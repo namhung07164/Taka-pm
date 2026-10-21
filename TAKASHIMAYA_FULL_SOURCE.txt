@@ -13496,9 +13496,12 @@ export function useCostData({
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const costTabSearchTerm = useAppStore((state) => state.costTabSearchTerm);
 
-  const expandedCodes = useAppStore((state) => state.expandedProjectIds);
-  const toggleProjectExpansion = useAppStore((state) => state.toggleProjectExpansion);
-  const setExpandedCodes = useAppStore((state) => state.setExpandedProjectIds);
+  const [expandedCodes, setExpandedCodes] = useState<string[]>([]);
+  const toggleProjectExpansion = useCallback((id: string) => {
+    setExpandedCodes((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  }, []);
 
   const handleProjectLinkClick = (p: Project) => {
     if (!p) return;
@@ -13870,8 +13873,6 @@ export function useCostData({
     handleClearPaidDateFilter,
   };
 }
-
-
 ================================================================================
 FILE: src/components/CostParts/useCostDateFilter.ts
 ================================================================================
@@ -90309,17 +90310,6 @@ export function useDetailPredecessorSync({
     }
   }, [tasks, projects, hasWritePermission]);
 
-  useEffect(() => {
-    if (hasAutoHealedRef.current) return;
-    if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
-    if (!hasWritePermission) return;
-    // 15 giây đầu sau khi mở app, tasks mới chỉ là bản cũ từ Dexie: không tự ghi lên Firestore
-    if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS) return;
-
-    hasAutoHealedRef.current = true;
-    handleConvertAllSubtasksToHash(false).catch(() => {});
-  }, [tasks, projects, hasWritePermission, handleConvertAllSubtasksToHash]);
-
   return {
     isSyncingPredecessors,
     handleSyncAllPredecessors,
@@ -90327,8 +90317,6 @@ export function useDetailPredecessorSync({
     handleConvertAllSubtasksToHash,
   };
 }
-
-
 ================================================================================
 FILE: src/hooks/useDetailTaskReorder.ts
 ================================================================================
@@ -91319,7 +91307,8 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     });
   }
 
-  // 2. Any in-memory task belonging to this project that is not in serverSummaryIds (and not edited in last 30s) is a zombie task
+  // 2. Any in-memory task belonging to this project that is not in serverSummaryIds (and not edited in last 30s, nor newer than project doc) is a zombie task
+  const projUpdatedMs = tsOf(data.updatedAt);
   const localProjTasks = getLocalProjectTasksFromIndex(resolvedData, tasksIndex);
   const localProjTasksById = new Map<string, any>();
   localProjTasks.forEach((t) => {
@@ -91328,27 +91317,48 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     localProjTasksById.set(tIdLower, t);
     if (allSummariesHaveIds && !serverSummaryIds.has(tIdLower)) {
       const updatedMs = tsOf(t.updatedAt);
-      if (!updatedMs || nowMs - updatedMs > 30000) {
+      const isOlderOrEqualToProj = !projUpdatedMs || !updatedMs || projUpdatedMs >= updatedMs;
+      if (isOlderOrEqualToProj && (!updatedMs || nowMs - updatedMs > 30000)) {
         markTasksDeleted([t.id], id);
         pendingDeletedTaskIds.add(t.id);
       }
     }
   });
 
-  // 3. If project already has tasks hydrated in RAM (and is not just freshly expanding with 0 local tasks while useTasksHydration attaches its query),
-  // reconcile only genuinely missing single tasks or patch summary fields in-place without firing N getDocFromServer calls.
+  // 3. Patch summary fields in-place for already-loaded local tasks without firing N getDocFromServer calls.
+  // Unexpanded projects with partial tasks (e.g. from deadline notifications) already render missing tasks from project.taskSummaries (0 Read).
   const isActivelyExpanded =
     expandedSet.has(String(id)) ||
     (resolvedData.code && expandedSet.has(String(resolvedData.code)));
+
+  const prevSummaryIdSet =
+    existing && Array.isArray(existing.taskSummaries)
+      ? new Set(
+          existing.taskSummaries
+            .map((s: any) => String(s?.id || '').trim().toLowerCase())
+            .filter(Boolean)
+        )
+      : null;
+  const wasFullyHydratedInRam =
+    prevSummaryIdSet !== null &&
+    prevSummaryIdSet.size > 0 &&
+    localProjTasksById.size >= prevSummaryIdSet.size;
 
   if (localProjTasksById.size > 0 && serverSummaryIds.size > 0) {
     data.taskSummaries.forEach((s: any) => {
       const sId = String(s?.id || '').trim();
       if (!sId || sId.startsWith('ts_')) return;
-      const localT = localProjTasksById.get(sId.toLowerCase());
+      const sIdLower = sId.toLowerCase();
+      const localT = localProjTasksById.get(sIdLower);
       if (!localT) {
-        // If the project is not covered by an active expanded listener in useTasksHydration, fetch the single missing task
-        if (!isActivelyExpanded) {
+        // Only invalidate if this project was already 100% hydrated in RAM, is not covered by an active expanded listener,
+        // and this summary ID is a genuinely brand-new task added on the server (not just an unexpanded project with 1 notification task in RAM).
+        if (
+          !isActivelyExpanded &&
+          wasFullyHydratedInRam &&
+          prevSummaryIdSet &&
+          !prevSummaryIdSet.has(sIdLower)
+        ) {
           pendingInvalidatedTaskIds.set(sId, String(resolvedData.year || ''));
         }
       } else {
@@ -92038,15 +92048,14 @@ export function buildProjectCodeTasksQuery(p: Project) {
       codeSet.add(c.toLowerCase());
     });
   }
-  if (p.id) {
-    const idStr = String(p.id).trim();
-    if (idStr) codeSet.add(idStr);
-  }
   const codeList = Array.from(codeSet);
   const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks');
+  if (codeList.length === 0) {
+    return query(colRef, where('projectId', '==', String(p.id || '').trim()));
+  }
   return codeList.length > 1
     ? query(colRef, where('projectCode', 'in', codeList.slice(0, 10)))
-    : query(colRef, where('projectCode', '==', p.code || ''));
+    : query(colRef, where('projectCode', '==', codeList[0]));
 }
 
 /**
@@ -92229,8 +92238,6 @@ export function attachProjectTasksListener(params: {
   );
   tasksPool.set(projKey, unsub);
 }
-
-
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts
 ================================================================================
@@ -92416,6 +92423,9 @@ export function useCostsHydration({
 
     liveTargetYears.forEach(async (year) => {
       if (!costsPool.current.has(year)) {
+        // Reserve slot synchronously before awaiting IndexedDB to prevent duplicate listener attachment
+        costsPool.current.set(year, () => {});
+
         const localCount = await hydrateCostsFromLocal(year);
         const currentCosts = useAppStore.getState().costs || [];
         const hasLocalCosts =
@@ -92426,11 +92436,8 @@ export function useCostsHydration({
           (hasLocalCosts && isClosedOrPastYear) ||
           (DELTA_FIRST.costs && hasLocalCosts && hasMarker(await getLoadedMarkers(), 'costs_year', year));
         if (deltaManaged) {
-          costsPool.current.set(year, () => {});
           setIsCostsLoading(false);
-          pullAndApplyDeltas(year, true)
-            .then(() => setCloudStatus("online"))
-            .catch(() => {});
+          setCloudStatus("online");
           usePerformanceStore
             .getState()
             .trackGetDoc(
@@ -92450,6 +92457,9 @@ export function useCostsHydration({
             userRole,
             allowedStores
           );
+
+          const existingUnsub = costsPool.current.get(year);
+          if (existingUnsub) existingUnsub();
 
           usePerformanceStore.getState().registerListener(`taka_costs_${year}`);
           const unsub = onSnapshot(
@@ -92472,6 +92482,8 @@ export function useCostsHydration({
               }
             },
             (e) => {
+              costsPool.current.delete(year);
+              usePerformanceStore.getState().unregisterListener(`taka_costs_${year}`);
               setIsCostsLoading(false);
               console.error("Costs listener error:", e);
             }
@@ -92479,6 +92491,7 @@ export function useCostsHydration({
           costsPool.current.set(year, unsub);
         }
       } else {
+        hydrateCostsFromLocal(year).catch(() => {});
         setIsCostsLoading(false);
       }
     });
@@ -92771,6 +92784,9 @@ export function useDelegationsHydration({
 
     targetYears.forEach(async (year) => {
       if (!delegationsPool.current.has(year)) {
+        // Reserve slot synchronously before awaiting IndexedDB to prevent duplicate listener attachment
+        delegationsPool.current.set(year, () => {});
+
         const localCount = await hydrateDelegationsFromLocal(year);
         const isClosedOrPastYear = Number(year) < new Date().getFullYear();
         const currentDelegations = useAppStore.getState().delegationGroups || [];
@@ -92782,11 +92798,8 @@ export function useDelegationsHydration({
           (hasLocalDelegations && isClosedOrPastYear) ||
           (DELTA_FIRST.delegations && hasLocalDelegations && hasMarker(await getLoadedMarkers(), 'delegations_year', year));
         if (deltaManaged) {
-          delegationsPool.current.set(year, () => {});
           setIsDelegationsLoading(false);
-          pullAndApplyDeltas(year, true)
-            .then(() => setCloudStatus("online"))
-            .catch(() => {});
+          setCloudStatus("online");
           usePerformanceStore
             .getState()
             .trackGetDoc(
@@ -92798,22 +92811,7 @@ export function useDelegationsHydration({
           return;
         }
 
-        delegationsPool.current.set(year, () => {});
         setIsDelegationsLoading(false);
-
-        if (!yearDelegationsCache.current.has(year)) {
-          yearDelegationsCache.current.set(year, new Map());
-        }
-        const yearMap = yearDelegationsCache.current.get(year)!;
-        if (localCount > 0) {
-          const localItems = await getLocalDelegations(year);
-          localItems.forEach((d) => {
-            if (d.id) yearMap.set(d.id, d);
-          });
-          pullAndApplyDeltas(year)
-            .then(() => setCloudStatus("online"))
-            .catch(() => {});
-        }
 
         const colRef = collection(
           db,
@@ -92831,6 +92829,9 @@ export function useDelegationsHydration({
           userRole,
           allowedStores
         );
+
+        const existingUnsub = delegationsPool.current.get(year);
+        if (existingUnsub) existingUnsub();
 
         usePerformanceStore.getState().registerListener(`taka_delegation_groups_${year}`);
         const unsub = onSnapshot(
@@ -92852,11 +92853,15 @@ export function useDelegationsHydration({
           },
           (e) => {
             delegationsPool.current.delete(year);
+            usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${year}`);
             setIsDelegationsLoading(false);
             console.error("Delegation groups listener error:", e);
           }
         );
         delegationsPool.current.set(year, unsub);
+      } else {
+        hydrateDelegationsFromLocal(year).catch(() => {});
+        setIsDelegationsLoading(false);
       }
     });
   }, [
@@ -92869,8 +92874,6 @@ export function useDelegationsHydration({
     setCloudStatus,
   ]);
 }
-
-
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useProjectsHydration.ts
 ================================================================================
@@ -93141,93 +93144,98 @@ export function useProjectsHydration({
     const liveTargetYears = isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter];
 
     liveTargetYears.forEach(async (year) => {
+      if (projectsPool.current.has(year)) {
+        hydrateProjectsFromLocal(year, useAppStore.getState().globalStoreFilter).catch(() => {});
+        return;
+      }
+      // Reserve slot synchronously before awaiting IndexedDB to prevent duplicate listener attachment on rapid effect re-runs
+      projectsPool.current.set(year, () => {});
+
       const localCount = await hydrateProjectsFromLocal(
         year,
         useAppStore.getState().globalStoreFilter
       );
 
-      if (!projectsPool.current.has(year)) {
-        const isClosedOrPastYear = Number(year) < new Date().getFullYear() - 1;
-        const hasLocalData =
-          localCount > 0 ||
-          (useAppStore.getState().projects || []).some((p) => String(p.year) === String(year));
+      const isClosedOrPastYear = Number(year) < new Date().getFullYear() - 1;
+      const hasLocalData =
+        localCount > 0 ||
+        (useAppStore.getState().projects || []).some((p) => String(p.year) === String(year));
 
-        const deltaManaged =
-          (hasLocalData && isClosedOrPastYear) ||
-          (DELTA_FIRST.projects &&
-            hasLocalData &&
-            hasMarker(await getLoadedMarkers(), 'projects_year', year));
-        if (deltaManaged) {
-          projectsPool.current.set(year, () => {});
-          pullAndApplyDeltas(year, false)
-            .then(() => setCloudStatus('online'))
-            .catch(() => {});
-          usePerformanceStore
-            .getState()
-            .trackGetDoc(
-              `taka_projects_${year}`,
-              true,
-              localCount,
-              'Dexie Local-First Projects Hydration (0 Read full collection)'
-            );
-          return;
-        }
-
-        const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects');
-        const qProjects = buildStoreAndYearQuery(
-          colRef,
-          'store',
-          'year',
-          year,
-          userRole,
-          allowedStores
-        );
-
-        usePerformanceStore.getState().registerListener(`taka_projects_${year}`);
-        const unsub = onSnapshot(
-          qProjects,
-          (snapshot) => {
-            usePerformanceStore.getState().trackSnapshot(`taka_projects_${year}`, snapshot);
-            const fromCache = snapshot.metadata.fromCache;
-            let changesToApply: any[] = snapshot.docChanges();
-
-            if (!fromCache && !snapshot.metadata.hasPendingWrites) {
-              const currentProjectsNow = useAppStore.getState().projects || [];
-              const zombieRemovals = buildZombieProjectRemovalsForYear(
-                snapshot.docs,
-                currentProjectsNow,
-                year,
-                userRole,
-                allowedStores
-              );
-              if (zombieRemovals.length > 0) {
-                changesToApply = [...changesToApply, ...zombieRemovals];
-              }
-            }
-
-            batchProjectsUpdate(changesToApply, fromCache);
-            setCloudStatus('online');
-
-            if (!fromCache) {
-              markLoaded('projects_year', year).catch(() => {});
-            }
-
-            if (DELTA_FIRST.projects && !fromCache) {
-              const u = projectsPool.current.get(year);
-              projectsPool.current.set(year, () => {});
-              u?.();
-              usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
-            }
-          },
-          (e) => {
-            projectsPool.current.delete(year);
-            usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
-            console.error('Projects listener error:', e);
-            setCloudStatus('offline');
-          }
-        );
-        projectsPool.current.set(year, unsub);
+      const deltaManaged =
+        (hasLocalData && isClosedOrPastYear) ||
+        (DELTA_FIRST.projects &&
+          hasLocalData &&
+          hasMarker(await getLoadedMarkers(), 'projects_year', year));
+      if (deltaManaged) {
+        setCloudStatus('online');
+        usePerformanceStore
+          .getState()
+          .trackGetDoc(
+            `taka_projects_${year}`,
+            true,
+            localCount,
+            'Dexie Local-First Projects Hydration (0 Read full collection)'
+          );
+        return;
       }
+
+      const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects');
+      const qProjects = buildStoreAndYearQuery(
+        colRef,
+        'store',
+        'year',
+        year,
+        userRole,
+        allowedStores
+      );
+
+      const existingUnsub = projectsPool.current.get(year);
+      if (existingUnsub) existingUnsub();
+
+      usePerformanceStore.getState().registerListener(`taka_projects_${year}`);
+      const unsub = onSnapshot(
+        qProjects,
+        (snapshot) => {
+          usePerformanceStore.getState().trackSnapshot(`taka_projects_${year}`, snapshot);
+          const fromCache = snapshot.metadata.fromCache;
+          let changesToApply: any[] = snapshot.docChanges();
+
+          if (!fromCache && !snapshot.metadata.hasPendingWrites) {
+            const currentProjectsNow = useAppStore.getState().projects || [];
+            const zombieRemovals = buildZombieProjectRemovalsForYear(
+              snapshot.docs,
+              currentProjectsNow,
+              year,
+              userRole,
+              allowedStores
+            );
+            if (zombieRemovals.length > 0) {
+              changesToApply = [...changesToApply, ...zombieRemovals];
+            }
+          }
+
+          batchProjectsUpdate(changesToApply, fromCache);
+          setCloudStatus('online');
+
+          if (!fromCache) {
+            markLoaded('projects_year', year).catch(() => {});
+          }
+
+          if (DELTA_FIRST.projects && !fromCache) {
+            const u = projectsPool.current.get(year);
+            projectsPool.current.set(year, () => {});
+            u?.();
+            usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
+          }
+        },
+        (e) => {
+          projectsPool.current.delete(year);
+          usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
+          console.error('Projects listener error:', e);
+          setCloudStatus('offline');
+        }
+      );
+      projectsPool.current.set(year, unsub);
     });
 
     if (isAllYears) {
@@ -93360,9 +93368,15 @@ export function useStaticAndAuthHydration() {
   // 1. Sleep / Wake Guard & 20s Heartbeat Gap Detection (Rule 16.2)
   useEffect(() => {
     const triggerOvernightRecovery = (elapsedSleepMs: number) => {
-      import("../../lib/deltaOrchestratorService").then((m) => {
-        m.triggerImmediateDeltaSync().catch(() => {});
-      });
+      import("../../lib/deltaRealtimeListener")
+        .then(({ isDeltaRealtimeConnected }) => {
+          if (!isDeltaRealtimeConnected() || elapsedSleepMs > 15 * 60 * 1000) {
+            return import("../../lib/deltaOrchestratorService").then((m) =>
+              m.triggerImmediateDeltaSync()
+            );
+          }
+        })
+        .catch(() => {});
 
       if (elapsedSleepMs > 60 * 1000) {
         // Dispatch recovery event to sub-hooks (>60s sleep/freeze gap per Rule 16.2)
@@ -93396,7 +93410,7 @@ export function useStaticAndAuthHydration() {
       const elapsedSleepMs = now - lastActiveTimestampRef.current;
       lastActiveTimestampRef.current = now;
 
-      if (elapsedSleepMs > 30 * 1000) {
+      if (elapsedSleepMs > 60 * 1000) {
         triggerOvernightRecovery(elapsedSleepMs);
       }
     };
@@ -93419,76 +93433,62 @@ export function useStaticAndAuthHydration() {
 
     document.addEventListener("visibilitychange", handleSleepWake);
     window.addEventListener("pageshow", handleSleepWake);
-    window.addEventListener("focus", handleSleepWake);
     window.addEventListener("online", handleSleepWake);
 
     return () => {
       clearInterval(heartbeatTimer);
       document.removeEventListener("visibilitychange", handleSleepWake);
       window.removeEventListener("pageshow", handleSleepWake);
-      window.removeEventListener("focus", handleSleepWake);
       window.removeEventListener("online", handleSleepWake);
     };
   }, []);
 
   // 2. Tri-Gate Lazy trigger & Visibility Tracker
   useEffect(() => {
-    const evaluate = () => {
-      const tabsRequiringTasks: TabId[] = [
-        "gantt",
-        "detail",
-        "calendar",
-        "taskDelegation",
-        "taskDelegationCalendar",
-      ];
-      const isChatOnly = isProjectModalOpen && modalInitialTab === "chat";
-      const isLayoutTab = activeTab === "layout";
-      const needsTasks =
-        tabsRequiringTasks.includes(activeTab) ||
-        isTaskModalOpen ||
-        (isProjectModalOpen && !isChatOnly && !isLayoutTab);
+    const tabsRequiringTasks: TabId[] = [
+      "gantt",
+      "detail",
+      "calendar",
+      "taskDelegation",
+      "taskDelegationCalendar",
+    ];
+    const isChatOnly = isProjectModalOpen && modalInitialTab === "chat";
+    const isLayoutTab = activeTab === "layout";
+    const needsTasks =
+      tabsRequiringTasks.includes(activeTab) ||
+      isTaskModalOpen ||
+      (isProjectModalOpen && !isChatOnly && !isLayoutTab);
 
-      const tabsRequiringCosts: TabId[] = ["cost", "budget"];
-      const needsCosts =
-        tabsRequiringCosts.includes(activeTab) ||
-        (isProjectModalOpen && !isChatOnly && !isLayoutTab);
+    const tabsRequiringCosts: TabId[] = ["cost", "budget"];
+    const needsCosts =
+      tabsRequiringCosts.includes(activeTab) ||
+      (isProjectModalOpen && !isChatOnly && !isLayoutTab);
 
-      const tabsRequiringDelegations: TabId[] = ["taskDelegation", "taskDelegationCalendar"];
-      const needsDelegations = tabsRequiringDelegations.includes(activeTab);
+    const tabsRequiringDelegations: TabId[] = ["taskDelegation", "taskDelegationCalendar"];
+    const needsDelegations = tabsRequiringDelegations.includes(activeTab);
 
-      if (needsTasks) {
-        setIsTasksRequested(true);
-        hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+    if (needsTasks) {
+      setIsTasksRequested(true);
+      hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+    }
+    if (needsCosts) {
+      setIsCostsRequested(true);
+      hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+    }
+    if (needsDelegations) {
+      setIsDelegationsRequested(true);
+      hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+    } else {
+      const store = useAppStore.getState();
+      const openProjectKeys: string[] = [];
+      if (store.editingProject?.id) openProjectKeys.push(store.editingProject.id);
+      if (store.editingProject?.code) openProjectKeys.push(store.editingProject.code);
+      if (store.editingTask?.projectId) openProjectKeys.push(store.editingTask.projectId);
+      if (store.editingTask?.projectCode) openProjectKeys.push(store.editingTask.projectCode);
+      if (openProjectKeys.length > 0) {
+        hydrateDelegationsForProjects(openProjectKeys).catch(() => {});
       }
-      if (needsCosts) {
-        setIsCostsRequested(true);
-        hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
-      }
-      if (needsDelegations) {
-        setIsDelegationsRequested(true);
-        hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
-      } else {
-        const store = useAppStore.getState();
-        const openProjectKeys: string[] = [];
-        if (store.editingProject?.id) openProjectKeys.push(store.editingProject.id);
-        if (store.editingProject?.code) openProjectKeys.push(store.editingProject.code);
-        if (store.editingTask?.projectId) openProjectKeys.push(store.editingTask.projectId);
-        if (store.editingTask?.projectCode) openProjectKeys.push(store.editingTask.projectCode);
-        if (openProjectKeys.length > 0) {
-          hydrateDelegationsForProjects(openProjectKeys).catch(() => {});
-        }
-      }
-    };
-
-    evaluate();
-    document.addEventListener("visibilitychange", evaluate);
-    window.addEventListener("pageshow", evaluate);
-    window.addEventListener("focus", evaluate);
-    return () => {
-      document.removeEventListener("visibilitychange", evaluate);
-      window.removeEventListener("pageshow", evaluate);
-      window.removeEventListener("focus", evaluate);
-    };
+    }
   }, [
     activeTab,
     isTaskModalOpen,
@@ -93720,8 +93720,6 @@ export function useStaticAndAuthHydration() {
     };
   }, [globalYearFilter]);
 }
-
-
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useTasksHydration.ts
 ================================================================================
@@ -93975,6 +93973,7 @@ export function useTasksHydration({
       ]);
       if (isCancelled) return;
       const markers = await getLoadedMarkers();
+      if (isCancelled) return;
 
       setIsTasksLoading(true);
 
@@ -93985,7 +93984,6 @@ export function useTasksHydration({
       );
 
       const neededKeys = new Set<string>();
-      let needTasksDeltaSync = false;
 
       // Pre-build O(T) lookup index of currentTasks once before iterating active projects
       const currentTasksSnapshot = useAppStore.getState().tasks || [];
@@ -94023,7 +94021,7 @@ export function useTasksHydration({
             if (deltaManaged) {
               tasksPool.current.set(yearKey, () => {});
               setIsTasksLoading(false);
-              needTasksDeltaSync = true;
+              setCloudStatus('online');
               usePerformanceStore
                 .getState()
                 .trackGetDoc(
@@ -94046,6 +94044,8 @@ export function useTasksHydration({
                 setCloudStatus,
               });
             }
+          } else {
+            setIsTasksLoading(false);
           }
         } else {
           const visibleSet = new Set(
@@ -94063,6 +94063,11 @@ export function useTasksHydration({
 
             if (tasksPool.current.has(yearKey)) {
               neededKeys.add(yearKey);
+              if (tasksTTLTimeouts.current.has(yearKey)) {
+                clearTimeout(tasksTTLTimeouts.current.get(yearKey)!);
+                tasksTTLTimeouts.current.delete(yearKey);
+              }
+              setIsTasksLoading(false);
               return;
             }
 
@@ -94101,7 +94106,7 @@ export function useTasksHydration({
                 tasksPool.current.set(projKey, () => {});
                 setIsTasksLoading(false);
                 if (!isZeroTaskProject) {
-                  needTasksDeltaSync = true;
+                  setCloudStatus('online');
                   const healed = healProjectsAfterTasksBatch({
                     currentProjects: useAppStore.getState().projects || [],
                     finalTasks: currentTasksSnapshot,
@@ -94137,16 +94142,12 @@ export function useTasksHydration({
                   setCloudStatus,
                 });
               }
+            } else {
+              setIsTasksLoading(false);
             }
           });
         }
       });
-
-      if (needTasksDeltaSync) {
-        pullAndApplyDeltas(undefined, false)
-          .then(() => setCloudStatus('online'))
-          .catch(() => {});
-      }
 
       Array.from(tasksPool.current.keys()).forEach((key) => {
         if (!neededKeys.has(key)) {
@@ -94196,7 +94197,6 @@ export function useTasksHydration({
     setCloudStatus,
   ]);
 }
-
 ================================================================================
 FILE: src/hooks/useGanttDragDrop.ts
 ================================================================================
@@ -100237,14 +100237,12 @@ FILE: src/lib/deltaConstants.ts
 export const LAST_SYNC_KEY = 'taka_last_delta_sync_time_v1';
 export const RESTORE_CUTOFF_KEY = 'taka_restore_cutoff_time_v1';
 export const DELTA_COLLECTION = 'taka_deltas';
-export const CLOCK_SKEW_OVERLAP_MS = 10 * 1000;
+export const CLOCK_SKEW_OVERLAP_MS = 2 * 1000;
 export const MAX_APPLIED_IDS = 3000;
 
 export const CLIENT_SESSION_ID = typeof window !== 'undefined'
   ? `sess_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`
   : 'server_sess';
-
-
 ================================================================================
 FILE: src/lib/deltaInvalidateService.ts
 ================================================================================
@@ -100396,13 +100394,13 @@ FILE: src/lib/deltaOrchestratorService.ts
 import { useAppStore } from '../store/useAppStore';
 import { pullAndApplyDeltas } from './deltaPullService';
 import { initNetworkRecovery } from './syncResilience';
-import { startDeltaRealtimeListener } from './deltaRealtimeListener';
+import { startDeltaRealtimeListener, isDeltaRealtimeConnected } from './deltaRealtimeListener';
 import { purgeOldDeltas } from './deltaPurgeService';
 
 let syncIntervalTimer: any = null;
 let isHibernating = false;
 let lastActivityTime = Date.now();
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes inactivity threshold
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes inactivity threshold
 
 /**
  * Tự động Dọn dẹp Delta cũ (Delta Retention TTL & Pruning)
@@ -100413,8 +100411,8 @@ export async function pruneExpiredDeltas(retentionDays: number = 7): Promise<num
 
 /**
  * Khởi động Background Delta Sync Poller với Adaptive Tab Hibernation & Inactivity Sleep
- * - Khi ẩn tab hoặc người dùng không hoạt động > 5 phút: Tạm dừng định thời hoàn toàn (0 Idle Read).
- * - Khi quay lại tab hoặc tương tác: Lập tức sync tức thì (0ms) và kích hoạt lại interval.
+ * - Kênh chính: startDeltaRealtimeListener (1 onSnapshot duy nhất trên taka_deltas).
+ * - Polling chỉ chạy làm safety-net khi listener bị ngắt hoặc sau khi ngủ sâu (> 15 phút).
  */
 export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () => void {
   if (typeof window === 'undefined') return () => {};
@@ -100423,8 +100421,11 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
 
   let lastTriggerAt = 0;
   const triggerSync = (force: boolean = false) => {
+    // If the real-time onSnapshot listener on taka_deltas is already connected and streaming,
+    // skip redundant getDocsFromServer polling unless explicitly forced by deep sleep recovery.
+    if (!force && isDeltaRealtimeConnected()) return;
     const now = Date.now();
-    if (!force && now - lastTriggerAt < 10000) return;
+    if (!force && now - lastTriggerAt < 15000) return;
     lastTriggerAt = now;
     const year = force ? undefined : useAppStore.getState().globalYearFilter;
     pullAndApplyDeltas(year, force).catch(() => {});
@@ -100458,20 +100459,20 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     stopPolling();
   };
 
-  const wakeAndSync = () => {
+  const wakeAndSync = (forceServerPull: boolean = false) => {
     lastActivityTime = Date.now();
     isHibernating = false;
-    triggerSync(true); // Ép đồng bộ ngay khi thức giấc (bỏ qua throttle)
+    if (forceServerPull || !isDeltaRealtimeConnected()) {
+      triggerSync(true);
+    }
     startPolling();
   };
 
-  // 1. Initial boot sync & start timer
-  triggerSync(true);
+  // 1. Start safety polling timer (initial delta catch-up is already handled by startDeltaRealtimeListener's onSnapshot)
   startPolling();
-  // Khi syncResilience khôi phục xong mạng (sau disableNetwork -> enableNetwork), ép pull delta ngay lập tức với force=true!
+
+  // Khi syncResilience khôi phục xong mạng (sau disableNetwork -> enableNetwork hoặc ngủ qua đêm),發 sự kiện để deltaRealtimeListener gắn lại trên socket mới
   const stopNetworkRecovery = initNetworkRecovery(() => {
-    triggerSync(true);
-    // Phát sự kiện để deltaRealtimeListener gắn lại (re-attach) trên socket mới
     window.dispatchEvent(new CustomEvent('taka_network_recovered'));
   });
 
@@ -100482,8 +100483,9 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
       const hiddenDuration = hiddenSince ? Date.now() - hiddenSince : 0;
       hiddenSince = 0;
       lastActivityTime = Date.now();
-      if (isHibernating || hiddenDuration >= 15000) {
-        wakeAndSync();
+      // Only force a fallback pull if hidden > 15 minutes (when realtime listener detached)
+      if (hiddenDuration >= 15 * 60 * 1000 || !isDeltaRealtimeConnected()) {
+        wakeAndSync(true);
       } else {
         startPolling();
       }
@@ -100493,31 +100495,13 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     }
   };
 
-  // 3. Online network reconnection, Window Focus & User Activity (Desktop overnight idle / iPad Split-View)
+  // 3. Online network reconnection
   const handleOnline = () => {
-    wakeAndSync();
-  };
-  const handleFocus = () => {
-    lastActivityTime = Date.now();
-    // Force a server pull on focus if the poller had entered hibernation (>5 min idle)
-    if (document.visibilityState === 'visible' && isHibernating) {
-      wakeAndSync();
-    }
-  };
-  const handleUserInteraction = () => {
-    const now = Date.now();
-    const wasIdleLong = now - lastActivityTime > IDLE_TIMEOUT_MS;
-    lastActivityTime = now;
-    if (document.visibilityState === 'visible' && (isHibernating || wasIdleLong)) {
-      wakeAndSync();
-    }
+    wakeAndSync(!isDeltaRealtimeConnected());
   };
 
   document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('online', handleOnline);
-  window.addEventListener('focus', handleFocus);
-  window.addEventListener('pointerdown', handleUserInteraction, { passive: true });
-  window.addEventListener('keydown', handleUserInteraction, { passive: true });
 
   return () => {
     stopPolling();
@@ -100525,9 +100509,6 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     stopRealtime();
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('online', handleOnline);
-    window.removeEventListener('focus', handleFocus);
-    window.removeEventListener('pointerdown', handleUserInteraction);
-    window.removeEventListener('keydown', handleUserInteraction);
   };
 }
 
@@ -100536,8 +100517,6 @@ export async function triggerImmediateDeltaSync(year?: string): Promise<number> 
   isHibernating = false;
   return pullAndApplyDeltas(year, true);
 }
-
-
 ================================================================================
 FILE: src/lib/deltaPatchService.test.ts
 ================================================================================
@@ -101163,9 +101142,15 @@ import type { TakaDelta } from '../types';
  * The listener is detached when the tab has been hidden > 2 min and re-attached (since = lastSyncTime) on return.
  */
 
-const OVERLAP_MS = 10 * 1000; // serverTime overlap window, duplicates filtered by delta id
-const DETACH_AFTER_HIDDEN_MS = 5 * 60 * 1000; // Keep listener alive for up to 5 min when tab hidden
+const OVERLAP_MS = 3 * 1000; // 3s serverTime jitter buffer (duplicates filtered by delta id)
+const DETACH_AFTER_HIDDEN_MS = 15 * 60 * 1000; // Keep listener alive for up to 15 min when tab hidden (matches pool TTL)
 const RETRY_MS = 30 * 1000;
+
+let activeRealtimeUnsub: (() => void) | null = null;
+
+export function isDeltaRealtimeConnected(): boolean {
+  return activeRealtimeUnsub !== null;
+}
 
 export function startDeltaRealtimeListener(): () => void {
   if (typeof window === 'undefined') return () => {};
@@ -101196,6 +101181,7 @@ export function startDeltaRealtimeListener(): () => void {
       try { unsub(); } catch {}
       unsub = null;
     }
+    activeRealtimeUnsub = null;
   };
 
   const attach = () => {
@@ -101209,6 +101195,7 @@ export function startDeltaRealtimeListener(): () => void {
     unsub = onSnapshot(
       q,
       (snap) => {
+        if (snap.metadata.hasPendingWrites) return;
         snap.docChanges().forEach((c) => {
           if (c.type === 'added' || c.type === 'modified') {
             const raw = c.doc.data({ serverTimestamps: 'estimate' }) as TakaDelta;
@@ -101228,73 +101215,52 @@ export function startDeltaRealtimeListener(): () => void {
         }
       }
     );
+    activeRealtimeUnsub = unsub;
   };
 
   if (signedIn) attach();
 
-  let hiddenAt = 0;
-  let lastActiveAt = Date.now();
-  const IDLE_REATTACH_MS = 10 * 60 * 1000;
-
   const onVisibility = () => {
     if (document.visibilityState === 'hidden') {
-      hiddenAt = Date.now();
       if (detachTimer) clearTimeout(detachTimer);
       detachTimer = setTimeout(detach, DETACH_AFTER_HIDDEN_MS);
     } else {
       if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
-      const now = Date.now();
-      const hiddenFor = hiddenAt ? now - hiddenAt : Infinity;
-      hiddenAt = 0;
-      lastActiveAt = now;
-      // If hidden < 2 minutes and listener is still active, keep existing WebChannel socket (0 extra reads)
-      if (unsub && hiddenFor < 2 * 60 * 1000) return;
-      // Re-attach listener if it was detached or hidden > 2 minutes (attach() already queries since lastSyncTime - 10s)
-      detach();
+      // If listener is still attached (hidden < 15 minutes), keep existing WebChannel socket (0 extra reads)
+      if (unsub) return;
       attach();
     }
   };
 
   const onNetworkRecovered = () => {
-    lastActiveAt = Date.now();
     if (document.visibilityState === 'visible') {
       detach();
       attach();
     }
   };
 
+  const onSleepWake = () => {
+    if (document.visibilityState === 'visible' && !unsub) {
+      attach();
+    }
+  };
+
   const handlePageShow = (e: PageTransitionEvent) => {
     if (e.persisted) {
-      lastActiveAt = Date.now();
       detach();
       attach();
     }
   };
 
   const handleOnline = () => {
-    lastActiveAt = Date.now();
-    detach();
-    attach();
-  };
-
-  const handleFocus = () => {
-    const now = Date.now();
-    const idleFor = now - lastActiveAt;
-    lastActiveAt = now;
-    if (idleFor > IDLE_REATTACH_MS || !unsub) {
-      detach();
+    if (!unsub) {
       attach();
     }
   };
 
-  const handleActivity = () => {
-    const now = Date.now();
-    if (now - lastActiveAt > IDLE_REATTACH_MS || !unsub) {
-      lastActiveAt = now;
-      detach();
+  const handleFocus = () => {
+    if (!unsub) {
       attach();
-    } else {
-      lastActiveAt = now;
     }
   };
 
@@ -101306,24 +101272,20 @@ export function startDeltaRealtimeListener(): () => void {
 
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('taka_network_recovered', onNetworkRecovered);
-  window.addEventListener('taka_sleep_wake_recovery', onNetworkRecovered);
+  window.addEventListener('taka_sleep_wake_recovery', onSleepWake);
   window.addEventListener('pageshow', handlePageShow as any);
   window.addEventListener('online', handleOnline);
   window.addEventListener('focus', handleFocus);
-  window.addEventListener('pointerdown', handleActivity, { passive: true });
-  window.addEventListener('keydown', handleActivity, { passive: true });
 
   return () => {
     stopped = true;
     unsubAuth();
     document.removeEventListener('visibilitychange', onVisibility);
     window.removeEventListener('taka_network_recovered', onNetworkRecovered);
-    window.removeEventListener('taka_sleep_wake_recovery', onNetworkRecovered);
+    window.removeEventListener('taka_sleep_wake_recovery', onSleepWake);
     window.removeEventListener('pageshow', handlePageShow as any);
     window.removeEventListener('online', handleOnline);
     window.removeEventListener('focus', handleFocus);
-    window.removeEventListener('pointerdown', handleActivity);
-    window.removeEventListener('keydown', handleActivity);
     if (flushTimer) clearTimeout(flushTimer);
     if (detachTimer) clearTimeout(detachTimer);
     if (retryTimer) clearTimeout(retryTimer);
@@ -112338,10 +112300,9 @@ import { processPendingSync, getConnectionStatus } from './syncQueue';
  *    than that can never catch up through deltas, so wipe the local cache and reload once.
  */
 
-const HIDDEN_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes hidden before cycling network
+const HIDDEN_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes hidden before cycling network
 const WALL_CLOCK_CHECK_INTERVAL_MS = 20 * 1000;
-const WALL_CLOCK_JUMP_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes OS sleep jump
-const IDLE_FOCUS_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes idle before cycling network on focus
+const WALL_CLOCK_JUMP_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes OS sleep jump
 const STALE_RESYNC_MS = 6 * 24 * 60 * 60 * 1000; // < 7-day delta retention
 const RESYNC_GUARD_KEY = 'taka_full_resync_guard_v1';
 
@@ -112363,14 +112324,13 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return () => {};
 
   let hiddenAt = 0;
-  let lastActiveAt = Date.now();
   let lastWallClockTick = Date.now();
   let lastRecoveredAt = 0;
   let busy = false;
 
   const recover = async () => {
     const now = Date.now();
-    if (busy || now - lastRecoveredAt < 15000) return;
+    if (busy || now - lastRecoveredAt < 30000) return;
     busy = true;
     lastRecoveredAt = now;
     const p = (async () => {
@@ -112383,7 +112343,6 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
       } finally {
         busy = false;
         activeRecoveryPromise = null;
-        lastActiveAt = Date.now();
         lastWallClockTick = Date.now();
         try { onRecovered?.(); } catch {}
       }
@@ -112399,10 +112358,8 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
     }
     const now = Date.now();
     const hiddenDuration = hiddenAt ? now - hiddenAt : 0;
-    const idleDuration = now - lastActiveAt;
     hiddenAt = 0;
-    lastActiveAt = now;
-    if (hiddenDuration > HIDDEN_THRESHOLD_MS || idleDuration > IDLE_FOCUS_THRESHOLD_MS) {
+    if (hiddenDuration > HIDDEN_THRESHOLD_MS) {
       recover();
     }
   };
@@ -112414,25 +112371,6 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
 
   // Network came back (e.g. iPhone/Desktop was offline): force a clean reconnect so queued offline writes flush now
   const handleOnline = () => { recover(); };
-
-  // Desktop overnight wake: tab may have stayed "visible" all night while monitor/OS slept or sat idle
-  const handleFocusOrSleepWake = () => {
-    const now = Date.now();
-    if (now - lastActiveAt > IDLE_FOCUS_THRESHOLD_MS) {
-      lastActiveAt = now;
-      recover();
-    }
-  };
-
-  const handleUserActivity = () => {
-    const now = Date.now();
-    if (now - lastActiveAt > IDLE_FOCUS_THRESHOLD_MS) {
-      lastActiveAt = now;
-      recover();
-    } else {
-      lastActiveAt = now;
-    }
-  };
 
   // Wall-clock sleep detector: catches OS sleep/wake even when tab stayed visible and focused
   const wallClockTimer = setInterval(() => {
@@ -112447,18 +112385,12 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
   document.addEventListener('visibilitychange', handleVisibility);
   window.addEventListener('pageshow', handlePageShow);
   window.addEventListener('online', handleOnline);
-  window.addEventListener('focus', handleFocusOrSleepWake);
-  window.addEventListener('pointerdown', handleUserActivity, { passive: true });
-  window.addEventListener('keydown', handleUserActivity, { passive: true });
 
   return () => {
     clearInterval(wallClockTimer);
     document.removeEventListener('visibilitychange', handleVisibility);
     window.removeEventListener('pageshow', handlePageShow);
     window.removeEventListener('online', handleOnline);
-    window.removeEventListener('focus', handleFocusOrSleepWake);
-    window.removeEventListener('pointerdown', handleUserActivity);
-    window.removeEventListener('keydown', handleUserActivity);
   };
 }
 

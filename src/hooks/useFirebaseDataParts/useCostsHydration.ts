@@ -180,6 +180,9 @@ export function useCostsHydration({
 
     liveTargetYears.forEach(async (year) => {
       if (!costsPool.current.has(year)) {
+        // Reserve slot synchronously before awaiting IndexedDB to prevent duplicate listener attachment
+        costsPool.current.set(year, () => {});
+
         const localCount = await hydrateCostsFromLocal(year);
         const currentCosts = useAppStore.getState().costs || [];
         const hasLocalCosts =
@@ -190,11 +193,8 @@ export function useCostsHydration({
           (hasLocalCosts && isClosedOrPastYear) ||
           (DELTA_FIRST.costs && hasLocalCosts && hasMarker(await getLoadedMarkers(), 'costs_year', year));
         if (deltaManaged) {
-          costsPool.current.set(year, () => {});
           setIsCostsLoading(false);
-          pullAndApplyDeltas(year, true)
-            .then(() => setCloudStatus("online"))
-            .catch(() => {});
+          setCloudStatus("online");
           usePerformanceStore
             .getState()
             .trackGetDoc(
@@ -214,6 +214,9 @@ export function useCostsHydration({
             userRole,
             allowedStores
           );
+
+          const existingUnsub = costsPool.current.get(year);
+          if (existingUnsub) existingUnsub();
 
           usePerformanceStore.getState().registerListener(`taka_costs_${year}`);
           const unsub = onSnapshot(
@@ -236,6 +239,8 @@ export function useCostsHydration({
               }
             },
             (e) => {
+              costsPool.current.delete(year);
+              usePerformanceStore.getState().unregisterListener(`taka_costs_${year}`);
               setIsCostsLoading(false);
               console.error("Costs listener error:", e);
             }
@@ -243,6 +248,7 @@ export function useCostsHydration({
           costsPool.current.set(year, unsub);
         }
       } else {
+        hydrateCostsFromLocal(year).catch(() => {});
         setIsCostsLoading(false);
       }
     });

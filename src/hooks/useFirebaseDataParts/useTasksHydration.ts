@@ -248,6 +248,7 @@ export function useTasksHydration({
       ]);
       if (isCancelled) return;
       const markers = await getLoadedMarkers();
+      if (isCancelled) return;
 
       setIsTasksLoading(true);
 
@@ -258,7 +259,6 @@ export function useTasksHydration({
       );
 
       const neededKeys = new Set<string>();
-      let needTasksDeltaSync = false;
 
       // Pre-build O(T) lookup index of currentTasks once before iterating active projects
       const currentTasksSnapshot = useAppStore.getState().tasks || [];
@@ -296,7 +296,7 @@ export function useTasksHydration({
             if (deltaManaged) {
               tasksPool.current.set(yearKey, () => {});
               setIsTasksLoading(false);
-              needTasksDeltaSync = true;
+              setCloudStatus('online');
               usePerformanceStore
                 .getState()
                 .trackGetDoc(
@@ -319,6 +319,8 @@ export function useTasksHydration({
                 setCloudStatus,
               });
             }
+          } else {
+            setIsTasksLoading(false);
           }
         } else {
           const visibleSet = new Set(
@@ -336,6 +338,11 @@ export function useTasksHydration({
 
             if (tasksPool.current.has(yearKey)) {
               neededKeys.add(yearKey);
+              if (tasksTTLTimeouts.current.has(yearKey)) {
+                clearTimeout(tasksTTLTimeouts.current.get(yearKey)!);
+                tasksTTLTimeouts.current.delete(yearKey);
+              }
+              setIsTasksLoading(false);
               return;
             }
 
@@ -374,7 +381,7 @@ export function useTasksHydration({
                 tasksPool.current.set(projKey, () => {});
                 setIsTasksLoading(false);
                 if (!isZeroTaskProject) {
-                  needTasksDeltaSync = true;
+                  setCloudStatus('online');
                   const healed = healProjectsAfterTasksBatch({
                     currentProjects: useAppStore.getState().projects || [],
                     finalTasks: currentTasksSnapshot,
@@ -410,16 +417,12 @@ export function useTasksHydration({
                   setCloudStatus,
                 });
               }
+            } else {
+              setIsTasksLoading(false);
             }
           });
         }
       });
-
-      if (needTasksDeltaSync) {
-        pullAndApplyDeltas(undefined, false)
-          .then(() => setCloudStatus('online'))
-          .catch(() => {});
-      }
 
       Array.from(tasksPool.current.keys()).forEach((key) => {
         if (!neededKeys.has(key)) {

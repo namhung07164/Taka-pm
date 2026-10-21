@@ -14,9 +14,15 @@ import type { TakaDelta } from '../types';
  * The listener is detached when the tab has been hidden > 2 min and re-attached (since = lastSyncTime) on return.
  */
 
-const OVERLAP_MS = 10 * 1000; // serverTime overlap window, duplicates filtered by delta id
-const DETACH_AFTER_HIDDEN_MS = 5 * 60 * 1000; // Keep listener alive for up to 5 min when tab hidden
+const OVERLAP_MS = 3 * 1000; // 3s serverTime jitter buffer (duplicates filtered by delta id)
+const DETACH_AFTER_HIDDEN_MS = 15 * 60 * 1000; // Keep listener alive for up to 15 min when tab hidden (matches pool TTL)
 const RETRY_MS = 30 * 1000;
+
+let activeRealtimeUnsub: (() => void) | null = null;
+
+export function isDeltaRealtimeConnected(): boolean {
+  return activeRealtimeUnsub !== null;
+}
 
 export function startDeltaRealtimeListener(): () => void {
   if (typeof window === 'undefined') return () => {};
@@ -47,6 +53,7 @@ export function startDeltaRealtimeListener(): () => void {
       try { unsub(); } catch {}
       unsub = null;
     }
+    activeRealtimeUnsub = null;
   };
 
   const attach = () => {
@@ -60,6 +67,7 @@ export function startDeltaRealtimeListener(): () => void {
     unsub = onSnapshot(
       q,
       (snap) => {
+        if (snap.metadata.hasPendingWrites) return;
         snap.docChanges().forEach((c) => {
           if (c.type === 'added' || c.type === 'modified') {
             const raw = c.doc.data({ serverTimestamps: 'estimate' }) as TakaDelta;
@@ -79,73 +87,52 @@ export function startDeltaRealtimeListener(): () => void {
         }
       }
     );
+    activeRealtimeUnsub = unsub;
   };
 
   if (signedIn) attach();
 
-  let hiddenAt = 0;
-  let lastActiveAt = Date.now();
-  const IDLE_REATTACH_MS = 10 * 60 * 1000;
-
   const onVisibility = () => {
     if (document.visibilityState === 'hidden') {
-      hiddenAt = Date.now();
       if (detachTimer) clearTimeout(detachTimer);
       detachTimer = setTimeout(detach, DETACH_AFTER_HIDDEN_MS);
     } else {
       if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
-      const now = Date.now();
-      const hiddenFor = hiddenAt ? now - hiddenAt : Infinity;
-      hiddenAt = 0;
-      lastActiveAt = now;
-      // If hidden < 2 minutes and listener is still active, keep existing WebChannel socket (0 extra reads)
-      if (unsub && hiddenFor < 2 * 60 * 1000) return;
-      // Re-attach listener if it was detached or hidden > 2 minutes (attach() already queries since lastSyncTime - 10s)
-      detach();
+      // If listener is still attached (hidden < 15 minutes), keep existing WebChannel socket (0 extra reads)
+      if (unsub) return;
       attach();
     }
   };
 
   const onNetworkRecovered = () => {
-    lastActiveAt = Date.now();
     if (document.visibilityState === 'visible') {
       detach();
       attach();
     }
   };
 
+  const onSleepWake = () => {
+    if (document.visibilityState === 'visible' && !unsub) {
+      attach();
+    }
+  };
+
   const handlePageShow = (e: PageTransitionEvent) => {
     if (e.persisted) {
-      lastActiveAt = Date.now();
       detach();
       attach();
     }
   };
 
   const handleOnline = () => {
-    lastActiveAt = Date.now();
-    detach();
-    attach();
-  };
-
-  const handleFocus = () => {
-    const now = Date.now();
-    const idleFor = now - lastActiveAt;
-    lastActiveAt = now;
-    if (idleFor > IDLE_REATTACH_MS || !unsub) {
-      detach();
+    if (!unsub) {
       attach();
     }
   };
 
-  const handleActivity = () => {
-    const now = Date.now();
-    if (now - lastActiveAt > IDLE_REATTACH_MS || !unsub) {
-      lastActiveAt = now;
-      detach();
+  const handleFocus = () => {
+    if (!unsub) {
       attach();
-    } else {
-      lastActiveAt = now;
     }
   };
 
@@ -157,24 +144,20 @@ export function startDeltaRealtimeListener(): () => void {
 
   document.addEventListener('visibilitychange', onVisibility);
   window.addEventListener('taka_network_recovered', onNetworkRecovered);
-  window.addEventListener('taka_sleep_wake_recovery', onNetworkRecovered);
+  window.addEventListener('taka_sleep_wake_recovery', onSleepWake);
   window.addEventListener('pageshow', handlePageShow as any);
   window.addEventListener('online', handleOnline);
   window.addEventListener('focus', handleFocus);
-  window.addEventListener('pointerdown', handleActivity, { passive: true });
-  window.addEventListener('keydown', handleActivity, { passive: true });
 
   return () => {
     stopped = true;
     unsubAuth();
     document.removeEventListener('visibilitychange', onVisibility);
     window.removeEventListener('taka_network_recovered', onNetworkRecovered);
-    window.removeEventListener('taka_sleep_wake_recovery', onNetworkRecovered);
+    window.removeEventListener('taka_sleep_wake_recovery', onSleepWake);
     window.removeEventListener('pageshow', handlePageShow as any);
     window.removeEventListener('online', handleOnline);
     window.removeEventListener('focus', handleFocus);
-    window.removeEventListener('pointerdown', handleActivity);
-    window.removeEventListener('keydown', handleActivity);
     if (flushTimer) clearTimeout(flushTimer);
     if (detachTimer) clearTimeout(detachTimer);
     if (retryTimer) clearTimeout(retryTimer);

@@ -185,7 +185,8 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     });
   }
 
-  // 2. Any in-memory task belonging to this project that is not in serverSummaryIds (and not edited in last 30s) is a zombie task
+  // 2. Any in-memory task belonging to this project that is not in serverSummaryIds (and not edited in last 30s, nor newer than project doc) is a zombie task
+  const projUpdatedMs = tsOf(data.updatedAt);
   const localProjTasks = getLocalProjectTasksFromIndex(resolvedData, tasksIndex);
   const localProjTasksById = new Map<string, any>();
   localProjTasks.forEach((t) => {
@@ -194,27 +195,48 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     localProjTasksById.set(tIdLower, t);
     if (allSummariesHaveIds && !serverSummaryIds.has(tIdLower)) {
       const updatedMs = tsOf(t.updatedAt);
-      if (!updatedMs || nowMs - updatedMs > 30000) {
+      const isOlderOrEqualToProj = !projUpdatedMs || !updatedMs || projUpdatedMs >= updatedMs;
+      if (isOlderOrEqualToProj && (!updatedMs || nowMs - updatedMs > 30000)) {
         markTasksDeleted([t.id], id);
         pendingDeletedTaskIds.add(t.id);
       }
     }
   });
 
-  // 3. If project already has tasks hydrated in RAM (and is not just freshly expanding with 0 local tasks while useTasksHydration attaches its query),
-  // reconcile only genuinely missing single tasks or patch summary fields in-place without firing N getDocFromServer calls.
+  // 3. Patch summary fields in-place for already-loaded local tasks without firing N getDocFromServer calls.
+  // Unexpanded projects with partial tasks (e.g. from deadline notifications) already render missing tasks from project.taskSummaries (0 Read).
   const isActivelyExpanded =
     expandedSet.has(String(id)) ||
     (resolvedData.code && expandedSet.has(String(resolvedData.code)));
+
+  const prevSummaryIdSet =
+    existing && Array.isArray(existing.taskSummaries)
+      ? new Set(
+          existing.taskSummaries
+            .map((s: any) => String(s?.id || '').trim().toLowerCase())
+            .filter(Boolean)
+        )
+      : null;
+  const wasFullyHydratedInRam =
+    prevSummaryIdSet !== null &&
+    prevSummaryIdSet.size > 0 &&
+    localProjTasksById.size >= prevSummaryIdSet.size;
 
   if (localProjTasksById.size > 0 && serverSummaryIds.size > 0) {
     data.taskSummaries.forEach((s: any) => {
       const sId = String(s?.id || '').trim();
       if (!sId || sId.startsWith('ts_')) return;
-      const localT = localProjTasksById.get(sId.toLowerCase());
+      const sIdLower = sId.toLowerCase();
+      const localT = localProjTasksById.get(sIdLower);
       if (!localT) {
-        // If the project is not covered by an active expanded listener in useTasksHydration, fetch the single missing task
-        if (!isActivelyExpanded) {
+        // Only invalidate if this project was already 100% hydrated in RAM, is not covered by an active expanded listener,
+        // and this summary ID is a genuinely brand-new task added on the server (not just an unexpanded project with 1 notification task in RAM).
+        if (
+          !isActivelyExpanded &&
+          wasFullyHydratedInRam &&
+          prevSummaryIdSet &&
+          !prevSummaryIdSet.has(sIdLower)
+        ) {
           pendingInvalidatedTaskIds.set(sId, String(resolvedData.year || ''));
         }
       } else {

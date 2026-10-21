@@ -188,17 +188,6 @@ export function useDetailPredecessorSync({
     }
   }, [tasks, projects, hasWritePermission]);
 
-  useEffect(() => {
-    if (hasAutoHealedRef.current) return;
-    if (!tasks || tasks.length === 0 || !projects || projects.length === 0) return;
-    if (!hasWritePermission) return;
-    // 15 giây đầu sau khi mở app, tasks mới chỉ là bản cũ từ Dexie: không tự ghi lên Firestore
-    if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS) return;
-
-    hasAutoHealedRef.current = true;
-    handleConvertAllSubtasksToHash(false).catch(() => {});
-  }, [tasks, projects, hasWritePermission, handleConvertAllSubtasksToHash]);
-
   return {
     isSyncingPredecessors,
     handleSyncAllPredecessors,

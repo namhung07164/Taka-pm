@@ -35,15 +35,14 @@ export function buildProjectCodeTasksQuery(p: Project) {
       codeSet.add(c.toLowerCase());
     });
   }
-  if (p.id) {
-    const idStr = String(p.id).trim();
-    if (idStr) codeSet.add(idStr);
-  }
   const codeList = Array.from(codeSet);
   const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks');
+  if (codeList.length === 0) {
+    return query(colRef, where('projectId', '==', String(p.id || '').trim()));
+  }
   return codeList.length > 1
     ? query(colRef, where('projectCode', 'in', codeList.slice(0, 10)))
-    : query(colRef, where('projectCode', '==', p.code || ''));
+    : query(colRef, where('projectCode', '==', codeList[0]));
 }
 
 /**

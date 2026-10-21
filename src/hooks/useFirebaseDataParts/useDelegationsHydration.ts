@@ -208,6 +208,9 @@ export function useDelegationsHydration({
 
     targetYears.forEach(async (year) => {
       if (!delegationsPool.current.has(year)) {
+        // Reserve slot synchronously before awaiting IndexedDB to prevent duplicate listener attachment
+        delegationsPool.current.set(year, () => {});
+
         const localCount = await hydrateDelegationsFromLocal(year);
         const isClosedOrPastYear = Number(year) < new Date().getFullYear();
         const currentDelegations = useAppStore.getState().delegationGroups || [];
@@ -219,11 +222,8 @@ export function useDelegationsHydration({
           (hasLocalDelegations && isClosedOrPastYear) ||
           (DELTA_FIRST.delegations && hasLocalDelegations && hasMarker(await getLoadedMarkers(), 'delegations_year', year));
         if (deltaManaged) {
-          delegationsPool.current.set(year, () => {});
           setIsDelegationsLoading(false);
-          pullAndApplyDeltas(year, true)
-            .then(() => setCloudStatus("online"))
-            .catch(() => {});
+          setCloudStatus("online");
           usePerformanceStore
             .getState()
             .trackGetDoc(
@@ -235,22 +235,7 @@ export function useDelegationsHydration({
           return;
         }
 
-        delegationsPool.current.set(year, () => {});
         setIsDelegationsLoading(false);
-
-        if (!yearDelegationsCache.current.has(year)) {
-          yearDelegationsCache.current.set(year, new Map());
-        }
-        const yearMap = yearDelegationsCache.current.get(year)!;
-        if (localCount > 0) {
-          const localItems = await getLocalDelegations(year);
-          localItems.forEach((d) => {
-            if (d.id) yearMap.set(d.id, d);
-          });
-          pullAndApplyDeltas(year)
-            .then(() => setCloudStatus("online"))
-            .catch(() => {});
-        }
 
         const colRef = collection(
           db,
@@ -268,6 +253,9 @@ export function useDelegationsHydration({
           userRole,
           allowedStores
         );
+
+        const existingUnsub = delegationsPool.current.get(year);
+        if (existingUnsub) existingUnsub();
 
         usePerformanceStore.getState().registerListener(`taka_delegation_groups_${year}`);
         const unsub = onSnapshot(
@@ -289,11 +277,15 @@ export function useDelegationsHydration({
           },
           (e) => {
             delegationsPool.current.delete(year);
+            usePerformanceStore.getState().unregisterListener(`taka_delegation_groups_${year}`);
             setIsDelegationsLoading(false);
             console.error("Delegation groups listener error:", e);
           }
         );
         delegationsPool.current.set(year, unsub);
+      } else {
+        hydrateDelegationsFromLocal(year).catch(() => {});
+        setIsDelegationsLoading(false);
       }
     });
   }, [

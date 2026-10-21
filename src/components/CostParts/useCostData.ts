@@ -44,9 +44,12 @@ export function useCostData({
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const costTabSearchTerm = useAppStore((state) => state.costTabSearchTerm);
 
-  const expandedCodes = useAppStore((state) => state.expandedProjectIds);
-  const toggleProjectExpansion = useAppStore((state) => state.toggleProjectExpansion);
-  const setExpandedCodes = useAppStore((state) => state.setExpandedProjectIds);
+  const [expandedCodes, setExpandedCodes] = useState<string[]>([]);
+  const toggleProjectExpansion = useCallback((id: string) => {
+    setExpandedCodes((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  }, []);
 
   const handleProjectLinkClick = (p: Project) => {
     if (!p) return;

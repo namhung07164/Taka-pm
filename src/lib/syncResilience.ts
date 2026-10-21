@@ -13,10 +13,9 @@ import { processPendingSync, getConnectionStatus } from './syncQueue';
  *    than that can never catch up through deltas, so wipe the local cache and reload once.
  */
 
-const HIDDEN_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes hidden before cycling network
+const HIDDEN_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes hidden before cycling network
 const WALL_CLOCK_CHECK_INTERVAL_MS = 20 * 1000;
-const WALL_CLOCK_JUMP_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes OS sleep jump
-const IDLE_FOCUS_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes idle before cycling network on focus
+const WALL_CLOCK_JUMP_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes OS sleep jump
 const STALE_RESYNC_MS = 6 * 24 * 60 * 60 * 1000; // < 7-day delta retention
 const RESYNC_GUARD_KEY = 'taka_full_resync_guard_v1';
 
@@ -38,14 +37,13 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return () => {};
 
   let hiddenAt = 0;
-  let lastActiveAt = Date.now();
   let lastWallClockTick = Date.now();
   let lastRecoveredAt = 0;
   let busy = false;
 
   const recover = async () => {
     const now = Date.now();
-    if (busy || now - lastRecoveredAt < 15000) return;
+    if (busy || now - lastRecoveredAt < 30000) return;
     busy = true;
     lastRecoveredAt = now;
     const p = (async () => {
@@ -58,7 +56,6 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
       } finally {
         busy = false;
         activeRecoveryPromise = null;
-        lastActiveAt = Date.now();
         lastWallClockTick = Date.now();
         try { onRecovered?.(); } catch {}
       }
@@ -74,10 +71,8 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
     }
     const now = Date.now();
     const hiddenDuration = hiddenAt ? now - hiddenAt : 0;
-    const idleDuration = now - lastActiveAt;
     hiddenAt = 0;
-    lastActiveAt = now;
-    if (hiddenDuration > HIDDEN_THRESHOLD_MS || idleDuration > IDLE_FOCUS_THRESHOLD_MS) {
+    if (hiddenDuration > HIDDEN_THRESHOLD_MS) {
       recover();
     }
   };
@@ -89,25 +84,6 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
 
   // Network came back (e.g. iPhone/Desktop was offline): force a clean reconnect so queued offline writes flush now
   const handleOnline = () => { recover(); };
-
-  // Desktop overnight wake: tab may have stayed "visible" all night while monitor/OS slept or sat idle
-  const handleFocusOrSleepWake = () => {
-    const now = Date.now();
-    if (now - lastActiveAt > IDLE_FOCUS_THRESHOLD_MS) {
-      lastActiveAt = now;
-      recover();
-    }
-  };
-
-  const handleUserActivity = () => {
-    const now = Date.now();
-    if (now - lastActiveAt > IDLE_FOCUS_THRESHOLD_MS) {
-      lastActiveAt = now;
-      recover();
-    } else {
-      lastActiveAt = now;
-    }
-  };
 
   // Wall-clock sleep detector: catches OS sleep/wake even when tab stayed visible and focused
   const wallClockTimer = setInterval(() => {
@@ -122,18 +98,12 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
   document.addEventListener('visibilitychange', handleVisibility);
   window.addEventListener('pageshow', handlePageShow);
   window.addEventListener('online', handleOnline);
-  window.addEventListener('focus', handleFocusOrSleepWake);
-  window.addEventListener('pointerdown', handleUserActivity, { passive: true });
-  window.addEventListener('keydown', handleUserActivity, { passive: true });
 
   return () => {
     clearInterval(wallClockTimer);
     document.removeEventListener('visibilitychange', handleVisibility);
     window.removeEventListener('pageshow', handlePageShow);
     window.removeEventListener('online', handleOnline);
-    window.removeEventListener('focus', handleFocusOrSleepWake);
-    window.removeEventListener('pointerdown', handleUserActivity);
-    window.removeEventListener('keydown', handleUserActivity);
   };
 }
 

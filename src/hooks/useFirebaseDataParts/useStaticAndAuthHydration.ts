@@ -46,9 +46,15 @@ export function useStaticAndAuthHydration() {
   // 1. Sleep / Wake Guard & 20s Heartbeat Gap Detection (Rule 16.2)
   useEffect(() => {
     const triggerOvernightRecovery = (elapsedSleepMs: number) => {
-      import("../../lib/deltaOrchestratorService").then((m) => {
-        m.triggerImmediateDeltaSync().catch(() => {});
-      });
+      import("../../lib/deltaRealtimeListener")
+        .then(({ isDeltaRealtimeConnected }) => {
+          if (!isDeltaRealtimeConnected() || elapsedSleepMs > 15 * 60 * 1000) {
+            return import("../../lib/deltaOrchestratorService").then((m) =>
+              m.triggerImmediateDeltaSync()
+            );
+          }
+        })
+        .catch(() => {});
 
       if (elapsedSleepMs > 60 * 1000) {
         // Dispatch recovery event to sub-hooks (>60s sleep/freeze gap per Rule 16.2)
@@ -82,7 +88,7 @@ export function useStaticAndAuthHydration() {
       const elapsedSleepMs = now - lastActiveTimestampRef.current;
       lastActiveTimestampRef.current = now;
 
-      if (elapsedSleepMs > 30 * 1000) {
+      if (elapsedSleepMs > 60 * 1000) {
         triggerOvernightRecovery(elapsedSleepMs);
       }
     };
@@ -105,76 +111,62 @@ export function useStaticAndAuthHydration() {
 
     document.addEventListener("visibilitychange", handleSleepWake);
     window.addEventListener("pageshow", handleSleepWake);
-    window.addEventListener("focus", handleSleepWake);
     window.addEventListener("online", handleSleepWake);
 
     return () => {
       clearInterval(heartbeatTimer);
       document.removeEventListener("visibilitychange", handleSleepWake);
       window.removeEventListener("pageshow", handleSleepWake);
-      window.removeEventListener("focus", handleSleepWake);
       window.removeEventListener("online", handleSleepWake);
     };
   }, []);
 
   // 2. Tri-Gate Lazy trigger & Visibility Tracker
   useEffect(() => {
-    const evaluate = () => {
-      const tabsRequiringTasks: TabId[] = [
-        "gantt",
-        "detail",
-        "calendar",
-        "taskDelegation",
-        "taskDelegationCalendar",
-      ];
-      const isChatOnly = isProjectModalOpen && modalInitialTab === "chat";
-      const isLayoutTab = activeTab === "layout";
-      const needsTasks =
-        tabsRequiringTasks.includes(activeTab) ||
-        isTaskModalOpen ||
-        (isProjectModalOpen && !isChatOnly && !isLayoutTab);
+    const tabsRequiringTasks: TabId[] = [
+      "gantt",
+      "detail",
+      "calendar",
+      "taskDelegation",
+      "taskDelegationCalendar",
+    ];
+    const isChatOnly = isProjectModalOpen && modalInitialTab === "chat";
+    const isLayoutTab = activeTab === "layout";
+    const needsTasks =
+      tabsRequiringTasks.includes(activeTab) ||
+      isTaskModalOpen ||
+      (isProjectModalOpen && !isChatOnly && !isLayoutTab);
 
-      const tabsRequiringCosts: TabId[] = ["cost", "budget"];
-      const needsCosts =
-        tabsRequiringCosts.includes(activeTab) ||
-        (isProjectModalOpen && !isChatOnly && !isLayoutTab);
+    const tabsRequiringCosts: TabId[] = ["cost", "budget"];
+    const needsCosts =
+      tabsRequiringCosts.includes(activeTab) ||
+      (isProjectModalOpen && !isChatOnly && !isLayoutTab);
 
-      const tabsRequiringDelegations: TabId[] = ["taskDelegation", "taskDelegationCalendar"];
-      const needsDelegations = tabsRequiringDelegations.includes(activeTab);
+    const tabsRequiringDelegations: TabId[] = ["taskDelegation", "taskDelegationCalendar"];
+    const needsDelegations = tabsRequiringDelegations.includes(activeTab);
 
-      if (needsTasks) {
-        setIsTasksRequested(true);
-        hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+    if (needsTasks) {
+      setIsTasksRequested(true);
+      hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+    }
+    if (needsCosts) {
+      setIsCostsRequested(true);
+      hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+    }
+    if (needsDelegations) {
+      setIsDelegationsRequested(true);
+      hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+    } else {
+      const store = useAppStore.getState();
+      const openProjectKeys: string[] = [];
+      if (store.editingProject?.id) openProjectKeys.push(store.editingProject.id);
+      if (store.editingProject?.code) openProjectKeys.push(store.editingProject.code);
+      if (store.editingTask?.projectId) openProjectKeys.push(store.editingTask.projectId);
+      if (store.editingTask?.projectCode) openProjectKeys.push(store.editingTask.projectCode);
+      if (openProjectKeys.length > 0) {
+        hydrateDelegationsForProjects(openProjectKeys).catch(() => {});
       }
-      if (needsCosts) {
-        setIsCostsRequested(true);
-        hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
-      }
-      if (needsDelegations) {
-        setIsDelegationsRequested(true);
-        hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
-      } else {
-        const store = useAppStore.getState();
-        const openProjectKeys: string[] = [];
-        if (store.editingProject?.id) openProjectKeys.push(store.editingProject.id);
-        if (store.editingProject?.code) openProjectKeys.push(store.editingProject.code);
-        if (store.editingTask?.projectId) openProjectKeys.push(store.editingTask.projectId);
-        if (store.editingTask?.projectCode) openProjectKeys.push(store.editingTask.projectCode);
-        if (openProjectKeys.length > 0) {
-          hydrateDelegationsForProjects(openProjectKeys).catch(() => {});
-        }
-      }
-    };
-
-    evaluate();
-    document.addEventListener("visibilitychange", evaluate);
-    window.addEventListener("pageshow", evaluate);
-    window.addEventListener("focus", evaluate);
-    return () => {
-      document.removeEventListener("visibilitychange", evaluate);
-      window.removeEventListener("pageshow", evaluate);
-      window.removeEventListener("focus", evaluate);
-    };
+    }
   }, [
     activeTab,
     isTaskModalOpen,

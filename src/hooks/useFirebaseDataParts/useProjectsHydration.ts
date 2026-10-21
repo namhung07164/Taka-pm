@@ -265,93 +265,98 @@ export function useProjectsHydration({
     const liveTargetYears = isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter];
 
     liveTargetYears.forEach(async (year) => {
+      if (projectsPool.current.has(year)) {
+        hydrateProjectsFromLocal(year, useAppStore.getState().globalStoreFilter).catch(() => {});
+        return;
+      }
+      // Reserve slot synchronously before awaiting IndexedDB to prevent duplicate listener attachment on rapid effect re-runs
+      projectsPool.current.set(year, () => {});
+
       const localCount = await hydrateProjectsFromLocal(
         year,
         useAppStore.getState().globalStoreFilter
       );
 
-      if (!projectsPool.current.has(year)) {
-        const isClosedOrPastYear = Number(year) < new Date().getFullYear() - 1;
-        const hasLocalData =
-          localCount > 0 ||
-          (useAppStore.getState().projects || []).some((p) => String(p.year) === String(year));
+      const isClosedOrPastYear = Number(year) < new Date().getFullYear() - 1;
+      const hasLocalData =
+        localCount > 0 ||
+        (useAppStore.getState().projects || []).some((p) => String(p.year) === String(year));
 
-        const deltaManaged =
-          (hasLocalData && isClosedOrPastYear) ||
-          (DELTA_FIRST.projects &&
-            hasLocalData &&
-            hasMarker(await getLoadedMarkers(), 'projects_year', year));
-        if (deltaManaged) {
-          projectsPool.current.set(year, () => {});
-          pullAndApplyDeltas(year, false)
-            .then(() => setCloudStatus('online'))
-            .catch(() => {});
-          usePerformanceStore
-            .getState()
-            .trackGetDoc(
-              `taka_projects_${year}`,
-              true,
-              localCount,
-              'Dexie Local-First Projects Hydration (0 Read full collection)'
-            );
-          return;
-        }
-
-        const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects');
-        const qProjects = buildStoreAndYearQuery(
-          colRef,
-          'store',
-          'year',
-          year,
-          userRole,
-          allowedStores
-        );
-
-        usePerformanceStore.getState().registerListener(`taka_projects_${year}`);
-        const unsub = onSnapshot(
-          qProjects,
-          (snapshot) => {
-            usePerformanceStore.getState().trackSnapshot(`taka_projects_${year}`, snapshot);
-            const fromCache = snapshot.metadata.fromCache;
-            let changesToApply: any[] = snapshot.docChanges();
-
-            if (!fromCache && !snapshot.metadata.hasPendingWrites) {
-              const currentProjectsNow = useAppStore.getState().projects || [];
-              const zombieRemovals = buildZombieProjectRemovalsForYear(
-                snapshot.docs,
-                currentProjectsNow,
-                year,
-                userRole,
-                allowedStores
-              );
-              if (zombieRemovals.length > 0) {
-                changesToApply = [...changesToApply, ...zombieRemovals];
-              }
-            }
-
-            batchProjectsUpdate(changesToApply, fromCache);
-            setCloudStatus('online');
-
-            if (!fromCache) {
-              markLoaded('projects_year', year).catch(() => {});
-            }
-
-            if (DELTA_FIRST.projects && !fromCache) {
-              const u = projectsPool.current.get(year);
-              projectsPool.current.set(year, () => {});
-              u?.();
-              usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
-            }
-          },
-          (e) => {
-            projectsPool.current.delete(year);
-            usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
-            console.error('Projects listener error:', e);
-            setCloudStatus('offline');
-          }
-        );
-        projectsPool.current.set(year, unsub);
+      const deltaManaged =
+        (hasLocalData && isClosedOrPastYear) ||
+        (DELTA_FIRST.projects &&
+          hasLocalData &&
+          hasMarker(await getLoadedMarkers(), 'projects_year', year));
+      if (deltaManaged) {
+        setCloudStatus('online');
+        usePerformanceStore
+          .getState()
+          .trackGetDoc(
+            `taka_projects_${year}`,
+            true,
+            localCount,
+            'Dexie Local-First Projects Hydration (0 Read full collection)'
+          );
+        return;
       }
+
+      const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects');
+      const qProjects = buildStoreAndYearQuery(
+        colRef,
+        'store',
+        'year',
+        year,
+        userRole,
+        allowedStores
+      );
+
+      const existingUnsub = projectsPool.current.get(year);
+      if (existingUnsub) existingUnsub();
+
+      usePerformanceStore.getState().registerListener(`taka_projects_${year}`);
+      const unsub = onSnapshot(
+        qProjects,
+        (snapshot) => {
+          usePerformanceStore.getState().trackSnapshot(`taka_projects_${year}`, snapshot);
+          const fromCache = snapshot.metadata.fromCache;
+          let changesToApply: any[] = snapshot.docChanges();
+
+          if (!fromCache && !snapshot.metadata.hasPendingWrites) {
+            const currentProjectsNow = useAppStore.getState().projects || [];
+            const zombieRemovals = buildZombieProjectRemovalsForYear(
+              snapshot.docs,
+              currentProjectsNow,
+              year,
+              userRole,
+              allowedStores
+            );
+            if (zombieRemovals.length > 0) {
+              changesToApply = [...changesToApply, ...zombieRemovals];
+            }
+          }
+
+          batchProjectsUpdate(changesToApply, fromCache);
+          setCloudStatus('online');
+
+          if (!fromCache) {
+            markLoaded('projects_year', year).catch(() => {});
+          }
+
+          if (DELTA_FIRST.projects && !fromCache) {
+            const u = projectsPool.current.get(year);
+            projectsPool.current.set(year, () => {});
+            u?.();
+            usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
+          }
+        },
+        (e) => {
+          projectsPool.current.delete(year);
+          usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
+          console.error('Projects listener error:', e);
+          setCloudStatus('offline');
+        }
+      );
+      projectsPool.current.set(year, unsub);
     });
 
     if (isAllYears) {
