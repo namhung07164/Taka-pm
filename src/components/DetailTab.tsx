@@ -155,9 +155,11 @@ export function DetailTab({
     childTasksCountMap,
     expandedModularTasks,
     handleToggleModularParent,
+    handleToggleProjectModularTasks,
     isAllModularExpanded,
     handleToggleExpandAllModular,
     totalChildTasksCount,
+    modularParentsCount,
     flatTableRows,
     handleSelectAllTasksInProject,
     handleToggleSelectTask,
@@ -395,9 +397,10 @@ export function DetailTab({
         childTasksCountMap={childTasksCountMap}
         expandedModularTasks={expandedModularTasks}
         onToggleModularParent={handleToggleModularParent}
+        onToggleProjectModularTasks={handleToggleProjectModularTasks}
         isAllModularExpanded={isAllModularExpanded}
         onToggleExpandAllModular={handleToggleExpandAllModular}
-        totalChildTasksCount={totalChildTasksCount}
+        totalChildTasksCount={modularParentsCount > 0 ? modularParentsCount : totalChildTasksCount}
         draggingTaskIds={draggingTaskIds}
         dragOverTaskId={dragOverTaskId}
         dropPosition={dropPosition}
@@ -452,7 +455,7 @@ export function DetailTab({
         onToggleModularParent={handleToggleModularParent}
         isAllModularExpanded={isAllModularExpanded}
         onToggleExpandAllModular={handleToggleExpandAllModular}
-        totalChildTasksCount={totalChildTasksCount}
+        totalChildTasksCount={modularParentsCount > 0 ? modularParentsCount : totalChildTasksCount}
       />
 
       <DetailFocusControls 

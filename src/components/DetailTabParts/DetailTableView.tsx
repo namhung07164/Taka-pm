@@ -42,6 +42,7 @@ export interface DetailTableViewProps {
   childTasksCountMap?: Map<string, number>;
   expandedModularTasks?: Set<string>;
   onToggleModularParent?: (parentTaskId: string) => void;
+  onToggleProjectModularTasks?: (parentTaskIds: string[], expand: boolean) => void;
   isAllModularExpanded?: boolean;
   onToggleExpandAllModular?: () => void;
   totalChildTasksCount?: number;
@@ -103,6 +104,7 @@ export const DetailTableView = memo(function DetailTableView({
   childTasksCountMap,
   expandedModularTasks,
   onToggleModularParent,
+  onToggleProjectModularTasks,
   isAllModularExpanded,
   onToggleExpandAllModular,
   totalChildTasksCount,
@@ -189,12 +191,20 @@ export const DetailTableView = memo(function DetailTableView({
                     onEditProject={onEditProject || (() => {})}
                     onAddTask={onAddTask}
                     onDeleteProject={handleDeleteProject}
+                    expandedModularTasks={expandedModularTasks}
+                    onToggleModularParent={onToggleModularParent}
+                    onToggleProjectModularTasks={onToggleProjectModularTasks}
                   />
                 );
               }
               const t = item.task;
               const actStatus = taskActualStatusMap.get(t.id) || { label: 'Pending', color: 'bg-slate-50 text-slate-600' };
               const childCount = (childTasksCountMap?.get(t.id) || 0) + (t.taskCodePhu && t.taskCodePhu !== t.id ? (childTasksCountMap?.get(t.taskCodePhu) || 0) : 0);
+              const isModularExpanded = expandedModularTasks
+                ? (expandedModularTasks.has(String(t.id)) ||
+                   expandedModularTasks.has(String(t.id).toLowerCase()) ||
+                   (!!t.taskCodePhu && (expandedModularTasks.has(t.taskCodePhu) || expandedModularTasks.has(t.taskCodePhu.trim().toLowerCase()))))
+                : false;
               return (
                 <DetailTaskRow
                   key={item.key}
@@ -211,7 +221,7 @@ export const DetailTableView = memo(function DetailTableView({
                   delStatusText={actStatus.label}
                   delStatusColorClass={actStatus.color}
                   childTasksCount={childCount}
-                  isModularExpanded={expandedModularTasks ? (expandedModularTasks.has(t.id) || (!!t.taskCodePhu && expandedModularTasks.has(t.taskCodePhu))) : false}
+                  isModularExpanded={isModularExpanded}
                   onToggleModularParent={onToggleModularParent}
                   onToggleSelectTask={handleToggleSelectTask}
                   onEditTask={onEditTask}

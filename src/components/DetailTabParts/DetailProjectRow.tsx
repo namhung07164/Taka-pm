@@ -22,6 +22,9 @@ interface DetailProjectRowProps {
   onEditProject: (p: Project) => void;
   onAddTask: (p: Project) => void;
   onDeleteProject: (p: Project) => void;
+  expandedModularTasks?: Set<string>;
+  onToggleModularParent?: (parentTaskId: string) => void;
+  onToggleProjectModularTasks?: (parentTaskIds: string[], expand: boolean) => void;
 }
 
 export const DetailProjectRow = React.memo(function DetailProjectRow({
@@ -38,11 +41,68 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
   onEditProject,
   onAddTask,
   onDeleteProject,
+  expandedModularTasks,
+  onToggleModularParent,
+  onToggleProjectModularTasks,
 }: DetailProjectRowProps) {
   const p = item.project;
   const isExpanded = item.isExpanded;
   const groupTasks = item.groupTasks;
   const effectiveTaskCount = item.effectiveTaskCount;
+
+  const parentTaskMap = React.useMemo(() => {
+    const map = new Map<string, Task>();
+    (groupTasks || []).forEach((gt) => {
+      if (gt.id) map.set(String(gt.id), gt);
+      if (gt.taskCodePhu) map.set(gt.taskCodePhu.trim().toLowerCase(), gt);
+    });
+    return map;
+  }, [groupTasks]);
+
+  const projectModularParentIds = React.useMemo(() => {
+    const parentIds = new Set<string>();
+    (groupTasks || []).forEach((t) => {
+      if (t.parentTaskId) {
+        const rawParentId = String(t.parentTaskId).trim();
+        const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
+        const effectiveId = matchedParent ? String(matchedParent.id) : rawParentId;
+        parentIds.add(effectiveId);
+      }
+    });
+    return Array.from(parentIds);
+  }, [groupTasks, parentTaskMap]);
+
+  const hasModularTasks = projectModularParentIds.length > 0;
+  const isProjectModularExpanded =
+    hasModularTasks &&
+    projectModularParentIds.some((id) => 
+      expandedModularTasks?.has(id) || 
+      expandedModularTasks?.has(id.toLowerCase())
+    );
+
+  const projectChildTasksCount = React.useMemo(() => {
+    return (groupTasks || []).filter((t) => Boolean(t.parentTaskId)).length;
+  }, [groupTasks]);
+
+  const handleToggleProjectModular = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasModularTasks) return;
+    if (!isExpanded) {
+      onToggleGroup(String(p.id || p.code || p.no || ''));
+    }
+    if (onToggleProjectModularTasks) {
+      onToggleProjectModularTasks(projectModularParentIds, !isProjectModularExpanded);
+    } else if (onToggleModularParent) {
+      projectModularParentIds.forEach((id) => {
+        const isExp = expandedModularTasks?.has(id) || expandedModularTasks?.has(id.toLowerCase());
+        if (isProjectModularExpanded) {
+          if (isExp) onToggleModularParent(id);
+        } else {
+          if (!isExp) onToggleModularParent(id);
+        }
+      });
+    }
+  };
   const isProjDelegationOn = item.isProjDelegationOn;
   const planProgressPercent = item.planProgressPercent;
   const actProgressPercent = item.actProgressPercent;
@@ -110,7 +170,7 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
       )}
       {visibleColumns.includes('no') && (
         <td className="px-3 py-2 font-bold text-slate-800 dark:text-[#f5f5f7]">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-col items-center justify-center gap-1">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -129,6 +189,26 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
               {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
               <span className="text-[10px]">({effectiveTaskCount})</span>
             </button>
+            {hasModularTasks && (
+              <button
+                type="button"
+                onClick={handleToggleProjectModular}
+                className={cn(
+                  "flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all active:scale-95 touch-manipulation cursor-pointer border shadow-2xs select-none",
+                  isProjectModularExpanded
+                    ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                    : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                )}
+                title={isProjectModularExpanded ? "Collapse modular tasks of this project" : `Expand modular tasks (${projectChildTasksCount})`}
+              >
+                {isProjectModularExpanded ? (
+                  <ChevronDown className="w-3 h-3 text-current pointer-events-none" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 text-current pointer-events-none" />
+                )}
+                <span>({projectChildTasksCount})</span>
+              </button>
+            )}
           </div>
         </td>
       )}

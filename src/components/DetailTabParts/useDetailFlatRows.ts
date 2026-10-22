@@ -181,10 +181,16 @@ export function useDetailFlatRows({
           if (t.parentTaskId && !lowerSearchTerm) {
             const rawParentId = String(t.parentTaskId).trim();
             const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-            const effectiveParentId = matchedParent ? matchedParent.id : rawParentId;
+            const effectiveParentId = matchedParent ? String(matchedParent.id) : rawParentId;
             const isParentExpanded =
               expandedModularTasks.has(effectiveParentId) ||
-              Boolean(matchedParent?.taskCodePhu && expandedModularTasks.has(matchedParent.taskCodePhu));
+              expandedModularTasks.has(effectiveParentId.toLowerCase()) ||
+              expandedModularTasks.has(rawParentId) ||
+              expandedModularTasks.has(rawParentId.toLowerCase()) ||
+              Boolean(matchedParent?.taskCodePhu && (
+                expandedModularTasks.has(matchedParent.taskCodePhu) ||
+                expandedModularTasks.has(matchedParent.taskCodePhu.trim().toLowerCase())
+              ));
 
             if (!isParentExpanded) {
               return; // Parent task is collapsed -> hide child task

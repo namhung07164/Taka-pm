@@ -8,6 +8,7 @@ import { formatGanttDate, renderGanttDateCell } from './GanttUtils';
 import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { safeSetItemSession } from '../../lib/storage';
 
 export interface GanttProjectRowProps {
   p: Project;
@@ -121,15 +122,19 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
 
   const handleToggleProjectModular = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!hasModularTasks) return;
+    if (!hasModularTasks || !setExpandedModularTasks) return;
     if (isProjectModularExpanded) {
-      setExpandedModularTasks((prev) =>
-        prev.filter((id) => !projectModularParentIds.includes(id))
-      );
+      setExpandedModularTasks((prev) => {
+        const next = prev.filter((id) => !projectModularParentIds.includes(id));
+        safeSetItemSession('taka_gantt_modular_expanded', JSON.stringify(next));
+        return next;
+      });
     } else {
-      setExpandedModularTasks((prev) =>
-        Array.from(new Set([...prev, ...projectModularParentIds]))
-      );
+      setExpandedModularTasks((prev) => {
+        const next = Array.from(new Set([...prev, ...projectModularParentIds]));
+        safeSetItemSession('taka_gantt_modular_expanded', JSON.stringify(next));
+        return next;
+      });
     }
   };
 

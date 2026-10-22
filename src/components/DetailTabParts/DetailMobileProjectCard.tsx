@@ -194,10 +194,12 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
     if (t.parentTaskId && !lowerSearchTerm) {
       const rawParentId = String(t.parentTaskId).trim();
       const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-      const effectiveParentId = matchedParent ? matchedParent.id : rawParentId;
+      const effectiveParentId = matchedParent ? String(matchedParent.id) : rawParentId;
       const isParentExpanded =
         expandedModularTasks?.has(effectiveParentId) ||
-        Boolean(matchedParent?.taskCodePhu && expandedModularTasks?.has(matchedParent.taskCodePhu));
+        expandedModularTasks?.has(effectiveParentId.toLowerCase()) ||
+        expandedModularTasks?.has(rawParentId) ||
+        (matchedParent?.taskCodePhu ? (expandedModularTasks?.has(matchedParent.taskCodePhu) || expandedModularTasks?.has(matchedParent.taskCodePhu.trim().toLowerCase())) : false);
 
       if (!isParentExpanded) return false;
     }
@@ -210,8 +212,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
       if (t.parentTaskId) {
         const rawParentId = String(t.parentTaskId).trim();
         const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-        const effectiveId = matchedParent ? matchedParent.id : rawParentId;
-        parentIds.add(effectiveId);
+        parentIds.add(matchedParent ? String(matchedParent.id) : rawParentId);
       }
     });
     return Array.from(parentIds);
@@ -220,7 +221,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   const hasModularTasks = projectModularParentIds.length > 0;
   const isProjectModularExpanded =
     hasModularTasks &&
-    projectModularParentIds.some((id) => expandedModularTasks?.has(id));
+    projectModularParentIds.some((id) => expandedModularTasks?.has(id) || expandedModularTasks?.has(id.toLowerCase()));
 
   const projectChildTasksCount = React.useMemo(() => {
     return groupTasks.filter((t) => Boolean(t.parentTaskId)).length;
@@ -233,15 +234,10 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
       toggleGroup(String(p.id || p.code || p.no || ''));
     }
     if (onToggleModularParent) {
-      if (isProjectModularExpanded) {
-        projectModularParentIds.forEach((id) => {
-          if (expandedModularTasks?.has(id)) onToggleModularParent(id);
-        });
-      } else {
-        projectModularParentIds.forEach((id) => {
-          if (!expandedModularTasks?.has(id)) onToggleModularParent(id);
-        });
-      }
+      projectModularParentIds.forEach((id) => {
+        const isExp = expandedModularTasks?.has(id) || expandedModularTasks?.has(id.toLowerCase());
+        if (isProjectModularExpanded ? isExp : !isExp) onToggleModularParent(id);
+      });
     }
   };
 
@@ -441,7 +437,11 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
           ) : (
             visibleTasksToRender.map((t, index) => {
               const childCount = (childTasksCountMap?.get(t.id) || 0) + (t.taskCodePhu && t.taskCodePhu !== t.id ? (childTasksCountMap?.get(t.taskCodePhu) || 0) : 0);
-              const isModularExpanded = expandedModularTasks ? (expandedModularTasks.has(t.id) || (!!t.taskCodePhu && expandedModularTasks.has(t.taskCodePhu))) : false;
+              const isModularExpanded = expandedModularTasks
+                ? (expandedModularTasks.has(String(t.id)) ||
+                   expandedModularTasks.has(String(t.id).toLowerCase()) ||
+                   (!!t.taskCodePhu && (expandedModularTasks.has(t.taskCodePhu) || expandedModularTasks.has(t.taskCodePhu.trim().toLowerCase()))))
+                : false;
 
               return (
                 <DetailMobileTaskItem

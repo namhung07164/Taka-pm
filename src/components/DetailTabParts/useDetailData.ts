@@ -246,42 +246,127 @@ export function useDetailData({
     return map;
   }, [tasks]);
 
-  // Modular parent task expand/collapse state
+  // Modular parent task expand/collapse state (isolated to Detail Tab)
   const [expandedModularTasks, setExpandedModularTasks] = useState<string[]>(() => {
     try {
-      return JSON.parse(sessionStorage.getItem('taka_detail_modular_expanded') || '[]');
+      const saved = safeGetItemSession('taka_detail_modular_expanded') || sessionStorage.getItem('taka_detail_modular_expanded');
+      return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
     }
   });
 
-  const expandedModularTasksSet = useMemo(() => new Set(expandedModularTasks), [expandedModularTasks]);
+  const expandedModularTasksSet = useMemo(() => {
+    const set = new Set<string>();
+    expandedModularTasks.forEach(id => {
+      const idStr = String(id).trim();
+      set.add(idStr);
+      set.add(idStr.toLowerCase());
+    });
+    return set;
+  }, [expandedModularTasks]);
 
   const handleToggleModularParent = useCallback((parentTaskId: string) => {
+    const pId = String(parentTaskId).trim();
+    if (!pId) return;
+
+    // Find the task object to get all identifier aliases (id, taskCodePhu)
+    const targetTask = tasks.find(
+      t => String(t.id) === pId ||
+           (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pId.toLowerCase())
+    );
+    const aliases = new Set<string>([pId, pId.toLowerCase()]);
+    if (targetTask) {
+      if (targetTask.id) {
+        aliases.add(String(targetTask.id).trim());
+        aliases.add(String(targetTask.id).trim().toLowerCase());
+      }
+      if (targetTask.taskCodePhu) {
+        aliases.add(String(targetTask.taskCodePhu).trim());
+        aliases.add(String(targetTask.taskCodePhu).trim().toLowerCase());
+      }
+    }
+
     setExpandedModularTasks(prev => {
-      const pId = String(parentTaskId).trim();
-      const next = prev.includes(pId) ? prev.filter(id => id !== pId) : [...prev, pId];
+      const isCurrentlyExpanded = prev.some(id => aliases.has(id) || aliases.has(String(id).trim().toLowerCase()));
+      let next: string[];
+      if (isCurrentlyExpanded) {
+        next = prev.filter(id => !aliases.has(id) && !aliases.has(String(id).trim().toLowerCase()));
+      } else {
+        const canonicalId = targetTask?.id ? String(targetTask.id).trim() : pId;
+        next = [...prev.filter(id => !aliases.has(id) && !aliases.has(String(id).trim().toLowerCase())), canonicalId];
+      }
       safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(next));
       return next;
     });
-  }, []);
+  }, [tasks]);
+
+  const handleToggleProjectModularTasks = useCallback((parentTaskIds: string[], expand: boolean) => {
+    setExpandedModularTasks(prev => {
+      const prevSet = new Set(prev);
+      const toUpdateIds: string[] = [];
+      parentTaskIds.forEach(pId => {
+        const idStr = String(pId).trim();
+        const targetTask = tasks.find(
+          t => String(t.id) === idStr ||
+               (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === idStr.toLowerCase())
+        );
+        if (targetTask?.id) toUpdateIds.push(String(targetTask.id).trim());
+        if (targetTask?.taskCodePhu) toUpdateIds.push(String(targetTask.taskCodePhu).trim());
+        toUpdateIds.push(idStr);
+      });
+
+      if (expand) {
+        toUpdateIds.forEach(id => prevSet.add(id));
+      } else {
+        toUpdateIds.forEach(id => {
+          prevSet.delete(id);
+          prevSet.delete(id.toLowerCase());
+        });
+      }
+      const next = Array.from(prevSet);
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(next));
+      return next;
+    });
+  }, [tasks]);
 
   const currentModularParentIds = useMemo(() => {
-    const set = new Set<string>();
+    const parentIdSet = new Set<string>();
     filteredProjects.slice(0, visibleCount).forEach(p => {
       const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
       const info = projectInfoMap.get(pKey) || getProjectInfo(p);
-      (info.sortedTasks || []).forEach(t => {
-        if (t.parentTaskId) set.add(String(t.parentTaskId).trim());
+      const pTasks = info.sortedTasks || [];
+      const taskById = new Map<string, Task>();
+      const taskByCode = new Map<string, Task>();
+
+      pTasks.forEach(t => {
+        if (t.id) taskById.set(String(t.id), t);
+        if (t.taskCodePhu) taskByCode.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+      });
+
+      pTasks.forEach(t => {
+        const rawParentId = t.parentTaskId;
+        if (rawParentId) {
+          const parentKey = String(rawParentId).trim().toLowerCase();
+          const matchedParent = taskById.get(String(rawParentId)) || taskByCode.get(parentKey);
+          if (matchedParent && String(matchedParent.id) !== String(t.id)) {
+            parentIdSet.add(String(matchedParent.id));
+          } else {
+            parentIdSet.add(String(rawParentId).trim());
+          }
+        }
       });
     });
-    return Array.from(set);
+
+    return Array.from(parentIdSet);
   }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo]);
 
   const isAllModularExpanded = useMemo(() => {
     if (currentModularParentIds.length === 0) return false;
-    return currentModularParentIds.some(id => expandedModularTasks.includes(id));
-  }, [currentModularParentIds, expandedModularTasks]);
+    return currentModularParentIds.some(id => 
+      expandedModularTasksSet.has(id) || expandedModularTasksSet.has(id.toLowerCase())
+    );
+  }, [currentModularParentIds, expandedModularTasksSet]);
 
   const handleToggleExpandAllModular = useCallback(() => {
     if (isAllModularExpanded) {
@@ -296,6 +381,10 @@ export function useDetailData({
   const totalChildTasksCount = useMemo(() => {
     return tasks.filter(t => Boolean(t.parentTaskId)).length;
   }, [tasks]);
+
+  const modularParentsCount = useMemo(() => {
+    return currentModularParentIds.length;
+  }, [currentModularParentIds]);
 
   // Virtual Windowing Flat Rows
   const flatTableRows = useDetailFlatRows({
@@ -378,9 +467,11 @@ export function useDetailData({
     childTasksCountMap,
     expandedModularTasks: expandedModularTasksSet,
     handleToggleModularParent,
+    handleToggleProjectModularTasks,
     isAllModularExpanded,
     handleToggleExpandAllModular,
     totalChildTasksCount,
+    modularParentsCount,
     flatTableRows,
     handleSelectAllTasksInProject,
     handleToggleSelectTask,
