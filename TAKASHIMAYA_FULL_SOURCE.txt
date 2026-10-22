@@ -19517,11 +19517,11 @@ export const DetailFocusControls = memo(function DetailFocusControls({
 FILE: src/components/DetailTabParts/DetailMobileProjectCard.tsx
 ================================================================================
 import React, { memo } from 'react';
-import { ChevronRight, ChevronDown, Plus, ArrowDownUp, Maximize2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus } from 'lucide-react';
 import { Project, Task, DelegationGroup } from '../../types';
 import { QuickNavButton } from '../QuickNavButton';
 import { DetailMobileTaskItem } from './DetailMobileTaskItem';
-import { FastToggle } from './FastToggle';
+import { DetailMobileCardControls } from './DetailMobileCardControls';
 import { 
   cn, 
   formatDisplayDateMain, 
@@ -19570,6 +19570,9 @@ interface DetailMobileProjectCardProps {
   taskActualStatusMap?: Map<string, { label: string; color: string }>;
   onSortSubTasks?: (p: Project, groupTasks: Task[]) => void;
   initialFocusTaskId?: string;
+  childTasksCountMap?: Map<string, number>;
+  expandedModularTasks?: Set<string>;
+  onToggleModularParent?: (parentTaskId: string) => void;
 }
 
 export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
@@ -19595,6 +19598,9 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   taskActualStatusMap,
   onSortSubTasks,
   initialFocusTaskId,
+  childTasksCountMap,
+  expandedModularTasks,
+  onToggleModularParent,
 }: DetailMobileProjectCardProps) {
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
@@ -19696,6 +19702,67 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
     return taskFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
   });
 
+  const parentTaskMap = new Map<string, Task>();
+  groupTasks.forEach(gt => {
+    if (gt.id) parentTaskMap.set(gt.id, gt);
+    if (gt.taskCodePhu) parentTaskMap.set(gt.taskCodePhu.trim().toLowerCase(), gt);
+  });
+
+  const visibleTasksToRender = tasksToRender.filter(t => {
+    if (t.parentTaskId && !lowerSearchTerm) {
+      const rawParentId = String(t.parentTaskId).trim();
+      const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
+      const effectiveParentId = matchedParent ? matchedParent.id : rawParentId;
+      const isParentExpanded =
+        expandedModularTasks?.has(effectiveParentId) ||
+        Boolean(matchedParent?.taskCodePhu && expandedModularTasks?.has(matchedParent.taskCodePhu));
+
+      if (!isParentExpanded) return false;
+    }
+    return true;
+  });
+
+  const projectModularParentIds = React.useMemo(() => {
+    const parentIds = new Set<string>();
+    groupTasks.forEach((t) => {
+      if (t.parentTaskId) {
+        const rawParentId = String(t.parentTaskId).trim();
+        const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
+        const effectiveId = matchedParent ? matchedParent.id : rawParentId;
+        parentIds.add(effectiveId);
+      }
+    });
+    return Array.from(parentIds);
+  }, [groupTasks, parentTaskMap]);
+
+  const hasModularTasks = projectModularParentIds.length > 0;
+  const isProjectModularExpanded =
+    hasModularTasks &&
+    projectModularParentIds.some((id) => expandedModularTasks?.has(id));
+
+  const projectChildTasksCount = React.useMemo(() => {
+    return groupTasks.filter((t) => Boolean(t.parentTaskId)).length;
+  }, [groupTasks]);
+
+  const handleToggleProjectModular = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasModularTasks) return;
+    if (!isExpanded) {
+      toggleGroup(String(p.id || p.code || p.no || ''));
+    }
+    if (onToggleModularParent) {
+      if (isProjectModularExpanded) {
+        projectModularParentIds.forEach((id) => {
+          if (expandedModularTasks?.has(id)) onToggleModularParent(id);
+        });
+      } else {
+        projectModularParentIds.forEach((id) => {
+          if (!expandedModularTasks?.has(id)) onToggleModularParent(id);
+        });
+      }
+    }
+  };
+
   const activeSummaries = (p.taskSummaries && Array.isArray(p.taskSummaries))
     ? p.taskSummaries.filter(ts => !isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined))
     : [];
@@ -19775,26 +19842,49 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
         </div>
       </div>
 
-      {/* Project Title with Expand button on left & Quick Navigation on right */}
+      {/* Project Title with Expand buttons on left & Quick Navigation on right */}
       <div className="flex items-start justify-between gap-2 w-full">
         <div className="flex items-start gap-2 flex-1 min-w-0">
-          <button 
-            onClick={() => toggleGroup(String(p.id || p.code || p.no || ''))} 
-            className={cn(
-              "flex items-center gap-1 px-2 py-0.5 mt-0.5 shrink-0 rounded text-white font-extrabold text-[10px] shadow-2xs transition-all active:scale-95 touch-manipulation cursor-pointer",
-              effectiveTaskCount > 0 
-                ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500" 
-                : "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
+          <div className="flex flex-col items-center gap-1 shrink-0 mt-0.5">
+            <button 
+              onClick={() => toggleGroup(String(p.id || p.code || p.no || ''))} 
+              className={cn(
+                "flex items-center gap-1 px-2 py-0.5 rounded text-white font-extrabold text-[10px] shadow-2xs transition-all active:scale-95 touch-manipulation cursor-pointer",
+                effectiveTaskCount > 0 
+                  ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500" 
+                  : "bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500"
+              )}
+              title={isExpanded ? "Collapse" : `Expand (${effectiveTaskCount})`}
+            >
+              {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              <span>({effectiveTaskCount})</span>
+            </button>
+
+            {hasModularTasks && (
+              <button
+                type="button"
+                onClick={handleToggleProjectModular}
+                className={cn(
+                  "flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all active:scale-95 touch-manipulation cursor-pointer border shadow-2xs select-none",
+                  isProjectModularExpanded
+                    ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                    : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                )}
+                title={isProjectModularExpanded ? "Collapse modular tasks of this project" : `Expand modular tasks (${projectChildTasksCount})`}
+              >
+                {isProjectModularExpanded ? (
+                  <ChevronDown className="w-3 h-3 text-current pointer-events-none" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 text-current pointer-events-none" />
+                )}
+                <span>({projectChildTasksCount})</span>
+              </button>
             )}
-            title={isExpanded ? "Collapse" : `Expand (${effectiveTaskCount})`}
-          >
-            {!isExpanded ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            <span>({effectiveTaskCount})</span>
-          </button>
+          </div>
 
           <div 
             onClick={() => onEditProject?.(p, !canWrite, "chat")}
-            className="font-bold text-slate-900 dark:text-[#ffffff] text-sm sm:text-base leading-snug cursor-pointer hover:text-blue-600 dark:hover:text-[#8ab4f8] transition-colors break-words flex-1 min-w-0"
+            className="font-bold text-slate-900 dark:text-[#ffffff] text-sm sm:text-base leading-snug cursor-pointer hover:text-blue-600 dark:hover:text-[#8ab4f8] transition-colors break-words whitespace-normal flex-1 min-w-0"
           >
             {p.name}
           </div>
@@ -19845,104 +19935,53 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
         )}
       </div>
 
-      <div className="border-t border-slate-200/80 dark:border-[#38383b] my-0.5" />
-
-      {/* Controls Bar: Sort, Party, Toggle, Maximize, and Stacked Dates */}
-      <div className="flex items-center justify-between gap-2 pt-0.5">
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onSortSubTasks?.(p, groupTasks);
-            }}
-            className="px-2 py-1 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1 shadow-2xs active:scale-95 touch-manipulation cursor-pointer"
-            title="Sort sub-tasks by Start Date"
-          >
-            <ArrowDownUp className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-            <span>Sort</span>
-          </button>
-
-          {displayParty ? (
-            <span 
-              className="px-2 py-0.5 rounded-md border border-purple-500/80 dark:border-purple-500 bg-purple-100/60 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-semibold whitespace-nowrap shadow-2xs"
-              title={`Party: ${displayParty}`}
-            >
-              {displayParty}
-            </span>
-          ) : null}
-
-          <div className="flex items-center" title="Project delegation status (active when child tasks have delegation enabled)">
-            <FastToggle
-              value={isProjectDelegationOn}
-              canWrite={false}
-              readOnly={true}
-              onToggle={() => {}}
-              isSmall={true}
-            />
-          </div>
-
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onEditProject?.(p, !canWrite, "chat");
-            }}
-            className="p-1 text-sky-500 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-300 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors active:scale-95 touch-manipulation cursor-pointer"
-            title="Open Project Details"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Right side: Stacked Dates */}
-        <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-          {startParts && (
-            <div 
-              className="flex flex-col items-center text-center font-bold text-xs sm:text-sm leading-tight text-blue-600 dark:text-sky-400 select-none"
-              title={`Start: ${formatDisplayDateMain(computedTakStart || p.start)}`}
-            >
-              <span>{startParts.month}</span>
-              <span>{startParts.day}</span>
-              <span>{startParts.year}</span>
-            </div>
-          )}
-          {complParts && (
-            <div 
-              className="flex flex-col items-center text-center font-bold text-xs sm:text-sm leading-tight text-pink-600 dark:text-pink-400 select-none"
-              title={`Finish: ${formatDisplayDateMain(computedTakCompl || p.handover || p.opening)}`}
-            >
-              <span>{complParts.month}</span>
-              <span>{complParts.day}</span>
-              <span>{complParts.year}</span>
-            </div>
-          )}
-        </div>
-      </div>
+      <DetailMobileCardControls
+        project={p}
+        groupTasks={groupTasks}
+        displayParty={displayParty}
+        isProjectDelegationOn={isProjectDelegationOn}
+        startParts={startParts}
+        complParts={complParts}
+        canWrite={canWrite}
+        computedTakStart={computedTakStart}
+        computedTakCompl={computedTakCompl}
+        onSortSubTasks={onSortSubTasks}
+        onEditProject={onEditProject}
+      />
 
       {/* Expanded sub-tasks list */}
       {isExpanded && (
         <div className="flex flex-col gap-2 pt-2 border-t border-slate-200/80 dark:border-[#38383b]">
-          {tasksToRender.length === 0 ? (
+          {visibleTasksToRender.length === 0 ? (
             <div className="text-center py-4 text-xs text-slate-400 dark:text-[#838383]">
               No tasks found
             </div>
           ) : (
-            tasksToRender.map((t, index) => (
-              <DetailMobileTaskItem
-                key={`mobile-task-${p.id || p.code || p.no}-${t.id || index}`}
-                task={t}
-                project={p}
-                groupTasks={groupTasks}
-                index={index}
-                taskCode={taskCodeMap.get(t.id) || t.taskCode || ''}
-                actStatus={taskActualStatusMap.get(t.id) || { label: '0%', color: 'text-slate-400' }}
-                isFocused={initialFocusTaskId === t.id}
-                canWrite={canWrite}
-                onEditTask={onEditTask}
-                handleUpdateTask={handleUpdateTask}
-                handleDeleteTask={handleDeleteTask}
-                handleMoveTask={handleMoveTask}
-              />
-            ))
+            visibleTasksToRender.map((t, index) => {
+              const childCount = (childTasksCountMap?.get(t.id) || 0) + (t.taskCodePhu && t.taskCodePhu !== t.id ? (childTasksCountMap?.get(t.taskCodePhu) || 0) : 0);
+              const isModularExpanded = expandedModularTasks ? (expandedModularTasks.has(t.id) || (!!t.taskCodePhu && expandedModularTasks.has(t.taskCodePhu))) : false;
+
+              return (
+                <DetailMobileTaskItem
+                  key={`mobile-task-${p.id || p.code || p.no}-${t.id || index}`}
+                  task={t}
+                  project={p}
+                  groupTasks={groupTasks}
+                  index={index}
+                  taskCode={taskCodeMap?.get(t.id) || t.taskCode || ''}
+                  actStatus={taskActualStatusMap?.get(t.id) || { label: '0%', color: 'text-slate-400' }}
+                  isFocused={initialFocusTaskId === t.id}
+                  canWrite={canWrite}
+                  childTasksCount={childCount}
+                  isModularExpanded={isModularExpanded}
+                  onToggleModularParent={onToggleModularParent}
+                  onEditTask={onEditTask}
+                  handleUpdateTask={handleUpdateTask}
+                  handleDeleteTask={handleDeleteTask}
+                  handleMoveTask={handleMoveTask}
+                />
+              );
+            })
           )}
 
           {canWrite && (
@@ -19959,12 +19998,11 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   );
 });
 
-
 ================================================================================
 FILE: src/components/DetailTabParts/DetailMobileTaskItem.tsx
 ================================================================================
 import React, { memo } from 'react';
-import { ChevronUp, ChevronDown, Maximize2, Trash2 } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronRight, Maximize2, Trash2 } from 'lucide-react';
 import { Task, Project } from '../../types';
 import { FastToggle } from './FastToggle';
 import { EditableCell } from './EditableCell';
@@ -19981,6 +20019,9 @@ export interface DetailMobileTaskItemProps {
   isFocused: boolean;
   canWrite: boolean;
   isProjectDelegationOn?: boolean;
+  childTasksCount?: number;
+  isModularExpanded?: boolean;
+  onToggleModularParent?: (parentTaskId: string) => void;
   onEditTask: (t: Task, isReadOnly?: boolean, initialTab?: string) => void;
   handleMoveTask: (p: Project, groupTasks: Task[], index: number, direction: 'up' | 'down') => void;
   handleUpdateTask: (task: Task, updates: Partial<Task>) => void;
@@ -19997,6 +20038,9 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
   isFocused,
   canWrite,
   isProjectDelegationOn,
+  childTasksCount = 0,
+  isModularExpanded = false,
+  onToggleModularParent,
   onEditTask,
   handleMoveTask,
   handleUpdateTask,
@@ -20079,7 +20123,35 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
             <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 shrink-0 inline-block">
               {taskCode || t.taskCodePhu || `${p.code}#${i + 1}`}
             </span>
-            <span className="font-bold text-slate-900 dark:text-[#ffffff] text-sm leading-snug">
+            {childTasksCount > 0 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onToggleModularParent) onToggleModularParent(t.id);
+                }}
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
+                  isModularExpanded
+                    ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                    : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                )}
+                title={isModularExpanded ? `Collapse ${childTasksCount} subtasks` : `Expand ${childTasksCount} subtasks`}
+              >
+                {isModularExpanded ? (
+                  <ChevronDown className="w-3 h-3 text-current font-bold" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 text-current font-bold" />
+                )}
+                <span>({childTasksCount})</span>
+              </button>
+            )}
+            {Boolean(t.parentTaskId) && (
+              <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Task con (Sub-task)">
+                ↳ SUB
+              </span>
+            )}
+            <span className="font-bold text-slate-900 dark:text-[#ffffff] text-sm leading-snug break-words flex-1 min-w-0">
               {t.name || '(Unnamed Task)'}
             </span>
           </div>
@@ -20132,7 +20204,6 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
     </div>
   );
 });
-
 
 ================================================================================
 FILE: src/components/DetailTabParts/DetailMobileView.tsx
@@ -131273,4 +131344,122 @@ FILE: index.html
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+
+
+================================================================================
+FILE: src/components/DetailTabParts/DetailMobileCardControls.tsx
+================================================================================
+import React, { memo } from 'react';
+import { ArrowDownUp, Maximize2 } from 'lucide-react';
+import { Project, Task } from '../../types';
+import { FastToggle } from './FastToggle';
+import { formatDisplayDateMain } from '../../lib/utils';
+
+interface DetailMobileCardControlsProps {
+  project: Project;
+  groupTasks: Task[];
+  displayParty: string;
+  isProjectDelegationOn: boolean;
+  startParts: { month: string; day: string; year: string } | null;
+  complParts: { month: string; day: string; year: string } | null;
+  canWrite: boolean;
+  computedTakStart?: string;
+  computedTakCompl?: string;
+  onSortSubTasks?: (p: Project, groupTasks: Task[]) => void;
+  onEditProject?: (p: Project, isReadOnly?: boolean, initialTab?: string) => void;
+}
+
+export const DetailMobileCardControls = memo(function DetailMobileCardControls({
+  project: p,
+  groupTasks,
+  displayParty,
+  isProjectDelegationOn,
+  startParts,
+  complParts,
+  canWrite,
+  computedTakStart,
+  computedTakCompl,
+  onSortSubTasks,
+  onEditProject,
+}: DetailMobileCardControlsProps) {
+  return (
+    <>
+      {/* Project Party (Placed above controls bar so it has full width and never truncates) */}
+      {displayParty ? (
+        <div className="flex items-center gap-1.5 pt-0.5">
+          <span 
+            className="px-2 py-0.5 rounded-md border border-purple-500/80 dark:border-purple-500 bg-purple-100/60 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 text-xs font-semibold shadow-2xs break-words max-w-full"
+            title={`Party: ${displayParty}`}
+          >
+            {displayParty}
+          </span>
+        </div>
+      ) : null}
+
+      <div className="border-t border-slate-200/80 dark:border-[#38383b] my-0.5" />
+
+      {/* Controls Bar: Sort, Delegation Toggle, Maximize, and Stacked Dates */}
+      <div className="flex items-center justify-between gap-2 pt-0.5">
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onSortSubTasks?.(p, groupTasks);
+            }}
+            className="px-2 py-1 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#28282a] hover:bg-slate-100 dark:hover:bg-[#333336] text-slate-700 dark:text-slate-300 text-xs font-semibold flex items-center gap-1 shadow-2xs active:scale-95 touch-manipulation cursor-pointer"
+            title="Sort sub-tasks by Start Date"
+          >
+            <ArrowDownUp className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+            <span>Sort</span>
+          </button>
+
+          <div className="flex items-center" title="Project delegation status (active when child tasks have delegation enabled)">
+            <FastToggle
+              value={isProjectDelegationOn}
+              canWrite={false}
+              readOnly={true}
+              onToggle={() => {}}
+              isSmall={true}
+            />
+          </div>
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditProject?.(p, !canWrite, "chat");
+            }}
+            className="p-1 text-sky-500 hover:text-sky-600 dark:text-sky-400 dark:hover:text-sky-300 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors active:scale-95 touch-manipulation cursor-pointer"
+            title="Open Project Details"
+          >
+            <Maximize2 className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Right side: Stacked Dates */}
+        <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
+          {startParts && (
+            <div 
+              className="flex flex-col items-center text-center font-bold text-xs sm:text-sm leading-tight text-blue-600 dark:text-sky-400 select-none whitespace-nowrap"
+              title={`Start: ${formatDisplayDateMain(computedTakStart || p.start)}`}
+            >
+              <span>{startParts.month}</span>
+              <span>{startParts.day}</span>
+              <span>{startParts.year}</span>
+            </div>
+          )}
+          {complParts && (
+            <div 
+              className="flex flex-col items-center text-center font-bold text-xs sm:text-sm leading-tight text-pink-600 dark:text-pink-400 select-none whitespace-nowrap"
+              title={`Finish: ${formatDisplayDateMain(computedTakCompl || p.handover || p.opening)}`}
+            >
+              <span>{complParts.month}</span>
+              <span>{complParts.day}</span>
+              <span>{complParts.year}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+});
 

@@ -148,7 +148,7 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
                 ↳ SUB
               </span>
             )}
-            <span className="font-bold text-slate-900 dark:text-[#ffffff] text-sm leading-snug">
+            <span className="font-bold text-slate-900 dark:text-[#ffffff] text-sm leading-snug break-words flex-1 min-w-0">
               {t.name || '(Unnamed Task)'}
             </span>
           </div>
