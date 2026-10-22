@@ -48,6 +48,26 @@ export const GanttDependencyLinks: React.FC<GanttDependencyLinksProps> = React.m
           >
             <polygon points="0 0, 8 4, 0 8" fill="#1d4ed8" />
           </marker>
+          <marker
+            id="arrowhead-left"
+            markerWidth="7"
+            markerHeight="7"
+            refX="1"
+            refY="3.5"
+            orient="auto"
+          >
+            <polygon points="7 0, 0 3.5, 7 7" fill="#2563eb" />
+          </marker>
+          <marker
+            id="arrowhead-left-hover"
+            markerWidth="8"
+            markerHeight="8"
+            refX="1"
+            refY="4"
+            orient="auto"
+          >
+            <polygon points="8 0, 0 4, 8 8" fill="#1d4ed8" />
+          </marker>
           <filter id="gantt-dep-shadow" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="#000" floodOpacity="0.18" />
           </filter>
@@ -56,6 +76,10 @@ export const GanttDependencyLinks: React.FC<GanttDependencyLinksProps> = React.m
         {dependencyLines.map((line, idx) => {
           const lineKey = line.id || `dep-${idx}`;
           const isHovered = hoveredLineId === lineKey;
+          const isLeft = line.arrowDir === 'left';
+          const markerEnd = isLeft
+            ? (isHovered ? "url(#arrowhead-left-hover)" : "url(#arrowhead-left)")
+            : (isHovered ? "url(#arrowhead-hover)" : "url(#arrowhead-default)");
 
           return (
             <g key={lineKey}>
@@ -97,7 +121,7 @@ export const GanttDependencyLinks: React.FC<GanttDependencyLinksProps> = React.m
                 stroke={isHovered ? "#1d4ed8" : (line.color || "#2563eb")}
                 strokeWidth={isHovered ? "2.5" : "1.75"}
                 strokeDasharray={line.isAnimated ? "4 2" : undefined}
-                markerEnd={isHovered ? "url(#arrowhead-hover)" : "url(#arrowhead-default)"}
+                markerEnd={markerEnd}
                 filter="url(#gantt-dep-shadow)"
                 className={`transition-all duration-150 ${isHovered ? "opacity-100" : "opacity-80 hover:opacity-100"}`}
               />
