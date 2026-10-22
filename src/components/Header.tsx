@@ -1,4 +1,3 @@
-import { useEnrichedData } from '../hooks/useEnrichedData';
 import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "../lib/storage";
 import { useAppStore } from "../store/useAppStore";
 import { doc } from 'firebase/firestore';
@@ -67,24 +66,55 @@ interface HeaderProps {
   onQuickNavigate?: (targetTab: TabId, target: any) => void;
 }
 
-export function Header({
+const HeaderClockWidget = React.memo(function HeaderClockWidget() {
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const day = currentTime.getDate().toString().padStart(2, '0');
+  const month = currentTime.toLocaleString('en-US', { month: 'short' });
+  const year = currentTime.getFullYear();
+  const hours = currentTime.getHours().toString().padStart(2, '0');
+  const mins = currentTime.getMinutes().toString().padStart(2, '0');
+  const secs = currentTime.getSeconds().toString().padStart(2, '0');
+  const compactTime = `${day} ${month} ${year} ${hours}:${mins}:${secs}`;
+
+  const fullTime = currentTime.toLocaleString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  return (
+    <div
+      title={`Today: ${fullTime}`}
+      className="h-8 px-2.5 bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] rounded-lg text-xs font-mono font-bold border border-blue-100 dark:border-[#444446] hidden lg:flex items-center gap-1.5 shadow-2xs transition-colors shrink-0 select-none whitespace-nowrap"
+    >
+      <Clock className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-[#8ab4f8]" />
+      <span>{compactTime}</span>
+    </div>
+  );
+});
+
+export const Header = React.memo(function Header({
   cloudStatus, onLoginClick, onLogoutClick, onTabChange, activeTab, notificationCount = 0, onUndo, canUndo = false, hasDataToUndo = false, undoDescription, onRedo, canRedo = false, hasDataToRedo = false, redoDescription, onToggleTheme, isFocusMode = false, onToggleFocusMode, onPrintClick, isPrintPreview = false, onPrintPreviewToggle, onDeepLink, onQuickNavigate}: HeaderProps) {
 
-  const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups: delegationGroups } = useEnrichedData();
   const currentUser = useAppStore(state => state.currentUser)!;
   const permissionMatrix = useAppStore(state => state.permissionMatrix);
-  const locations = useAppStore(state => state.locations);
   const theme = useAppStore(state => state.theme);
-  const appUsers = useAppStore(state => state.appUsers);
-  const subAppUsers = useAppStore(state => state.subAppUsers);
-  const parties = useAppStore(state => state.parties);
   const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
   const menuRef = useRef<HTMLDivElement>(null);
-  const { language, setLanguage, t } = useLanguage();
+  const { t } = useLanguage();
   
   const currency = useAppStore(state => state.currency);
   const setCurrency = useAppStore(state => state.setCurrency);
@@ -92,16 +122,6 @@ export function Header({
   const canWriteImportCsv = currentUser?.role === 'admin' || !!permissionMatrix[currentUser?.role as AppRole]?.Write?.importCsv;
   const jpyRate = useAppStore(state => state.jpyRate);
   const usdRate = useAppStore(state => state.usdRate);
-
-  const ganttViewMode = useAppStore(state => state.ganttViewMode);
-  const setGanttViewMode = useAppStore(state => state.setGanttViewMode);
-  const ganttDayWidth = useAppStore(state => state.ganttDayWidth);
-  const setGanttDayWidth = useAppStore(state => state.setGanttDayWidth);
-  const ganttScaleInput = useAppStore(state => state.ganttScaleInput);
-  const setGanttScaleInput = useAppStore(state => state.setGanttScaleInput);
-  const isGanttWidthChanged = useAppStore(state => state.isGanttWidthChanged);
-  const setIsGanttWidthChanged = useAppStore(state => state.setIsGanttWidthChanged);
-  const saveGanttDayWidth = useAppStore(state => state.saveGanttDayWidth);
 
   const handleCurrencyClick = () => {
     let nextCurrency: 'VND' | 'JPY' | 'USD' = 'VND';
@@ -136,11 +156,6 @@ export function Header({
   };
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
@@ -158,29 +173,6 @@ export function Header({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
-
-  const formatCompactTime = (date: Date) => {
-    const day = date.getDate().toString().padStart(2, '0');
-    const month = date.toLocaleString('en-US', { month: 'short' });
-    const year = date.getFullYear();
-    const hours = date.getHours().toString().padStart(2, '0');
-    const mins = date.getMinutes().toString().padStart(2, '0');
-    const secs = date.getSeconds().toString().padStart(2, '0');
-    return `${day} ${month} ${year} ${hours}:${mins}:${secs}`;
-  };
-
-  const formatFullTime = (date: Date) => {
-    return date.toLocaleString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
-  };
 
   const statusColors = {
     online: "text-emerald-700 bg-emerald-50/90 border-emerald-200 dark:bg-[#1a3821] dark:border-[#265330] dark:text-emerald-400",
@@ -435,13 +427,7 @@ export function Header({
             )}
 
             {/* Realtime Clock Widget */}
-            <div 
-              title={`Today: ${formatFullTime(currentTime)}`}
-              className="h-8 px-2.5 bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] rounded-lg text-xs font-mono font-bold border border-blue-100 dark:border-[#444446] hidden lg:flex items-center gap-1.5 shadow-2xs transition-colors shrink-0 select-none whitespace-nowrap"
-            >
-              <Clock className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-[#8ab4f8]" />
-              <span>{formatCompactTime(currentTime)}</span>
-            </div>
+            <HeaderClockWidget />
 
             {/* Ribbon Display Options on Header */}
             <RibbonDisplayMenu variant="header" className="hidden lg:inline-flex shrink-0" />
@@ -467,4 +453,4 @@ export function Header({
       )}
     </header>
   );
-}
+});

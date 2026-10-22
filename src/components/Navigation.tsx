@@ -1,5 +1,4 @@
 import { useAppStore } from '../store/useAppStore';
-import { useEnrichedData } from '../hooks/useEnrichedData';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   TabId,
@@ -52,17 +51,11 @@ const childTabMap: Record<ParentTabId, TabId[]> = {
   Help: ["manual", "csv_export", "picture_mapping"],
 };
 
-export function Navigation({
+export const Navigation = React.memo(function Navigation({
   activeTab, onTabChange}: NavigationProps) {
 
-  const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups: delegationGroups } = useEnrichedData();
   const currentUser = useAppStore(state => state.currentUser)!;
   const permissionMatrix = useAppStore(state => state.permissionMatrix);
-  const locations = useAppStore(state => state.locations);
-  const theme = useAppStore(state => state.theme);
-  const appUsers = useAppStore(state => state.appUsers);
-  const subAppUsers = useAppStore(state => state.subAppUsers);
-  const parties = useAppStore(state => state.parties);
 
   const isAdmin = currentUser.role === "admin";
   const role = (
@@ -448,4 +441,4 @@ export function Navigation({
       </div>
     </>
   );
-}
+});

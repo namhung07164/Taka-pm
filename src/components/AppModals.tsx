@@ -17,6 +17,21 @@ interface AppModalsProps {
   onTabChange: (tab: any) => void;
 }
 
+const TaskModalWithDelegations: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  task: any;
+  prefillProjectCode: string;
+  prefillProjectYear: string | number | null;
+  prefillProjectStore: string | null;
+  isReadOnly: boolean;
+  initialTab: "details" | "chat";
+  onNavigateToDelegation: (groupId: string) => void;
+}> = React.memo((props) => {
+  const { visibleDelegationGroups } = useEnrichedData();
+  return <TaskModal {...props} visibleDelegationGroups={visibleDelegationGroups} />;
+});
+
 export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabChange }) => {
   const isLoginModalOpen = useAppStore(state => state.isLoginModalOpen);
   const setIsLoginModalOpen = useAppStore(state => state.setIsLoginModalOpen);
@@ -69,7 +84,6 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
     return () => window.removeEventListener('taka_open_image_viewer', handleOpenEvent);
   }, []);
 
-  const { filteredTasks: tasks, visibleDelegationGroups } = useEnrichedData();
   const isImageViewerActive = Boolean(zoomableImageSrc || eventViewerImage);
 
   return (
@@ -90,7 +104,7 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
           isReadOnly={isReadOnlyModal}
           initialTab={modalInitialTab}
           onOpenTask={(taskId) => {
-            const t = tasks.find((item) => item.id === taskId);
+            const t = useAppStore.getState().tasks.find((item) => item.id === taskId);
             if (t) {
               setEditingTask(t);
               setIsReadOnlyModal(false);
@@ -104,11 +118,10 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
 
       {isTaskModalOpen && (
         <TabErrorBoundary tabKey="TaskModal">
-          <TaskModal
+          <TaskModalWithDelegations
             isOpen={isTaskModalOpen}
             onClose={() => setIsTaskModalOpen(false)}
             task={editingTask}
-            visibleDelegationGroups={visibleDelegationGroups}
             prefillProjectCode={prefillProjectCode}
             prefillProjectYear={prefillProjectYear}
             prefillProjectStore={prefillProjectStore}

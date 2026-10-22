@@ -39,74 +39,88 @@ export async function refreshProjectTasksAndDates(pId: string): Promise<void> {
   }
 }
 
+let bootstrapInFlightPromise: Promise<{
+  projectCount: number;
+  taskCount: number;
+  costCount: number;
+}> | null = null;
+
 /**
  * Nạp tức thì (Instant Boot ~5ms, 0 Read) dữ liệu từ Dexie Local-First Engine vào Zustand Store
  */
-export async function bootstrapLocalStore(): Promise<{
+export function bootstrapLocalStore(): Promise<{
   projectCount: number;
   taskCount: number;
   costCount: number;
 }> {
-  const start = performance.now();
-  try {
-    const store = useAppStore.getState();
-    const currentYear = store.globalYearFilter;
+  if (bootstrapInFlightPromise) return bootstrapInFlightPromise;
 
-    const [projects, tasks, costs, delegations] = await Promise.all([
-      getLocalProjects(currentYear),
-      store.isTasksRequested ? getLocalTasks(currentYear) : Promise.resolve([]),
-      store.isCostsRequested ? getLocalCosts(currentYear) : Promise.resolve([]),
-      store.isDelegationsRequested ? getLocalDelegations(currentYear) : Promise.resolve([]),
-    ]);
+  bootstrapInFlightPromise = (async () => {
+    const start = performance.now();
+    try {
+      const store = useAppStore.getState();
+      const currentYear = store.globalYearFilter;
 
-    if (projects.length > 0 && (!store.projects || store.projects.length === 0)) {
-      const normalizedProjects = projects.map((p) => ({
-        ...p,
-        taskCount:
-          Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
-            ? p.taskSummaries.length
-            : (p.taskCount ?? 0),
-      }));
-      store.setProjects(normalizedProjects);
-    }
-    if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
-      const zombieIndex = buildZombieProjectIndex(projects);
-      const cleanTasks = tasks.filter(
-        (t) => !isZombieTaskAgainstProjects(t, projects, zombieIndex)
-      );
-      store.setTasks(deduplicateTasks(cleanTasks, projects));
-    }
-    if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
-      store.setCosts(costs);
-    }
-    if (
-      delegations.length > 0 &&
-      store.isDelegationsRequested &&
-      (!store.delegationGroups || store.delegationGroups.length === 0)
-    ) {
-      store.setDelegationGroups(delegations);
-    }
+      const [projects, tasks, costs, delegations] = await Promise.all([
+        getLocalProjects(currentYear),
+        store.isTasksRequested ? getLocalTasks(currentYear) : Promise.resolve([]),
+        store.isCostsRequested ? getLocalCosts(currentYear) : Promise.resolve([]),
+        store.isDelegationsRequested ? getLocalDelegations(currentYear) : Promise.resolve([]),
+      ]);
 
-    const duration = Math.round(performance.now() - start);
-    if (projects.length > 0) {
-      usePerformanceStore
-        .getState()
-        .trackGetDoc('dexie_local_db', true, projects.length, `Local-First Boot in ${duration}ms`);
+      if (projects.length > 0 && (!store.projects || store.projects.length === 0)) {
+        const normalizedProjects = projects.map((p) => ({
+          ...p,
+          taskCount:
+            Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+              ? p.taskSummaries.length
+              : (p.taskCount ?? 0),
+        }));
+        store.setProjects(normalizedProjects);
+      }
+      if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
+        const zombieIndex = buildZombieProjectIndex(projects);
+        const cleanTasks = tasks.filter(
+          (t) => !isZombieTaskAgainstProjects(t, projects, zombieIndex)
+        );
+        store.setTasks(deduplicateTasks(cleanTasks, projects));
+      }
+      if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
+        store.setCosts(costs);
+      }
+      if (
+        delegations.length > 0 &&
+        store.isDelegationsRequested &&
+        (!store.delegationGroups || store.delegationGroups.length === 0)
+      ) {
+        store.setDelegationGroups(delegations);
+      }
+
+      const duration = Math.round(performance.now() - start);
+      if (projects.length > 0) {
+        usePerformanceStore
+          .getState()
+          .trackGetDoc('dexie_local_db', true, projects.length, `Local-First Boot in ${duration}ms`);
+      }
+
+      setTimeout(() => {
+        enforceStorageBudget().catch(() => {});
+      }, 1000);
+
+      return {
+        projectCount: projects.length,
+        taskCount: tasks.length,
+        costCount: costs.length,
+      };
+    } catch (err) {
+      console.warn('[backgroundSyncWorker] bootstrapLocalStore error:', err);
+      return { projectCount: 0, taskCount: 0, costCount: 0 };
+    } finally {
+      bootstrapInFlightPromise = null;
     }
+  })();
 
-    setTimeout(() => {
-      enforceStorageBudget().catch(() => {});
-    }, 1000);
-
-    return {
-      projectCount: projects.length,
-      taskCount: tasks.length,
-      costCount: costs.length,
-    };
-  } catch (err) {
-    console.warn('[backgroundSyncWorker] bootstrapLocalStore error:', err);
-    return { projectCount: 0, taskCount: 0, costCount: 0 };
-  }
+  return bootstrapInFlightPromise;
 }
 
 /**

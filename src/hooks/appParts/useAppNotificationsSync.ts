@@ -32,7 +32,7 @@ export function useAppNotificationsSync({
   const permissionMatrix = useAppStore((state) => state.permissionMatrix);
 
   const mergedTasksForNotifs = useMemo(() => {
-    if (allTasksForNotifs.length === 0) return tasks;
+    if (allTasksForNotifs.length === 0 || allTasksForNotifs === tasks) return tasks;
     if (tasks.length === 0) return allTasksForNotifs;
     const map = new Map<string, Task>();
     for (let i = 0; i < allTasksForNotifs.length; i++) {
@@ -49,9 +49,17 @@ export function useAppNotificationsSync({
     return Array.from(map.values());
   }, [allTasksForNotifs, tasks]);
 
+  const isSameAsActiveYearScope =
+    (allProjectsForNotifs.length === 0 ||
+      allProjectsForNotifs === projects ||
+      allProjectsForNotifs.length === projects.length) &&
+    (allTasksForNotifs.length === 0 ||
+      allTasksForNotifs === tasks ||
+      allTasksForNotifs.length === tasks.length);
+
   const globalEnrichedProjectsForNotifs = useMemo(() => {
-    // Fast-path: When notification-specific arrays are empty, reuse already-computed enrichedProjects (0ms)
-    if (allProjectsForNotifs.length === 0 && allTasksForNotifs.length === 0) {
+    // Fast-path: When notification arrays match the active scope, reuse already-computed enrichedProjects (0ms)
+    if (isSameAsActiveYearScope) {
       return enrichedProjects;
     }
 
@@ -131,11 +139,18 @@ export function useAppNotificationsSync({
 
       return true;
     });
-  }, [allProjectsForNotifs, allTasksForNotifs, projects, tasks, currentUser, enrichedProjects]);
+  }, [
+    isSameAsActiveYearScope,
+    allProjectsForNotifs,
+    mergedTasksForNotifs,
+    projects,
+    currentUser,
+    enrichedProjects,
+  ]);
 
   const globalFilteredTasksForNotifs = useMemo(() => {
-    // Fast-path: Reuse filteredTasks when no separate notification arrays are active (0ms)
-    if (allProjectsForNotifs.length === 0 && allTasksForNotifs.length === 0) {
+    // Fast-path: Reuse filteredTasks when notification arrays match active scope (0ms)
+    if (isSameAsActiveYearScope) {
       return filteredTasks;
     }
 
@@ -201,8 +216,7 @@ export function useAppNotificationsSync({
 
     return visibleTasks;
   }, [
-    allProjectsForNotifs,
-    allTasksForNotifs,
+    isSameAsActiveYearScope,
     mergedTasksForNotifs,
     globalEnrichedProjectsForNotifs,
     currentUser,
@@ -210,41 +224,62 @@ export function useAppNotificationsSync({
   ]);
 
   useEffect(() => {
-    const notifs = calculateActiveNotifications(
-      globalEnrichedProjectsForNotifs,
-      globalFilteredTasksForNotifs,
-      notificationRules,
-      visibleDelegationGroups,
-      currentUser.id,
-      currentUser.username,
-      currentUser
-    );
-    setActiveNotifications(notifs);
+    let cancelled = false;
+    let idleHandle: number | null = null;
 
-    if (currentUser.readNotifs && currentUser.readNotifs.length > 300) {
-      const trimmed = currentUser.readNotifs.slice(-200);
-      safeSetItemLocal(`taka_read_notifs_${currentUser.id}`, JSON.stringify(trimmed));
-    }
+    const timer = setTimeout(() => {
+      const runNotificationCalc = () => {
+        if (cancelled) return;
+        const notifs = calculateActiveNotifications(
+          globalEnrichedProjectsForNotifs,
+          globalFilteredTasksForNotifs,
+          notificationRules,
+          visibleDelegationGroups,
+          currentUser.id,
+          currentUser.username,
+          currentUser
+        );
+        if (cancelled) return;
+        setActiveNotifications(notifs);
 
-    if (
-      currentUser.id !== "guest" &&
-      currentUser.notification !== false &&
-      "Notification" in window &&
-      Notification.permission === "granted"
-    ) {
-      const notifiedStr = safeGetItemLocal(`taka_notified_${currentUser.id}`);
-      const notifiedIds: string[] = notifiedStr ? JSON.parse(notifiedStr) : [];
-      let hasNew = false;
+        if (currentUser.readNotifs && currentUser.readNotifs.length > 300) {
+          const trimmed = currentUser.readNotifs.slice(-200);
+          safeSetItemLocal(`taka_read_notifs_${currentUser.id}`, JSON.stringify(trimmed));
+        }
 
-      notifs.forEach((notif) => {
-        if (!notifiedIds.includes(notif.id)) {
-          hasNew = true;
-          notifiedIds.push(notif.id);
+        if (
+          currentUser.id !== "guest" &&
+          currentUser.notification !== false &&
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
+          const notifiedStr = safeGetItemLocal(`taka_notified_${currentUser.id}`);
+          const notifiedIds: string[] = notifiedStr ? JSON.parse(notifiedStr) : [];
+          const notifiedSet = new Set(notifiedIds);
+          let hasNew = false;
 
-          if ("serviceWorker" in navigator) {
-            navigator.serviceWorker.ready
-              .then((registration) => {
-                registration.showNotification(notif.title, {
+          notifs.forEach((notif) => {
+            if (!notifiedSet.has(notif.id)) {
+              hasNew = true;
+              notifiedSet.add(notif.id);
+              notifiedIds.push(notif.id);
+
+              if ("serviceWorker" in navigator) {
+                navigator.serviceWorker.ready
+                  .then((registration) => {
+                    registration.showNotification(notif.title, {
+                      body: notif.message,
+                      icon: "/manifest-icon-192.maskable.png",
+                      data: {
+                        targetType: notif.targetType,
+                        targetId: notif.targetId,
+                        notificationId: notif.id,
+                      },
+                    });
+                  })
+                  .catch(console.error);
+              } else {
+                const n = new Notification(notif.title, {
                   body: notif.message,
                   icon: "/manifest-icon-192.maskable.png",
                   data: {
@@ -253,32 +288,36 @@ export function useAppNotificationsSync({
                     notificationId: notif.id,
                   },
                 });
-              })
-              .catch(console.error);
-          } else {
-            const n = new Notification(notif.title, {
-              body: notif.message,
-              icon: "/manifest-icon-192.maskable.png",
-              data: {
-                targetType: notif.targetType,
-                targetId: notif.targetId,
-                notificationId: notif.id,
-              },
-            });
-            n.onclick = (e) => {
-              e.preventDefault();
-              window.focus();
-              setNotificationFilterId(notif.id);
-              setActiveTab("notification");
-            };
+                n.onclick = (e) => {
+                  e.preventDefault();
+                  window.focus();
+                  setNotificationFilterId(notif.id);
+                  setActiveTab("notification");
+                };
+              }
+            }
+          });
+
+          if (hasNew) {
+            safeSetItemLocal(`taka_notified_${currentUser.id}`, JSON.stringify(notifiedIds));
           }
         }
-      });
+      };
 
-      if (hasNew) {
-        safeSetItemLocal(`taka_notified_${currentUser.id}`, JSON.stringify(notifiedIds));
+      if (typeof (window as any).requestIdleCallback === "function") {
+        idleHandle = (window as any).requestIdleCallback(runNotificationCalc, { timeout: 500 });
+      } else {
+        runNotificationCalc();
       }
-    }
+    }, 80);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (idleHandle !== null && typeof (window as any).cancelIdleCallback === "function") {
+        (window as any).cancelIdleCallback(idleHandle);
+      }
+    };
   }, [
     globalEnrichedProjectsForNotifs,
     globalFilteredTasksForNotifs,
@@ -291,10 +330,15 @@ export function useAppNotificationsSync({
   ]);
 
   const readNotifs = currentUser.readNotifs || [];
-  const unreadCount =
-    currentUser.notification === false
-      ? 0
-      : activeNotifications.filter((n) => !readNotifs.includes(n.id)).length;
+  const readNotifsSet = useMemo(() => new Set(readNotifs), [readNotifs]);
+  const unreadCount = useMemo(() => {
+    if (currentUser.notification === false) return 0;
+    let count = 0;
+    for (let i = 0; i < activeNotifications.length; i++) {
+      if (!readNotifsSet.has(activeNotifications[i].id)) count++;
+    }
+    return count;
+  }, [currentUser.notification, activeNotifications, readNotifsSet]);
 
   useEffect(() => {
     if ("setAppBadge" in navigator) {

@@ -4,9 +4,11 @@ import App from './App.tsx';
 import './index.css';
 import { LanguageProvider } from './lib/LanguageContext';
 import { checkAndCleanStorageQuota, cleanupBloatedStorage } from './lib/storage';
+import { bootstrapLocalStore } from './lib/backgroundSyncWorker';
 
-// Proactively verify & clean localStorage quota before React and Firebase mount
+// Proactively verify & clean localStorage quota and kick off Local-First IndexedDB hydration before React mounts
 checkAndCleanStorageQuota();
+bootstrapLocalStore().catch(() => {});
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any, errorInfo: any}> {
   constructor(props: {children: React.ReactNode}) {

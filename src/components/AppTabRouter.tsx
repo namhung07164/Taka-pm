@@ -139,6 +139,31 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
   const appUsers = useAppStore(state => state.appUsers);
   const setActiveTab = useAppStore(state => state.setActiveTab);
 
+  // Idle-time prefetching for primary tabs so switching tabs has 0ms network delay
+  React.useEffect(() => {
+    let idleId: number | null = null;
+    const timer = setTimeout(() => {
+      const prefetchCoreTabs = () => {
+        import("./DetailTab").catch(() => {});
+        import("./GanttTab").catch(() => {});
+        import("./SummaryTab").catch(() => {});
+        import("./CalendarTab").catch(() => {});
+      };
+      if (typeof (window as any).requestIdleCallback === "function") {
+        idleId = (window as any).requestIdleCallback(prefetchCoreTabs, { timeout: 2500 });
+      } else {
+        prefetchCoreTabs();
+      }
+    }, 1500);
+
+    return () => {
+      clearTimeout(timer);
+      if (idleId !== null && typeof (window as any).cancelIdleCallback === "function") {
+        (window as any).cancelIdleCallback(idleId);
+      }
+    };
+  }, []);
+
   return (
     <div className="flex-grow flex flex-col min-h-0 relative z-[10]">
       <TabErrorBoundary tabKey={activeTab}>

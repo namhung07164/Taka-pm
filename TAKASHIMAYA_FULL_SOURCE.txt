@@ -2151,6 +2151,21 @@ interface AppModalsProps {
   onTabChange: (tab: any) => void;
 }
 
+const TaskModalWithDelegations: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  task: any;
+  prefillProjectCode: string;
+  prefillProjectYear: string | number | null;
+  prefillProjectStore: string | null;
+  isReadOnly: boolean;
+  initialTab: "details" | "chat";
+  onNavigateToDelegation: (groupId: string) => void;
+}> = React.memo((props) => {
+  const { visibleDelegationGroups } = useEnrichedData();
+  return <TaskModal {...props} visibleDelegationGroups={visibleDelegationGroups} />;
+});
+
 export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabChange }) => {
   const isLoginModalOpen = useAppStore(state => state.isLoginModalOpen);
   const setIsLoginModalOpen = useAppStore(state => state.setIsLoginModalOpen);
@@ -2203,7 +2218,6 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
     return () => window.removeEventListener('taka_open_image_viewer', handleOpenEvent);
   }, []);
 
-  const { filteredTasks: tasks, visibleDelegationGroups } = useEnrichedData();
   const isImageViewerActive = Boolean(zoomableImageSrc || eventViewerImage);
 
   return (
@@ -2224,7 +2238,7 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
           isReadOnly={isReadOnlyModal}
           initialTab={modalInitialTab}
           onOpenTask={(taskId) => {
-            const t = tasks.find((item) => item.id === taskId);
+            const t = useAppStore.getState().tasks.find((item) => item.id === taskId);
             if (t) {
               setEditingTask(t);
               setIsReadOnlyModal(false);
@@ -2238,11 +2252,10 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
 
       {isTaskModalOpen && (
         <TabErrorBoundary tabKey="TaskModal">
-          <TaskModal
+          <TaskModalWithDelegations
             isOpen={isTaskModalOpen}
             onClose={() => setIsTaskModalOpen(false)}
             task={editingTask}
-            visibleDelegationGroups={visibleDelegationGroups}
             prefillProjectCode={prefillProjectCode}
             prefillProjectYear={prefillProjectYear}
             prefillProjectStore={prefillProjectStore}
@@ -2288,7 +2301,6 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
     </Suspense>
   );
 });
-
 
 ================================================================================
 FILE: src/components/AppParts/AppGanttPrintPagesView.tsx
@@ -2698,7 +2710,7 @@ import { lazyWithRetry } from "../lib/lazyWithRetry";
 import { useAppStore } from "../store/useAppStore";
 import { useEnrichedData } from "../hooks/useEnrichedData";
 import { TabId, Project, Task, AppUser, ActiveNotification, NotificationRule } from "../types";
-import { findProjectLayoutUnit } from "../lib/layoutUnitFinder";
+import { routeNotificationItemClick } from "./appTabNotificationRouter";
 
 // Code Splitting - JIT Dynamic Imports for all application tabs (Rule 12)
 const GeneralTab = lazyWithRetry(() => import("./GeneralTab"), "GeneralTab");
@@ -2831,6 +2843,31 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
   const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups } = useEnrichedData();
   const appUsers = useAppStore(state => state.appUsers);
   const setActiveTab = useAppStore(state => state.setActiveTab);
+
+  // Idle-time prefetching for primary tabs so switching tabs has 0ms network delay
+  React.useEffect(() => {
+    let idleId: number | null = null;
+    const timer = setTimeout(() => {
+      const prefetchCoreTabs = () => {
+        import("./DetailTab").catch(() => {});
+        import("./GanttTab").catch(() => {});
+        import("./SummaryTab").catch(() => {});
+        import("./CalendarTab").catch(() => {});
+      };
+      if (typeof (window as any).requestIdleCallback === "function") {
+        idleId = (window as any).requestIdleCallback(prefetchCoreTabs, { timeout: 2500 });
+      } else {
+        prefetchCoreTabs();
+      }
+    }, 1500);
+
+    return () => {
+      clearTimeout(timer);
+      if (idleId !== null && typeof (window as any).cancelIdleCallback === "function") {
+        (window as any).cancelIdleCallback(idleId);
+      }
+    };
+  }, []);
 
   return (
     <div className="flex-grow flex flex-col min-h-0 relative z-[10]">
@@ -3070,98 +3107,24 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                     onQuickCompleteTask={notifActions.onQuickCompleteTask}
                     onSnoozeNotif={notifActions.onSnoozeNotif}
                     onClearStaleNotifs={() => notifActions.onClearStaleNotifs(activeNotifications)}
-                    onNotificationClick={(notif) => {
-                      notifActions.onNotificationClick(notif);
-
-                      if (notif.targetId && notif.targetType) {
-                        if (notif.targetType === "notification") {
-                          setNotificationFilterId(notif.targetId);
-                          handleTabChange("notification");
-                          return;
-                        }
-
-                        const canSeeLayout = currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.layout;
-                        const combinedProjects = (projects && projects.length > 0) ? projects : (useAppStore.getState().allProjectsForNotifs || []);
-                        const combinedTasks = (tasks && tasks.length > 0) ? tasks : (useAppStore.getState().allTasksForNotifs || []);
-                        const layoutMatch = canSeeLayout ? findProjectLayoutUnit(notif, combinedProjects, combinedTasks) : null;
-
-                        if (canSeeLayout && layoutMatch) {
-                          const targetYear = layoutMatch.year || (layoutMatch.project?.year ? String(layoutMatch.project.year) : (notif.projectYear ? String(notif.projectYear) : ''));
-                          if (targetYear && targetYear !== globalYearFilter && targetYear !== 'all') {
-                            setGlobalYearFilter(targetYear);
-                          }
-                          const targetStore = layoutMatch.store || notif.projectStore || 'HCM';
-                          if (targetStore && targetStore !== 'all') {
-                            setGlobalStoreFilter(targetStore);
-                          }
-                          const targetLocation = layoutMatch.location || 'L1';
-                          if (targetLocation && targetLocation !== 'ALL') {
-                            useAppStore.getState().setGlobalLocationFilter([targetLocation]);
-                          }
-
-                          const targetUnitCode = layoutMatch.unitCode || layoutMatch.project?.code || notif.projectCode || (notif.title && notif.title.includes(' - ') ? notif.title.split(' - ')[0].trim() : '');
-
-                          setLayoutTabFilters({
-                            store: targetStore,
-                            location: targetLocation,
-                            projectCode: targetUnitCode,
-                            sourceTaskId: layoutMatch.task?.id,
-                          });
-
-                          handleTabChange("layout");
-
-                          if (layoutMatch.isComment) {
-                            if (layoutMatch.isTaskComment && layoutMatch.task) {
-                              setEditingTask(layoutMatch.task);
-                              setIsReadOnlyModal(false);
-                              setModalInitialTab("chat");
-                              setIsTaskModalOpen(true);
-                            } else if (layoutMatch.project) {
-                              setEditingProject(layoutMatch.project);
-                              setIsReadOnlyModal(false);
-                              setModalInitialTab("chat");
-                              setIsProjectModalOpen(true);
-                            }
-                          }
-                          return;
-                        }
-
-                        if (notif.targetType === "task_delegation") {
-                          handleTabChange("detail");
-                          const targetProject =
-                            layoutMatch?.project ||
-                            combinedProjects.find(
-                              (p) =>
-                                (notif.projectCode && p.code?.toLowerCase() === notif.projectCode.toLowerCase()) ||
-                                String(p.id) === String(notif.targetId) ||
-                                String(p.no) === String(notif.targetId)
-                            );
-
-                          if (targetProject) {
-                            setEditingProject(targetProject);
-                            setIsReadOnlyModal(false);
-                            setModalInitialTab("chat");
-                            setIsProjectModalOpen(true);
-                          } else if (layoutMatch?.task) {
-                            setEditingTask(layoutMatch.task);
-                            setIsReadOnlyModal(false);
-                            setModalInitialTab("chat");
-                            setIsTaskModalOpen(true);
-                            return;
-                          }
-                        }
-
-                        executeDeepLinkRef.current?.(
-                          notif.targetType,
-                          notif.targetId,
-                          {
-                            store: notif.projectStore,
-                            year: String(notif.projectYear),
-                            code: notif.projectCode,
-                          }
-                        );
-                      }
-                    }}
+                    onNotificationClick={(notif) =>
+                      routeNotificationItemClick({
+                        notif,
+                        notifActions,
+                        projects,
+                        tasks,
+                        currentUser,
+                        userRole,
+                        permissionMatrix,
+                        globalYearFilter,
+                        setGlobalYearFilter,
+                        setGlobalStoreFilter,
+                        setLayoutTabFilters,
+                        setNotificationFilterId,
+                        handleTabChange,
+                        executeDeepLinkRef,
+                      })
+                    }
                   />
                 )}
 
@@ -3190,7 +3153,6 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
     </div>
   );
 });
-
 
 ================================================================================
 FILE: src/components/AppTour.tsx
@@ -39279,7 +39241,6 @@ export function GlobalFleetMonitorView() {
 ================================================================================
 FILE: src/components/Header.tsx
 ================================================================================
-import { useEnrichedData } from '../hooks/useEnrichedData';
 import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "../lib/storage";
 import { useAppStore } from "../store/useAppStore";
 import { doc } from 'firebase/firestore';
@@ -39348,24 +39309,55 @@ interface HeaderProps {
   onQuickNavigate?: (targetTab: TabId, target: any) => void;
 }
 
-export function Header({
+const HeaderClockWidget = React.memo(function HeaderClockWidget() {
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const day = currentTime.getDate().toString().padStart(2, '0');
+  const month = currentTime.toLocaleString('en-US', { month: 'short' });
+  const year = currentTime.getFullYear();
+  const hours = currentTime.getHours().toString().padStart(2, '0');
+  const mins = currentTime.getMinutes().toString().padStart(2, '0');
+  const secs = currentTime.getSeconds().toString().padStart(2, '0');
+  const compactTime = `${day} ${month} ${year} ${hours}:${mins}:${secs}`;
+
+  const fullTime = currentTime.toLocaleString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+
+  return (
+    <div
+      title={`Today: ${fullTime}`}
+      className="h-8 px-2.5 bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] rounded-lg text-xs font-mono font-bold border border-blue-100 dark:border-[#444446] hidden lg:flex items-center gap-1.5 shadow-2xs transition-colors shrink-0 select-none whitespace-nowrap"
+    >
+      <Clock className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-[#8ab4f8]" />
+      <span>{compactTime}</span>
+    </div>
+  );
+});
+
+export const Header = React.memo(function Header({
   cloudStatus, onLoginClick, onLogoutClick, onTabChange, activeTab, notificationCount = 0, onUndo, canUndo = false, hasDataToUndo = false, undoDescription, onRedo, canRedo = false, hasDataToRedo = false, redoDescription, onToggleTheme, isFocusMode = false, onToggleFocusMode, onPrintClick, isPrintPreview = false, onPrintPreviewToggle, onDeepLink, onQuickNavigate}: HeaderProps) {
 
-  const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups: delegationGroups } = useEnrichedData();
   const currentUser = useAppStore(state => state.currentUser)!;
   const permissionMatrix = useAppStore(state => state.permissionMatrix);
-  const locations = useAppStore(state => state.locations);
   const theme = useAppStore(state => state.theme);
-  const appUsers = useAppStore(state => state.appUsers);
-  const subAppUsers = useAppStore(state => state.subAppUsers);
-  const parties = useAppStore(state => state.parties);
   const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
   const menuRef = useRef<HTMLDivElement>(null);
-  const { language, setLanguage, t } = useLanguage();
+  const { t } = useLanguage();
   
   const currency = useAppStore(state => state.currency);
   const setCurrency = useAppStore(state => state.setCurrency);
@@ -39373,16 +39365,6 @@ export function Header({
   const canWriteImportCsv = currentUser?.role === 'admin' || !!permissionMatrix[currentUser?.role as AppRole]?.Write?.importCsv;
   const jpyRate = useAppStore(state => state.jpyRate);
   const usdRate = useAppStore(state => state.usdRate);
-
-  const ganttViewMode = useAppStore(state => state.ganttViewMode);
-  const setGanttViewMode = useAppStore(state => state.setGanttViewMode);
-  const ganttDayWidth = useAppStore(state => state.ganttDayWidth);
-  const setGanttDayWidth = useAppStore(state => state.setGanttDayWidth);
-  const ganttScaleInput = useAppStore(state => state.ganttScaleInput);
-  const setGanttScaleInput = useAppStore(state => state.setGanttScaleInput);
-  const isGanttWidthChanged = useAppStore(state => state.isGanttWidthChanged);
-  const setIsGanttWidthChanged = useAppStore(state => state.setIsGanttWidthChanged);
-  const saveGanttDayWidth = useAppStore(state => state.saveGanttDayWidth);
 
   const handleCurrencyClick = () => {
     let nextCurrency: 'VND' | 'JPY' | 'USD' = 'VND';
@@ -39417,11 +39399,6 @@ export function Header({
   };
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setIsMenuOpen(false);
@@ -39439,29 +39416,6 @@ export function Header({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
-
-  const formatCompactTime = (date: Date) => {
-    const day = date.getDate().toString().padStart(2, '0');
-    const month = date.toLocaleString('en-US', { month: 'short' });
-    const year = date.getFullYear();
-    const hours = date.getHours().toString().padStart(2, '0');
-    const mins = date.getMinutes().toString().padStart(2, '0');
-    const secs = date.getSeconds().toString().padStart(2, '0');
-    return `${day} ${month} ${year} ${hours}:${mins}:${secs}`;
-  };
-
-  const formatFullTime = (date: Date) => {
-    return date.toLocaleString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
-  };
 
   const statusColors = {
     online: "text-emerald-700 bg-emerald-50/90 border-emerald-200 dark:bg-[#1a3821] dark:border-[#265330] dark:text-emerald-400",
@@ -39716,13 +39670,7 @@ export function Header({
             )}
 
             {/* Realtime Clock Widget */}
-            <div 
-              title={`Today: ${formatFullTime(currentTime)}`}
-              className="h-8 px-2.5 bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] rounded-lg text-xs font-mono font-bold border border-blue-100 dark:border-[#444446] hidden lg:flex items-center gap-1.5 shadow-2xs transition-colors shrink-0 select-none whitespace-nowrap"
-            >
-              <Clock className="w-3.5 h-3.5 shrink-0 text-blue-600 dark:text-[#8ab4f8]" />
-              <span>{formatCompactTime(currentTime)}</span>
-            </div>
+            <HeaderClockWidget />
 
             {/* Ribbon Display Options on Header */}
             <RibbonDisplayMenu variant="header" className="hidden lg:inline-flex shrink-0" />
@@ -39748,8 +39696,7 @@ export function Header({
       )}
     </header>
   );
-}
-
+});
 
 ================================================================================
 FILE: src/components/HeaderParts/HeaderMenuDrawer.tsx
@@ -55271,7 +55218,6 @@ export function MultiSelect({ value, onChange, options, placeholder = 'Select...
 FILE: src/components/Navigation.tsx
 ================================================================================
 import { useAppStore } from '../store/useAppStore';
-import { useEnrichedData } from '../hooks/useEnrichedData';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   TabId,
@@ -55324,17 +55270,11 @@ const childTabMap: Record<ParentTabId, TabId[]> = {
   Help: ["manual", "csv_export", "picture_mapping"],
 };
 
-export function Navigation({
+export const Navigation = React.memo(function Navigation({
   activeTab, onTabChange}: NavigationProps) {
 
-  const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups: delegationGroups } = useEnrichedData();
   const currentUser = useAppStore(state => state.currentUser)!;
   const permissionMatrix = useAppStore(state => state.permissionMatrix);
-  const locations = useAppStore(state => state.locations);
-  const theme = useAppStore(state => state.theme);
-  const appUsers = useAppStore(state => state.appUsers);
-  const subAppUsers = useAppStore(state => state.subAppUsers);
-  const parties = useAppStore(state => state.parties);
 
   const isAdmin = currentUser.role === "admin";
   const role = (
@@ -55720,8 +55660,7 @@ export function Navigation({
       </div>
     </>
   );
-}
-
+});
 
 ================================================================================
 FILE: src/components/NotificationParts/NotificationFilterToolbar.tsx
@@ -88157,7 +88096,7 @@ export function useAppNotificationsSync({
   const permissionMatrix = useAppStore((state) => state.permissionMatrix);
 
   const mergedTasksForNotifs = useMemo(() => {
-    if (allTasksForNotifs.length === 0) return tasks;
+    if (allTasksForNotifs.length === 0 || allTasksForNotifs === tasks) return tasks;
     if (tasks.length === 0) return allTasksForNotifs;
     const map = new Map<string, Task>();
     for (let i = 0; i < allTasksForNotifs.length; i++) {
@@ -88174,9 +88113,17 @@ export function useAppNotificationsSync({
     return Array.from(map.values());
   }, [allTasksForNotifs, tasks]);
 
+  const isSameAsActiveYearScope =
+    (allProjectsForNotifs.length === 0 ||
+      allProjectsForNotifs === projects ||
+      allProjectsForNotifs.length === projects.length) &&
+    (allTasksForNotifs.length === 0 ||
+      allTasksForNotifs === tasks ||
+      allTasksForNotifs.length === tasks.length);
+
   const globalEnrichedProjectsForNotifs = useMemo(() => {
-    // Fast-path: When notification-specific arrays are empty, reuse already-computed enrichedProjects (0ms)
-    if (allProjectsForNotifs.length === 0 && allTasksForNotifs.length === 0) {
+    // Fast-path: When notification arrays match the active scope, reuse already-computed enrichedProjects (0ms)
+    if (isSameAsActiveYearScope) {
       return enrichedProjects;
     }
 
@@ -88256,11 +88203,18 @@ export function useAppNotificationsSync({
 
       return true;
     });
-  }, [allProjectsForNotifs, allTasksForNotifs, projects, tasks, currentUser, enrichedProjects]);
+  }, [
+    isSameAsActiveYearScope,
+    allProjectsForNotifs,
+    mergedTasksForNotifs,
+    projects,
+    currentUser,
+    enrichedProjects,
+  ]);
 
   const globalFilteredTasksForNotifs = useMemo(() => {
-    // Fast-path: Reuse filteredTasks when no separate notification arrays are active (0ms)
-    if (allProjectsForNotifs.length === 0 && allTasksForNotifs.length === 0) {
+    // Fast-path: Reuse filteredTasks when notification arrays match active scope (0ms)
+    if (isSameAsActiveYearScope) {
       return filteredTasks;
     }
 
@@ -88326,8 +88280,7 @@ export function useAppNotificationsSync({
 
     return visibleTasks;
   }, [
-    allProjectsForNotifs,
-    allTasksForNotifs,
+    isSameAsActiveYearScope,
     mergedTasksForNotifs,
     globalEnrichedProjectsForNotifs,
     currentUser,
@@ -88335,41 +88288,62 @@ export function useAppNotificationsSync({
   ]);
 
   useEffect(() => {
-    const notifs = calculateActiveNotifications(
-      globalEnrichedProjectsForNotifs,
-      globalFilteredTasksForNotifs,
-      notificationRules,
-      visibleDelegationGroups,
-      currentUser.id,
-      currentUser.username,
-      currentUser
-    );
-    setActiveNotifications(notifs);
+    let cancelled = false;
+    let idleHandle: number | null = null;
 
-    if (currentUser.readNotifs && currentUser.readNotifs.length > 300) {
-      const trimmed = currentUser.readNotifs.slice(-200);
-      safeSetItemLocal(`taka_read_notifs_${currentUser.id}`, JSON.stringify(trimmed));
-    }
+    const timer = setTimeout(() => {
+      const runNotificationCalc = () => {
+        if (cancelled) return;
+        const notifs = calculateActiveNotifications(
+          globalEnrichedProjectsForNotifs,
+          globalFilteredTasksForNotifs,
+          notificationRules,
+          visibleDelegationGroups,
+          currentUser.id,
+          currentUser.username,
+          currentUser
+        );
+        if (cancelled) return;
+        setActiveNotifications(notifs);
 
-    if (
-      currentUser.id !== "guest" &&
-      currentUser.notification !== false &&
-      "Notification" in window &&
-      Notification.permission === "granted"
-    ) {
-      const notifiedStr = safeGetItemLocal(`taka_notified_${currentUser.id}`);
-      const notifiedIds: string[] = notifiedStr ? JSON.parse(notifiedStr) : [];
-      let hasNew = false;
+        if (currentUser.readNotifs && currentUser.readNotifs.length > 300) {
+          const trimmed = currentUser.readNotifs.slice(-200);
+          safeSetItemLocal(`taka_read_notifs_${currentUser.id}`, JSON.stringify(trimmed));
+        }
 
-      notifs.forEach((notif) => {
-        if (!notifiedIds.includes(notif.id)) {
-          hasNew = true;
-          notifiedIds.push(notif.id);
+        if (
+          currentUser.id !== "guest" &&
+          currentUser.notification !== false &&
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
+          const notifiedStr = safeGetItemLocal(`taka_notified_${currentUser.id}`);
+          const notifiedIds: string[] = notifiedStr ? JSON.parse(notifiedStr) : [];
+          const notifiedSet = new Set(notifiedIds);
+          let hasNew = false;
 
-          if ("serviceWorker" in navigator) {
-            navigator.serviceWorker.ready
-              .then((registration) => {
-                registration.showNotification(notif.title, {
+          notifs.forEach((notif) => {
+            if (!notifiedSet.has(notif.id)) {
+              hasNew = true;
+              notifiedSet.add(notif.id);
+              notifiedIds.push(notif.id);
+
+              if ("serviceWorker" in navigator) {
+                navigator.serviceWorker.ready
+                  .then((registration) => {
+                    registration.showNotification(notif.title, {
+                      body: notif.message,
+                      icon: "/manifest-icon-192.maskable.png",
+                      data: {
+                        targetType: notif.targetType,
+                        targetId: notif.targetId,
+                        notificationId: notif.id,
+                      },
+                    });
+                  })
+                  .catch(console.error);
+              } else {
+                const n = new Notification(notif.title, {
                   body: notif.message,
                   icon: "/manifest-icon-192.maskable.png",
                   data: {
@@ -88378,32 +88352,36 @@ export function useAppNotificationsSync({
                     notificationId: notif.id,
                   },
                 });
-              })
-              .catch(console.error);
-          } else {
-            const n = new Notification(notif.title, {
-              body: notif.message,
-              icon: "/manifest-icon-192.maskable.png",
-              data: {
-                targetType: notif.targetType,
-                targetId: notif.targetId,
-                notificationId: notif.id,
-              },
-            });
-            n.onclick = (e) => {
-              e.preventDefault();
-              window.focus();
-              setNotificationFilterId(notif.id);
-              setActiveTab("notification");
-            };
+                n.onclick = (e) => {
+                  e.preventDefault();
+                  window.focus();
+                  setNotificationFilterId(notif.id);
+                  setActiveTab("notification");
+                };
+              }
+            }
+          });
+
+          if (hasNew) {
+            safeSetItemLocal(`taka_notified_${currentUser.id}`, JSON.stringify(notifiedIds));
           }
         }
-      });
+      };
 
-      if (hasNew) {
-        safeSetItemLocal(`taka_notified_${currentUser.id}`, JSON.stringify(notifiedIds));
+      if (typeof (window as any).requestIdleCallback === "function") {
+        idleHandle = (window as any).requestIdleCallback(runNotificationCalc, { timeout: 500 });
+      } else {
+        runNotificationCalc();
       }
-    }
+    }, 80);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (idleHandle !== null && typeof (window as any).cancelIdleCallback === "function") {
+        (window as any).cancelIdleCallback(idleHandle);
+      }
+    };
   }, [
     globalEnrichedProjectsForNotifs,
     globalFilteredTasksForNotifs,
@@ -88416,10 +88394,15 @@ export function useAppNotificationsSync({
   ]);
 
   const readNotifs = currentUser.readNotifs || [];
-  const unreadCount =
-    currentUser.notification === false
-      ? 0
-      : activeNotifications.filter((n) => !readNotifs.includes(n.id)).length;
+  const readNotifsSet = useMemo(() => new Set(readNotifs), [readNotifs]);
+  const unreadCount = useMemo(() => {
+    if (currentUser.notification === false) return 0;
+    let count = 0;
+    for (let i = 0; i < activeNotifications.length; i++) {
+      if (!readNotifsSet.has(activeNotifications[i].id)) count++;
+    }
+    return count;
+  }, [currentUser.notification, activeNotifications, readNotifsSet]);
 
   useEffect(() => {
     if ("setAppBadge" in navigator) {
@@ -97549,74 +97532,88 @@ export async function refreshProjectTasksAndDates(pId: string): Promise<void> {
   }
 }
 
+let bootstrapInFlightPromise: Promise<{
+  projectCount: number;
+  taskCount: number;
+  costCount: number;
+}> | null = null;
+
 /**
  * Nạp tức thì (Instant Boot ~5ms, 0 Read) dữ liệu từ Dexie Local-First Engine vào Zustand Store
  */
-export async function bootstrapLocalStore(): Promise<{
+export function bootstrapLocalStore(): Promise<{
   projectCount: number;
   taskCount: number;
   costCount: number;
 }> {
-  const start = performance.now();
-  try {
-    const store = useAppStore.getState();
-    const currentYear = store.globalYearFilter;
+  if (bootstrapInFlightPromise) return bootstrapInFlightPromise;
 
-    const [projects, tasks, costs, delegations] = await Promise.all([
-      getLocalProjects(currentYear),
-      store.isTasksRequested ? getLocalTasks(currentYear) : Promise.resolve([]),
-      store.isCostsRequested ? getLocalCosts(currentYear) : Promise.resolve([]),
-      store.isDelegationsRequested ? getLocalDelegations(currentYear) : Promise.resolve([]),
-    ]);
+  bootstrapInFlightPromise = (async () => {
+    const start = performance.now();
+    try {
+      const store = useAppStore.getState();
+      const currentYear = store.globalYearFilter;
 
-    if (projects.length > 0 && (!store.projects || store.projects.length === 0)) {
-      const normalizedProjects = projects.map((p) => ({
-        ...p,
-        taskCount:
-          Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
-            ? p.taskSummaries.length
-            : (p.taskCount ?? 0),
-      }));
-      store.setProjects(normalizedProjects);
-    }
-    if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
-      const zombieIndex = buildZombieProjectIndex(projects);
-      const cleanTasks = tasks.filter(
-        (t) => !isZombieTaskAgainstProjects(t, projects, zombieIndex)
-      );
-      store.setTasks(deduplicateTasks(cleanTasks, projects));
-    }
-    if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
-      store.setCosts(costs);
-    }
-    if (
-      delegations.length > 0 &&
-      store.isDelegationsRequested &&
-      (!store.delegationGroups || store.delegationGroups.length === 0)
-    ) {
-      store.setDelegationGroups(delegations);
-    }
+      const [projects, tasks, costs, delegations] = await Promise.all([
+        getLocalProjects(currentYear),
+        store.isTasksRequested ? getLocalTasks(currentYear) : Promise.resolve([]),
+        store.isCostsRequested ? getLocalCosts(currentYear) : Promise.resolve([]),
+        store.isDelegationsRequested ? getLocalDelegations(currentYear) : Promise.resolve([]),
+      ]);
 
-    const duration = Math.round(performance.now() - start);
-    if (projects.length > 0) {
-      usePerformanceStore
-        .getState()
-        .trackGetDoc('dexie_local_db', true, projects.length, `Local-First Boot in ${duration}ms`);
+      if (projects.length > 0 && (!store.projects || store.projects.length === 0)) {
+        const normalizedProjects = projects.map((p) => ({
+          ...p,
+          taskCount:
+            Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+              ? p.taskSummaries.length
+              : (p.taskCount ?? 0),
+        }));
+        store.setProjects(normalizedProjects);
+      }
+      if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
+        const zombieIndex = buildZombieProjectIndex(projects);
+        const cleanTasks = tasks.filter(
+          (t) => !isZombieTaskAgainstProjects(t, projects, zombieIndex)
+        );
+        store.setTasks(deduplicateTasks(cleanTasks, projects));
+      }
+      if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
+        store.setCosts(costs);
+      }
+      if (
+        delegations.length > 0 &&
+        store.isDelegationsRequested &&
+        (!store.delegationGroups || store.delegationGroups.length === 0)
+      ) {
+        store.setDelegationGroups(delegations);
+      }
+
+      const duration = Math.round(performance.now() - start);
+      if (projects.length > 0) {
+        usePerformanceStore
+          .getState()
+          .trackGetDoc('dexie_local_db', true, projects.length, `Local-First Boot in ${duration}ms`);
+      }
+
+      setTimeout(() => {
+        enforceStorageBudget().catch(() => {});
+      }, 1000);
+
+      return {
+        projectCount: projects.length,
+        taskCount: tasks.length,
+        costCount: costs.length,
+      };
+    } catch (err) {
+      console.warn('[backgroundSyncWorker] bootstrapLocalStore error:', err);
+      return { projectCount: 0, taskCount: 0, costCount: 0 };
+    } finally {
+      bootstrapInFlightPromise = null;
     }
+  })();
 
-    setTimeout(() => {
-      enforceStorageBudget().catch(() => {});
-    }, 1000);
-
-    return {
-      projectCount: projects.length,
-      taskCount: tasks.length,
-      costCount: costs.length,
-    };
-  } catch (err) {
-    console.warn('[backgroundSyncWorker] bootstrapLocalStore error:', err);
-    return { projectCount: 0, taskCount: 0, costCount: 0 };
-  }
+  return bootstrapInFlightPromise;
 }
 
 /**
@@ -118161,9 +118158,11 @@ import App from './App.tsx';
 import './index.css';
 import { LanguageProvider } from './lib/LanguageContext';
 import { checkAndCleanStorageQuota, cleanupBloatedStorage } from './lib/storage';
+import { bootstrapLocalStore } from './lib/backgroundSyncWorker';
 
-// Proactively verify & clean localStorage quota before React and Firebase mount
+// Proactively verify & clean localStorage quota and kick off Local-First IndexedDB hydration before React mounts
 checkAndCleanStorageQuota();
+bootstrapLocalStore().catch(() => {});
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any, errorInfo: any}> {
   constructor(props: {children: React.ReactNode}) {
@@ -118336,7 +118335,6 @@ createRoot(document.getElementById('root')!).render(
     </LanguageProvider>
   </ErrorBoundary>,
 );
-
 
 ================================================================================
 FILE: src/pages/api/r2-upload.ts
@@ -131213,4 +131211,66 @@ export const R2ConfigTabView: React.FC<R2ConfigTabViewProps> = ({
     </div>
   </div>
 );
+
+
+================================================================================
+FILE: index.html
+================================================================================
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      (function() {
+        window.addEventListener('error', function(e) {
+          var f = String((e && e.filename) || '');
+          var m = String((e && e.message) || '');
+          if (f.indexOf('@vite/client') !== -1 || m.indexOf('WebSocket') !== -1 || m.indexOf('vite') !== -1 || m.indexOf('HMR') !== -1) {
+            e.preventDefault();
+            e.stopPropagation();
+            return true;
+          }
+        }, true);
+        window.addEventListener('unhandledrejection', function(e) {
+          var r = String((e && (e.reason && (e.reason.message || e.reason))) || '');
+          if (r.indexOf('WebSocket') !== -1 || r.indexOf('vite') !== -1 || r.indexOf('HMR') !== -1) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }, true);
+      })();
+    </script>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Taka PM" />
+    <link rel="manifest" href="/manifest.json?v=5" />
+    <link rel="icon" type="image/png" href="/icon-192.png?v=5" />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/apple-touch-icon.png?v=5"
+    />
+    <link
+      rel="apple-touch-icon-precomposed"
+      sizes="180x180"
+      href="/apple-touch-icon.png?v=5"
+    />
+    <title>Takashimaya PM - cloud (offical) ver10042026</title>
+    <meta name="description" content="A comprehensive project management tool with cloud sync, budget tracking, and real-time notifications." />
+    <link rel="preconnect" href="https://unpkg.com" crossorigin />
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+    <script src="https://unpkg.com/@phosphor-icons/web" defer></script>
+    <meta property="og:title" content="Takashimaya PM - cloud (offical) ver10042026" />
+    <meta property="og:description" content="A comprehensive project management tool with cloud sync, budget tracking, and real-time notifications." />
+  </head>
+  <body>
+    <div id="root"></div>
+    <div id="portal-root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
 
