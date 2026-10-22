@@ -206,7 +206,7 @@ export function useCostsHydration({
         const deltaManaged =
           (hasLocalCosts && isClosedOrPastYear) ||
           yearHasZeroProjects ||
-          (DELTA_FIRST.costs && hasFreshCostMarker);
+          (DELTA_FIRST.costs && hasFreshCostMarker && hasLocalCosts);
         if (deltaManaged) {
           setIsCostsLoading(false);
           setCloudStatus("online");

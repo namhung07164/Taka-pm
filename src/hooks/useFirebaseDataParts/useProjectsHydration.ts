@@ -38,6 +38,8 @@ interface UseProjectsHydrationProps {
 
 // Các (người dùng, năm) thuộc nhóm năm phụ đã được nạp trong phiên này: không truy vấn server lặp lại
 const secondaryYearsFetched = new Set<string>();
+// Các tổ hợp (querySignature, year) đã được xác thực từ server trong phiên chạy hiện tại (kể cả khi năm đó thực sự có 0 dự án)
+const serverVerifiedProjectYearsInSession = new Set<string>();
 
 export function useProjectsHydration({
   querySignature,
@@ -45,6 +47,7 @@ export function useProjectsHydration({
   allowedStores,
 }: UseProjectsHydrationProps) {
   const globalYearFilter = useAppStore((state) => state.globalYearFilter);
+  const globalStoreFilter = useAppStore((state) => state.globalStoreFilter);
   const setCloudStatus = useAppStore((state) => state.setCloudStatus);
   const [recoveryTick] = useState(0);
 
@@ -220,11 +223,7 @@ export function useProjectsHydration({
   // Sleep/Wake & Network Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      // Preserve active onSnapshot listeners in projectsPool so Firestore SDK resumes via resumeToken (0 full-collection re-read)
-      hydrateProjectsFromLocal(
-        useAppStore.getState().globalYearFilter,
-        useAppStore.getState().globalStoreFilter
-      ).catch(() => {});
+      hydrateProjectsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
     };
 
     window.addEventListener('taka_sleep_wake_recovery', handleSleepWakeRecovery);
@@ -262,35 +261,54 @@ export function useProjectsHydration({
 
     const isAllYears = globalYearFilter === 'all' || globalYearFilter === 'ALL';
     const liveTargetYears = isAllYears ? PRIMARY_ACTIVE_YEARS : [globalYearFilter];
+    const normActiveStore =
+      globalStoreFilter && String(globalStoreFilter).toLowerCase() !== 'all'
+        ? String(globalStoreFilter).trim().toUpperCase()
+        : '';
 
     liveTargetYears.forEach(async (year) => {
-      if (projectsPool.current.has(year)) {
-        hydrateProjectsFromLocal(year, useAppStore.getState().globalStoreFilter).catch(() => {});
+      const sessionYearKey = `${querySignature}_${year}`;
+      const existingPoolEntry = projectsPool.current.get(year);
+      const isNoopSlot = Boolean((existingPoolEntry as any)?.__isDeltaNoop);
+
+      if (existingPoolEntry && !isNoopSlot) {
+        hydrateProjectsFromLocal(year).catch(() => {});
         return;
       }
-      // Reserve slot synchronously before awaiting IndexedDB to prevent duplicate listener attachment on rapid effect re-runs
-      projectsPool.current.set(year, () => {});
 
-      const localCount = await hydrateProjectsFromLocal(
-        year,
-        useAppStore.getState().globalStoreFilter
-      );
+      // Reserve slot synchronously before awaiting IndexedDB to prevent duplicate listener attachment
+      const tempNoop = () => {};
+      (tempNoop as any).__isDeltaNoop = true;
+      projectsPool.current.set(year, tempNoop);
+
+      const localCount = await hydrateProjectsFromLocal(year);
 
       const isClosedOrPastYear = Number(year) < new Date().getFullYear() - 1;
       const allStoreProjects = useAppStore.getState().projects || [];
-      const hasLocalData =
-        localCount > 0 ||
-        allStoreProjects.some((p) => String(p.year) === String(year));
+      const hasLocalDataForYear = allStoreProjects.some(
+        (p) => !p.isDeleted && String(p.year || '').trim() === String(year).trim()
+      );
+      const hasLocalDataForActiveStore = normActiveStore
+        ? allStoreProjects.some(
+            (p) =>
+              !p.isDeleted &&
+              String(p.year || '').trim() === String(year).trim() &&
+              String(p.store || '').trim().toUpperCase() === normActiveStore
+          )
+        : hasLocalDataForYear;
+
       const markers = await getLoadedMarkers();
       const hasFreshYearMarker = hasFreshMarker(markers, 'projects_year', year);
-      const isVerifiedEmptyOrLoadedYear =
-        hasLocalData ||
-        allStoreProjects.length > 0 ||
-        String(year) !== String(new Date().getFullYear());
+      const isVerifiedInThisSession = serverVerifiedProjectYearsInSession.has(sessionYearKey);
 
+      // Only skip Firestore when we ACTUALLY have local projects for the selected year + store,
+      // OR when this exact (querySignature, year) was already verified against Firestore server in this session.
       const deltaManaged =
-        (hasLocalData && isClosedOrPastYear) ||
-        (DELTA_FIRST.projects && hasFreshYearMarker && isVerifiedEmptyOrLoadedYear);
+        (hasLocalDataForActiveStore && isClosedOrPastYear) ||
+        (DELTA_FIRST.projects &&
+          hasFreshYearMarker &&
+          (hasLocalDataForActiveStore || isVerifiedInThisSession));
+
       if (deltaManaged) {
         setCloudStatus('online');
         usePerformanceStore
@@ -343,12 +361,15 @@ export function useProjectsHydration({
           setCloudStatus('online');
 
           if (!fromCache) {
+            serverVerifiedProjectYearsInSession.add(sessionYearKey);
             markLoaded('projects_year', year).catch(() => {});
           }
 
           if (DELTA_FIRST.projects && !fromCache) {
             const u = projectsPool.current.get(year);
-            projectsPool.current.set(year, () => {});
+            const doneNoop = () => {};
+            (doneNoop as any).__isDeltaNoop = true;
+            projectsPool.current.set(year, doneNoop);
             u?.();
             usePerformanceStore.getState().unregisterListener(`taka_projects_${year}`);
           }
@@ -370,12 +391,9 @@ export function useProjectsHydration({
         if (secondaryYearsFetched.has(secKey)) return;
         secondaryYearsFetched.add(secKey);
         try {
-          const localCount = await hydrateProjectsFromLocal(
-            year,
-            useAppStore.getState().globalStoreFilter
-          );
+          const localCount = await hydrateProjectsFromLocal(year);
           const markers = await getLoadedMarkers();
-          if (localCount > 0 || hasFreshMarker(markers, 'projects_year', year)) {
+          if (localCount > 0 && hasFreshMarker(markers, 'projects_year', year)) {
             return;
           }
 
@@ -402,6 +420,7 @@ export function useProjectsHydration({
           }
 
           if (fetchedFromServer) {
+            serverVerifiedProjectYearsInSession.add(secKey);
             markLoaded('projects_year', year).catch(() => {});
           }
 
@@ -437,6 +456,7 @@ export function useProjectsHydration({
     userRole,
     allowedStores,
     globalYearFilter,
+    globalStoreFilter,
     batchProjectsUpdate,
     setCloudStatus,
     recoveryTick,

@@ -128,13 +128,14 @@ export function bootstrapLocalStore(): Promise<{
  */
 export async function hydrateProjectsFromLocal(
   year?: string,
-  storeFilter?: string
+  _storeFilter?: string
 ): Promise<number> {
   try {
     const store = useAppStore.getState();
     const targetYear = year || store.globalYearFilter;
 
-    const localProjects = await getLocalProjects(targetYear, storeFilter);
+    // Always hydrate all stores for targetYear from Dexie so switching store (HCM <-> HN) has 0ms data ready
+    const localProjects = await getLocalProjects(targetYear);
     const currentProjects = store.projects || [];
     const mergedMap = new Map<string, Project>();
 

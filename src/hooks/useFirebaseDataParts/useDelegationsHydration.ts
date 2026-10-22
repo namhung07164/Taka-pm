@@ -236,7 +236,7 @@ export function useDelegationsHydration({
         const deltaManaged =
           (hasLocalDelegations && isClosedOrPastYear) ||
           yearHasZeroProjects ||
-          (DELTA_FIRST.delegations && hasFreshDelMarker);
+          (DELTA_FIRST.delegations && hasFreshDelMarker && hasLocalDelegations);
         if (deltaManaged) {
           setIsDelegationsLoading(false);
           setCloudStatus("online");
