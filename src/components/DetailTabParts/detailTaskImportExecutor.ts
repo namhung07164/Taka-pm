@@ -29,7 +29,7 @@ export async function executeImportTasks({
   tasks,
   appUsers,
   currentUser
-}: ExecuteImportTasksParams): Promise<{ count: number }> {
+}: ExecuteImportTasksParams): Promise<{ count: number; projectCount?: number }> {
   // Build fast multi-index maps for existing tasks
   const existingTasksById = new Map<string, Task>();
   const existingTasksByName = new Map<string, Task>();
@@ -64,8 +64,8 @@ export async function executeImportTasks({
     const sortedItems = [...items].sort((a, b) => {
       const codeA = String(a.rowData.taskCodePhu || '').trim();
       const codeB = String(b.rowData.taskCodePhu || '').trim();
-      const numMatchA = codeA.match(/-(\d+)$/);
-      const numMatchB = codeB.match(/-(\d+)$/);
+      const numMatchA = codeA.match(/[-#](\d+)$/);
+      const numMatchB = codeB.match(/[-#](\d+)$/);
       if (numMatchA && numMatchB) {
         const numA = parseInt(numMatchA[1], 10);
         const numB = parseInt(numMatchB[1], 10);
@@ -97,19 +97,12 @@ export async function executeImportTasks({
       const taskCodePhu = `${exactProjectCode}#${taskOrderIndex + 1}`;
 
       const canonicalPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
-      const pCode = exactProjectCode.toLowerCase();
       const rawName = String(t.name || '').trim().toLowerCase();
       const normName = normalizeTaskNameForComparison(t.name);
       const nameKey = `${canonicalPrjKey}:::${rawName}`;
       const normKey = `${canonicalPrjKey}:::norm:::${normName}`;
       const codeKey = `${canonicalPrjKey}:::code:::${String(taskCodePhu).trim().toLowerCase()}`;
 
-      // Match against existing tasks in priority:
-      // 1. Matched in current import batch (by exact name, norm name, or code)
-      // 2. By ID
-      // 3. By exact project + name
-      // 4. By normalized project + name
-      // 5. By project + taskCodePhu
       let existing: Task | undefined = processedImportTasksMap.get(nameKey) ||
                                        (normName ? processedImportTasksMap.get(normKey) : undefined) ||
                                        (taskCodePhu ? processedImportTasksMap.get(codeKey) : undefined);
@@ -281,13 +274,41 @@ export async function executeImportTasks({
     });
   });
 
-  // Resolve parent-child hierarchy across imported tasks and existing tasks
+  // Resolve parent-child hierarchy across imported tasks and existing tasks in O(1) via pre-built maps
   const lookupTaskMap = new Map<string, Task>();
-  tasks.forEach(t => lookupTaskMap.set(t.id, t));
-  tasksToImport.forEach(t => lookupTaskMap.set(t.id, t));
+  const parentByCode = new Map<string, Task>();
+  const parentBySuffix = new Map<string, Task>();
+  const parentByOrder = new Map<string, Task>();
+  const parentByName = new Map<string, Task>();
+
+  const buildScopeKey = (tk: Partial<Task>) =>
+    `${String(tk.projectCode || '').trim().toLowerCase()}|${String(tk.projectYear ?? '').trim()}|${String(tk.projectStore || '').trim().toLowerCase()}`;
+
+  const indexTaskForParentLookup = (pt: Task) => {
+    lookupTaskMap.set(pt.id, pt);
+    const scope = buildScopeKey(pt);
+    if (pt.taskCodePhu) {
+      const cLower = String(pt.taskCodePhu).trim().toLowerCase();
+      parentByCode.set(`${scope}:::${cLower}`, pt);
+      const suffixMatch = cLower.match(/[#-](\d+)$/);
+      if (suffixMatch) {
+        parentBySuffix.set(`${scope}:::${suffixMatch[1]}`, pt);
+      }
+    }
+    if (pt.orderIndex !== undefined && pt.orderIndex !== null) {
+      parentByOrder.set(`${scope}:::${pt.orderIndex}`, pt);
+    }
+    if (pt.name) {
+      parentByName.set(`${scope}:::${String(pt.name).trim().toLowerCase()}`, pt);
+    }
+  };
+
+  tasks.forEach(indexTaskForParentLookup);
+  tasksToImport.forEach(indexTaskForParentLookup);
 
   tasksToImport.forEach(t => {
     let resolvedParentId: string | undefined = undefined;
+    const scope = buildScopeKey(t);
 
     if (t.parentTaskId && lookupTaskMap.has(t.parentTaskId)) {
       resolvedParentId = t.parentTaskId;
@@ -296,28 +317,18 @@ export async function executeImportTasks({
       const cleanNumMatch = pCode.match(/^#?(\d+)$/);
       const targetIndex = cleanNumMatch ? parseInt(cleanNumMatch[1], 10) - 1 : -1;
 
-      const matchedParent = Array.from(lookupTaskMap.values()).find(
-        pt => pt.projectCode === t.projectCode &&
-              (pt.projectYear == t.projectYear || (!pt.projectYear && !t.projectYear)) &&
-              (pt.projectStore == t.projectStore || (!pt.projectStore && !t.projectStore)) &&
-              (
-                String(pt.taskCodePhu || '').trim().toLowerCase() === pCode ||
-                String(pt.id).toLowerCase() === pCode ||
-                (cleanNumMatch && String(pt.taskCodePhu || '').trim().toLowerCase().endsWith(`#${cleanNumMatch[1]}`)) ||
-                (targetIndex >= 0 && pt.orderIndex === targetIndex)
-              )
-      );
+      const matchedParent =
+        parentByCode.get(`${scope}:::${pCode}`) ||
+        lookupTaskMap.get(String((t as any).parentTaskCode).trim()) ||
+        (cleanNumMatch ? parentBySuffix.get(`${scope}:::${cleanNumMatch[1]}`) : undefined) ||
+        (targetIndex >= 0 ? parentByOrder.get(`${scope}:::${targetIndex}`) : undefined);
+
       if (matchedParent && matchedParent.id !== t.id) {
         resolvedParentId = matchedParent.id;
       }
     } else if ((t as any).parentTaskName) {
       const pName = String((t as any).parentTaskName).trim().toLowerCase();
-      const matchedParent = Array.from(lookupTaskMap.values()).find(
-        pt => pt.projectCode === t.projectCode &&
-              (pt.projectYear == t.projectYear || (!pt.projectYear && !t.projectYear)) &&
-              (pt.projectStore == t.projectStore || (!pt.projectStore && !t.projectStore)) &&
-              String(pt.name || '').trim().toLowerCase() === pName
-      );
+      const matchedParent = parentByName.get(`${scope}:::${pName}`);
       if (matchedParent && matchedParent.id !== t.id) {
         resolvedParentId = matchedParent.id;
       }
@@ -362,32 +373,106 @@ export async function executeImportTasks({
   const healed = healAllTasksPredecessors(rawTasksToSave, projects);
   const finalTasksToSave = healed.updatedTasks;
 
-  // Optimistic update
+  // Optimistic update (0ms UI)
   useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
 
-  // Sync project summaries
+  // Compute & sync project summaries in memory BEFORE overwriting store.projects
   const finalFullTasksList = Array.from(allTasksMap.values());
   const affectedProjects = findAffectedProjects(finalTasksToSave, projects);
   const delegationGroups = useAppStore.getState().delegationGroups;
   const currentProjects = useAppStore.getState().projects;
+  const computedByProjectId = new Map<string, ReturnType<typeof calculateProjectComputedDates>>();
+  const touchedProjectsForPersistence: Project[] = [];
+
   const updatedProjects = currentProjects.map(proj => {
     const isAffected = affectedProjects.some(ap => ap.id === proj.id);
     if (!isAffected) return proj;
     const pTasks = getTasksForProject(proj, finalFullTasksList);
     const computed = calculateProjectComputedDates(proj, pTasks, delegationGroups);
-    return { ...proj, ...computed };
+    computedByProjectId.set(proj.id, computed);
+    const nextProj = { ...proj, ...computed };
+    touchedProjectsForPersistence.push(nextProj);
+    return nextProj;
   });
   useAppStore.getState().setProjects(updatedProjects);
 
-  // Save to Firestore
-  const activeUser = useAppStore.getState().currentUser || currentUser;
-  await batchSaveTasksToFirestore(finalTasksToSave, activeUser);
-
-  for (const p of affectedProjects) {
-    const pTasks = getTasksForProject(p, finalFullTasksList);
-    const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);
-    await syncProjectDatesToFirestore(p.id, computed);
+  // Persist affected projects to LocalDB (Dexie) immediately
+  if (touchedProjectsForPersistence.length > 0) {
+    import('../../lib/localDb')
+      .then(({ bulkPersistProjects }) => bulkPersistProjects(touchedProjectsForPersistence))
+      .catch(() => {});
   }
+
+  // Save tasks & project summaries to Firestore + Delta bus in parallel chunks
+  const activeUser = useAppStore.getState().currentUser || currentUser;
+
+  const syncProjectsBatchPromise = (async () => {
+    if (affectedProjects.length === 0) return;
+    const { recordBatchDeltas } = await import('../../lib/deltaSyncService');
+    const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+    const nowIso = new Date().toISOString();
+    const PROJ_BATCH_LIMIT = 100;
+
+    for (let i = 0; i < affectedProjects.length; i += PROJ_BATCH_LIMIT) {
+      const projChunk = affectedProjects.slice(i, i + PROJ_BATCH_LIMIT).filter(p => Boolean(p?.id));
+      if (projChunk.length === 0) continue;
+
+      markExplicitDelta(projChunk.map(p => ({ docId: p.id, collectionName: 'taka_projects' as const })));
+      const pBatch = writeBatch(db);
+      const projDeltaItems: any[] = [];
+
+      projChunk.forEach(p => {
+        const computed = computedByProjectId.get(p.id);
+        if (!computed) return;
+        const cleanSummaries = (computed.taskSummaries || []).map((ts: any) => {
+          const item: Record<string, any> = {};
+          for (const [k, v] of Object.entries(ts)) {
+            if (v !== undefined) item[k] = v;
+          }
+          return item;
+        });
+        const updatePayload: Record<string, any> = {
+          updatedAt: nowIso,
+          ...(computed.computedTakStart !== undefined ? { computedTakStart: computed.computedTakStart } : {}),
+          ...(computed.computedTakCompl !== undefined ? { computedTakCompl: computed.computedTakCompl } : {}),
+          ...(computed.computedOpening !== undefined ? { computedOpening: computed.computedOpening } : {}),
+          ...(computed.computedPlanProgress !== undefined ? { computedPlanProgress: computed.computedPlanProgress } : {}),
+          ...(computed.computedActProgress !== undefined ? { computedActProgress: computed.computedActProgress } : {}),
+          ...(computed.taskCount !== undefined ? { taskCount: computed.taskCount } : {}),
+          taskSummaries: cleanSummaries,
+        };
+
+        const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', p.id);
+        pBatch.set(pRef, updatePayload, { merge: true });
+        projDeltaItems.push({
+          docId: p.id,
+          collectionName: 'taka_projects' as const,
+          action: 'update' as const,
+          isPatch: true,
+          data: updatePayload,
+          year: p.year ? String(p.year) : undefined,
+        });
+      });
+
+      try {
+        await pBatch.commit();
+        await recordBatchDeltas(projDeltaItems, activeUser?.username || activeUser?.id);
+      } catch (err) {
+        console.warn('[detailTaskImportExecutor] Project summary batch commit failed:', err);
+      }
+    }
+  })();
+
+  const cloudSyncPromise = Promise.all([
+    batchSaveTasksToFirestore(finalTasksToSave, activeUser),
+    syncProjectsBatchPromise,
+  ]);
+
+  // Wait up to 2.5s for fast cloud commit; if mass import is very large, let remaining chunks finish in background without blocking the UI notification
+  await Promise.race([
+    cloudSyncPromise,
+    new Promise<void>(resolve => setTimeout(resolve, 2500)),
+  ]);
 
   if (finalTasksToSave.length > 0) {
     undoManager.push({
@@ -405,5 +490,6 @@ export async function executeImportTasks({
     });
   }
 
-  return { count: tasksToImport.length };
+  return { count: tasksToImport.length, projectCount: affectedProjects.length };
 }
+

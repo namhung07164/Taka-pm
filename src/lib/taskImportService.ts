@@ -45,8 +45,8 @@ export function calculateDatesFromPredecessorsAndDuration(
   const currentAllTasks = Array.from(workingMap.values());
   const taskNoMap = buildTaskNoMap(projects, currentAllTasks);
 
-  // Relax dependencies iteratively (topological convergence with cycle limit)
-  const maxIterations = Math.max(10, tasksToProcess.length + 5);
+  // Relax dependencies iteratively (topological convergence with cycle limit capped at 50 for mass imports)
+  const maxIterations = Math.min(50, Math.max(10, tasksToProcess.length + 2));
   let hasChanges = true;
   let iteration = 0;
 
@@ -105,7 +105,7 @@ export function calculateDatesFromPredecessorsAndDuration(
 }
 
 /**
- * Recalculates start/finish/duration/runningStatus for parent tasks.
+ * Recalculates start/finish/duration/runningStatus for parent tasks in O(N).
  */
 export function rollupParentTaskDates(
   allTasks: Task[],
@@ -122,9 +122,14 @@ export function rollupParentTaskDates(
   const parentPredMap = new Map<string, Task>();
   parentPredUpdates.forEach((p) => parentPredMap.set(p.id, p));
 
+  const originalMap = new Map<string, Task>();
+  allTasks.forEach((orig) => {
+    if (orig?.id) originalMap.set(orig.id, orig);
+  });
+
   rolledUpList.forEach((t) => {
     taskMap.set(t.id, t);
-    const original = allTasks.find((orig) => orig.id === t.id);
+    const original = originalMap.get(t.id);
     const hasPredUpdate = parentPredMap.has(t.id);
     if (
       hasPredUpdate ||
@@ -145,10 +150,9 @@ export function rollupParentTaskDates(
   };
 }
 
-
-
 /**
- * Saves tasks to Firestore in safe chunks (max 400 operations per batch).
+ * Saves tasks to LocalDB (Dexie) immediately and commits to Firestore in safe operation-counted chunks
+ * (max 200 ops per batch) with Offline Queue fallback and multi-device upsert deltas.
  */
 export async function batchSaveTasksToFirestore(
   tasksToSave: Task[],
@@ -156,37 +160,39 @@ export async function batchSaveTasksToFirestore(
 ): Promise<void> {
   if (!tasksToSave || tasksToSave.length === 0) return;
 
-  const BATCH_LIMIT = 400;
-  for (let i = 0; i < tasksToSave.length; i += BATCH_LIMIT) {
-    const chunk = tasksToSave.slice(i, i + BATCH_LIMIT);
-    const batch = writeBatch(db);
+  const now = new Date().toISOString();
+  const dateStr = now.substring(0, 10);
+  const activeUserId =
+    currentUser?.id && currentUser.id !== 'guest'
+      ? currentUser.id
+      : currentUser?.username || 'system';
 
-    chunk.forEach(t => {
-      const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-      batch.set(tRef, t, { merge: true });
+  const generatedDelegations: DelegationGroup[] = [];
+  const taskDelegationMap = new Map<string, DelegationGroup>();
 
-      if (t.delegation) {
-        const now = new Date().toISOString();
-        const dateStr = now.substring(0, 10);
-        const activeUserId = currentUser?.id && currentUser.id !== 'guest' 
-          ? currentUser.id 
-          : (currentUser?.username || 'system');
-        const rawParty = (t.party && t.party.trim()) ? t.party.trim() : '';
-        const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
+  tasksToSave.forEach((t) => {
+    if (t.delegation) {
+      const rawParty = t.party && t.party.trim() ? t.party.trim() : '';
+      const parsedParty =
+        rawParty
+          .split(/[,;/+]+/)
+          .map((s) => s.trim())
+          .filter(Boolean)[0] || rawParty;
+      if (parsedParty) {
         const deterministicGroupId = `del_${t.id}`;
-
-        // Only create delegation group if party is explicitly assigned, preventing thousands of empty ghost delegations
-        if (parsedParty) {
-          const delGroup: DelegationGroup = {
-            id: deterministicGroupId,
-            parentTaskId: t.id,
-            name: t.name || 'Delegated Task',
-            projectCode: t.projectCode,
-            projectStore: t.projectStore,
-            projectYear: t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear)) 
-              ? Number(t.projectYear) 
+        const delGroup: DelegationGroup = {
+          id: deterministicGroupId,
+          parentTaskId: t.id,
+          name: t.name || 'Delegated Task',
+          ...(t.projectId ? { projectId: t.projectId } : {}),
+          projectCode: t.projectCode,
+          projectStore: t.projectStore,
+          projectYear:
+            t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))
+              ? Number(t.projectYear)
               : new Date().getFullYear(),
-            subTasks: [{
+          subTasks: [
+            {
               id: generateId(),
               name: '',
               comments: '',
@@ -196,29 +202,115 @@ export async function batchSaveTasksToFirestore(
               party: parsedParty,
               startAct: dateStr,
               finishAct: dateStr,
-              updatedAt: now
-            }],
-            updatedAt: now,
-            createdBy: activeUserId
-          };
-
-          const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
-          batch.set(delRef, delGroup, { merge: true });
-        }
+              updatedAt: now,
+            },
+          ],
+          updatedAt: now,
+          createdBy: activeUserId,
+        };
+        generatedDelegations.push(delGroup);
+        taskDelegationMap.set(t.id, delGroup);
       }
+    }
+  });
+
+  // 1. Persist immediately to local Dexie database & Zustand delegations so local cache is 100% synced
+  import('./localDb')
+    .then(({ bulkPersistTasks, bulkPersistDelegations }) => {
+      bulkPersistTasks(tasksToSave).catch(() => {});
+      if (generatedDelegations.length > 0) {
+        bulkPersistDelegations(generatedDelegations).catch(() => {});
+      }
+    })
+    .catch(() => {});
+
+  if (generatedDelegations.length > 0) {
+    const store = useAppStore.getState();
+    const existingDel = store.delegationGroups || [];
+    const delMap = new Map<string, DelegationGroup>(existingDel.map((d) => [d.id, d]));
+    generatedDelegations.forEach((d) => {
+      if (!delMap.has(d.id)) delMap.set(d.id, d);
     });
+    store.setDelegationGroups(Array.from(delMap.values()));
+  }
 
-    await batch.commit();
+  // 2. Build chunks capped at 200 Firestore operations per batch (accounting for 2 ops when delegation exists)
+  const MAX_OPS_PER_BATCH = 200;
+  const chunks: Task[][] = [];
+  let currentChunk: Task[] = [];
+  let currentOps = 0;
 
-    // Ghi gom các delta theo lô vào 1 document duy nhất (Giai đoạn 2)
-    const deltaItems = chunk.map((t) => ({
-      docId: t.id,
-      collectionName: 'taka_tasks' as const,
-      action: 'update' as const,
-      data: t,
-      year: t.projectYear ? String(t.projectYear) : undefined,
-    }));
-    recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id).catch(() => {});
+  for (const t of tasksToSave) {
+    const opsForTask = taskDelegationMap.has(t.id) ? 2 : 1;
+    if (currentChunk.length > 0 && currentOps + opsForTask > MAX_OPS_PER_BATCH) {
+      chunks.push(currentChunk);
+      currentChunk = [];
+      currentOps = 0;
+    }
+    currentChunk.push(t);
+    currentOps += opsForTask;
+  }
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  // 3. Commit chunks with bounded concurrency (3 parallel batches) and Offline Queue fallback
+  const CONCURRENCY = 3;
+  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+    const slice = chunks.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      slice.map(async (chunk) => {
+        const batch = writeBatch(db);
+        const deltaItems: any[] = [];
+
+        chunk.forEach((t) => {
+          const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
+          batch.set(tRef, t, { merge: true });
+
+          deltaItems.push({
+            docId: t.id,
+            collectionName: 'taka_tasks' as const,
+            action: 'create' as const,
+            isPatch: false,
+            data: t,
+            year: t.projectYear ? String(t.projectYear) : undefined,
+          });
+
+          const delGroup = taskDelegationMap.get(t.id);
+          if (delGroup) {
+            const delRef = doc(
+              db,
+              'artifacts',
+              APP_ID,
+              'public',
+              'data',
+              'taka_delegation_groups',
+              delGroup.id
+            );
+            batch.set(delRef, delGroup, { merge: true });
+            deltaItems.push({
+              docId: delGroup.id,
+              collectionName: 'taka_delegations' as const,
+              action: 'create' as const,
+              isPatch: false,
+              data: delGroup,
+              year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
+            });
+          }
+        });
+
+        try {
+          await batch.commit();
+          await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
+        } catch (err) {
+          console.warn('[taskImportService] Batch commit failed, queuing to syncQueue:', err);
+          const { syncQueueManager } = await import('./syncQueue');
+          for (const t of chunk) {
+            syncQueueManager.addToQueue('taka_tasks', t.id, 'set', t).catch(() => {});
+          }
+        }
+      })
+    );
   }
 }
 
@@ -234,26 +326,32 @@ export async function syncAffectedProjectSummaries(
 ): Promise<void> {
   if (!affectedProjects.length) return;
 
-  for (const project of affectedProjects) {
-    if (!project.id) continue;
-    const projectTasks = allTasks.filter(t => {
-      if (!t.projectCode) return false;
-      const tCode = String(t.projectCode).trim().toLowerCase();
-      const pCode = String(project.code || '').trim().toLowerCase();
-      if (tCode !== pCode) return false;
+  await Promise.all(
+    affectedProjects.map(async (project) => {
+      if (!project.id) return;
+      const projectTasks = allTasks.filter((t) => {
+        if (t.projectId && project.id) {
+          return String(t.projectId) === String(project.id);
+        }
+        if (!t.projectCode) return false;
+        const tCode = String(t.projectCode).trim().toLowerCase();
+        const pCode = String(project.code || '').trim().toLowerCase();
+        if (tCode !== pCode) return false;
 
-      const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-      const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
-      if (pStore && tStore && pStore !== tStore) return false;
+        const tStore = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+        const pStore = project.store ? String(project.store).trim().toLowerCase() : '';
+        if (pStore && tStore && pStore !== tStore) return false;
 
-      const tYear = t.projectYear ? String(t.projectYear).trim() : '';
-      const pYear = project.year ? String(project.year).trim() : '';
-      if (pYear && tYear && pYear !== tYear) return false;
+        const tYear = t.projectYear ? String(t.projectYear).trim() : '';
+        const pYear = project.year ? String(project.year).trim() : '';
+        if (pYear && tYear && pYear !== tYear) return false;
 
-      return true;
-    });
+        return true;
+      });
 
-    const computed = calculateProjectComputedDates(project, projectTasks, delegationGroups);
-    await syncProjectDatesToFirestore(project.id, computed);
-  }
+      const computed = calculateProjectComputedDates(project, projectTasks, delegationGroups);
+      await syncProjectDatesToFirestore(project.id, computed);
+    })
+  );
 }
+

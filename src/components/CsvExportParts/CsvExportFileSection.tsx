@@ -1,4 +1,5 @@
 import React, { FC } from 'react';
+import { Cloud } from 'lucide-react';
 
 interface CsvExportFileSectionProps {
   file: File | null;
@@ -12,6 +13,7 @@ interface CsvExportFileSectionProps {
   onCancelTemplate: () => void;
   activeTab: string;
   error: string;
+  onOpenR2Modal?: () => void;
 }
 
 export const CsvExportFileSection: React.FC<CsvExportFileSectionProps> = ({
@@ -26,6 +28,7 @@ export const CsvExportFileSection: React.FC<CsvExportFileSectionProps> = ({
   onCancelTemplate,
   activeTab,
   error,
+  onOpenR2Modal,
 }) => {
   return (
     <div className="space-y-6">
@@ -36,14 +39,26 @@ export const CsvExportFileSection: React.FC<CsvExportFileSectionProps> = ({
             <i className="ph ph-upload-simple text-blue-600 dark:text-blue-400 text-lg"></i>{' '}
             1. Tải lên dữ liệu gốc
           </h2>
-          {file && (
-            <button
-              onClick={onCancelUpload}
-              className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors cursor-pointer"
-            >
-              <i className="ph-fill ph-x-circle text-sm"></i> Đổi file
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {onOpenR2Modal && (
+              <button
+                type="button"
+                onClick={onOpenR2Modal}
+                className="text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1 font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-all cursor-pointer active:scale-95"
+                title="Mở thư mục mẫu trên Cloud R2"
+              >
+                <Cloud className="w-3.5 h-3.5" /> Thư Mục R2
+              </button>
+            )}
+            {file && (
+              <button
+                onClick={onCancelUpload}
+                className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors cursor-pointer"
+              >
+                <i className="ph-fill ph-x-circle text-sm"></i> Đổi file
+              </button>
+            )}
+          </div>
         </div>
         <label className="border-2 border-dashed border-slate-200 dark:border-[#333336] rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 dark:hover:bg-[#333336]/50 transition-colors group">
           <i

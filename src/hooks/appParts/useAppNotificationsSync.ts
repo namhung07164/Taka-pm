@@ -31,6 +31,24 @@ export function useAppNotificationsSync({
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const permissionMatrix = useAppStore((state) => state.permissionMatrix);
 
+  const mergedTasksForNotifs = useMemo(() => {
+    if (allTasksForNotifs.length === 0) return tasks;
+    if (tasks.length === 0) return allTasksForNotifs;
+    const map = new Map<string, Task>();
+    for (let i = 0; i < allTasksForNotifs.length; i++) {
+      const t = allTasksForNotifs[i];
+      if (t?.id && !t.isDeleted) map.set(t.id, t);
+    }
+    for (let i = 0; i < tasks.length; i++) {
+      const t = tasks[i];
+      if (t?.id) {
+        if (t.isDeleted) map.delete(t.id);
+        else map.set(t.id, t);
+      }
+    }
+    return Array.from(map.values());
+  }, [allTasksForNotifs, tasks]);
+
   const globalEnrichedProjectsForNotifs = useMemo(() => {
     // Fast-path: When notification-specific arrays are empty, reuse already-computed enrichedProjects (0ms)
     if (allProjectsForNotifs.length === 0 && allTasksForNotifs.length === 0) {
@@ -38,7 +56,7 @@ export function useAppNotificationsSync({
     }
 
     const baseProjects = allProjectsForNotifs.length > 0 ? allProjectsForNotifs : projects;
-    const baseTasks = allTasksForNotifs.length > 0 ? allTasksForNotifs : tasks;
+    const baseTasks = mergedTasksForNotifs;
     const enriched = enrichProjects(baseProjects, baseTasks);
     if (currentUser.role === "admin") return enriched;
 
@@ -121,7 +139,7 @@ export function useAppNotificationsSync({
       return filteredTasks;
     }
 
-    const baseTasks = allTasksForNotifs.length > 0 ? allTasksForNotifs : tasks;
+    const baseTasks = mergedTasksForNotifs;
     if (currentUser.role === "admin") return baseTasks;
 
     // O(1) Pre-indexed map of project key -> project party list (Rule 7)
@@ -185,7 +203,7 @@ export function useAppNotificationsSync({
   }, [
     allProjectsForNotifs,
     allTasksForNotifs,
-    tasks,
+    mergedTasksForNotifs,
     globalEnrichedProjectsForNotifs,
     currentUser,
     filteredTasks,

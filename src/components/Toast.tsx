@@ -17,7 +17,7 @@ export function Toast({ title, message, type = 'info', onClose }: ToastProps) {
       onClose();
     }, 5000);
     return () => clearTimeout(timer);
-  }, [onClose]);
+  }, [onClose, title, message, type]);
 
   const typeConfig = {
     error: {

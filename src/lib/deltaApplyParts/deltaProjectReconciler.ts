@@ -220,7 +220,7 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
         taskSummaries: currentSummaries,
         taskCount: currentSummaries.length,
       };
-    } else if (action === 'create') {
+    } else if (action === 'create' || action === 'update') {
       currentSummaries.push(summaryItem);
       anyProjectChanged = true;
       updatedProjects[pIdx] = {

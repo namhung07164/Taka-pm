@@ -71,8 +71,10 @@ export async function recordDelta(delta: {
 }
 
 /**
- * Giai đoạn 2: Ghi gom hàng loạt mutation vào 1 Document Delta duy nhất (Giảm 90% Firestore Write)
+ * Giai đoạn 2: Ghi gom hàng loạt mutation vào Document Delta theo lô an toàn (tối đa 80 items/doc để tránh vượt trần 1MB của Firestore khi import mass)
  */
+const MAX_ITEMS_PER_DELTA_DOC = 80;
+
 export async function recordBatchDeltas(
   items: TakaDeltaItem[],
   updatedBy?: string
@@ -92,34 +94,51 @@ export async function recordBatchDeltas(
     });
   }
 
-  const now = Date.now();
-  const deltaId = `delta_batch_${now}_${Math.random().toString(36).substring(2, 8)}`;
-  const nowIso = new Date(now).toISOString();
+  const effectiveUpdatedBy =
+    updatedBy || useAppStore.getState().currentUser?.email || 'system';
+  const chunks: TakaDeltaItem[][] = [];
+  for (let i = 0; i < items.length; i += MAX_ITEMS_PER_DELTA_DOC) {
+    chunks.push(items.slice(i, i + MAX_ITEMS_PER_DELTA_DOC));
+  }
 
-  const deltaPayload: TakaDelta = {
-    id: deltaId,
-    action: 'batch_update',
-    batchItems: items,
-    updatedBy: updatedBy || useAppStore.getState().currentUser?.email || 'system',
-    sessionId: CLIENT_SESSION_ID,
-    timestamp: nowIso,
-    numericTime: now,
-    serverTime: serverTimestamp() as any,
-    expireAt: Timestamp.fromMillis(now + 7 * 24 * 60 * 60 * 1000),
-  };
+  const createdPayloads: TakaDelta[] = [];
 
   try {
-    const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION, deltaId);
-    const cleanPayload = removeUndefinedDeep(deltaPayload);
-    await setDoc(docRef, cleanPayload);
+    await Promise.all(
+      chunks.map(async (chunkItems, chunkIdx) => {
+        const now = Date.now() + chunkIdx;
+        const deltaId = `delta_batch_${now}_${Math.random().toString(36).substring(2, 8)}`;
+        const nowIso = new Date(now).toISOString();
+
+        const deltaPayload: TakaDelta = {
+          id: deltaId,
+          action: 'batch_update',
+          batchItems: chunkItems,
+          updatedBy: effectiveUpdatedBy,
+          sessionId: CLIENT_SESSION_ID,
+          timestamp: nowIso,
+          numericTime: now,
+          serverTime: serverTimestamp() as any,
+          expireAt: Timestamp.fromMillis(now + 7 * 24 * 60 * 60 * 1000),
+        };
+
+        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION, deltaId);
+        const cleanPayload = removeUndefinedDeep(deltaPayload);
+        await setDoc(docRef, cleanPayload);
+        createdPayloads.push(deltaPayload);
+      })
+    );
 
     // Kích hoạt cập nhật fingerprint các năm bị ảnh hưởng
     const affectedYears = new Set(items.map((i) => i.year).filter(Boolean));
     affectedYears.forEach((yr) => touchYearMeta(yr!).catch(() => {}));
 
     // Phát tín hiệu tức thì sang các máy trạm khác (0 Read)
-    broadcastAppliedDeltas([deltaPayload]);
+    if (createdPayloads.length > 0) {
+      broadcastAppliedDeltas(createdPayloads);
+    }
   } catch (err) {
     console.warn('[deltaSync] Failed to record batch deltas to Firestore:', err);
   }
 }
+

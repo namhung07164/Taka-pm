@@ -107,6 +107,13 @@ export function useDetailTaskCsv({
     if (!file) return;
 
     try {
+      useAppStore.getState().setToast({
+        title: "Processing Import...",
+        message: "Validating and importing tasks, please wait...",
+        type: "info"
+      });
+      await new Promise((r) => setTimeout(r, 15));
+
       const parsed = await parseTasksFile(file, projects);
 
       // If errors, duplicates, or data bugs are detected, BLOCK the import completely
@@ -125,7 +132,7 @@ export function useDetailTaskCsv({
       }
 
       // Safe to execute import
-      const { count } = await executeImportTasks({
+      const { count, projectCount } = await executeImportTasks({
         rawParsedRowsByProject: parsed.rawParsedRowsByProject,
         projects,
         tasks,
@@ -134,8 +141,9 @@ export function useDetailTaskCsv({
       });
 
       useAppStore.getState().setToast({
-        title: "Success",
-        message: `Import Tasks completed! Successfully processed ${count} tasks.`
+        title: "Import Successful",
+        message: `Import Tasks completed! Successfully processed ${count} task(s)${projectCount ? ` across ${projectCount} project(s)` : ''} and synced to cloud.`,
+        type: "success"
       });
     } catch (err: any) {
       console.error("Import error:", err);

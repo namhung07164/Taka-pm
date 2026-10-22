@@ -9,13 +9,13 @@ import { cleanOrphanTasks } from '../../lib/taskStateService';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { deleteLocalRecord } from '../../lib/localDb';
 import { pullAndApplyDeltas } from '../../lib/deltaSyncService';
-import { getLoadedMarkers, hasMarker } from '../../lib/loadedMarkers';
+import { getLoadedMarkers, hasFreshMarker } from '../../lib/loadedMarkers';
 import { markTasksDeleted, unmarkTaskDeleted, clearDeletedTasksTracker } from '../../lib/taskDeletedTracker';
 import { isStaleCacheDoc, extractKeysToHydrate, groupActiveProjectsByYear, healProjectsAfterTasksBatch } from './tasksHydrationHelpers';
 import { buildProjectTasksLookupIndex, getLocalProjectTasksFromIndex } from './projectsHydrationHelpers';
 import { attachYearTasksListener, attachProjectTasksListener } from './tasksListenerAttachHelpers';
 
-const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
 const TTL_DURATION_MS = 15 * 60 * 1000;
 
 interface UseTasksHydrationProps {
@@ -300,7 +300,7 @@ export function useTasksHydration({
 
             const deltaManaged =
               (hasLocalYearTasks && isArchivedPastYear) ||
-              (DELTA_FIRST.tasks && hasLocalYearTasks && hasMarker(markers, 'tasks_year', year));
+              (DELTA_FIRST.tasks && hasLocalYearTasks && hasFreshMarker(markers, 'tasks_year', year));
             if (deltaManaged) {
               tasksPool.current.set(yearKey, () => {});
               setIsTasksLoading(false);
@@ -361,6 +361,15 @@ export function useTasksHydration({
               tasksTTLTimeouts.current.delete(projKey);
             }
 
+            const existingListener = tasksPool.current.get(projKey);
+            const isZeroNoop = Boolean((existingListener as any)?.__isZeroTaskNoop);
+            if (
+              isZeroNoop &&
+              ((p.taskCount || 0) > 0 || (Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0))
+            ) {
+              tasksPool.current.delete(projKey);
+            }
+
             if (!tasksPool.current.has(projKey)) {
               const localProjTasks = getLocalProjectTasksFromIndex(p, tasksLookupIndex);
               const expectedSummaryCount = Array.isArray(p.taskSummaries)
@@ -381,12 +390,14 @@ export function useTasksHydration({
                 (hasLocalProjTasks && isArchivedPastYear) ||
                 (DELTA_FIRST.tasks &&
                   hasLocalProjTasks &&
-                  (hasMarker(markers, 'tasks_proj', p.id) ||
-                    hasMarker(markers, 'tasks_proj', p.code) ||
-                    hasMarker(markers, 'tasks_year', year)));
+                  (hasFreshMarker(markers, 'tasks_proj', p.id) ||
+                    hasFreshMarker(markers, 'tasks_proj', p.code) ||
+                    hasFreshMarker(markers, 'tasks_year', year)));
               if (deltaManaged) {
                 knownHydratedProjectCodes.current.add(String(p.id));
-                tasksPool.current.set(projKey, () => {});
+                const noop = () => {};
+                if (isZeroTaskProject) (noop as any).__isZeroTaskNoop = true;
+                tasksPool.current.set(projKey, noop);
                 setIsTasksLoading(false);
                 if (!isZeroTaskProject) {
                   setCloudStatus('online');

@@ -18,7 +18,7 @@ import {
   applyIncomingDeltas,
 } from '../../lib/deltaSyncService';
 import { resolveInvalidations } from '../../lib/deltaInvalidateService';
-import { getLoadedMarkers, hasMarker, markLoaded } from '../../lib/loadedMarkers';
+import { getLoadedMarkers, hasFreshMarker, markLoaded } from '../../lib/loadedMarkers';
 import {
   isStaleCacheDoc,
   buildProjectTasksLookupIndex,
@@ -27,9 +27,8 @@ import {
   buildZombieProjectRemovalsForYear,
 } from './projectsHydrationHelpers';
 
-// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
-// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
-const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+// Delta-first with 6-hour warm marker TTL: reopens within 30m-6h use Dexie + taka_deltas (0 collection reads)
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
 
 interface UseProjectsHydrationProps {
   querySignature: string | null;
@@ -286,7 +285,7 @@ export function useProjectsHydration({
         (hasLocalData && isClosedOrPastYear) ||
         (DELTA_FIRST.projects &&
           hasLocalData &&
-          hasMarker(await getLoadedMarkers(), 'projects_year', year));
+          hasFreshMarker(await getLoadedMarkers(), 'projects_year', year));
       if (deltaManaged) {
         setCloudStatus('online');
         usePerformanceStore
@@ -371,7 +370,7 @@ export function useProjectsHydration({
             useAppStore.getState().globalStoreFilter
           );
           const markers = await getLoadedMarkers();
-          if (localCount > 0 || hasMarker(markers, 'projects_year', year)) {
+          if (localCount > 0 || hasFreshMarker(markers, 'projects_year', year)) {
             return;
           }
 

@@ -229,7 +229,10 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         if (idx !== -1) {
           tasksChanged = true;
           updatedTasks[idx] = mergedTask;
-        } else if (action === 'create') {
+        } else if (
+          action === 'create' ||
+          (action === 'update' && Boolean(data?.name && (data?.projectCode || data?.projectId)))
+        ) {
           if (store.isTasksRequested || updatedTasks.length > 0) {
             const expandedSet = new Set(
               [...(store.expandedProjectIds || []), ...(store.searchActiveProjectIds || [])].map(
@@ -245,6 +248,15 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
               mergedTask.projectYear !== undefined && mergedTask.projectYear !== null
                 ? String(mergedTask.projectYear).trim()
                 : '';
+
+            const activeYearFilter = store.globalYearFilter
+              ? String(store.globalYearFilter).trim()
+              : '';
+            const matchesActiveYear =
+              !activeYearFilter ||
+              activeYearFilter.toLowerCase() === 'all' ||
+              !tYearStr ||
+              tYearStr === activeYearFilter;
 
             const projInMemory = updatedTasks.some((t) => {
               if (tProjId && t.projectId) {
@@ -278,6 +290,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             const matchingProj =
               matchingIdx !== undefined ? updatedProjects[matchingIdx] : undefined;
             const isProjExpandedOrEmpty =
+              (store.isTasksRequested && matchesActiveYear) ||
               projInMemory ||
               (tProjId && expandedSet.has(tProjId)) ||
               (matchingProj?.id && expandedSet.has(String(matchingProj.id))) ||

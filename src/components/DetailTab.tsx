@@ -188,33 +188,19 @@ export function DetailTab({
   });
 
   // Virtual Windowing Table
-  const {
-    tableContainerRef,
-    handleTableScroll,
-    startIndex,
-    endIndex,
-    paddingTop,
-    paddingBottom,
-  } = useDetailVirtualization({
-    flatTableRows,
-    initialFocusTaskId,
-    initialFilterCode,
-    visibleCount,
-    setVisibleCount,
-    filteredProjectsLength: filteredProjects.length,
-  });
+  const { tableContainerRef, handleTableScroll, startIndex, endIndex, paddingTop, paddingBottom } =
+    useDetailVirtualization({
+      flatTableRows,
+      initialFocusTaskId,
+      initialFilterCode,
+      visibleCount,
+      setVisibleCount,
+      filteredProjectsLength: filteredProjects.length,
+    });
 
   // Reordering & Predecessor Synchronization
-  const {
-    isSyncingPredecessors,
-    handleSyncAllPredecessors,
-    isConvertingToHash,
-    handleConvertAllSubtasksToHash,
-  } = useDetailPredecessorSync({
-    tasks,
-    projects,
-    hasWritePermission,
-  });
+  const { isSyncingPredecessors, handleSyncAllPredecessors, isConvertingToHash, handleConvertAllSubtasksToHash } =
+    useDetailPredecessorSync({ tasks, projects, hasWritePermission });
 
   const {
     draggingTaskIds,
@@ -228,12 +214,7 @@ export function DetailTab({
     handleDetailTaskDragLeave,
     handleDetailTaskDragEnd,
     handleDetailTaskDrop,
-  } = useDetailTaskReorder({
-    tasks,
-    projects,
-    selectedTaskIds,
-    setSelectedTaskIds,
-  });
+  } = useDetailTaskReorder({ tasks, projects, selectedTaskIds, setSelectedTaskIds });
 
   const { isSortingSubTasks, handleSortActiveOrAll } = useDetailSubTaskSort({
     tasks,
@@ -243,10 +224,7 @@ export function DetailTab({
   });
 
   // Project & Task Mutations
-  const {
-    handleDeleteProject,
-    handleUpdateProject,
-  } = useDetailProjectMutations({
+  const { handleDeleteProject, handleUpdateProject } = useDetailProjectMutations({
     projects,
     tasks,
     delegationGroups,
@@ -254,11 +232,7 @@ export function DetailTab({
     setConfirmModal,
   });
 
-  const {
-    handleDeleteTask,
-    handleUpdateTask,
-    handleSaveNotes,
-  } = useDetailTaskMutations({
+  const { handleDeleteTask, handleUpdateTask, handleSaveNotes } = useDetailTaskMutations({
     tasks,
     projects,
     delegationGroups,
@@ -266,14 +240,12 @@ export function DetailTab({
     setConfirmModal,
   });
 
-  const { handleExportProjects, handleImportProjects, projectImportErrorModal } = useDetailProjectCsv({ filteredProjects, projects });
+  const { handleExportProjects, handleImportProjects, projectImportErrorModal } = useDetailProjectCsv({
+    filteredProjects,
+    projects,
+  });
 
-  const {
-    handleExportTasks,
-    handleImportTasks,
-    parseCSVDate,
-    importErrorModal,
-  } = useDetailTaskCsv({
+  const { handleExportTasks, handleImportTasks, parseCSVDate, importErrorModal } = useDetailTaskCsv({
     filteredProjects,
     projects,
     tasks,
@@ -282,9 +254,7 @@ export function DetailTab({
   });
 
   // Bulk Actions
-  const {
-    handleBulkAction,
-  } = useDetailBulkActions({
+  const { handleBulkAction } = useDetailBulkActions({
     selectedTaskIds,
     setSelectedTaskIds,
     lastCheckedTaskIdRef,

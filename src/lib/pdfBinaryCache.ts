@@ -217,15 +217,9 @@ export function hasCachedPdfBinary(rawUrl: string): boolean {
 
 function isValidPdfBytes(bytes: Uint8Array): boolean {
   if (!bytes || bytes.byteLength < 64) return false;
-  // Check within first 1024 bytes for %PDF- header (some servers prepend BOM/whitespace)
   const scanLimit = Math.min(bytes.byteLength - 4, 1024);
   for (let i = 0; i <= scanLimit; i++) {
-    if (
-      bytes[i] === 0x25 && // %
-      bytes[i + 1] === 0x50 && // P
-      bytes[i + 2] === 0x44 && // D
-      bytes[i + 3] === 0x46 // F
-    ) {
+    if (bytes[i] === 0x25 && bytes[i + 1] === 0x50 && bytes[i + 2] === 0x44 && bytes[i + 3] === 0x46) {
       return true;
     }
   }
@@ -239,14 +233,12 @@ export async function fetchPdfBinaryUnified(
   if (!rawUrl) return null;
   const key = canonicalizePdfKey(rawUrl);
 
-  // 1. Synchronous 0ms RAM Cache Hit
   const cached = memoryBinaryCache.get(key);
   if (cached && cached.byteLength > 0) {
     onProgress?.(100);
     return cached.slice(0);
   }
 
-  // 2. Deduplicate concurrent downloads for the same PDF
   const existingPromise = inFlightBinaryMap.get(key);
   if (existingPromise) {
     const res = await existingPromise;

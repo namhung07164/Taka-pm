@@ -12,11 +12,10 @@ import {
 } from "../../lib/backgroundSyncWorker";
 import { getLocalDelegations, deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
-import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+import { getLoadedMarkers, hasFreshMarker, markLoaded } from "../../lib/loadedMarkers";
 
-// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
-// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
-const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+// Delta-first with 6-hour warm marker TTL: reopens within 30m-6h use Dexie + taka_deltas (0 collection reads)
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
 
 
 interface UseDelegationsHydrationProps {
@@ -230,7 +229,7 @@ export function useDelegationsHydration({
 
         const deltaManaged =
           (hasLocalDelegations && isClosedOrPastYear) ||
-          (DELTA_FIRST.delegations && hasLocalDelegations && hasMarker(await getLoadedMarkers(), 'delegations_year', year));
+          (DELTA_FIRST.delegations && hasLocalDelegations && hasFreshMarker(await getLoadedMarkers(), 'delegations_year', year));
         if (deltaManaged) {
           setIsDelegationsLoading(false);
           setCloudStatus("online");

@@ -253,6 +253,9 @@ export function setupStaticConfigSync(): Unsubscribe {
       const localVersions = getLocalConfigVersions();
       const store = useAppStore.getState();
 
+      if (!docSnap.exists() && (docSnap as any).metadata?.fromCache) {
+        return;
+      }
       const remoteData: ConfigVersions = docSnap.exists() ? (docSnap.data() as ConfigVersions) : {};
       const needsInit = !docSnap.exists();
 

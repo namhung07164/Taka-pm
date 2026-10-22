@@ -9,11 +9,10 @@ import { buildStoreAndYearQuery } from "./firebaseQueryHelpers";
 import { hydrateCostsFromLocal, offloadPersistSnapshot } from "../../lib/backgroundSyncWorker";
 import { deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
-import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+import { getLoadedMarkers, hasFreshMarker, markLoaded } from "../../lib/loadedMarkers";
 
-// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
-// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
-const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+// Delta-first with 6-hour warm marker TTL: reopens within 30m-6h use Dexie + taka_deltas (0 collection reads)
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
 
 
 interface UseCostsHydrationProps {
@@ -200,7 +199,7 @@ export function useCostsHydration({
 
         const deltaManaged =
           (hasLocalCosts && isClosedOrPastYear) ||
-          (DELTA_FIRST.costs && hasLocalCosts && hasMarker(await getLoadedMarkers(), 'costs_year', year));
+          (DELTA_FIRST.costs && hasLocalCosts && hasFreshMarker(await getLoadedMarkers(), 'costs_year', year));
         if (deltaManaged) {
           setIsCostsLoading(false);
           setCloudStatus("online");
@@ -304,7 +303,7 @@ export function useCostsHydration({
         try {
           const localCount = await hydrateCostsFromLocal(year);
           const markers = await getLoadedMarkers();
-          if (localCount > 0 || hasMarker(markers, 'costs_year', year)) {
+          if (localCount > 0 || hasFreshMarker(markers, 'costs_year', year)) {
             return;
           }
 

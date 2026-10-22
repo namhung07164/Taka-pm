@@ -1,7 +1,14 @@
 import { collection, onSnapshot, orderBy, query, where, Timestamp } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db, APP_ID } from './firebase';
-import { applyIncomingDeltas, filterUnappliedDeltas, getLastDeltaSyncTime, deltaTime } from './deltaSyncService';
+import {
+  applyIncomingDeltas,
+  filterUnappliedDeltas,
+  getLastDeltaSyncTime,
+  deltaTime,
+  LAST_SYNC_KEY,
+} from './deltaSyncService';
+import { safeSetItemLocal } from './storage';
 import type { TakaDelta } from '../types';
 
 /**
@@ -11,7 +18,7 @@ import type { TakaDelta } from '../types';
  *  - idle cost = 0 reads (previously >= 1 read per poll, ~1100+/user/day)
  *  - changes arrive in ~1s instead of 25s - 3 min
  *  - billed once per delta doc; cached deltas (persistent cache) are free
- * The listener is detached when the tab has been hidden > 2 min and re-attached (since = lastSyncTime) on return.
+ * The listener is detached when the tab has been hidden > 15 min and re-attached (since = lastSyncTime) on return.
  */
 
 const OVERLAP_MS = 3 * 1000; // 3s serverTime jitter buffer (duplicates filtered by delta id)
@@ -32,6 +39,7 @@ export function startDeltaRealtimeListener(): () => void {
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let detachTimer: ReturnType<typeof setTimeout> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let signedIn = !!auth.currentUser;
   let stopped = false;
 
@@ -68,12 +76,20 @@ export function startDeltaRealtimeListener(): () => void {
       q,
       (snap) => {
         if (snap.metadata.hasPendingWrites) return;
+        let maxSeenMs = 0;
         snap.docChanges().forEach((c) => {
           if (c.type === 'added' || c.type === 'modified') {
             const raw = c.doc.data({ serverTimestamps: 'estimate' }) as TakaDelta;
+            const dMs = deltaTime(raw);
+            if (dMs > maxSeenMs) maxSeenMs = dMs;
             buffer.push({ ...raw, id: raw.id || c.doc.id });
           }
         });
+        if (!snap.metadata.fromCache) {
+          // Advance sync cursor even when 0 deltas occurred during 30m-1h idle window so next reconnect doesn't re-query old window
+          const safeNow = Math.max(getLastDeltaSyncTime(), maxSeenMs, Date.now() - 5000);
+          safeSetItemLocal(LAST_SYNC_KEY, String(safeNow));
+        }
         if (buffer.length > 0 && !flushTimer) flushTimer = setTimeout(flush, 20);
       },
       (err) => {
@@ -88,6 +104,18 @@ export function startDeltaRealtimeListener(): () => void {
       }
     );
     activeRealtimeUnsub = unsub;
+  };
+
+  const scheduleReconnect = () => {
+    if (stopped) return;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (document.visibilityState === 'visible') {
+        detach();
+        attach();
+      }
+    }, 80);
   };
 
   if (signedIn) attach();
@@ -105,23 +133,16 @@ export function startDeltaRealtimeListener(): () => void {
   };
 
   const onNetworkRecovered = () => {
-    if (document.visibilityState === 'visible') {
-      detach();
-      attach();
-    }
+    scheduleReconnect();
   };
 
   const onSleepWake = () => {
-    if (document.visibilityState === 'visible') {
-      detach();
-      attach();
-    }
+    scheduleReconnect();
   };
 
   const handlePageShow = (e: PageTransitionEvent) => {
     if (e.persisted) {
-      detach();
-      attach();
+      scheduleReconnect();
     }
   };
 
@@ -162,6 +183,7 @@ export function startDeltaRealtimeListener(): () => void {
     if (flushTimer) clearTimeout(flushTimer);
     if (detachTimer) clearTimeout(detachTimer);
     if (retryTimer) clearTimeout(retryTimer);
+    if (reconnectTimer) clearTimeout(reconnectTimer);
     detach();
   };
 }

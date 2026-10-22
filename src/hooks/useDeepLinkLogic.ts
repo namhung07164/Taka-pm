@@ -110,17 +110,12 @@ export function useDeepLinkLogic(
         if (p) {
           if (!checkAccessLocally(p)) {
             window.history.replaceState({}, document.title, window.location.pathname);
-            useAppStore.getState().setToast({
-              title: "Access Denied",
-              message: "You do not have permission to access this project's store.",
-            });
+            useAppStore.getState().setToast({ title: "Access Denied", message: "You do not have permission to access this project's store." });
             return;
           }
           syncProjectScopeFilters(p.store, p.year, p.location, p.id);
           handleTabChange("detail");
-          if (p.code) {
-            useAppStore.getState().setDetailTabFilterCode(p.code);
-          }
+          if (p.code) useAppStore.getState().setDetailTabFilterCode(p.code);
           if (extraParams?.openModal !== false) {
             useAppStore.getState().setEditingProject(p);
             useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
@@ -138,48 +133,31 @@ export function useDeepLinkLogic(
           if (docIdCandidate) {
             const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", docIdCandidate);
             const snap = await getDoc(docRef);
-            if (snap.exists()) {
-              fetchedProj = { id: snap.id, ...snap.data() } as Project;
-            }
+            if (snap.exists()) fetchedProj = { id: snap.id, ...snap.data() } as Project;
           }
           if (!fetchedProj) {
             const isNum = !isNaN(Number(targetId));
-            const constraints: any[] = [];
-            if (isNum) {
-              constraints.push(where("no", "==", Number(targetId)));
-            } else {
-              constraints.push(where("code", "==", targetId));
-            }
+            const constraints: any[] = [isNum ? where("no", "==", Number(targetId)) : where("code", "==", targetId)];
             if (extraParams?.store && extraParams.store.toLowerCase() !== "all") {
               constraints.push(where("store", "==", extraParams.store.trim().toUpperCase()));
             }
-            const q = query(
-              collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"),
-              ...constraints,
-              limit(5)
-            );
+            const q = query(collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"), ...constraints, limit(5));
             const snap = await getDocs(q);
             if (!snap.empty) {
               const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
-              fetchedProj =
-                findProjectWithCompositeIsolation([docs], String(targetId), extraParams) || docs[0];
+              fetchedProj = findProjectWithCompositeIsolation([docs], String(targetId), extraParams) || docs[0];
             }
           }
 
           if (fetchedProj) {
             if (!checkAccessLocally(fetchedProj)) {
               window.history.replaceState({}, document.title, window.location.pathname);
-              useAppStore.getState().setToast({
-                title: "Access Denied",
-                message: "You do not have permission to access this project's store.",
-              });
+              useAppStore.getState().setToast({ title: "Access Denied", message: "You do not have permission to access this project's store." });
               return;
             }
             syncProjectScopeFilters(fetchedProj.store, fetchedProj.year, fetchedProj.location, fetchedProj.id);
             handleTabChange("detail");
-            if (fetchedProj.code) {
-              useAppStore.getState().setDetailTabFilterCode(fetchedProj.code);
-            }
+            if (fetchedProj.code) useAppStore.getState().setDetailTabFilterCode(fetchedProj.code);
             if (extraParams?.openModal !== false) {
               useAppStore.getState().setEditingProject(fetchedProj);
               useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
@@ -189,18 +167,12 @@ export function useDeepLinkLogic(
             window.history.replaceState({}, document.title, window.location.pathname);
           } else {
             window.history.replaceState({}, document.title, window.location.pathname);
-            useAppStore.getState().setToast({
-              title: "Not Found",
-              message: "This project was not found or data has been deleted.",
-            });
+            useAppStore.getState().setToast({ title: "Not Found", message: "This project was not found or data has been deleted." });
           }
         } catch (err) {
           console.error("Error fetching project deep link:", err);
           window.history.replaceState({}, document.title, window.location.pathname);
-          useAppStore.getState().setToast({
-            title: "Error",
-            message: "Could not load project.",
-          });
+          useAppStore.getState().setToast({ title: "Error", message: "Could not load project." });
         }
         return;
       }

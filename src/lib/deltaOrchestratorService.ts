@@ -92,11 +92,14 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
       const hiddenDuration = hiddenSince ? Date.now() - hiddenSince : 0;
       hiddenSince = 0;
       lastActivityTime = Date.now();
-      // Only force a fallback pull if hidden > 15 minutes (when realtime listener detached)
-      if (hiddenDuration >= 15 * 60 * 1000 || !isDeltaRealtimeConnected()) {
-        wakeAndSync(true);
-      } else {
-        startPolling();
+      startPolling();
+      // Give deltaRealtimeListener 150ms to re-attach onSnapshot(taka_deltas); only fallback to getDocsFromServer if still disconnected
+      if (hiddenDuration >= 15 * 60 * 1000) {
+        setTimeout(() => {
+          if (!isDeltaRealtimeConnected()) {
+            wakeAndSync(true);
+          }
+        }, 150);
       }
     } else {
       hiddenSince = Date.now();
