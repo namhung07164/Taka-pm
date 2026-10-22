@@ -2,6 +2,7 @@ import React, { Dispatch, SetStateAction, memo, useCallback, useEffect } from 'r
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { Project, Task, DelegationGroup } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
+import { cn } from '../../lib/utils';
 import { DetailMobileProjectCard } from './DetailMobileProjectCard';
 
 interface DetailMobileViewProps {
@@ -32,6 +33,12 @@ interface DetailMobileViewProps {
   taskActualStatusMap?: Map<string, { label: string; color: string }>;
   onSortSubTasks?: (p: Project, groupTasks: Task[]) => void;
   onNavigateToDelegation?: (groupId: string, sourceTaskId?: string) => void;
+  childTasksCountMap?: Map<string, number>;
+  expandedModularTasks?: Set<string>;
+  onToggleModularParent?: (parentTaskId: string) => void;
+  isAllModularExpanded?: boolean;
+  onToggleExpandAllModular?: () => void;
+  totalChildTasksCount?: number;
 }
 
 export const DetailMobileView = memo(function DetailMobileView({
@@ -59,7 +66,13 @@ export const DetailMobileView = memo(function DetailMobileView({
   handleDeleteTask,
   taskCodeMap,
   taskActualStatusMap,
-  onSortSubTasks
+  onSortSubTasks,
+  childTasksCountMap,
+  expandedModularTasks,
+  onToggleModularParent,
+  isAllModularExpanded,
+  onToggleExpandAllModular,
+  totalChildTasksCount
 }: DetailMobileViewProps) {
   const handleMobileScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
@@ -92,16 +105,36 @@ export const DetailMobileView = memo(function DetailMobileView({
     <>
       <div className="xl:hidden flex justify-between items-center px-2 pb-2">
         <span className="text-sm font-bold text-slate-600 dark:text-[#a3a3a3]">Projects ({filteredProjects.length})</span>
-        <button 
-          onClick={() => setExpandedCodes(expandedCodes.length === 0 ? filteredProjects.map(p => String(p.id!)) : [])} 
-          className="flex items-center gap-1 text-sm text-blue-600 dark:text-[#8ab4f8] font-medium hover:text-blue-800 dark:text-[#8ab4f8] transition-colors cursor-pointer"
-        >
-          {expandedCodes.length === 0 ? (
-            <><ChevronRight className="w-4 h-4" /> Expand All</>
-          ) : (
-            <><ChevronDown className="w-4 h-4" /> Collapse All</>
+        <div className="flex items-center gap-2">
+          {onToggleExpandAllModular && (
+            <button
+              type="button"
+              onClick={onToggleExpandAllModular}
+              className={cn(
+                "px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-all flex items-center gap-1 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
+                isAllModularExpanded
+                  ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                  : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+              )}
+              title={isAllModularExpanded ? "Collapse All Group Tasks" : "Expand All Group Tasks"}
+            >
+              {isAllModularExpanded ? <ChevronDown className="w-3.5 h-3.5 text-current" /> : <ChevronRight className="w-3.5 h-3.5 text-current" />}
+              {totalChildTasksCount !== undefined && totalChildTasksCount > 0 && (
+                <span>({totalChildTasksCount})</span>
+              )}
+            </button>
           )}
-        </button>
+          <button 
+            onClick={() => setExpandedCodes(expandedCodes.length === 0 ? filteredProjects.map(p => String(p.id!)) : [])} 
+            className="flex items-center gap-1 text-sm text-blue-600 dark:text-[#8ab4f8] font-medium hover:text-blue-800 dark:text-[#8ab4f8] transition-colors cursor-pointer"
+          >
+            {expandedCodes.length === 0 ? (
+              <><ChevronRight className="w-4 h-4" /> Expand All</>
+            ) : (
+              <><ChevronDown className="w-4 h-4" /> Collapse All</>
+            )}
+          </button>
+        </div>
       </div>
 
       <div 
@@ -133,6 +166,9 @@ export const DetailMobileView = memo(function DetailMobileView({
             taskActualStatusMap={taskActualStatusMap}
             onSortSubTasks={onSortSubTasks}
             initialFocusTaskId={initialFocusTaskId}
+            childTasksCountMap={childTasksCountMap}
+            expandedModularTasks={expandedModularTasks}
+            onToggleModularParent={onToggleModularParent}
           />
         ))}
         {visibleCount < filteredProjects.length && (

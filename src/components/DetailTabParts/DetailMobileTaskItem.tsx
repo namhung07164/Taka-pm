@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { ChevronUp, ChevronDown, Maximize2, Trash2 } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronRight, Maximize2, Trash2 } from 'lucide-react';
 import { Task, Project } from '../../types';
 import { FastToggle } from './FastToggle';
 import { EditableCell } from './EditableCell';
@@ -16,6 +16,9 @@ export interface DetailMobileTaskItemProps {
   isFocused: boolean;
   canWrite: boolean;
   isProjectDelegationOn?: boolean;
+  childTasksCount?: number;
+  isModularExpanded?: boolean;
+  onToggleModularParent?: (parentTaskId: string) => void;
   onEditTask: (t: Task, isReadOnly?: boolean, initialTab?: string) => void;
   handleMoveTask: (p: Project, groupTasks: Task[], index: number, direction: 'up' | 'down') => void;
   handleUpdateTask: (task: Task, updates: Partial<Task>) => void;
@@ -32,6 +35,9 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
   isFocused,
   canWrite,
   isProjectDelegationOn,
+  childTasksCount = 0,
+  isModularExpanded = false,
+  onToggleModularParent,
   onEditTask,
   handleMoveTask,
   handleUpdateTask,
@@ -114,6 +120,34 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
             <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 shrink-0 inline-block">
               {taskCode || t.taskCodePhu || `${p.code}#${i + 1}`}
             </span>
+            {childTasksCount > 0 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onToggleModularParent) onToggleModularParent(t.id);
+                }}
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
+                  isModularExpanded
+                    ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                    : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                )}
+                title={isModularExpanded ? `Collapse ${childTasksCount} subtasks` : `Expand ${childTasksCount} subtasks`}
+              >
+                {isModularExpanded ? (
+                  <ChevronDown className="w-3 h-3 text-current font-bold" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 text-current font-bold" />
+                )}
+                <span>({childTasksCount})</span>
+              </button>
+            )}
+            {Boolean(t.parentTaskId) && (
+              <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Task con (Sub-task)">
+                ↳ SUB
+              </span>
+            )}
             <span className="font-bold text-slate-900 dark:text-[#ffffff] text-sm leading-snug">
               {t.name || '(Unnamed Task)'}
             </span>

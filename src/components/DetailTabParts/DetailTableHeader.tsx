@@ -80,6 +80,65 @@ export const DetailTableHeader = memo(function DetailTableHeader({
             const isSortable = col.id === 'start' || col.id === 'finish';
             const isSorted = sortConfig?.key === col.id;
 
+            if (col.id === 'no') {
+              return (
+                <ResizableHeader
+                  key={col.id}
+                  width={col.width || 70}
+                  onResize={(w) => onResize(col.id, w)}
+                  className="px-2 py-2 font-bold select-none text-center"
+                  hideable={!!onToggleColumn}
+                  onHide={onToggleColumn ? () => onToggleColumn(col.id) : undefined}
+                >
+                  <div className="flex flex-col items-center justify-center gap-1">
+                    <div className="flex items-center justify-center gap-1">
+                      {canWrite && !columnsWithWidths.some(c => c.id === 'checkbox') && (
+                        <input
+                          type="checkbox"
+                          title="Select All Visible Tasks"
+                          onChange={(e) => handleSelectAll(e.target.checked)}
+                          checked={isAllSelected}
+                          className="cursor-pointer rounded border-slate-300 dark:border-slate-600"
+                        />
+                      )}
+                      <span>
+                        {col.label}
+                        {isSorted && (sortConfig.direction === 'asc' ? ' ↑' : ' ↓')}
+                      </span>
+                      {onToggleExpandAll && (
+                        <button
+                          type="button"
+                          onClick={onToggleExpandAll}
+                          className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8] cursor-pointer"
+                          title={expandedCodes.length === 0 ? "Expand All Projects" : "Collapse All Projects"}
+                        >
+                          {expandedCodes.length === 0 ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
+                    </div>
+                    {onToggleExpandAllModular && (
+                      <button
+                        type="button"
+                        onClick={onToggleExpandAllModular}
+                        className={cn(
+                          "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
+                          isAllModularExpanded
+                            ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                            : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                        )}
+                        title={isAllModularExpanded ? "Collapse All Group Tasks" : "Expand All Group Tasks"}
+                      >
+                        {isAllModularExpanded ? <ChevronDown className="w-3 h-3 text-current" /> : <ChevronRight className="w-3 h-3 text-current" />}
+                        {totalChildTasksCount !== undefined && totalChildTasksCount > 0 && (
+                          <span>({totalChildTasksCount})</span>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </ResizableHeader>
+              );
+            }
+
             return (
               <ResizableHeader
                 key={col.id}
@@ -91,51 +150,10 @@ export const DetailTableHeader = memo(function DetailTableHeader({
                 onHide={onToggleColumn ? () => onToggleColumn(col.id) : undefined}
               >
                 <div className="flex items-center gap-1">
-                  {col.id === 'no' && canWrite && !columnsWithWidths.some(c => c.id === 'checkbox') && (
-                    <input
-                      type="checkbox"
-                      title="Select All Visible Tasks"
-                      onChange={(e) => handleSelectAll(e.target.checked)}
-                      checked={isAllSelected}
-                      className="cursor-pointer rounded border-slate-300 dark:border-slate-600 mr-1"
-                    />
-                  )}
                   <span>
                     {col.label}
                     {isSorted && (sortConfig.direction === 'asc' ? ' ↑' : ' ↓')}
                   </span>
-                  {col.id === 'no' && (
-                    <div className="flex items-center gap-1 ml-1">
-                      {onToggleExpandAll && (
-                        <button
-                          type="button"
-                          onClick={onToggleExpandAll}
-                          className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8] cursor-pointer"
-                          title={expandedCodes.length === 0 ? "Expand All Projects" : "Collapse All Projects"}
-                        >
-                          {expandedCodes.length === 0 ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                        </button>
-                      )}
-                      {onToggleExpandAllModular && (
-                        <button
-                          type="button"
-                          onClick={onToggleExpandAllModular}
-                          className={cn(
-                            "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
-                            isAllModularExpanded
-                              ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
-                              : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
-                          )}
-                          title={isAllModularExpanded ? "Collapse All Group Tasks" : "Expand All Group Tasks"}
-                        >
-                          {isAllModularExpanded ? <ChevronDown className="w-3 h-3 text-current" /> : <ChevronRight className="w-3 h-3 text-current" />}
-                          {totalChildTasksCount !== undefined && totalChildTasksCount > 0 && (
-                            <span>({totalChildTasksCount})</span>
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  )}
                   {col.id === 'party' && (
                     <div className="ml-1 inline-flex items-center">
                       <span className="text-[9px] font-bold text-slate-400 dark:text-[#838383] normal-case leading-none mr-1">deleg</span>
@@ -171,24 +189,24 @@ export const DetailTableHeader = memo(function DetailTableHeader({
         )}
         {visCols.includes('no') && (
           <ResizableHeader 
-            width={colWidths.no || 60} 
+            width={colWidths.no || 70} 
             onResize={(w) => onResize('no', w)} 
-            className="px-6 py-3 font-bold text-center" 
+            className="px-2 py-2 font-bold text-center" 
             hideable={!!onToggleColumn} 
             onHide={onToggleColumn ? () => onToggleColumn('no') : undefined}
           >
-            <div className="flex items-center justify-center gap-1">
-              {canWrite && !visCols.includes('checkbox') && (
-                <input 
-                  type="checkbox" 
-                  title="Select All Visible Tasks"
-                  onChange={(e) => handleSelectAll(e.target.checked)}
-                  checked={isAllSelected}
-                  className="cursor-pointer rounded border-slate-300 dark:border-slate-600 mr-1"
-                />
-              )}
-              No.
-              <div className="flex items-center gap-1 ml-1">
+            <div className="flex flex-col items-center justify-center gap-1">
+              <div className="flex items-center justify-center gap-1">
+                {canWrite && !visCols.includes('checkbox') && (
+                  <input 
+                    type="checkbox" 
+                    title="Select All Visible Tasks"
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    checked={isAllSelected}
+                    className="cursor-pointer rounded border-slate-300 dark:border-slate-600"
+                  />
+                )}
+                <span>No.</span>
                 {onToggleExpandAll && (
                   <button 
                     type="button"
@@ -199,25 +217,25 @@ export const DetailTableHeader = memo(function DetailTableHeader({
                     {expandedCodes.length === 0 ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                   </button>
                 )}
-                {onToggleExpandAllModular && (
-                  <button
-                    type="button"
-                    onClick={onToggleExpandAllModular}
-                    className={cn(
-                      "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
-                      isAllModularExpanded
-                        ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
-                        : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
-                    )}
-                    title={isAllModularExpanded ? "Collapse All Group Tasks" : "Expand All Group Tasks"}
-                  >
-                    {isAllModularExpanded ? <ChevronDown className="w-3 h-3 text-current" /> : <ChevronRight className="w-3 h-3 text-current" />}
-                    {totalChildTasksCount !== undefined && totalChildTasksCount > 0 && (
-                      <span>({totalChildTasksCount})</span>
-                    )}
-                  </button>
-                )}
               </div>
+              {onToggleExpandAllModular && (
+                <button
+                  type="button"
+                  onClick={onToggleExpandAllModular}
+                  className={cn(
+                    "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
+                    isAllModularExpanded
+                      ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                      : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                  )}
+                  title={isAllModularExpanded ? "Collapse All Group Tasks" : "Expand All Group Tasks"}
+                >
+                  {isAllModularExpanded ? <ChevronDown className="w-3 h-3 text-current" /> : <ChevronRight className="w-3 h-3 text-current" />}
+                  {totalChildTasksCount !== undefined && totalChildTasksCount > 0 && (
+                    <span>({totalChildTasksCount})</span>
+                  )}
+                </button>
+              )}
             </div>
           </ResizableHeader>
         )}

@@ -477,6 +477,12 @@ export function DetailTab({
         taskCodeMap={taskCodeMap}
         taskActualStatusMap={taskActualStatusMap}
         onSortSubTasks={handleSortSubTasks}
+        childTasksCountMap={childTasksCountMap}
+        expandedModularTasks={expandedModularTasks}
+        onToggleModularParent={handleToggleModularParent}
+        isAllModularExpanded={isAllModularExpanded}
+        onToggleExpandAllModular={handleToggleExpandAllModular}
+        totalChildTasksCount={totalChildTasksCount}
       />
 
       <DetailFocusControls 

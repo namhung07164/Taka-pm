@@ -123,14 +123,21 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         </td>
       )}
       {visibleColumns.includes('no') && (
-        <td className="px-3 py-2 text-slate-600 dark:text-[#c3c3c3] text-xs font-mono">
-          <div className="flex items-center gap-1.5 pl-1">
-            {canWrite && (
-              <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                <GripVertical size={13} />
-              </div>
-            )}
-            <span className="font-semibold">{i + 1}</span>
+        <td className="px-2 py-2 text-slate-600 dark:text-[#c3c3c3] text-xs font-mono text-center">
+          <div className="flex flex-col items-center justify-center gap-0.5">
+            <div className="flex items-center justify-center gap-1">
+              {canWrite && (
+                <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                  <GripVertical size={13} />
+                </div>
+              )}
+              <span className="font-semibold">{i + 1}</span>
+              {isChildTask && (
+                <span className="text-[8.5px] font-bold px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Task con (Sub-task)">
+                  ↳ SUB
+                </span>
+              )}
+            </div>
             {childTasksCount > 0 && (
               <button
                 type="button"
@@ -153,11 +160,6 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
                 )}
                 <span>({childTasksCount})</span>
               </button>
-            )}
-            {isChildTask && (
-              <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Task con (Sub-task)">
-                ↳ SUB
-              </span>
             )}
           </div>
         </td>

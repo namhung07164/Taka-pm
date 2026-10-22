@@ -52,6 +52,9 @@ interface DetailMobileProjectCardProps {
   taskActualStatusMap?: Map<string, { label: string; color: string }>;
   onSortSubTasks?: (p: Project, groupTasks: Task[]) => void;
   initialFocusTaskId?: string;
+  childTasksCountMap?: Map<string, number>;
+  expandedModularTasks?: Set<string>;
+  onToggleModularParent?: (parentTaskId: string) => void;
 }
 
 export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
@@ -77,6 +80,9 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   taskActualStatusMap,
   onSortSubTasks,
   initialFocusTaskId,
+  childTasksCountMap,
+  expandedModularTasks,
+  onToggleModularParent,
 }: DetailMobileProjectCardProps) {
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
@@ -176,6 +182,26 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
       formatDisplayDateMain(t.finish)
     ];
     return taskFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
+  });
+
+  const parentTaskMap = new Map<string, Task>();
+  groupTasks.forEach(gt => {
+    if (gt.id) parentTaskMap.set(gt.id, gt);
+    if (gt.taskCodePhu) parentTaskMap.set(gt.taskCodePhu.trim().toLowerCase(), gt);
+  });
+
+  const visibleTasksToRender = tasksToRender.filter(t => {
+    if (t.parentTaskId && !lowerSearchTerm) {
+      const rawParentId = String(t.parentTaskId).trim();
+      const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
+      const effectiveParentId = matchedParent ? matchedParent.id : rawParentId;
+      const isParentExpanded =
+        expandedModularTasks?.has(effectiveParentId) ||
+        Boolean(matchedParent?.taskCodePhu && expandedModularTasks?.has(matchedParent.taskCodePhu));
+
+      if (!isParentExpanded) return false;
+    }
+    return true;
   });
 
   const activeSummaries = (p.taskSummaries && Array.isArray(p.taskSummaries))
@@ -403,28 +429,36 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
       {/* Expanded sub-tasks list */}
       {isExpanded && (
         <div className="flex flex-col gap-2 pt-2 border-t border-slate-200/80 dark:border-[#38383b]">
-          {tasksToRender.length === 0 ? (
+          {visibleTasksToRender.length === 0 ? (
             <div className="text-center py-4 text-xs text-slate-400 dark:text-[#838383]">
               No tasks found
             </div>
           ) : (
-            tasksToRender.map((t, index) => (
-              <DetailMobileTaskItem
-                key={`mobile-task-${p.id || p.code || p.no}-${t.id || index}`}
-                task={t}
-                project={p}
-                groupTasks={groupTasks}
-                index={index}
-                taskCode={taskCodeMap.get(t.id) || t.taskCode || ''}
-                actStatus={taskActualStatusMap.get(t.id) || { label: '0%', color: 'text-slate-400' }}
-                isFocused={initialFocusTaskId === t.id}
-                canWrite={canWrite}
-                onEditTask={onEditTask}
-                handleUpdateTask={handleUpdateTask}
-                handleDeleteTask={handleDeleteTask}
-                handleMoveTask={handleMoveTask}
-              />
-            ))
+            visibleTasksToRender.map((t, index) => {
+              const childCount = (childTasksCountMap?.get(t.id) || 0) + (t.taskCodePhu && t.taskCodePhu !== t.id ? (childTasksCountMap?.get(t.taskCodePhu) || 0) : 0);
+              const isModularExpanded = expandedModularTasks ? (expandedModularTasks.has(t.id) || (!!t.taskCodePhu && expandedModularTasks.has(t.taskCodePhu))) : false;
+
+              return (
+                <DetailMobileTaskItem
+                  key={`mobile-task-${p.id || p.code || p.no}-${t.id || index}`}
+                  task={t}
+                  project={p}
+                  groupTasks={groupTasks}
+                  index={index}
+                  taskCode={taskCodeMap?.get(t.id) || t.taskCode || ''}
+                  actStatus={taskActualStatusMap?.get(t.id) || { label: '0%', color: 'text-slate-400' }}
+                  isFocused={initialFocusTaskId === t.id}
+                  canWrite={canWrite}
+                  childTasksCount={childCount}
+                  isModularExpanded={isModularExpanded}
+                  onToggleModularParent={onToggleModularParent}
+                  onEditTask={onEditTask}
+                  handleUpdateTask={handleUpdateTask}
+                  handleDeleteTask={handleDeleteTask}
+                  handleMoveTask={handleMoveTask}
+                />
+              );
+            })
           )}
 
           {canWrite && (
