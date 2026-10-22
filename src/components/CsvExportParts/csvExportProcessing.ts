@@ -363,8 +363,12 @@ export async function executeCsvExport({
         if (typeof finish === 'number') finish = formatExcelDate(finish);
 
         const party = taskDef['party'] || '';
+        const mappedDuration = constantMapping['duration'] || proj[mapping['duration']];
         const duration =
-          taskDef['duration'] !== undefined ? taskDef['duration'] : '';
+          mappedDuration !== undefined && mappedDuration !== null && String(mappedDuration).trim() !== ''
+            ? String(mappedDuration).trim()
+            : (taskDef['duration'] !== undefined ? taskDef['duration'] : '');
+
         const predKey = Object.keys(taskDef).find(
           (k) => k.toLowerCase().replace(/\s+/g, '') === 'predecessor'
         );
@@ -377,13 +381,28 @@ export async function executeCsvExport({
           String(mappedPred).trim() !== ''
             ? mappedPred
             : templatePred;
+
         if (
           !keepOriginal['predecessor'] &&
           pred !== undefined &&
           pred !== null &&
           String(pred).trim() !== ''
         ) {
-          pred = projCode ? `${projCode}-${String(pred).trim()}` : String(pred).trim();
+          const strPred = String(pred).trim();
+          if (projCode) {
+            pred = strPred
+              .split(/([,;]\s*)/)
+              .map((part) => {
+                if (part === ',' || part === ';' || /^\s*$/.test(part)) return part;
+                const cleanPart = part.trim();
+                if (!cleanPart) return part;
+                if (cleanPart.includes('#') || cleanPart.startsWith(projCode)) return cleanPart;
+                return `${projCode}#${cleanPart}`;
+              })
+              .join('');
+          } else {
+            pred = strPred;
+          }
         }
         const mappedDelegation = constantMapping['delegation'] || proj[mapping['delegation']];
         const delegation =
@@ -424,7 +443,7 @@ export async function executeCsvExport({
       ['Cột', 'Quy tắc / Hướng dẫn'],
       [
         'Predecessor',
-        "Nếu không check 'Giữ nguyên', hệ thống sẽ tự ghép với Project Code. (VD: 23 thành VN26-23). Nếu nhiều task cách nhau bằng dấu phẩy.",
+        "Nếu không check 'Giữ nguyên', hệ thống sẽ tự ghép với Project Code. (VD: 23 thành VN26#23). Nếu nhiều task cách nhau bằng dấu phẩy.",
       ],
       ['Task code phụ', 'Hệ thống tự động ghép với Project Code ở đầu.'],
       [
@@ -474,7 +493,7 @@ export async function executeCsvExport({
       ['Cột', 'Quy tắc / Hướng dẫn'],
       [
         'Predecessor',
-        "Nếu không check 'Giữ nguyên', hệ thống sẽ tự ghép với Project Code. (VD: 23 thành VN26-23). Nếu nhiều task cách nhau bằng dấu phẩy.",
+        "Nếu không check 'Giữ nguyên', hệ thống sẽ tự ghép với Project Code. (VD: 23 thành VN26#23). Nếu nhiều task cách nhau bằng dấu phẩy.",
       ],
       ['Task code phụ', 'Hệ thống tự động ghép với Project Code ở đầu.'],
       [

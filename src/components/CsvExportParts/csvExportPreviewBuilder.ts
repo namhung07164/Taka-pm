@@ -157,8 +157,12 @@ export function buildCsvPreviewData({
         if (typeof finish === 'number') finish = formatExcelDate(finish);
 
         const party = taskDef['party'] || '';
+        const mappedDuration = constantMapping['duration'] || proj[mapping['duration']];
         const duration =
-          taskDef['duration'] !== undefined ? taskDef['duration'] : '';
+          mappedDuration !== undefined && mappedDuration !== null && String(mappedDuration).trim() !== ''
+            ? String(mappedDuration).trim()
+            : (taskDef['duration'] !== undefined ? taskDef['duration'] : '');
+
         const predKey = Object.keys(taskDef).find(
           (k) => k.toLowerCase().replace(/\s+/g, '') === 'predecessor'
         );
@@ -171,15 +175,28 @@ export function buildCsvPreviewData({
           String(mappedPred).trim() !== ''
             ? mappedPred
             : templatePred;
+
         if (
           !keepOriginal['predecessor'] &&
           pred !== undefined &&
           pred !== null &&
           String(pred).trim() !== ''
         ) {
-          pred = projCode
-            ? `${projCode}-${String(pred).trim()}`
-            : String(pred).trim();
+          const strPred = String(pred).trim();
+          if (projCode) {
+            pred = strPred
+              .split(/([,;]\s*)/)
+              .map((part) => {
+                if (part === ',' || part === ';' || /^\s*$/.test(part)) return part;
+                const cleanPart = part.trim();
+                if (!cleanPart) return part;
+                if (cleanPart.includes('#') || cleanPart.startsWith(projCode)) return cleanPart;
+                return `${projCode}#${cleanPart}`;
+              })
+              .join('');
+          } else {
+            pred = strPred;
+          }
         }
         const mappedDelegation = constantMapping['delegation'] || proj[mapping['delegation']];
         const delegation =
