@@ -56,6 +56,9 @@ export const CsvExportMappingTable: React.FC<CsvExportMappingTableProps> = ({
                 'projectCode',
                 'predecessor',
                 'projectYear',
+                'Sub-task code',
+                'Parent task code',
+                'delegation',
               ].includes(col);
             }
             return true;

@@ -292,7 +292,12 @@ export async function executeCsvExport({
             .replace(/[^a-z0-9]/g, '');
           return clean.includes('subtaskcode') || clean.includes('taskcodephu') || clean.includes('subtask');
         });
-        let subTaskCode = tcKey ? taskDef[tcKey] : '';
+        const mappedSubTaskCode = constantMapping['Sub-task code'] || proj[mapping['Sub-task code']];
+        let subTaskCode =
+          mappedSubTaskCode !== undefined && mappedSubTaskCode !== null && String(mappedSubTaskCode).trim() !== ''
+            ? String(mappedSubTaskCode).trim()
+            : (tcKey ? taskDef[tcKey] : '');
+
         if (
           keepOriginal['Sub-task code'] ||
           keepOriginal['Task code phụ']
@@ -308,7 +313,7 @@ export async function executeCsvExport({
           String(subTaskCode).trim() !== ''
         ) {
           const strVal = String(subTaskCode).trim();
-          subTaskCode = projCode && !strVal.includes('#') ? `${projCode}#${strVal}` : strVal;
+          subTaskCode = projCode && !strVal.includes('#') && !strVal.startsWith(projCode) ? `${projCode}#${strVal}` : strVal;
         } else {
           subTaskCode = projCode ? `${projCode}#${taskIndex}` : String(taskIndex);
         }
@@ -317,7 +322,12 @@ export async function executeCsvExport({
           const clean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
           return clean.includes('parenttaskcode') || clean.includes('parenttask') || clean.includes('taskme');
         });
-        let parentTaskCode = ptKey ? taskDef[ptKey] : '';
+        const mappedParentTaskCode = constantMapping['Parent task code'] || proj[mapping['Parent task code']];
+        let parentTaskCode =
+          mappedParentTaskCode !== undefined && mappedParentTaskCode !== null && String(mappedParentTaskCode).trim() !== ''
+            ? String(mappedParentTaskCode).trim()
+            : (ptKey ? taskDef[ptKey] : '');
+
         if (!keepOriginal['Parent task code']) {
           if (parentTaskCode !== undefined && parentTaskCode !== null && String(parentTaskCode).trim() !== '') {
             const strVal = String(parentTaskCode).trim();
@@ -329,6 +339,8 @@ export async function executeCsvExport({
           } else {
             parentTaskCode = '';
           }
+        } else {
+          parentTaskCode = parentTaskCode !== undefined && parentTaskCode !== null ? String(parentTaskCode).trim() : '';
         }
 
         let start = taskDef['start'] || '';
@@ -373,10 +385,11 @@ export async function executeCsvExport({
         ) {
           pred = projCode ? `${projCode}-${String(pred).trim()}` : String(pred).trim();
         }
+        const mappedDelegation = constantMapping['delegation'] || proj[mapping['delegation']];
         const delegation =
-          taskDef['delegation'] !== undefined
-            ? taskDef['delegation']
-            : constantMapping['delegation'] || 'true';
+          mappedDelegation !== undefined && mappedDelegation !== null && String(mappedDelegation).trim() !== ''
+            ? String(mappedDelegation).trim()
+            : (taskDef['delegation'] !== undefined ? String(taskDef['delegation']) : 'true');
         const comments =
           taskDef['comments'] !== undefined
             ? taskDef['comments']
