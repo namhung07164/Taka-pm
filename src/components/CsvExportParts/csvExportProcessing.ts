@@ -363,11 +363,11 @@ export async function executeCsvExport({
         if (typeof finish === 'number') finish = formatExcelDate(finish);
 
         const party = taskDef['party'] || '';
-        const mappedDuration = constantMapping['duration'] || proj[mapping['duration']];
+        const durKey = Object.keys(taskDef).find((k) => k.toLowerCase().trim() === 'duration');
         const duration =
-          mappedDuration !== undefined && mappedDuration !== null && String(mappedDuration).trim() !== ''
-            ? String(mappedDuration).trim()
-            : (taskDef['duration'] !== undefined ? taskDef['duration'] : '');
+          durKey && taskDef[durKey] !== undefined && taskDef[durKey] !== null
+            ? String(taskDef[durKey])
+            : (taskDef['duration'] !== undefined && taskDef['duration'] !== null ? String(taskDef['duration']) : '');
 
         const predKey = Object.keys(taskDef).find(
           (k) => k.toLowerCase().replace(/\s+/g, '') === 'predecessor'

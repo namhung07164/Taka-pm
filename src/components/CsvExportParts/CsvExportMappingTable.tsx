@@ -59,7 +59,6 @@ export const CsvExportMappingTable: React.FC<CsvExportMappingTableProps> = ({
                 'Sub-task code',
                 'Parent task code',
                 'delegation',
-                'duration',
               ].includes(col);
             }
             return true;
