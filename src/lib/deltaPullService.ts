@@ -26,6 +26,18 @@ let lastPullCompletedAt = 0;
 let pendingForcedFollowUp = false;
 
 /**
+ * If a delta pull is currently in-flight, wait for it to finish advancing LAST_SYNC_KEY
+ * before attaching or re-attaching the real-time delta listener.
+ */
+export async function waitForInFlightDeltaPull(): Promise<void> {
+  if (inFlightPullPromise) {
+    try {
+      await inFlightPullPromise;
+    } catch {}
+  }
+}
+
+/**
  * Kéo các delta thay đổi từ server về client kể từ lastSyncTime và áp dụng vào Zustand
  * Tiết kiệm hơn 80% Read so với việc onSnapshot cả collection
  * B4: In-flight deduplication prevents concurrent identical queries across tabs/effects

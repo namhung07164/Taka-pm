@@ -222,14 +222,21 @@ export function useDelegationsHydration({
 
         const localCount = await hydrateDelegationsFromLocal(year);
         const isClosedOrPastYear = Number(year) < new Date().getFullYear();
-        const currentDelegations = useAppStore.getState().delegationGroups || [];
+        const storeState = useAppStore.getState();
+        const currentDelegations = storeState.delegationGroups || [];
         const hasLocalDelegations =
           localCount > 0 ||
           currentDelegations.some((d) => String(d.projectYear || "") === String(year));
+        const markers = await getLoadedMarkers();
+        const hasFreshDelMarker = hasFreshMarker(markers, 'delegations_year', year);
+        const yearHasZeroProjects =
+          hasFreshMarker(markers, 'projects_year', year) &&
+          !(storeState.projects || []).some((p) => String(p.year) === String(year));
 
         const deltaManaged =
           (hasLocalDelegations && isClosedOrPastYear) ||
-          (DELTA_FIRST.delegations && hasLocalDelegations && hasFreshMarker(await getLoadedMarkers(), 'delegations_year', year));
+          yearHasZeroProjects ||
+          (DELTA_FIRST.delegations && hasFreshDelMarker);
         if (deltaManaged) {
           setIsDelegationsLoading(false);
           setCloudStatus("online");

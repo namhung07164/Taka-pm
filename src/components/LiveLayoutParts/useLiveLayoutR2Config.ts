@@ -64,7 +64,9 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       let bucketName = r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim();
 
       // If r2Config is not yet populated in store on fresh account boot, check local cache or fetch once from Firestore
-      const cachedR2 = localStorage.getItem('taka_r2_config_cache_v1');
+      const cachedR2 =
+        localStorage.getItem('taka_cache_r2_config_v1') ??
+        localStorage.getItem('taka_r2_config_cache_v1');
       if (cachedR2) {
         try {
           const parsed = JSON.parse(cachedR2);
@@ -78,7 +80,10 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
         } catch {}
       }
 
-      if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+      const alreadyVerifiedEmptyByConfigSync =
+        localStorage.getItem('taka_cache_r2_config_v1') === '';
+
+      if ((!accountId || !accessKeyId || !secretAccessKey || !bucketName) && !alreadyVerifiedEmptyByConfigSync) {
         try {
           const r2Doc = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
           if (r2Doc.exists()) {
@@ -88,9 +93,14 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
               accessKeyId = r2Data.accessKeyId;
               secretAccessKey = r2Data.secretAccessKey;
               bucketName = r2Data.bucketName;
+              localStorage.setItem('taka_cache_r2_config_v1', JSON.stringify(r2Data));
               localStorage.setItem('taka_r2_config_cache_v1', JSON.stringify(r2Data));
               useAppStore.getState().setR2Config(r2Data);
+            } else {
+              localStorage.setItem('taka_cache_r2_config_v1', '');
             }
+          } else {
+            localStorage.setItem('taka_cache_r2_config_v1', '');
           }
         } catch (fetchErr) {
           console.warn("Could not fetch r2_credentials from Firestore:", fetchErr);

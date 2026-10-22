@@ -1,9 +1,9 @@
 import { localDb } from './localDb';
 
 const PREFIX = 'loaded:';
-// Default warm window: 6 hours. Opening or resuming the app after 30m - 6h skips full-collection re-reads
+// Default warm window: 24 hours. Opening or resuming the app within 24h skips full-collection re-reads
 // and relies on Dexie Local-First + taka_deltas real-time stream (7-day retention).
-export const DEFAULT_MARKER_TTL_MS = 6 * 60 * 60 * 1000;
+export const DEFAULT_MARKER_TTL_MS = 24 * 60 * 60 * 1000;
 
 export type MarkerKind =
   | 'projects_year'

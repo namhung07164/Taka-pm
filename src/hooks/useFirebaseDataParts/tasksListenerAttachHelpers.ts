@@ -77,10 +77,12 @@ export function filterCompatibleServerDocsForProject(snapshotDocs: any[], p: Pro
 export function attachYearTasksListener(params: {
   year: string;
   yearKey: string;
+  projectsInYear?: Project[];
   userRole?: string;
   allowedStores: string[];
   deltaFirstTasks: boolean;
   tasksPool: Map<string, () => void>;
+  knownHydratedProjectCodes?: Set<string>;
   getCurrentPendingOrStoreTasks: () => Task[];
   batchTasksUpdate: (docChanges: any[], fromCache: boolean) => void;
   setIsTasksLoading: (loading: boolean) => void;
@@ -89,10 +91,12 @@ export function attachYearTasksListener(params: {
   const {
     year,
     yearKey,
+    projectsInYear,
     userRole,
     allowedStores,
     deltaFirstTasks,
     tasksPool,
+    knownHydratedProjectCodes,
     getCurrentPendingOrStoreTasks,
     batchTasksUpdate,
     setIsTasksLoading,
@@ -135,6 +139,14 @@ export function attachYearTasksListener(params: {
 
       if (deltaFirstTasks && !fromCache) {
         markLoaded('tasks_year', year).catch(() => {});
+        if (Array.isArray(projectsInYear)) {
+          projectsInYear.forEach((p) => {
+            if (p?.id) {
+              knownHydratedProjectCodes?.add(String(p.id));
+              markLoaded('tasks_proj', p.id).catch(() => {});
+            }
+          });
+        }
         const u = tasksPool.get(yearKey);
         tasksPool.set(yearKey, () => {});
         u?.();

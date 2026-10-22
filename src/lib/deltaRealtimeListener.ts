@@ -8,6 +8,8 @@ import {
   deltaTime,
   LAST_SYNC_KEY,
 } from './deltaSyncService';
+import { waitForInFlightDeltaPull } from './deltaPullService';
+import { waitForNetworkRecovery } from './syncResilience';
 import { safeSetItemLocal } from './storage';
 import type { TakaDelta } from '../types';
 
@@ -24,6 +26,7 @@ import type { TakaDelta } from '../types';
 const OVERLAP_MS = 3 * 1000; // 3s serverTime jitter buffer (duplicates filtered by delta id)
 const DETACH_AFTER_HIDDEN_MS = 15 * 60 * 1000; // Keep listener alive for up to 15 min when tab hidden (matches pool TTL)
 const RETRY_MS = 30 * 1000;
+const RECONNECT_COOLDOWN_MS = 2000;
 
 let activeRealtimeUnsub: (() => void) | null = null;
 
@@ -40,6 +43,7 @@ export function startDeltaRealtimeListener(): () => void {
   let detachTimer: ReturnType<typeof setTimeout> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastReconnectAt = 0;
   let signedIn = !!auth.currentUser;
   let stopped = false;
 
@@ -66,6 +70,7 @@ export function startDeltaRealtimeListener(): () => void {
 
   const attach = () => {
     if (stopped || unsub || !signedIn) return;
+    lastReconnectAt = Date.now();
     const since = getLastDeltaSyncTime() - OVERLAP_MS;
     const q = query(
       collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_deltas'),
@@ -109,13 +114,16 @@ export function startDeltaRealtimeListener(): () => void {
   const scheduleReconnect = () => {
     if (stopped) return;
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(() => {
+    reconnectTimer = setTimeout(async () => {
       reconnectTimer = null;
-      if (document.visibilityState === 'visible') {
-        detach();
-        attach();
-      }
-    }, 80);
+      if (stopped || document.visibilityState !== 'visible') return;
+      if (unsub && Date.now() - lastReconnectAt < RECONNECT_COOLDOWN_MS) return;
+      await waitForNetworkRecovery();
+      await waitForInFlightDeltaPull();
+      if (stopped || document.visibilityState !== 'visible') return;
+      detach();
+      attach();
+    }, 120);
   };
 
   if (signedIn) attach();
@@ -128,7 +136,7 @@ export function startDeltaRealtimeListener(): () => void {
       if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
       // If listener is still attached (hidden < 15 minutes), keep existing WebChannel socket (0 extra reads)
       if (unsub) return;
-      attach();
+      scheduleReconnect();
     }
   };
 

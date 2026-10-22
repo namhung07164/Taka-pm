@@ -101,11 +101,21 @@ export function useDeepLinkLogic(
         const curProjects = useAppStore.getState().projects || [];
         const curNotifProjects = useAppStore.getState().allProjectsForNotifs || [];
 
-        const p = findProjectWithCompositeIsolation(
+        let p = findProjectWithCompositeIsolation(
           [curEnriched, curProjects, curNotifProjects],
           String(targetId),
           extraParams
         );
+
+        if (!p) {
+          try {
+            const { localDb } = await import("../lib/localDb");
+            if (localDb) {
+              const allLocalProjs = await localDb.projects.toArray();
+              p = findProjectWithCompositeIsolation([allLocalProjs], String(targetId), extraParams);
+            }
+          } catch {}
+        }
 
         if (p) {
           if (!checkAccessLocally(p)) {
@@ -185,10 +195,22 @@ export function useDeepLinkLogic(
         const curTasks = useAppStore.getState().tasks || [];
         const curNotifTasks = useAppStore.getState().allTasksForNotifs || [];
 
-        const t: Task | undefined =
+        let t: Task | undefined =
           curFilteredTasks.find((item) => item.id && item.id.toLowerCase() === normId) ||
           curTasks.find((item) => item.id && item.id.toLowerCase() === normId) ||
           curNotifTasks.find((item) => item.id && item.id.toLowerCase() === normId);
+
+        if (!t && !String(targetId).startsWith("ts_")) {
+          try {
+            const { localDb } = await import("../lib/localDb");
+            if (localDb) {
+              const directMatch = await localDb.tasks.get(String(targetId));
+              if (directMatch && !directMatch.isDeleted) {
+                t = directMatch;
+              }
+            }
+          } catch {}
+        }
 
         if (t) {
           if (!checkAccessLocally(t)) {

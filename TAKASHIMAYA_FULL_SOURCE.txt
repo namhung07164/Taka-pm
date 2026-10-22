@@ -54320,7 +54320,9 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       let bucketName = r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim();
 
       // If r2Config is not yet populated in store on fresh account boot, check local cache or fetch once from Firestore
-      const cachedR2 = localStorage.getItem('taka_r2_config_cache_v1');
+      const cachedR2 =
+        localStorage.getItem('taka_cache_r2_config_v1') ??
+        localStorage.getItem('taka_r2_config_cache_v1');
       if (cachedR2) {
         try {
           const parsed = JSON.parse(cachedR2);
@@ -54334,7 +54336,10 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
         } catch {}
       }
 
-      if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+      const alreadyVerifiedEmptyByConfigSync =
+        localStorage.getItem('taka_cache_r2_config_v1') === '';
+
+      if ((!accountId || !accessKeyId || !secretAccessKey || !bucketName) && !alreadyVerifiedEmptyByConfigSync) {
         try {
           const r2Doc = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
           if (r2Doc.exists()) {
@@ -54344,9 +54349,14 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
               accessKeyId = r2Data.accessKeyId;
               secretAccessKey = r2Data.secretAccessKey;
               bucketName = r2Data.bucketName;
+              localStorage.setItem('taka_cache_r2_config_v1', JSON.stringify(r2Data));
               localStorage.setItem('taka_r2_config_cache_v1', JSON.stringify(r2Data));
               useAppStore.getState().setR2Config(r2Data);
+            } else {
+              localStorage.setItem('taka_cache_r2_config_v1', '');
             }
+          } else {
+            localStorage.setItem('taka_cache_r2_config_v1', '');
           }
         } catch (fetchErr) {
           console.warn("Could not fetch r2_credentials from Firestore:", fetchErr);
@@ -73894,7 +73904,11 @@ export async function handleProjectIdentityChange({
   if (relatedTasks.length === 0 && project.code && (project.taskCount || (project.taskSummaries && project.taskSummaries.length > 0))) {
     try {
       const { ensureProjectTasksLoaded } = await import('../../lib/taskStateService');
-      const loaded: Task[] = await ensureProjectTasksLoaded(project.code);
+      const loaded: Task[] = await ensureProjectTasksLoaded(project.code, {
+        projectId: project.id,
+        store: project.store,
+        year: project.year,
+      });
       if (loaded.length > 0) {
         relatedTasks = loaded.filter(t => {
           const matchesYear = !t.projectYear || !oldPYear || String(t.projectYear) === oldPYear;
@@ -73954,7 +73968,13 @@ export async function handleProjectIdentityChange({
     }
   });
 
-  const storeCosts = useAppStore.getState().costs || [];
+  let storeCosts = useAppStore.getState().costs || [];
+  if (storeCosts.length === 0) {
+    try {
+      const { getLocalCosts } = await import('../../lib/localDb');
+      storeCosts = await getLocalCosts(oldPYear || 'all');
+    } catch {}
+  }
   const relatedCosts = storeCosts.filter(c => {
     const matchesCode = String(c.projectCode || '').trim().toLowerCase() === oldPCode;
     const matchesYear = !c.projectYear || !oldPYear || String(c.projectYear) === oldPYear;
@@ -74081,7 +74101,6 @@ export async function handleProjectIdentityChange({
     }
   });
 }
-
 
 ================================================================================
 FILE: src/components/ProjectModalParts/projectModalTypes.ts
@@ -89909,7 +89928,16 @@ import { doc, getDoc, getDocs, collection, query, where, limit } from 'firebase/
 import { db, APP_ID } from '../lib/firebase';
 import { useAppStore } from '../store/useAppStore';
 import { Project, Task } from '../types';
-import { resolveStoreAndYearForQuery } from './deepLinkStoreResolver';
+import { resolveStoreAndYearForQuery, findProjectWithCompositeIsolation } from './deepLinkStoreResolver';
+
+export interface DeepLinkExtraParams {
+  store?: string;
+  year?: string;
+  code?: string;
+  projectId?: string;
+  openChat?: boolean;
+  openModal?: boolean;
+}
 
 export function useDeepLinkLogic(
   handleTabChange: (tab: any) => void,
@@ -89919,12 +89947,12 @@ export function useDeepLinkLogic(
   const currentUser = useAppStore(state => state.currentUser);
   const setIsLoginModalOpen = useAppStore(state => state.setIsLoginModalOpen);
 
-const pendingDeepLinkRef = useRef<{
+  const pendingDeepLinkRef = useRef<{
     targetType: string;
     targetId: string;
-    extraParams?: { store?: string; year?: string; code?: string };
+    extraParams?: DeepLinkExtraParams;
   } | null>(null);
-  const executeDeepLinkRef = useRef<((targetType: string, targetId: string, extraParams?: { store?: string; year?: string; code?: string }) => Promise<void>) | null>(null);
+  const executeDeepLinkRef = useRef<((targetType: string, targetId: string, extraParams?: DeepLinkExtraParams) => Promise<void>) | null>(null);
 
   useEffect(() => {
     if (currentUser?.id && currentUser.id !== "guest" && pendingDeepLinkRef.current && executeDeepLinkRef.current) {
@@ -89934,9 +89962,7 @@ const pendingDeepLinkRef = useRef<{
     }
   }, [currentUser?.id]);
 
-  
-
-const checkAccessLocally = useCallback((data: any): boolean => {
+  const checkAccessLocally = useCallback((data: any): boolean => {
     const user = useAppStore.getState().currentUser;
     if (!user || user.role === "admin") return true;
     const store = String(data.store || data.projectStore || "").toUpperCase().trim();
@@ -89945,11 +89971,33 @@ const checkAccessLocally = useCallback((data: any): boolean => {
     return true;
   }, []);
 
+  const syncProjectScopeFilters = useCallback((pStore?: string, pYear?: string | number, pLocation?: string, pId?: string) => {
+    const state = useAppStore.getState();
+    if (pYear && String(pYear).toLowerCase() !== "all" && String(pYear) !== state.globalYearFilter) {
+      state.setGlobalYearFilter(String(pYear));
+    }
+    if (pStore && pStore.toLowerCase() !== "all") {
+      const normStore = pStore.trim().toUpperCase();
+      if (state.globalStoreFilter.toUpperCase() !== normStore) {
+        state.setGlobalStoreFilter(normStore as any);
+      }
+    }
+    if (state.globalLocationFilter.length > 0 && pLocation && !state.globalLocationFilter.includes(pLocation)) {
+      state.setGlobalLocationFilter([]);
+    }
+    if (pId) {
+      const curExpanded = state.expandedProjectIds || [];
+      if (!curExpanded.includes(String(pId))) {
+        state.setExpandedProjectIds([...curExpanded, String(pId)]);
+      }
+    }
+  }, []);
+
   const executeDeepLink = useCallback(
     async (
       targetType: string,
       targetId: string,
-      extraParams?: { store?: string; year?: string; code?: string }
+      extraParams?: DeepLinkExtraParams
     ) => {
       if (!targetType || !targetId) return;
 
@@ -89960,144 +90008,106 @@ const checkAccessLocally = useCallback((data: any): boolean => {
         return;
       }
 
-      // If extraParams contains year or store, proactively sync filters
-      if (extraParams?.year && String(extraParams.year) !== useAppStore.getState().globalYearFilter) {
+      // Proactively sync store & year filters from extraParams
+      if (extraParams?.year && String(extraParams.year).toLowerCase() !== "all" && String(extraParams.year) !== useAppStore.getState().globalYearFilter) {
         useAppStore.getState().setGlobalYearFilter(String(extraParams.year));
       }
       if (
         extraParams?.store &&
-        useAppStore.getState().globalStoreFilter.toLowerCase() !== extraParams.store.toLowerCase()
+        extraParams.store.toLowerCase() !== "all" &&
+        useAppStore.getState().globalStoreFilter.toUpperCase() !== extraParams.store.trim().toUpperCase()
       ) {
-        useAppStore.getState().setGlobalStoreFilter(extraParams.store.toUpperCase() as any);
+        useAppStore.getState().setGlobalStoreFilter(extraParams.store.trim().toUpperCase() as any);
       }
 
       // 1. PROJECT TARGET
       if (targetType === "project") {
-        const normId = String(targetId).trim().toLowerCase();
         const curEnriched = enrichedProjectsRef.current || [];
         const curProjects = useAppStore.getState().projects || [];
         const curNotifProjects = useAppStore.getState().allProjectsForNotifs || [];
 
-        let p: Project | undefined =
-          curEnriched.find(
-            (item) =>
-              String(item.no) === targetId ||
-              String(item.id).toLowerCase() === normId ||
-              String(item.code || "").toLowerCase() === normId
-          ) ||
-          curProjects.find(
-            (item) =>
-              String(item.no) === targetId ||
-              String(item.id).toLowerCase() === normId ||
-              String(item.code || "").toLowerCase() === normId
-          ) ||
-          curNotifProjects.find(
-            (item) =>
-              String(item.no) === targetId ||
-              String(item.id).toLowerCase() === normId ||
-              String(item.code || "").toLowerCase() === normId
-          );
+        let p = findProjectWithCompositeIsolation(
+          [curEnriched, curProjects, curNotifProjects],
+          String(targetId),
+          extraParams
+        );
+
+        if (!p) {
+          try {
+            const { localDb } = await import("../lib/localDb");
+            if (localDb) {
+              const allLocalProjs = await localDb.projects.toArray();
+              p = findProjectWithCompositeIsolation([allLocalProjs], String(targetId), extraParams);
+            }
+          } catch {}
+        }
 
         if (p) {
           if (!checkAccessLocally(p)) {
             window.history.replaceState({}, document.title, window.location.pathname);
-            useAppStore.getState().setToast({
-              title: "Access Denied",
-              message: "You do not have permission to access this project's store.",
-            });
+            useAppStore.getState().setToast({ title: "Access Denied", message: "You do not have permission to access this project's store." });
             return;
           }
-          if (p.year && String(p.year) !== useAppStore.getState().globalYearFilter) {
-            useAppStore.getState().setGlobalYearFilter(String(p.year));
-          }
-          if (
-            p.store &&
-            useAppStore.getState().globalStoreFilter !== "all" &&
-            p.store.toLowerCase() !== useAppStore.getState().globalStoreFilter.toLowerCase()
-          ) {
-            useAppStore.getState().setGlobalStoreFilter("all");
-          }
+          syncProjectScopeFilters(p.store, p.year, p.location, p.id);
           handleTabChange("detail");
-          if (p.code) {
-            useAppStore.getState().setDetailTabFilterCode(p.code);
+          if (p.code) useAppStore.getState().setDetailTabFilterCode(p.code);
+          if (extraParams?.openModal !== false) {
+            useAppStore.getState().setEditingProject(p);
+            useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
+            useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
+            useAppStore.getState().setIsProjectModalOpen(true);
           }
-          useAppStore.getState().setEditingProject(p);
-          useAppStore.getState().setIsReadOnlyModal(true);
-          useAppStore.getState().setIsProjectModalOpen(true);
           window.history.replaceState({}, document.title, window.location.pathname);
           return;
         }
 
-        // Fast Firestore point read (<100ms)
+        // Fast Firestore point read (<100ms) with strict store isolation
         try {
           let fetchedProj: Project | null = null;
-          if (targetId.includes("_") || targetId.length > 8) {
-            const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetId);
+          const docIdCandidate = extraParams?.projectId || (String(targetId).includes("_") || String(targetId).length > 8 ? String(targetId) : "");
+          if (docIdCandidate) {
+            const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", docIdCandidate);
             const snap = await getDoc(docRef);
-            if (snap.exists()) {
-              fetchedProj = { id: snap.id, ...snap.data() } as Project;
-            }
+            if (snap.exists()) fetchedProj = { id: snap.id, ...snap.data() } as Project;
           }
           if (!fetchedProj) {
             const isNum = !isNaN(Number(targetId));
-            const constraints: any[] = [];
-            if (isNum) {
-              constraints.push(where("no", "==", Number(targetId)));
-            } else {
-              constraints.push(where("code", "==", targetId));
+            const constraints: any[] = [isNum ? where("no", "==", Number(targetId)) : where("code", "==", targetId)];
+            if (extraParams?.store && extraParams.store.toLowerCase() !== "all") {
+              constraints.push(where("store", "==", extraParams.store.trim().toUpperCase()));
             }
-            const q = query(
-              collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"),
-              ...constraints,
-              limit(1)
-            );
+            const q = query(collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"), ...constraints, limit(5));
             const snap = await getDocs(q);
             if (!snap.empty) {
-              fetchedProj = { id: snap.docs[0].id, ...snap.docs[0].data() } as Project;
+              const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
+              fetchedProj = findProjectWithCompositeIsolation([docs], String(targetId), extraParams) || docs[0];
             }
           }
 
           if (fetchedProj) {
             if (!checkAccessLocally(fetchedProj)) {
               window.history.replaceState({}, document.title, window.location.pathname);
-              useAppStore.getState().setToast({
-                title: "Access Denied",
-                message: "You do not have permission to access this project's store.",
-              });
+              useAppStore.getState().setToast({ title: "Access Denied", message: "You do not have permission to access this project's store." });
               return;
             }
-            if (fetchedProj.year && String(fetchedProj.year) !== useAppStore.getState().globalYearFilter) {
-              useAppStore.getState().setGlobalYearFilter(String(fetchedProj.year));
-            }
-            if (
-              fetchedProj.store &&
-              useAppStore.getState().globalStoreFilter !== "all" &&
-              fetchedProj.store.toLowerCase() !== useAppStore.getState().globalStoreFilter.toLowerCase()
-            ) {
-              useAppStore.getState().setGlobalStoreFilter("all");
-            }
+            syncProjectScopeFilters(fetchedProj.store, fetchedProj.year, fetchedProj.location, fetchedProj.id);
             handleTabChange("detail");
-            if (fetchedProj.code) {
-              useAppStore.getState().setDetailTabFilterCode(fetchedProj.code);
+            if (fetchedProj.code) useAppStore.getState().setDetailTabFilterCode(fetchedProj.code);
+            if (extraParams?.openModal !== false) {
+              useAppStore.getState().setEditingProject(fetchedProj);
+              useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
+              useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
+              useAppStore.getState().setIsProjectModalOpen(true);
             }
-            useAppStore.getState().setEditingProject(fetchedProj);
-            useAppStore.getState().setIsReadOnlyModal(true);
-            useAppStore.getState().setIsProjectModalOpen(true);
             window.history.replaceState({}, document.title, window.location.pathname);
           } else {
             window.history.replaceState({}, document.title, window.location.pathname);
-            useAppStore.getState().setToast({
-              title: "Not Found",
-              message: "This project was not found or data has been deleted.",
-            });
+            useAppStore.getState().setToast({ title: "Not Found", message: "This project was not found or data has been deleted." });
           }
         } catch (err) {
           console.error("Error fetching project deep link:", err);
           window.history.replaceState({}, document.title, window.location.pathname);
-          useAppStore.getState().setToast({
-            title: "Error",
-            message: "Could not load project.",
-          });
+          useAppStore.getState().setToast({ title: "Error", message: "Could not load project." });
         }
         return;
       }
@@ -90115,6 +90125,18 @@ const checkAccessLocally = useCallback((data: any): boolean => {
           curTasks.find((item) => item.id && item.id.toLowerCase() === normId) ||
           curNotifTasks.find((item) => item.id && item.id.toLowerCase() === normId);
 
+        if (!t && !String(targetId).startsWith("ts_")) {
+          try {
+            const { localDb } = await import("../lib/localDb");
+            if (localDb) {
+              const directMatch = await localDb.tasks.get(String(targetId));
+              if (directMatch && !directMatch.isDeleted) {
+                t = directMatch;
+              }
+            }
+          } catch {}
+        }
+
         if (t) {
           if (!checkAccessLocally(t)) {
             window.history.replaceState({}, document.title, window.location.pathname);
@@ -90124,70 +90146,78 @@ const checkAccessLocally = useCallback((data: any): boolean => {
             });
             return;
           }
-          if (t.projectYear && String(t.projectYear) !== useAppStore.getState().globalYearFilter) {
-            useAppStore.getState().setGlobalYearFilter(String(t.projectYear));
-          }
-          if (
-            t.projectStore &&
-            useAppStore.getState().globalStoreFilter !== "all" &&
-            t.projectStore.toLowerCase() !== useAppStore.getState().globalStoreFilter.toLowerCase()
-          ) {
-            useAppStore.getState().setGlobalStoreFilter("all");
-          }
+          const resolvedStore = t.projectStore || extraParams?.store;
+          const resolvedYear = t.projectYear || extraParams?.year;
+          const resolvedProjId = t.projectId || extraParams?.projectId;
+          syncProjectScopeFilters(resolvedStore, resolvedYear, t.location, resolvedProjId);
           handleTabChange("detail");
-          if (t.projectCode) {
-            useAppStore.getState().setDetailTabFilterCode(t.projectCode);
+          if (t.projectCode || extraParams?.code) {
+            useAppStore.getState().setDetailTabFilterCode(t.projectCode || extraParams?.code || "");
           }
           useAppStore.getState().setDetailTabFocusTaskId(t.id);
           useAppStore.getState().setGanttTabFocusTaskId(t.id);
-          useAppStore.getState().setEditingTask(t);
-          useAppStore.getState().setIsReadOnlyModal(true);
-          useAppStore.getState().setIsTaskModalOpen(true);
+          if (extraParams?.openModal !== false) {
+            useAppStore.getState().setEditingTask(t);
+            useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
+            useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
+            useAppStore.getState().setIsTaskModalOpen(true);
+          }
           window.history.replaceState({}, document.title, window.location.pathname);
           return;
         }
 
-        // Fast Firestore point read
+        // Fast Firestore point read (or fallback if virtual summary task ts_...)
         try {
-          const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", String(targetId));
-          const snap = await getDoc(docRef);
-          if (snap.exists()) {
-            const fetchedTask = { id: snap.id, ...snap.data() } as Task;
-            if (!checkAccessLocally(fetchedTask)) {
+          if (!String(targetId).startsWith("ts_")) {
+            const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", String(targetId));
+            const snap = await getDoc(docRef);
+            if (snap.exists()) {
+              const fetchedTask = { id: snap.id, ...snap.data() } as Task;
+              if (!checkAccessLocally(fetchedTask)) {
+                window.history.replaceState({}, document.title, window.location.pathname);
+                useAppStore.getState().setToast({
+                  title: "Access Denied",
+                  message: "You do not have permission to access this task's store.",
+                });
+                return;
+              }
+              syncProjectScopeFilters(
+                fetchedTask.projectStore || extraParams?.store,
+                fetchedTask.projectYear || extraParams?.year,
+                fetchedTask.location,
+                fetchedTask.projectId || extraParams?.projectId
+              );
+              handleTabChange("detail");
+              if (fetchedTask.projectCode || extraParams?.code) {
+                useAppStore.getState().setDetailTabFilterCode(fetchedTask.projectCode || extraParams?.code || "");
+              }
+              useAppStore.getState().setDetailTabFocusTaskId(fetchedTask.id);
+              useAppStore.getState().setGanttTabFocusTaskId(fetchedTask.id);
+              if (extraParams?.openModal !== false) {
+                useAppStore.getState().setEditingTask(fetchedTask);
+                useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
+                useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
+                useAppStore.getState().setIsTaskModalOpen(true);
+              }
               window.history.replaceState({}, document.title, window.location.pathname);
-              useAppStore.getState().setToast({
-                title: "Access Denied",
-                message: "You do not have permission to access this task's store.",
-              });
               return;
             }
-            if (fetchedTask.projectYear && String(fetchedTask.projectYear) !== useAppStore.getState().globalYearFilter) {
-              useAppStore.getState().setGlobalYearFilter(String(fetchedTask.projectYear));
-            }
-            if (
-              fetchedTask.projectStore &&
-              useAppStore.getState().globalStoreFilter !== "all" &&
-              fetchedTask.projectStore.toLowerCase() !== useAppStore.getState().globalStoreFilter.toLowerCase()
-            ) {
-              useAppStore.getState().setGlobalStoreFilter("all");
-            }
-            handleTabChange("detail");
-            if (fetchedTask.projectCode) {
-              useAppStore.getState().setDetailTabFilterCode(fetchedTask.projectCode);
-            }
-            useAppStore.getState().setDetailTabFocusTaskId(fetchedTask.id);
-            useAppStore.getState().setGanttTabFocusTaskId(fetchedTask.id);
-            useAppStore.getState().setEditingTask(fetchedTask);
-            useAppStore.getState().setIsReadOnlyModal(true);
-            useAppStore.getState().setIsTaskModalOpen(true);
-            window.history.replaceState({}, document.title, window.location.pathname);
-          } else {
-            window.history.replaceState({}, document.title, window.location.pathname);
-            useAppStore.getState().setToast({
-              title: "Not Found",
-              message: "This task was not found or data has been deleted.",
-            });
           }
+          // Fallback: if virtual task summary (ts_...) or task not yet hydrated, navigate to parent project in DetailTab
+          if (extraParams?.code || extraParams?.projectId) {
+            syncProjectScopeFilters(extraParams.store, extraParams.year, undefined, extraParams.projectId);
+            handleTabChange("detail");
+            if (extraParams.code) {
+              useAppStore.getState().setDetailTabFilterCode(extraParams.code);
+            }
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
+          }
+          window.history.replaceState({}, document.title, window.location.pathname);
+          useAppStore.getState().setToast({
+            title: "Not Found",
+            message: "This task was not found or data has been deleted.",
+          });
         } catch (err) {
           console.error("Error fetching task deep link:", err);
           window.history.replaceState({}, document.title, window.location.pathname);
@@ -92366,10 +92396,12 @@ export function filterCompatibleServerDocsForProject(snapshotDocs: any[], p: Pro
 export function attachYearTasksListener(params: {
   year: string;
   yearKey: string;
+  projectsInYear?: Project[];
   userRole?: string;
   allowedStores: string[];
   deltaFirstTasks: boolean;
   tasksPool: Map<string, () => void>;
+  knownHydratedProjectCodes?: Set<string>;
   getCurrentPendingOrStoreTasks: () => Task[];
   batchTasksUpdate: (docChanges: any[], fromCache: boolean) => void;
   setIsTasksLoading: (loading: boolean) => void;
@@ -92378,10 +92410,12 @@ export function attachYearTasksListener(params: {
   const {
     year,
     yearKey,
+    projectsInYear,
     userRole,
     allowedStores,
     deltaFirstTasks,
     tasksPool,
+    knownHydratedProjectCodes,
     getCurrentPendingOrStoreTasks,
     batchTasksUpdate,
     setIsTasksLoading,
@@ -92424,6 +92458,14 @@ export function attachYearTasksListener(params: {
 
       if (deltaFirstTasks && !fromCache) {
         markLoaded('tasks_year', year).catch(() => {});
+        if (Array.isArray(projectsInYear)) {
+          projectsInYear.forEach((p) => {
+            if (p?.id) {
+              knownHydratedProjectCodes?.add(String(p.id));
+              markLoaded('tasks_proj', p.id).catch(() => {});
+            }
+          });
+        }
         const u = tasksPool.get(yearKey);
         tasksPool.set(yearKey, () => {});
         u?.();
@@ -92514,6 +92556,7 @@ export function attachProjectTasksListener(params: {
   );
   tasksPool.set(projKey, unsub);
 }
+
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts
 ================================================================================
@@ -92528,11 +92571,10 @@ import { buildStoreAndYearQuery } from "./firebaseQueryHelpers";
 import { hydrateCostsFromLocal, offloadPersistSnapshot } from "../../lib/backgroundSyncWorker";
 import { deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
-import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+import { getLoadedMarkers, hasFreshMarker, markLoaded } from "../../lib/loadedMarkers";
 
-// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
-// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
-const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+// Delta-first with 6-hour warm marker TTL: reopens within 30m-6h use Dexie + taka_deltas (0 collection reads)
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
 
 
 interface UseCostsHydrationProps {
@@ -92544,13 +92586,21 @@ interface UseCostsHydrationProps {
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const secondaryCostsYearsFetched = new Set<string>();
 
-// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+// Chuyển updatedAt (ISO string / Firestore Timestamp / plain {seconds} / number) về ms
 const tsOf = (v: any): number => {
   if (!v) return 0;
-  const n =
-    typeof v === "string" ? Date.parse(v)
-    : typeof v?.toMillis === "function" ? v.toMillis()
-    : Number(v);
+  if (typeof v === "string") {
+    const n = Date.parse(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.toMillis === "function") {
+    const n = v.toMillis();
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.seconds === "number") {
+    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  }
+  const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 // Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
@@ -92630,19 +92680,20 @@ export function useCostsHydration({
     }, 80);
   }, []);
 
-  // Sleep/Wake Recovery Listener
+  // Sleep/Wake & Network Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      // 1. KHÔNG hủy listener khi thức giấc.
-      
+      // Preserve active onSnapshot listeners in costsPool so Firestore SDK resumes via resumeToken
       if (useAppStore.getState().isCostsRequested) {
         hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
       }
     };
 
     window.addEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    window.addEventListener("taka_network_recovered", handleSleepWakeRecovery);
     return () => {
       window.removeEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+      window.removeEventListener("taka_network_recovered", handleSleepWakeRecovery);
     };
   }, []);
 
@@ -92703,14 +92754,21 @@ export function useCostsHydration({
         costsPool.current.set(year, () => {});
 
         const localCount = await hydrateCostsFromLocal(year);
-        const currentCosts = useAppStore.getState().costs || [];
+        const storeState = useAppStore.getState();
+        const currentCosts = storeState.costs || [];
         const hasLocalCosts =
           localCount > 0 || currentCosts.some((c) => String(c.projectYear || "") === String(year));
         const isClosedOrPastYear = Number(year) < new Date().getFullYear();
+        const markers = await getLoadedMarkers();
+        const hasFreshCostMarker = hasFreshMarker(markers, 'costs_year', year);
+        const yearHasZeroProjects =
+          hasFreshMarker(markers, 'projects_year', year) &&
+          !(storeState.projects || []).some((p) => String(p.year) === String(year));
 
         const deltaManaged =
           (hasLocalCosts && isClosedOrPastYear) ||
-          (DELTA_FIRST.costs && hasLocalCosts && hasMarker(await getLoadedMarkers(), 'costs_year', year));
+          yearHasZeroProjects ||
+          (DELTA_FIRST.costs && hasFreshCostMarker);
         if (deltaManaged) {
           setIsCostsLoading(false);
           setCloudStatus("online");
@@ -92744,7 +92802,40 @@ export function useCostsHydration({
               usePerformanceStore.getState().trackSnapshot(`taka_costs_${year}`, snapshot);
               setIsCostsLoading(false);
               const fromCache = snapshot.metadata.fromCache;
-              batchCostsUpdate(snapshot.docChanges(), fromCache);
+              let changesToApply: any[] = snapshot.docChanges();
+
+              if (!fromCache && !snapshot.metadata.hasPendingWrites) {
+                const serverIds = new Set<string>();
+                snapshot.docs.forEach((d) => serverIds.add(d.id));
+                const nowMs = Date.now();
+                const allowedLower = allowedStores.map((s) => s.toLowerCase());
+                const isStoreRestricted =
+                  userRole !== "admin" && allowedLower.length > 0 && !allowedLower.includes("all");
+                const currentCostsNow = useAppStore.getState().costs || [];
+                currentCostsNow.forEach((c) => {
+                  const cYr = String(c.projectYear ?? (c as any).year ?? "").trim();
+                  if (c?.id && cYr === String(year).trim() && !serverIds.has(c.id)) {
+                    const cSt = c.projectStore || (c as any).store;
+                    if (
+                      isStoreRestricted &&
+                      cSt &&
+                      !allowedLower.includes(String(cSt).trim().toLowerCase())
+                    ) {
+                      return;
+                    }
+                    const updatedMs = tsOf(c.updatedAt);
+                    if (!updatedMs || nowMs - updatedMs > 30000) {
+                      changesToApply.push({
+                        type: "removed",
+                        doc: { id: c.id, data: () => ({ ...c, isDeleted: true }) },
+                      });
+                    }
+                  }
+                });
+              }
+
+              batchCostsUpdate(changesToApply, fromCache);
+              setCloudStatus("online");
 
               if (!fromCache) {
                 markLoaded('costs_year', year).catch(() => {});
@@ -92781,7 +92872,7 @@ export function useCostsHydration({
         try {
           const localCount = await hydrateCostsFromLocal(year);
           const markers = await getLoadedMarkers();
-          if (localCount > 0 || hasMarker(markers, 'costs_year', year)) {
+          if (localCount > 0 || hasFreshMarker(markers, 'costs_year', year)) {
             return;
           }
 
@@ -92847,6 +92938,7 @@ export function useCostsHydration({
     setCloudStatus,
   ]);
 }
+
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useDelegationsHydration.ts
 ================================================================================
@@ -92864,11 +92956,10 @@ import {
 } from "../../lib/backgroundSyncWorker";
 import { getLocalDelegations, deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
-import { getLoadedMarkers, hasMarker, markLoaded } from "../../lib/loadedMarkers";
+import { getLoadedMarkers, hasFreshMarker, markLoaded } from "../../lib/loadedMarkers";
 
-// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
-// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
-const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+// Delta-first with 6-hour warm marker TTL: reopens within 30m-6h use Dexie + taka_deltas (0 collection reads)
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
 
 
 interface UseDelegationsHydrationProps {
@@ -92879,13 +92970,21 @@ interface UseDelegationsHydrationProps {
 
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
-// Chuyển updatedAt (ISO string / Firestore Timestamp / number) về ms
+// Chuyển updatedAt (ISO string / Firestore Timestamp / plain {seconds} / number) về ms
 const tsOf = (v: any): number => {
   if (!v) return 0;
-  const n =
-    typeof v === "string" ? Date.parse(v)
-    : typeof v?.toMillis === "function" ? v.toMillis()
-    : Number(v);
+  if (typeof v === "string") {
+    const n = Date.parse(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.toMillis === "function") {
+    const n = v.toMillis();
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.seconds === "number") {
+    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  }
+  const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 // Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
@@ -92968,18 +93067,20 @@ export function useDelegationsHydration({
     }, 100);
   }, []);
 
-  // Sleep/Wake Recovery Listener
+  // Sleep/Wake & Network Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      // KHÔNG hủy listener và KHÔNG xóa cache năm khi thức giấc (xem giải thích ở B1).
+      // Preserve active onSnapshot listeners in delegationsPool so Firestore SDK resumes via resumeToken
       if (useAppStore.getState().isDelegationsRequested) {
         hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
       }
     };
 
     window.addEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+    window.addEventListener("taka_network_recovered", handleSleepWakeRecovery);
     return () => {
       window.removeEventListener("taka_sleep_wake_recovery", handleSleepWakeRecovery);
+      window.removeEventListener("taka_network_recovered", handleSleepWakeRecovery);
     };
   }, []);
 
@@ -93065,14 +93166,21 @@ export function useDelegationsHydration({
 
         const localCount = await hydrateDelegationsFromLocal(year);
         const isClosedOrPastYear = Number(year) < new Date().getFullYear();
-        const currentDelegations = useAppStore.getState().delegationGroups || [];
+        const storeState = useAppStore.getState();
+        const currentDelegations = storeState.delegationGroups || [];
         const hasLocalDelegations =
           localCount > 0 ||
           currentDelegations.some((d) => String(d.projectYear || "") === String(year));
+        const markers = await getLoadedMarkers();
+        const hasFreshDelMarker = hasFreshMarker(markers, 'delegations_year', year);
+        const yearHasZeroProjects =
+          hasFreshMarker(markers, 'projects_year', year) &&
+          !(storeState.projects || []).some((p) => String(p.year) === String(year));
 
         const deltaManaged =
           (hasLocalDelegations && isClosedOrPastYear) ||
-          (DELTA_FIRST.delegations && hasLocalDelegations && hasMarker(await getLoadedMarkers(), 'delegations_year', year));
+          yearHasZeroProjects ||
+          (DELTA_FIRST.delegations && hasFreshDelMarker);
         if (deltaManaged) {
           setIsDelegationsLoading(false);
           setCloudStatus("online");
@@ -93117,10 +93225,47 @@ export function useDelegationsHydration({
               .getState()
               .trackSnapshot(`taka_delegation_groups_${year}`, snapshot);
             setIsDelegationsLoading(false);
-            batchDelegationsUpdate(snapshot.docChanges(), snapshot.metadata.fromCache);
+            const fromCache = snapshot.metadata.fromCache;
+            let changesToApply: any[] = snapshot.docChanges();
 
-            if (DELTA_FIRST.delegations && !snapshot.metadata.fromCache) {
+            if (!fromCache && !snapshot.metadata.hasPendingWrites) {
+              const serverIds = new Set<string>();
+              snapshot.docs.forEach((d) => serverIds.add(d.id));
+              const nowMs = Date.now();
+              const allowedLower = allowedStores.map((s) => s.toLowerCase());
+              const isStoreRestricted =
+                userRole !== "admin" && allowedLower.length > 0 && !allowedLower.includes("all");
+              const currentDelegationsNow = useAppStore.getState().delegationGroups || [];
+              currentDelegationsNow.forEach((g) => {
+                const gYr = String(g.projectYear ?? (g as any).year ?? "").trim();
+                if (g?.id && gYr === String(year).trim() && !serverIds.has(g.id)) {
+                  const gSt = g.projectStore || (g as any).store;
+                  if (
+                    isStoreRestricted &&
+                    gSt &&
+                    !allowedLower.includes(String(gSt).trim().toLowerCase())
+                  ) {
+                    return;
+                  }
+                  const updatedMs = tsOf(g.updatedAt);
+                  if (!updatedMs || nowMs - updatedMs > 30000) {
+                    changesToApply.push({
+                      type: "removed",
+                      doc: { id: g.id, data: () => ({ ...g, isDeleted: true }) },
+                    });
+                  }
+                }
+              });
+            }
+
+            batchDelegationsUpdate(changesToApply, fromCache);
+            setCloudStatus("online");
+
+            if (!fromCache) {
               markLoaded('delegations_year', year).catch(() => {});
+            }
+
+            if (DELTA_FIRST.delegations && !fromCache) {
               const u = delegationsPool.current.get(year);
               delegationsPool.current.set(year, () => {});
               u?.();
@@ -93150,6 +93295,7 @@ export function useDelegationsHydration({
     setCloudStatus,
   ]);
 }
+
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useProjectsHydration.ts
 ================================================================================
@@ -93173,7 +93319,7 @@ import {
   applyIncomingDeltas,
 } from '../../lib/deltaSyncService';
 import { resolveInvalidations } from '../../lib/deltaInvalidateService';
-import { getLoadedMarkers, hasMarker, markLoaded } from '../../lib/loadedMarkers';
+import { getLoadedMarkers, hasFreshMarker, markLoaded } from '../../lib/loadedMarkers';
 import {
   isStaleCacheDoc,
   buildProjectTasksLookupIndex,
@@ -93182,9 +93328,8 @@ import {
   buildZombieProjectRemovalsForYear,
 } from './projectsHydrationHelpers';
 
-// Delta-first: sau lần tải đầy đủ đầu tiên, hủy onSnapshot lớn, dựa vào Dexie + kênh delta.
-// Bật TỪNG CÁI sau khi đã test. Mặc định tắt = hành vi hiện tại.
-const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+// Delta-first with 6-hour warm marker TTL: reopens within 30m-6h use Dexie + taka_deltas (0 collection reads)
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
 
 interface UseProjectsHydrationProps {
   querySignature: string | null;
@@ -93433,15 +93578,20 @@ export function useProjectsHydration({
       );
 
       const isClosedOrPastYear = Number(year) < new Date().getFullYear() - 1;
+      const allStoreProjects = useAppStore.getState().projects || [];
       const hasLocalData =
         localCount > 0 ||
-        (useAppStore.getState().projects || []).some((p) => String(p.year) === String(year));
+        allStoreProjects.some((p) => String(p.year) === String(year));
+      const markers = await getLoadedMarkers();
+      const hasFreshYearMarker = hasFreshMarker(markers, 'projects_year', year);
+      const isVerifiedEmptyOrLoadedYear =
+        hasLocalData ||
+        allStoreProjects.length > 0 ||
+        String(year) !== String(new Date().getFullYear());
 
       const deltaManaged =
         (hasLocalData && isClosedOrPastYear) ||
-        (DELTA_FIRST.projects &&
-          hasLocalData &&
-          hasMarker(await getLoadedMarkers(), 'projects_year', year));
+        (DELTA_FIRST.projects && hasFreshYearMarker && isVerifiedEmptyOrLoadedYear);
       if (deltaManaged) {
         setCloudStatus('online');
         usePerformanceStore
@@ -93526,7 +93676,7 @@ export function useProjectsHydration({
             useAppStore.getState().globalStoreFilter
           );
           const markers = await getLoadedMarkers();
-          if (localCount > 0 || hasMarker(markers, 'projects_year', year)) {
+          if (localCount > 0 || hasFreshMarker(markers, 'projects_year', year)) {
             return;
           }
 
@@ -93593,6 +93743,7 @@ export function useProjectsHydration({
     recoveryTick,
   ]);
 }
+
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useStaticAndAuthHydration.ts
 ================================================================================
@@ -93611,6 +93762,7 @@ import { enforceStorageBudget } from "../../lib/storageBudgetService";
 import {
   hydrateProjectsFromLocal,
   hydrateTasksFromLocal,
+  hydrateTasksForProjects,
   hydrateCostsFromLocal,
   hydrateDelegationsFromLocal,
   hydrateDelegationsForProjects,
@@ -93644,14 +93796,8 @@ export function useStaticAndAuthHydration() {
   // 1. Sleep / Wake Guard & 20s Heartbeat Gap Detection (Rule 16.2)
   useEffect(() => {
     const triggerOvernightRecovery = (elapsedSleepMs: number) => {
-      import("../../lib/deltaRealtimeListener")
-        .then(({ isDeltaRealtimeConnected }) => {
-          if (!isDeltaRealtimeConnected() || elapsedSleepMs > 15 * 60 * 1000) {
-            return import("../../lib/deltaOrchestratorService").then((m) =>
-              m.triggerImmediateDeltaSync()
-            );
-          }
-        })
+      import("../../lib/deltaOrchestratorService")
+        .then((m) => m.triggerImmediateDeltaSync())
         .catch(() => {});
 
       if (elapsedSleepMs > 60 * 1000) {
@@ -93710,12 +93856,14 @@ export function useStaticAndAuthHydration() {
     document.addEventListener("visibilitychange", handleSleepWake);
     window.addEventListener("pageshow", handleSleepWake);
     window.addEventListener("online", handleSleepWake);
+    window.addEventListener("focus", handleSleepWake);
 
     return () => {
       clearInterval(heartbeatTimer);
       document.removeEventListener("visibilitychange", handleSleepWake);
       window.removeEventListener("pageshow", handleSleepWake);
       window.removeEventListener("online", handleSleepWake);
+      window.removeEventListener("focus", handleSleepWake);
     };
   }, []);
 
@@ -93730,40 +93878,57 @@ export function useStaticAndAuthHydration() {
     ];
     const isChatOnly = isProjectModalOpen && modalInitialTab === "chat";
     const isLayoutTab = activeTab === "layout";
-    const needsTasks =
-      tabsRequiringTasks.includes(activeTab) ||
-      isTaskModalOpen ||
-      (isProjectModalOpen && !isChatOnly && !isLayoutTab);
+    const needsTasks = tabsRequiringTasks.includes(activeTab);
 
     const tabsRequiringCosts: TabId[] = ["cost", "budget"];
-    const needsCosts =
-      tabsRequiringCosts.includes(activeTab) ||
-      (isProjectModalOpen && !isChatOnly && !isLayoutTab);
+    const needsCosts = tabsRequiringCosts.includes(activeTab);
 
     const tabsRequiringDelegations: TabId[] = ["taskDelegation", "taskDelegationCalendar"];
     const needsDelegations = tabsRequiringDelegations.includes(activeTab);
 
+    const flushGateInvalidations = (coll: "taka_tasks" | "taka_costs" | "taka_delegations") => {
+      Promise.all([
+        import("../../lib/deltaInvalidateService"),
+        import("../../lib/deltaApplyService"),
+      ])
+        .then(([{ flushDeferredInvalidations }, { applyIncomingDeltas }]) =>
+          flushDeferredInvalidations(coll).then((synthetic) => {
+            if (synthetic.length > 0) applyIncomingDeltas(synthetic);
+          })
+        )
+        .catch(() => {});
+    };
+
+    const store = useAppStore.getState();
+    const openProjectKeys: string[] = [];
+    if (store.editingProject?.id) openProjectKeys.push(store.editingProject.id);
+    if (store.editingProject?.code) openProjectKeys.push(store.editingProject.code);
+    if (store.editingTask?.projectId) openProjectKeys.push(store.editingTask.projectId);
+    if (store.editingTask?.projectCode) openProjectKeys.push(store.editingTask.projectCode);
+    const targetYr = store.editingProject?.year ?? store.editingTask?.projectYear ?? store.globalYearFilter;
+    const targetSt = store.editingProject?.store ?? store.editingTask?.projectStore ?? store.globalStoreFilter;
+
     if (needsTasks) {
       setIsTasksRequested(true);
-      hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      hydrateTasksFromLocal(store.globalYearFilter).catch(() => {});
+      flushGateInvalidations("taka_tasks");
+    } else if ((isTaskModalOpen || (isProjectModalOpen && !isChatOnly && !isLayoutTab)) && openProjectKeys.length > 0) {
+      // Rule 3 & Rule 8: Zero-Query for Modals — hydrate only the target project's tasks from Dexie
+      hydrateTasksForProjects(openProjectKeys, targetYr, targetSt).catch(() => {});
     }
+
     if (needsCosts) {
       setIsCostsRequested(true);
-      hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      hydrateCostsFromLocal(store.globalYearFilter).catch(() => {});
+      flushGateInvalidations("taka_costs");
     }
+
     if (needsDelegations) {
       setIsDelegationsRequested(true);
-      hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
-    } else {
-      const store = useAppStore.getState();
-      const openProjectKeys: string[] = [];
-      if (store.editingProject?.id) openProjectKeys.push(store.editingProject.id);
-      if (store.editingProject?.code) openProjectKeys.push(store.editingProject.code);
-      if (store.editingTask?.projectId) openProjectKeys.push(store.editingTask.projectId);
-      if (store.editingTask?.projectCode) openProjectKeys.push(store.editingTask.projectCode);
-      if (openProjectKeys.length > 0) {
-        hydrateDelegationsForProjects(openProjectKeys).catch(() => {});
-      }
+      hydrateDelegationsFromLocal(store.globalYearFilter).catch(() => {});
+      flushGateInvalidations("taka_delegations");
+    } else if (openProjectKeys.length > 0) {
+      hydrateDelegationsForProjects(openProjectKeys, targetYr, targetSt).catch(() => {});
     }
   }, [
     activeTab,
@@ -93996,6 +94161,7 @@ export function useStaticAndAuthHydration() {
     };
   }, [globalYearFilter]);
 }
+
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useTasksHydration.ts
 ================================================================================
@@ -94010,13 +94176,13 @@ import { cleanOrphanTasks } from '../../lib/taskStateService';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { deleteLocalRecord } from '../../lib/localDb';
 import { pullAndApplyDeltas } from '../../lib/deltaSyncService';
-import { getLoadedMarkers, hasMarker } from '../../lib/loadedMarkers';
+import { getLoadedMarkers, hasFreshMarker } from '../../lib/loadedMarkers';
 import { markTasksDeleted, unmarkTaskDeleted, clearDeletedTasksTracker } from '../../lib/taskDeletedTracker';
 import { isStaleCacheDoc, extractKeysToHydrate, groupActiveProjectsByYear, healProjectsAfterTasksBatch } from './tasksHydrationHelpers';
 import { buildProjectTasksLookupIndex, getLocalProjectTasksFromIndex } from './projectsHydrationHelpers';
 import { attachYearTasksListener, attachProjectTasksListener } from './tasksListenerAttachHelpers';
 
-const DELTA_FIRST = { projects: false, tasks: false, costs: false, delegations: false };
+const DELTA_FIRST = { projects: true, tasks: true, costs: true, delegations: true };
 const TTL_DURATION_MS = 15 * 60 * 1000;
 
 interface UseTasksHydrationProps {
@@ -94268,178 +94434,164 @@ export function useTasksHydration({
       const tasksLookupIndex = buildProjectTasksLookupIndex(currentTasksSnapshot);
 
       projectsByYear.forEach((projs, year) => {
-        if (projs.length > 10) {
-          const yearKey = `year_${year}`;
-          neededKeys.add(yearKey);
+        const yearKey = `year_${year}`;
+        const isYearFresh = hasFreshMarker(markers, 'tasks_year', year);
+        const isArchivedPastYear = Number(year) < new Date().getFullYear() - 1;
 
+        if (tasksPool.current.has(yearKey)) {
+          neededKeys.add(yearKey);
           if (tasksTTLTimeouts.current.has(yearKey)) {
             clearTimeout(tasksTTLTimeouts.current.get(yearKey)!);
             tasksTTLTimeouts.current.delete(yearKey);
           }
+          setIsTasksLoading(false);
+          return;
+        }
 
-          projs.forEach((p) => {
+        const visibleSet = new Set(
+          (visibleActiveProjectIdsRef.current || []).map((id) => String(id))
+        );
+        const sortedProjs = [...projs].sort((a, b) => {
+          const aVis = visibleSet.has(a.id) || visibleSet.has(a.code) ? 1 : 0;
+          const bVis = visibleSet.has(b.id) || visibleSet.has(b.code) ? 1 : 0;
+          return bVis - aVis;
+        });
+
+        const unhydratedProjs: typeof sortedProjs = [];
+        let hydratedLocalTaskCount = 0;
+        let hasAnyNonZeroHydrated = false;
+
+        sortedProjs.forEach((p) => {
+          const projKey = `proj_${p.id}`;
+          neededKeys.add(projKey);
+
+          if (tasksTTLTimeouts.current.has(projKey)) {
+            clearTimeout(tasksTTLTimeouts.current.get(projKey)!);
+            tasksTTLTimeouts.current.delete(projKey);
+          }
+
+          const existingListener = tasksPool.current.get(projKey);
+          const isZeroNoop = Boolean((existingListener as any)?.__isZeroTaskNoop);
+          if (
+            isZeroNoop &&
+            ((p.taskCount || 0) > 0 || (Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0))
+          ) {
+            tasksPool.current.delete(projKey);
+          }
+
+          if (tasksPool.current.has(projKey)) {
+            return;
+          }
+
+          const localProjTasks = getLocalProjectTasksFromIndex(p, tasksLookupIndex);
+          const expectedSummaryCount = Array.isArray(p.taskSummaries)
+            ? p.taskSummaries.length
+            : p.taskCount || 0;
+          const isProjMarkerFresh =
+            hasFreshMarker(markers, 'tasks_proj', p.id) ||
+            hasFreshMarker(markers, 'tasks_proj', p.code) ||
+            isYearFresh;
+
+          // When a fresh marker exists in Dexie, trust localProjTasks.length > 0 even if deduplication merged a duplicate task
+          const hasLocalProjTasks =
+            knownHydratedProjectCodes.current.has(String(p.id)) ||
+            (isProjMarkerFresh && (localProjTasks.length > 0 || expectedSummaryCount === 0)) ||
+            (localProjTasks.length > 0 && localProjTasks.length >= expectedSummaryCount);
+
+          const isZeroTaskProject =
+            (p.taskCount || 0) === 0 &&
+            Array.isArray(p.taskSummaries) &&
+            p.taskSummaries.length === 0 &&
+            localProjTasks.length === 0;
+
+          const deltaManaged =
+            isZeroTaskProject ||
+            (hasLocalProjTasks && isArchivedPastYear) ||
+            (DELTA_FIRST.tasks && hasLocalProjTasks && isProjMarkerFresh);
+
+          if (deltaManaged) {
+            knownHydratedProjectCodes.current.add(String(p.id));
+            const noop = () => {};
+            if (isZeroTaskProject) (noop as any).__isZeroTaskNoop = true;
+            tasksPool.current.set(projKey, noop);
+            hydratedLocalTaskCount += localProjTasks.length;
+            if (!isZeroTaskProject) hasAnyNonZeroHydrated = true;
+          } else {
+            unhydratedProjs.push(p);
+          }
+        });
+
+        if (hydratedLocalTaskCount > 0 || hasAnyNonZeroHydrated) {
+          setCloudStatus('online');
+          const healed = healProjectsAfterTasksBatch({
+            currentProjects: useAppStore.getState().projects || [],
+            finalTasks: currentTasksSnapshot,
+            delegationGroups: useAppStore.getState().delegationGroups || [],
+            changedTasks: new Map(),
+            removedTasks: new Map(),
+            fromCache: false,
+            knownHydratedProjectCodes: knownHydratedProjectCodes.current,
+            tasksPool: tasksPool.current,
+          });
+          if (healed) {
+            useAppStore.getState().setProjects(healed);
+          }
+          usePerformanceStore
+            .getState()
+            .trackGetDoc(
+              `taka_tasks_${yearKey}_dexie`,
+              true,
+              hydratedLocalTaskCount,
+              `Dexie Local-First Tasks (0 Read, ${sortedProjs.length - unhydratedProjs.length} projects)`
+            );
+        }
+
+        if (unhydratedProjs.length === 0) {
+          setIsTasksLoading(false);
+          return;
+        }
+
+        // Only attach a year-wide listener when >8 projects genuinely lack local Dexie cache;
+        // otherwise lazily fetch only the specific missing projects (1-8 projects).
+        if (unhydratedProjs.length > 8) {
+          neededKeys.add(yearKey);
+          unhydratedProjs.forEach((p) => {
             const pKey = `proj_${p.id}`;
+            neededKeys.delete(pKey);
             if (tasksPool.current.has(pKey)) {
-              const u = tasksPool.current.get(pKey);
-              if (u) u();
+              tasksPool.current.get(pKey)?.();
               tasksPool.current.delete(pKey);
               usePerformanceStore.getState().unregisterListener(`taka_tasks_${pKey}`);
             }
           });
-
-          if (!tasksPool.current.has(yearKey)) {
-            const hasLocalYearTasks =
-              currentTasksSnapshot.some((t) => String(t.projectYear || '') === String(year)) &&
-              projs.every((p) => {
-                const expectedCount = Array.isArray(p.taskSummaries)
-                  ? p.taskSummaries.length
-                  : p.taskCount || 0;
-                if (expectedCount === 0) return true;
-                return getLocalProjectTasksFromIndex(p, tasksLookupIndex).length >= expectedCount;
-              });
-            const isArchivedPastYear = Number(year) < new Date().getFullYear() - 1;
-
-            const deltaManaged =
-              (hasLocalYearTasks && isArchivedPastYear) ||
-              (DELTA_FIRST.tasks && hasLocalYearTasks && hasMarker(markers, 'tasks_year', year));
-            if (deltaManaged) {
-              tasksPool.current.set(yearKey, () => {});
-              setIsTasksLoading(false);
-              setCloudStatus('online');
-              usePerformanceStore
-                .getState()
-                .trackGetDoc(
-                  `taka_tasks_${yearKey}`,
-                  true,
-                  currentTasksSnapshot.length,
-                  'Dexie Local-First Tasks (0 Read full collection)'
-                );
-            } else {
-              attachYearTasksListener({
-                year,
-                yearKey,
-                userRole,
-                allowedStores,
-                deltaFirstTasks: DELTA_FIRST.tasks,
-                tasksPool: tasksPool.current,
-                getCurrentPendingOrStoreTasks,
-                batchTasksUpdate,
-                setIsTasksLoading,
-                setCloudStatus,
-              });
-            }
-          } else {
-            setIsTasksLoading(false);
-          }
-        } else {
-          const visibleSet = new Set(
-            (visibleActiveProjectIdsRef.current || []).map((id) => String(id))
-          );
-          const sortedProjs = [...projs].sort((a, b) => {
-            const aVis = visibleSet.has(a.id) || visibleSet.has(a.code) ? 1 : 0;
-            const bVis = visibleSet.has(b.id) || visibleSet.has(b.code) ? 1 : 0;
-            return bVis - aVis;
+          attachYearTasksListener({
+            year,
+            yearKey,
+            projectsInYear: projs,
+            userRole,
+            allowedStores,
+            deltaFirstTasks: DELTA_FIRST.tasks,
+            tasksPool: tasksPool.current,
+            knownHydratedProjectCodes: knownHydratedProjectCodes.current,
+            getCurrentPendingOrStoreTasks,
+            batchTasksUpdate,
+            setIsTasksLoading,
+            setCloudStatus,
           });
-
-          sortedProjs.forEach((p) => {
+        } else {
+          unhydratedProjs.forEach((p) => {
             const projKey = `proj_${p.id}`;
-            const yearKey = `year_${year}`;
-
-            if (tasksPool.current.has(yearKey)) {
-              neededKeys.add(yearKey);
-              if (tasksTTLTimeouts.current.has(yearKey)) {
-                clearTimeout(tasksTTLTimeouts.current.get(yearKey)!);
-                tasksTTLTimeouts.current.delete(yearKey);
-              }
-              setIsTasksLoading(false);
-              return;
-            }
-
-            neededKeys.add(projKey);
-
-            if (tasksTTLTimeouts.current.has(projKey)) {
-              clearTimeout(tasksTTLTimeouts.current.get(projKey)!);
-              tasksTTLTimeouts.current.delete(projKey);
-            }
-
-            const existingListener = tasksPool.current.get(projKey);
-            const isZeroNoop = Boolean((existingListener as any)?.__isZeroTaskNoop);
-            if (
-              isZeroNoop &&
-              ((p.taskCount || 0) > 0 || (Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0))
-            ) {
-              tasksPool.current.delete(projKey);
-            }
-
-            if (!tasksPool.current.has(projKey)) {
-              const localProjTasks = getLocalProjectTasksFromIndex(p, tasksLookupIndex);
-              const expectedSummaryCount = Array.isArray(p.taskSummaries)
-                ? p.taskSummaries.length
-                : p.taskCount || 0;
-              const hasLocalProjTasks =
-                (localProjTasks.length > 0 && localProjTasks.length >= expectedSummaryCount) ||
-                knownHydratedProjectCodes.current.has(String(p.id));
-              const isArchivedPastYear = Number(year) < new Date().getFullYear() - 1;
-              const isZeroTaskProject =
-                (p.taskCount || 0) === 0 &&
-                Array.isArray(p.taskSummaries) &&
-                p.taskSummaries.length === 0 &&
-                localProjTasks.length === 0;
-
-              const deltaManaged =
-                isZeroTaskProject ||
-                (hasLocalProjTasks && isArchivedPastYear) ||
-                (DELTA_FIRST.tasks &&
-                  hasLocalProjTasks &&
-                  (hasMarker(markers, 'tasks_proj', p.id) ||
-                    hasMarker(markers, 'tasks_proj', p.code) ||
-                    hasMarker(markers, 'tasks_year', year)));
-              if (deltaManaged) {
-                knownHydratedProjectCodes.current.add(String(p.id));
-                const noop = () => {};
-                if (isZeroTaskProject) (noop as any).__isZeroTaskNoop = true;
-                tasksPool.current.set(projKey, noop);
-                setIsTasksLoading(false);
-                if (!isZeroTaskProject) {
-                  setCloudStatus('online');
-                  const healed = healProjectsAfterTasksBatch({
-                    currentProjects: useAppStore.getState().projects || [],
-                    finalTasks: currentTasksSnapshot,
-                    delegationGroups: useAppStore.getState().delegationGroups || [],
-                    changedTasks: new Map(),
-                    removedTasks: new Map(),
-                    fromCache: false,
-                    knownHydratedProjectCodes: knownHydratedProjectCodes.current,
-                    tasksPool: tasksPool.current,
-                  });
-                  if (healed) {
-                    useAppStore.getState().setProjects(healed);
-                  }
-                }
-                usePerformanceStore
-                  .getState()
-                  .trackGetDoc(
-                    `taka_tasks_${projKey}`,
-                    true,
-                    localProjTasks.length,
-                    'Dexie Local-First Project Tasks (0 Read)'
-                  );
-              } else {
-                attachProjectTasksListener({
-                  p,
-                  projKey,
-                  deltaFirstTasks: DELTA_FIRST.tasks,
-                  tasksPool: tasksPool.current,
-                  knownHydratedProjectCodes: knownHydratedProjectCodes.current,
-                  getCurrentPendingOrStoreTasks,
-                  batchTasksUpdate,
-                  setIsTasksLoading,
-                  setCloudStatus,
-                });
-              }
-            } else {
-              setIsTasksLoading(false);
-            }
+            attachProjectTasksListener({
+              p,
+              projKey,
+              deltaFirstTasks: DELTA_FIRST.tasks,
+              tasksPool: tasksPool.current,
+              knownHydratedProjectCodes: knownHydratedProjectCodes.current,
+              getCurrentPendingOrStoreTasks,
+              batchTasksUpdate,
+              setIsTasksLoading,
+              setCloudStatus,
+            });
           });
         }
       });
@@ -99149,84 +99301,93 @@ export async function bumpConfigVersion(
 export function setupStaticConfigSync(): Unsubscribe {
   const versionRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions");
   usePerformanceStore.getState().registerListener("taka_config/versions");
+  let syncQueuePromise: Promise<void> = Promise.resolve();
 
   const unsubscribe = onSnapshot(
     versionRef,
-    async (docSnap) => {
-      usePerformanceStore.getState().trackSnapshot("taka_config/versions", docSnap);
-      useAppStore.getState().setCloudStatus("online");
-      const localVersions = getLocalConfigVersions();
-      const store = useAppStore.getState();
+    (docSnap) => {
+      syncQueuePromise = syncQueuePromise
+        .then(async () => {
+          usePerformanceStore.getState().trackSnapshot("taka_config/versions", docSnap);
+          useAppStore.getState().setCloudStatus("online");
+          const localVersions = getLocalConfigVersions();
+          const store = useAppStore.getState();
 
-      const remoteData: ConfigVersions = docSnap.exists() ? (docSnap.data() as ConfigVersions) : {};
-      const needsInit = !docSnap.exists();
-
-      // 1. Locations
-      const localLocs = store.locations;
-      const remoteLocVer = remoteData.locationsVersion || 1;
-      const hasCachedLocs = safeGetItemLocal(CACHE_KEYS.LOCATIONS) !== null;
-      if (localVersions.locationsVersion !== remoteLocVer || (!hasCachedLocs && localLocs.length === 0) || needsInit) {
-        try {
-          const locDoc = await getDoc(
-            doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "locations")
-          );
-          if (locDoc.exists()) {
-            const list = locDoc.data()?.list || [];
-            const visibility = locDoc.data()?.visibility || {};
-            const uniqueList = [...new Set(list)] as string[];
-            store.setLocations(uniqueList);
-            store.setLocationVisibility(visibility);
-            cacheLocations(uniqueList, visibility);
-          } else {
-            cacheLocations(localLocs, store.locationVisibility);
+          if (!docSnap.exists() && (docSnap as any).metadata?.fromCache) {
+            return;
           }
-        } catch (err) {
-          console.error("Error fetching locations config:", err);
-        }
-      }
+          const remoteData: ConfigVersions = docSnap.exists() ? (docSnap.data() as ConfigVersions) : {};
+          const needsInit = !docSnap.exists();
 
-      // 2. Parties
-      const localParties = store.parties;
-      const remotePartyVer = remoteData.partiesVersion || 1;
-      const hasCachedParties = safeGetItemLocal(CACHE_KEYS.PARTIES) !== null;
-      if (localVersions.partiesVersion !== remotePartyVer || (!hasCachedParties && localParties.length === 0) || needsInit) {
-        try {
-          const partyDoc = await getDoc(
-            doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "parties")
-          );
-          if (partyDoc.exists() && partyDoc.data()?.list) {
-            const list = partyDoc.data()?.list;
-            store.setParties(list);
-            cacheParties(list);
-          } else {
-            const defaultParties = ["Shimizu", "Landlord", "Takashimaya", "CP"];
-            store.setParties(defaultParties);
-            cacheParties(defaultParties);
+          // 1. Locations
+          const localLocs = store.locations;
+          const remoteLocVer = remoteData.locationsVersion || 1;
+          const hasCachedLocs = safeGetItemLocal(CACHE_KEYS.LOCATIONS) !== null;
+          if (localVersions.locationsVersion !== remoteLocVer || (!hasCachedLocs && localLocs.length === 0) || needsInit) {
+            try {
+              const locDoc = await getDoc(
+                doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "locations")
+              );
+              if (locDoc.exists()) {
+                const list = locDoc.data()?.list || [];
+                const visibility = locDoc.data()?.visibility || {};
+                const uniqueList = [...new Set(list)] as string[];
+                store.setLocations(uniqueList);
+                store.setLocationVisibility(visibility);
+                cacheLocations(uniqueList, visibility);
+              } else {
+                cacheLocations(localLocs, store.locationVisibility);
+              }
+            } catch (err) {
+              console.error("Error fetching locations config:", err);
+            }
           }
-        } catch (err) {
-          console.error("Error fetching parties config:", err);
-        }
-      }
 
-      // 3. Exchange Rates
-      const remoteRateVer = remoteData.ratesVersion || 1;
-      if (localVersions.ratesVersion !== remoteRateVer || needsInit) {
-        try {
-          const rateDoc = await getDoc(
-            doc(db, "artifacts", APP_ID, "public", "data", "taka_settings", "exchange_rates")
-          );
-          if (rateDoc.exists()) {
-            const data = rateDoc.data();
-            const jpy = data.jpyRate !== undefined ? Number(data.jpyRate) : 160;
-            const usd = data.usdRate !== undefined ? Number(data.usdRate) : 25000;
-            store.setJpyRate(jpy);
-            store.setUsdRate(usd);
-            cacheExchangeRates(jpy, usd);
+          // 2. Parties
+          const localParties = store.parties;
+          const remotePartyVer = remoteData.partiesVersion || 1;
+          const hasCachedParties = safeGetItemLocal(CACHE_KEYS.PARTIES) !== null;
+          if (localVersions.partiesVersion !== remotePartyVer || (!hasCachedParties && localParties.length === 0) || needsInit) {
+            try {
+              const partyDoc = await getDoc(
+                doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "parties")
+              );
+              if (partyDoc.exists() && partyDoc.data()?.list) {
+                const list = partyDoc.data()?.list;
+                store.setParties(list);
+                cacheParties(list);
+              } else {
+                const defaultParties = ["Shimizu", "Landlord", "Takashimaya", "CP"];
+                store.setParties(defaultParties);
+                cacheParties(defaultParties);
+              }
+            } catch (err) {
+              console.error("Error fetching parties config:", err);
+            }
           }
-        } catch (err) {
-          console.error("Error fetching exchange rates config:", err);
-        }
-      }
+
+          // 3. Exchange Rates
+          const remoteRateVer = remoteData.ratesVersion || 1;
+          const hasCachedRates = safeGetItemLocal(CACHE_KEYS.JPY_RATE) !== null;
+          if (localVersions.ratesVersion !== remoteRateVer || !hasCachedRates || needsInit) {
+            try {
+              const rateDoc = await getDoc(
+                doc(db, "artifacts", APP_ID, "public", "data", "taka_settings", "exchange_rates")
+              );
+              if (rateDoc.exists()) {
+                const data = rateDoc.data();
+                const jpy = data.jpyRate !== undefined ? Number(data.jpyRate) : 160;
+                const usd = data.usdRate !== undefined ? Number(data.usdRate) : 25000;
+                store.setJpyRate(jpy);
+                store.setUsdRate(usd);
+                cacheExchangeRates(jpy, usd);
+              } else {
+                cacheExchangeRates(store.jpyRate || 160, store.usdRate || 25000);
+              }
+            } catch (err) {
+              console.error("Error fetching exchange rates config:", err);
+            }
+          }
 
       // 4. Notification Rules
       const remoteRuleVer = remoteData.rulesVersion || 1;
@@ -99338,21 +99499,23 @@ export function setupStaticConfigSync(): Unsubscribe {
         window.dispatchEvent(new Event("taka_cloud_sync_updated"));
       }
 
-      // Cập nhật lại versions vào local cache
-      setLocalConfigVersions({
-        locationsVersion: remoteLocVer,
-        partiesVersion: remotePartyVer,
-        ratesVersion: remoteRateVer,
-        rulesVersion: remoteRuleVer,
-        r2Version: remoteR2Ver,
-        permissionsVersion: remotePermsVer,
-        subAppUsersVersion: remoteSubUsersVer,
-        appUsersVersion: remoteAppUsersVer,
-        pictureMappingVersion: remotePicMapVer,
-        globalRestoreCutoff: remoteData.globalRestoreCutoff,
-        dataFingerprint: remoteData.dataFingerprint,
-        updatedAt: remoteData.updatedAt || new Date().toISOString(),
-      });
+          // Cập nhật lại versions vào local cache
+          setLocalConfigVersions({
+            locationsVersion: remoteLocVer,
+            partiesVersion: remotePartyVer,
+            ratesVersion: remoteRateVer,
+            rulesVersion: remoteRuleVer,
+            r2Version: remoteR2Ver,
+            permissionsVersion: remotePermsVer,
+            subAppUsersVersion: remoteSubUsersVer,
+            appUsersVersion: remoteAppUsersVer,
+            pictureMappingVersion: remotePicMapVer,
+            globalRestoreCutoff: remoteData.globalRestoreCutoff,
+            dataFingerprint: remoteData.dataFingerprint,
+            updatedAt: remoteData.updatedAt || new Date().toISOString(),
+          });
+        })
+        .catch(() => {});
     },
     (err) => {
       console.warn("Config versions listener error:", err);
@@ -100662,27 +100825,57 @@ const tsOf = (v: any): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const deferredTriGateInvalidations = new Map<string, TakaDeltaItem>();
+const MAX_DEFERRED_INVALIDATIONS = 500;
+const inFlightDocReads = new Map<string, Promise<TakaDeltaItem | null>>();
+const recentlyResolvedAt = new Map<string, number>();
+const RECENT_RESOLVE_DEDUP_MS = 2000;
+
+function queueDeferredInvalidation(item: TakaDeltaItem): void {
+  if (!item?.docId || !item?.collectionName) return;
+  const key = `${item.collectionName}:${item.docId}`;
+  deferredTriGateInvalidations.set(key, item);
+  if (deferredTriGateInvalidations.size > MAX_DEFERRED_INVALIDATIONS) {
+    const oldest = deferredTriGateInvalidations.keys().next().value;
+    if (oldest !== undefined) deferredTriGateInvalidations.delete(oldest);
+  }
+}
+
 /**
  * Checks Tri-Gate flags and skips re-reading documents that were already delivered
- * within the last 10 seconds by an active onSnapshot listener or explicit delta.
+ * within the last 1.5 seconds by an active onSnapshot listener or explicit delta.
+ * Deferred items for closed Tri-Gates are queued and resolved only when the gate opens.
  */
 function isRelevant(item: TakaDeltaItem, nowMs: number): boolean {
   if (!item || !item.docId || !item.collectionName) return false;
+  const key = `${item.collectionName}:${item.docId}`;
+  const lastResolved = recentlyResolvedAt.get(key) || 0;
+  if (lastResolved > 0 && nowMs - lastResolved < RECENT_RESOLVE_DEDUP_MS) {
+    return false;
+  }
+
   const store = useAppStore.getState();
-  const RECENT_SNAPSHOT_WINDOW_MS = 10000;
+  const RECENT_SNAPSHOT_WINDOW_MS = 1500;
 
   if (item.collectionName === 'taka_costs') {
-    if (!store.isCostsRequested && (!store.costs || store.costs.length === 0)) return false;
+    if (!store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
+      queueDeferredInvalidation(item);
+      return false;
+    }
     const existing = store.costs?.find((c) => c.id === item.docId);
     if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_delegations') {
     if (!store.isDelegationsRequested && (!store.delegationGroups || store.delegationGroups.length === 0)) {
+      queueDeferredInvalidation(item);
       return false;
     }
     const existing = store.delegationGroups?.find((d) => d.id === item.docId);
     if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_tasks') {
-    if (!store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) return false;
+    if (!store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
+      queueDeferredInvalidation(item);
+      return false;
+    }
     const existing = store.tasks?.find((t) => t.id === item.docId);
     if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_projects') {
@@ -100691,6 +100884,23 @@ function isRelevant(item: TakaDeltaItem, nowMs: number): boolean {
   }
 
   return true;
+}
+
+/**
+ * Flushes any deferred invalidations for a specific collection when its Tri-Gate opens.
+ */
+export async function flushDeferredInvalidations(
+  collectionName: TakaDeltaItem['collectionName']
+): Promise<TakaDelta[]> {
+  const toFlush: TakaDeltaItem[] = [];
+  for (const [k, item] of deferredTriGateInvalidations.entries()) {
+    if (item.collectionName === collectionName) {
+      toFlush.push(item);
+      deferredTriGateInvalidations.delete(k);
+    }
+  }
+  if (toFlush.length === 0) return [];
+  return resolveInvalidations(toFlush);
 }
 
 /**
@@ -100710,52 +100920,68 @@ export async function resolveInvalidations(items: TakaDeltaItem[]): Promise<Taka
   const nowIso = new Date(now).toISOString();
 
   const results = await Promise.all(
-    Array.from(unique.values()).map(async (it): Promise<TakaDeltaItem | null> => {
+    Array.from(unique.entries()).map(async ([dedupKey, it]): Promise<TakaDeltaItem | null> => {
+      if (inFlightDocReads.has(dedupKey)) {
+        return inFlightDocReads.get(dedupKey)!;
+      }
       const physical = PHYSICAL_COLLECTION[it.collectionName];
       if (!physical) return null;
-      try {
-        const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', physical, it.docId);
-        let snap;
-        try {
-          snap = await getDocFromServer(ref);
-        } catch {
-          snap = await getDoc(ref);
-        }
-        usePerformanceStore
-          .getState()
-          .trackGetDoc(physical, false, 1, `Delta invalidate re-read: ${it.docId}`);
 
-        if (!snap.exists()) {
+      const readPromise = (async (): Promise<TakaDeltaItem | null> => {
+        try {
+          const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', physical, it.docId);
+          let snap;
+          try {
+            snap = await getDocFromServer(ref);
+          } catch {
+            snap = await getDoc(ref);
+          }
+          recentlyResolvedAt.set(dedupKey, Date.now());
+          if (recentlyResolvedAt.size > 1000) {
+            const oldestKey = recentlyResolvedAt.keys().next().value;
+            if (oldestKey !== undefined) recentlyResolvedAt.delete(oldestKey);
+          }
+          usePerformanceStore
+            .getState()
+            .trackGetDoc(physical, false, 1, `Delta invalidate re-read: ${it.docId}`);
+
+          if (!snap.exists()) {
+            return {
+              docId: it.docId,
+              collectionName: it.collectionName,
+              action: 'delete',
+              isPatch: false,
+              data: { id: it.docId, isDeleted: true },
+            };
+          }
+          const data = snap.data() as Record<string, any>;
+          if (data?.isDeleted) {
+            return {
+              docId: it.docId,
+              collectionName: it.collectionName,
+              action: 'delete',
+              isPatch: false,
+              data: { id: it.docId, isDeleted: true, ...data },
+            };
+          }
           return {
             docId: it.docId,
             collectionName: it.collectionName,
-            action: 'delete',
+            action: 'create',
             isPatch: false,
-            data: { id: it.docId, isDeleted: true },
+            data: { id: it.docId, ...data },
+            year: String(data.year || data.projectYear || it.year || ''),
           };
+        } catch (err) {
+          console.warn('[deltaSync] Failed to re-read invalidated doc:', it.collectionName, it.docId, err);
+          return null;
+        } finally {
+          inFlightDocReads.delete(dedupKey);
         }
-        const data = snap.data() as Record<string, any>;
-        if (data?.isDeleted) {
-          return {
-            docId: it.docId,
-            collectionName: it.collectionName,
-            action: 'delete',
-            isPatch: false,
-            data: { id: it.docId, isDeleted: true, ...data },
-          };
-        }
-        return {
-          docId: it.docId,
-          collectionName: it.collectionName,
-          action: 'create',
-          isPatch: false,
-          data: { id: it.docId, ...data },
-          year: String(data.year || data.projectYear || it.year || ''),
-        };
-      } catch (err) {
-        console.warn('[deltaSync] Failed to re-read invalidated doc:', it.collectionName, it.docId, err);
-        return null;
-      }
+      })();
+
+      inFlightDocReads.set(dedupKey, readPromise);
+      return readPromise;
     })
   );
 
@@ -100774,6 +101000,7 @@ export async function resolveInvalidations(items: TakaDeltaItem[]): Promise<Taka
     },
   ];
 }
+
 ================================================================================
 FILE: src/lib/deltaOrchestratorService.ts
 ================================================================================
@@ -101358,6 +101585,18 @@ let lastPullCompletedAt = 0;
 let pendingForcedFollowUp = false;
 
 /**
+ * If a delta pull is currently in-flight, wait for it to finish advancing LAST_SYNC_KEY
+ * before attaching or re-attaching the real-time delta listener.
+ */
+export async function waitForInFlightDeltaPull(): Promise<void> {
+  if (inFlightPullPromise) {
+    try {
+      await inFlightPullPromise;
+    } catch {}
+  }
+}
+
+/**
  * Kéo các delta thay đổi từ server về client kể từ lastSyncTime và áp dụng vào Zustand
  * Tiết kiệm hơn 80% Read so với việc onSnapshot cả collection
  * B4: In-flight deduplication prevents concurrent identical queries across tabs/effects
@@ -101479,6 +101718,7 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
 
   return inFlightPullPromise;
 }
+
 ================================================================================
 FILE: src/lib/deltaPurgeService.ts
 ================================================================================
@@ -101515,7 +101755,16 @@ FILE: src/lib/deltaRealtimeListener.ts
 import { collection, onSnapshot, orderBy, query, where, Timestamp } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db, APP_ID } from './firebase';
-import { applyIncomingDeltas, filterUnappliedDeltas, getLastDeltaSyncTime, deltaTime } from './deltaSyncService';
+import {
+  applyIncomingDeltas,
+  filterUnappliedDeltas,
+  getLastDeltaSyncTime,
+  deltaTime,
+  LAST_SYNC_KEY,
+} from './deltaSyncService';
+import { waitForInFlightDeltaPull } from './deltaPullService';
+import { waitForNetworkRecovery } from './syncResilience';
+import { safeSetItemLocal } from './storage';
 import type { TakaDelta } from '../types';
 
 /**
@@ -101525,12 +101774,13 @@ import type { TakaDelta } from '../types';
  *  - idle cost = 0 reads (previously >= 1 read per poll, ~1100+/user/day)
  *  - changes arrive in ~1s instead of 25s - 3 min
  *  - billed once per delta doc; cached deltas (persistent cache) are free
- * The listener is detached when the tab has been hidden > 2 min and re-attached (since = lastSyncTime) on return.
+ * The listener is detached when the tab has been hidden > 15 min and re-attached (since = lastSyncTime) on return.
  */
 
 const OVERLAP_MS = 3 * 1000; // 3s serverTime jitter buffer (duplicates filtered by delta id)
 const DETACH_AFTER_HIDDEN_MS = 15 * 60 * 1000; // Keep listener alive for up to 15 min when tab hidden (matches pool TTL)
 const RETRY_MS = 30 * 1000;
+const RECONNECT_COOLDOWN_MS = 2000;
 
 let activeRealtimeUnsub: (() => void) | null = null;
 
@@ -101546,6 +101796,8 @@ export function startDeltaRealtimeListener(): () => void {
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let detachTimer: ReturnType<typeof setTimeout> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastReconnectAt = 0;
   let signedIn = !!auth.currentUser;
   let stopped = false;
 
@@ -101572,6 +101824,7 @@ export function startDeltaRealtimeListener(): () => void {
 
   const attach = () => {
     if (stopped || unsub || !signedIn) return;
+    lastReconnectAt = Date.now();
     const since = getLastDeltaSyncTime() - OVERLAP_MS;
     const q = query(
       collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_deltas'),
@@ -101582,12 +101835,20 @@ export function startDeltaRealtimeListener(): () => void {
       q,
       (snap) => {
         if (snap.metadata.hasPendingWrites) return;
+        let maxSeenMs = 0;
         snap.docChanges().forEach((c) => {
           if (c.type === 'added' || c.type === 'modified') {
             const raw = c.doc.data({ serverTimestamps: 'estimate' }) as TakaDelta;
+            const dMs = deltaTime(raw);
+            if (dMs > maxSeenMs) maxSeenMs = dMs;
             buffer.push({ ...raw, id: raw.id || c.doc.id });
           }
         });
+        if (!snap.metadata.fromCache) {
+          // Advance sync cursor even when 0 deltas occurred during 30m-1h idle window so next reconnect doesn't re-query old window
+          const safeNow = Math.max(getLastDeltaSyncTime(), maxSeenMs, Date.now() - 5000);
+          safeSetItemLocal(LAST_SYNC_KEY, String(safeNow));
+        }
         if (buffer.length > 0 && !flushTimer) flushTimer = setTimeout(flush, 20);
       },
       (err) => {
@@ -101604,6 +101865,21 @@ export function startDeltaRealtimeListener(): () => void {
     activeRealtimeUnsub = unsub;
   };
 
+  const scheduleReconnect = () => {
+    if (stopped) return;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(async () => {
+      reconnectTimer = null;
+      if (stopped || document.visibilityState !== 'visible') return;
+      if (unsub && Date.now() - lastReconnectAt < RECONNECT_COOLDOWN_MS) return;
+      await waitForNetworkRecovery();
+      await waitForInFlightDeltaPull();
+      if (stopped || document.visibilityState !== 'visible') return;
+      detach();
+      attach();
+    }, 120);
+  };
+
   if (signedIn) attach();
 
   const onVisibility = () => {
@@ -101614,27 +101890,21 @@ export function startDeltaRealtimeListener(): () => void {
       if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
       // If listener is still attached (hidden < 15 minutes), keep existing WebChannel socket (0 extra reads)
       if (unsub) return;
-      attach();
+      scheduleReconnect();
     }
   };
 
   const onNetworkRecovered = () => {
-    if (document.visibilityState === 'visible') {
-      detach();
-      attach();
-    }
+    scheduleReconnect();
   };
 
   const onSleepWake = () => {
-    if (document.visibilityState === 'visible' && !unsub) {
-      attach();
-    }
+    scheduleReconnect();
   };
 
   const handlePageShow = (e: PageTransitionEvent) => {
     if (e.persisted) {
-      detach();
-      attach();
+      scheduleReconnect();
     }
   };
 
@@ -101675,9 +101945,11 @@ export function startDeltaRealtimeListener(): () => void {
     if (flushTimer) clearTimeout(flushTimer);
     if (detachTimer) clearTimeout(detachTimer);
     if (retryTimer) clearTimeout(retryTimer);
+    if (reconnectTimer) clearTimeout(reconnectTimer);
     detach();
   };
 }
+
 ================================================================================
 FILE: src/lib/deltaSyncService.ts
 ================================================================================
@@ -107366,6 +107638,10 @@ FILE: src/lib/loadedMarkers.ts
 import { localDb } from './localDb';
 
 const PREFIX = 'loaded:';
+// Default warm window: 24 hours. Opening or resuming the app within 24h skips full-collection re-reads
+// and relies on Dexie Local-First + taka_deltas real-time stream (7-day retention).
+export const DEFAULT_MARKER_TTL_MS = 24 * 60 * 60 * 1000;
+
 export type MarkerKind =
   | 'projects_year'
   | 'tasks_proj'
@@ -107374,6 +107650,7 @@ export type MarkerKind =
   | 'delegations_year';
 
 let cache: Set<string> | null = null;
+let timestampCache: Map<string, number> = new Map();
 let loading: Promise<Set<string>> | null = null;
 
 export const markerKey = (kind: MarkerKind, id: string | number) =>
@@ -107385,9 +107662,18 @@ export async function getLoadedMarkers(): Promise<Set<string>> {
     loading = (async () => {
       try {
         const rows = await localDb.syncMeta.where('key').startsWith(PREFIX).toArray();
-        cache = new Set(rows.map((r) => r.key));
+        cache = new Set();
+        timestampCache = new Map();
+        rows.forEach((r) => {
+          cache!.add(r.key);
+          const ts = Number(r.updatedAt || r.value || 0);
+          if (Number.isFinite(ts) && ts > 0) {
+            timestampCache.set(r.key, ts);
+          }
+        });
       } catch {
         cache = new Set();
+        timestampCache = new Map();
       }
       return cache as Set<string>;
     })();
@@ -107399,17 +107685,37 @@ export function hasMarker(set: Set<string>, kind: MarkerKind, id: string | numbe
   return set.has(markerKey(kind, id));
 }
 
+/**
+ * Checks if a collection/year/project marker exists AND was verified within `maxAgeMs` (default 6 hours).
+ * Prevents full-collection Firestore re-reads when reopening the app after 30m - 1h.
+ */
+export function hasFreshMarker(
+  set: Set<string>,
+  kind: MarkerKind,
+  id: string | number,
+  maxAgeMs: number = DEFAULT_MARKER_TTL_MS
+): boolean {
+  const key = markerKey(kind, id);
+  if (!set.has(key)) return false;
+  const ts = timestampCache.get(key) || 0;
+  if (!ts) return false;
+  return Date.now() - ts <= maxAgeMs;
+}
+
 export async function markLoaded(kind: MarkerKind, id: string | number): Promise<void> {
   const key = markerKey(kind, id);
+  const now = Date.now();
   const currentCache = await getLoadedMarkers();
   currentCache.add(key);
+  timestampCache.set(key, now);
   try {
-    await localDb.syncMeta.put({ key, value: String(Date.now()), updatedAt: Date.now() });
+    await localDb.syncMeta.put({ key, value: String(now), updatedAt: now });
   } catch {}
 }
 
 export async function clearLoadedMarkers(): Promise<void> {
   cache = new Set();
+  timestampCache = new Map();
   loading = null;
   try {
     await localDb.syncMeta.where('key').startsWith(PREFIX).delete();

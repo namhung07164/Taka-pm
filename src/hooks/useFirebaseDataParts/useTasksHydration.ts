@@ -267,178 +267,164 @@ export function useTasksHydration({
       const tasksLookupIndex = buildProjectTasksLookupIndex(currentTasksSnapshot);
 
       projectsByYear.forEach((projs, year) => {
-        if (projs.length > 10) {
-          const yearKey = `year_${year}`;
-          neededKeys.add(yearKey);
+        const yearKey = `year_${year}`;
+        const isYearFresh = hasFreshMarker(markers, 'tasks_year', year);
+        const isArchivedPastYear = Number(year) < new Date().getFullYear() - 1;
 
+        if (tasksPool.current.has(yearKey)) {
+          neededKeys.add(yearKey);
           if (tasksTTLTimeouts.current.has(yearKey)) {
             clearTimeout(tasksTTLTimeouts.current.get(yearKey)!);
             tasksTTLTimeouts.current.delete(yearKey);
           }
+          setIsTasksLoading(false);
+          return;
+        }
 
-          projs.forEach((p) => {
+        const visibleSet = new Set(
+          (visibleActiveProjectIdsRef.current || []).map((id) => String(id))
+        );
+        const sortedProjs = [...projs].sort((a, b) => {
+          const aVis = visibleSet.has(a.id) || visibleSet.has(a.code) ? 1 : 0;
+          const bVis = visibleSet.has(b.id) || visibleSet.has(b.code) ? 1 : 0;
+          return bVis - aVis;
+        });
+
+        const unhydratedProjs: typeof sortedProjs = [];
+        let hydratedLocalTaskCount = 0;
+        let hasAnyNonZeroHydrated = false;
+
+        sortedProjs.forEach((p) => {
+          const projKey = `proj_${p.id}`;
+          neededKeys.add(projKey);
+
+          if (tasksTTLTimeouts.current.has(projKey)) {
+            clearTimeout(tasksTTLTimeouts.current.get(projKey)!);
+            tasksTTLTimeouts.current.delete(projKey);
+          }
+
+          const existingListener = tasksPool.current.get(projKey);
+          const isZeroNoop = Boolean((existingListener as any)?.__isZeroTaskNoop);
+          if (
+            isZeroNoop &&
+            ((p.taskCount || 0) > 0 || (Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0))
+          ) {
+            tasksPool.current.delete(projKey);
+          }
+
+          if (tasksPool.current.has(projKey)) {
+            return;
+          }
+
+          const localProjTasks = getLocalProjectTasksFromIndex(p, tasksLookupIndex);
+          const expectedSummaryCount = Array.isArray(p.taskSummaries)
+            ? p.taskSummaries.length
+            : p.taskCount || 0;
+          const isProjMarkerFresh =
+            hasFreshMarker(markers, 'tasks_proj', p.id) ||
+            hasFreshMarker(markers, 'tasks_proj', p.code) ||
+            isYearFresh;
+
+          // When a fresh marker exists in Dexie, trust localProjTasks.length > 0 even if deduplication merged a duplicate task
+          const hasLocalProjTasks =
+            knownHydratedProjectCodes.current.has(String(p.id)) ||
+            (isProjMarkerFresh && (localProjTasks.length > 0 || expectedSummaryCount === 0)) ||
+            (localProjTasks.length > 0 && localProjTasks.length >= expectedSummaryCount);
+
+          const isZeroTaskProject =
+            (p.taskCount || 0) === 0 &&
+            Array.isArray(p.taskSummaries) &&
+            p.taskSummaries.length === 0 &&
+            localProjTasks.length === 0;
+
+          const deltaManaged =
+            isZeroTaskProject ||
+            (hasLocalProjTasks && isArchivedPastYear) ||
+            (DELTA_FIRST.tasks && hasLocalProjTasks && isProjMarkerFresh);
+
+          if (deltaManaged) {
+            knownHydratedProjectCodes.current.add(String(p.id));
+            const noop = () => {};
+            if (isZeroTaskProject) (noop as any).__isZeroTaskNoop = true;
+            tasksPool.current.set(projKey, noop);
+            hydratedLocalTaskCount += localProjTasks.length;
+            if (!isZeroTaskProject) hasAnyNonZeroHydrated = true;
+          } else {
+            unhydratedProjs.push(p);
+          }
+        });
+
+        if (hydratedLocalTaskCount > 0 || hasAnyNonZeroHydrated) {
+          setCloudStatus('online');
+          const healed = healProjectsAfterTasksBatch({
+            currentProjects: useAppStore.getState().projects || [],
+            finalTasks: currentTasksSnapshot,
+            delegationGroups: useAppStore.getState().delegationGroups || [],
+            changedTasks: new Map(),
+            removedTasks: new Map(),
+            fromCache: false,
+            knownHydratedProjectCodes: knownHydratedProjectCodes.current,
+            tasksPool: tasksPool.current,
+          });
+          if (healed) {
+            useAppStore.getState().setProjects(healed);
+          }
+          usePerformanceStore
+            .getState()
+            .trackGetDoc(
+              `taka_tasks_${yearKey}_dexie`,
+              true,
+              hydratedLocalTaskCount,
+              `Dexie Local-First Tasks (0 Read, ${sortedProjs.length - unhydratedProjs.length} projects)`
+            );
+        }
+
+        if (unhydratedProjs.length === 0) {
+          setIsTasksLoading(false);
+          return;
+        }
+
+        // Only attach a year-wide listener when >8 projects genuinely lack local Dexie cache;
+        // otherwise lazily fetch only the specific missing projects (1-8 projects).
+        if (unhydratedProjs.length > 8) {
+          neededKeys.add(yearKey);
+          unhydratedProjs.forEach((p) => {
             const pKey = `proj_${p.id}`;
+            neededKeys.delete(pKey);
             if (tasksPool.current.has(pKey)) {
-              const u = tasksPool.current.get(pKey);
-              if (u) u();
+              tasksPool.current.get(pKey)?.();
               tasksPool.current.delete(pKey);
               usePerformanceStore.getState().unregisterListener(`taka_tasks_${pKey}`);
             }
           });
-
-          if (!tasksPool.current.has(yearKey)) {
-            const hasLocalYearTasks =
-              currentTasksSnapshot.some((t) => String(t.projectYear || '') === String(year)) &&
-              projs.every((p) => {
-                const expectedCount = Array.isArray(p.taskSummaries)
-                  ? p.taskSummaries.length
-                  : p.taskCount || 0;
-                if (expectedCount === 0) return true;
-                return getLocalProjectTasksFromIndex(p, tasksLookupIndex).length >= expectedCount;
-              });
-            const isArchivedPastYear = Number(year) < new Date().getFullYear() - 1;
-
-            const deltaManaged =
-              (hasLocalYearTasks && isArchivedPastYear) ||
-              (DELTA_FIRST.tasks && hasLocalYearTasks && hasFreshMarker(markers, 'tasks_year', year));
-            if (deltaManaged) {
-              tasksPool.current.set(yearKey, () => {});
-              setIsTasksLoading(false);
-              setCloudStatus('online');
-              usePerformanceStore
-                .getState()
-                .trackGetDoc(
-                  `taka_tasks_${yearKey}`,
-                  true,
-                  currentTasksSnapshot.length,
-                  'Dexie Local-First Tasks (0 Read full collection)'
-                );
-            } else {
-              attachYearTasksListener({
-                year,
-                yearKey,
-                userRole,
-                allowedStores,
-                deltaFirstTasks: DELTA_FIRST.tasks,
-                tasksPool: tasksPool.current,
-                getCurrentPendingOrStoreTasks,
-                batchTasksUpdate,
-                setIsTasksLoading,
-                setCloudStatus,
-              });
-            }
-          } else {
-            setIsTasksLoading(false);
-          }
-        } else {
-          const visibleSet = new Set(
-            (visibleActiveProjectIdsRef.current || []).map((id) => String(id))
-          );
-          const sortedProjs = [...projs].sort((a, b) => {
-            const aVis = visibleSet.has(a.id) || visibleSet.has(a.code) ? 1 : 0;
-            const bVis = visibleSet.has(b.id) || visibleSet.has(b.code) ? 1 : 0;
-            return bVis - aVis;
+          attachYearTasksListener({
+            year,
+            yearKey,
+            projectsInYear: projs,
+            userRole,
+            allowedStores,
+            deltaFirstTasks: DELTA_FIRST.tasks,
+            tasksPool: tasksPool.current,
+            knownHydratedProjectCodes: knownHydratedProjectCodes.current,
+            getCurrentPendingOrStoreTasks,
+            batchTasksUpdate,
+            setIsTasksLoading,
+            setCloudStatus,
           });
-
-          sortedProjs.forEach((p) => {
+        } else {
+          unhydratedProjs.forEach((p) => {
             const projKey = `proj_${p.id}`;
-            const yearKey = `year_${year}`;
-
-            if (tasksPool.current.has(yearKey)) {
-              neededKeys.add(yearKey);
-              if (tasksTTLTimeouts.current.has(yearKey)) {
-                clearTimeout(tasksTTLTimeouts.current.get(yearKey)!);
-                tasksTTLTimeouts.current.delete(yearKey);
-              }
-              setIsTasksLoading(false);
-              return;
-            }
-
-            neededKeys.add(projKey);
-
-            if (tasksTTLTimeouts.current.has(projKey)) {
-              clearTimeout(tasksTTLTimeouts.current.get(projKey)!);
-              tasksTTLTimeouts.current.delete(projKey);
-            }
-
-            const existingListener = tasksPool.current.get(projKey);
-            const isZeroNoop = Boolean((existingListener as any)?.__isZeroTaskNoop);
-            if (
-              isZeroNoop &&
-              ((p.taskCount || 0) > 0 || (Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0))
-            ) {
-              tasksPool.current.delete(projKey);
-            }
-
-            if (!tasksPool.current.has(projKey)) {
-              const localProjTasks = getLocalProjectTasksFromIndex(p, tasksLookupIndex);
-              const expectedSummaryCount = Array.isArray(p.taskSummaries)
-                ? p.taskSummaries.length
-                : p.taskCount || 0;
-              const hasLocalProjTasks =
-                (localProjTasks.length > 0 && localProjTasks.length >= expectedSummaryCount) ||
-                knownHydratedProjectCodes.current.has(String(p.id));
-              const isArchivedPastYear = Number(year) < new Date().getFullYear() - 1;
-              const isZeroTaskProject =
-                (p.taskCount || 0) === 0 &&
-                Array.isArray(p.taskSummaries) &&
-                p.taskSummaries.length === 0 &&
-                localProjTasks.length === 0;
-
-              const deltaManaged =
-                isZeroTaskProject ||
-                (hasLocalProjTasks && isArchivedPastYear) ||
-                (DELTA_FIRST.tasks &&
-                  hasLocalProjTasks &&
-                  (hasFreshMarker(markers, 'tasks_proj', p.id) ||
-                    hasFreshMarker(markers, 'tasks_proj', p.code) ||
-                    hasFreshMarker(markers, 'tasks_year', year)));
-              if (deltaManaged) {
-                knownHydratedProjectCodes.current.add(String(p.id));
-                const noop = () => {};
-                if (isZeroTaskProject) (noop as any).__isZeroTaskNoop = true;
-                tasksPool.current.set(projKey, noop);
-                setIsTasksLoading(false);
-                if (!isZeroTaskProject) {
-                  setCloudStatus('online');
-                  const healed = healProjectsAfterTasksBatch({
-                    currentProjects: useAppStore.getState().projects || [],
-                    finalTasks: currentTasksSnapshot,
-                    delegationGroups: useAppStore.getState().delegationGroups || [],
-                    changedTasks: new Map(),
-                    removedTasks: new Map(),
-                    fromCache: false,
-                    knownHydratedProjectCodes: knownHydratedProjectCodes.current,
-                    tasksPool: tasksPool.current,
-                  });
-                  if (healed) {
-                    useAppStore.getState().setProjects(healed);
-                  }
-                }
-                usePerformanceStore
-                  .getState()
-                  .trackGetDoc(
-                    `taka_tasks_${projKey}`,
-                    true,
-                    localProjTasks.length,
-                    'Dexie Local-First Project Tasks (0 Read)'
-                  );
-              } else {
-                attachProjectTasksListener({
-                  p,
-                  projKey,
-                  deltaFirstTasks: DELTA_FIRST.tasks,
-                  tasksPool: tasksPool.current,
-                  knownHydratedProjectCodes: knownHydratedProjectCodes.current,
-                  getCurrentPendingOrStoreTasks,
-                  batchTasksUpdate,
-                  setIsTasksLoading,
-                  setCloudStatus,
-                });
-              }
-            } else {
-              setIsTasksLoading(false);
-            }
+            attachProjectTasksListener({
+              p,
+              projKey,
+              deltaFirstTasks: DELTA_FIRST.tasks,
+              tasksPool: tasksPool.current,
+              knownHydratedProjectCodes: knownHydratedProjectCodes.current,
+              getCurrentPendingOrStoreTasks,
+              batchTasksUpdate,
+              setIsTasksLoading,
+              setCloudStatus,
+            });
           });
         }
       });

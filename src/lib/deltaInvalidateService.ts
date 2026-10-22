@@ -30,6 +30,9 @@ const tsOf = (v: any): number => {
 
 const deferredTriGateInvalidations = new Map<string, TakaDeltaItem>();
 const MAX_DEFERRED_INVALIDATIONS = 500;
+const inFlightDocReads = new Map<string, Promise<TakaDeltaItem | null>>();
+const recentlyResolvedAt = new Map<string, number>();
+const RECENT_RESOLVE_DEDUP_MS = 2000;
 
 function queueDeferredInvalidation(item: TakaDeltaItem): void {
   if (!item?.docId || !item?.collectionName) return;
@@ -48,6 +51,12 @@ function queueDeferredInvalidation(item: TakaDeltaItem): void {
  */
 function isRelevant(item: TakaDeltaItem, nowMs: number): boolean {
   if (!item || !item.docId || !item.collectionName) return false;
+  const key = `${item.collectionName}:${item.docId}`;
+  const lastResolved = recentlyResolvedAt.get(key) || 0;
+  if (lastResolved > 0 && nowMs - lastResolved < RECENT_RESOLVE_DEDUP_MS) {
+    return false;
+  }
+
   const store = useAppStore.getState();
   const RECENT_SNAPSHOT_WINDOW_MS = 1500;
 
@@ -114,52 +123,68 @@ export async function resolveInvalidations(items: TakaDeltaItem[]): Promise<Taka
   const nowIso = new Date(now).toISOString();
 
   const results = await Promise.all(
-    Array.from(unique.values()).map(async (it): Promise<TakaDeltaItem | null> => {
+    Array.from(unique.entries()).map(async ([dedupKey, it]): Promise<TakaDeltaItem | null> => {
+      if (inFlightDocReads.has(dedupKey)) {
+        return inFlightDocReads.get(dedupKey)!;
+      }
       const physical = PHYSICAL_COLLECTION[it.collectionName];
       if (!physical) return null;
-      try {
-        const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', physical, it.docId);
-        let snap;
-        try {
-          snap = await getDocFromServer(ref);
-        } catch {
-          snap = await getDoc(ref);
-        }
-        usePerformanceStore
-          .getState()
-          .trackGetDoc(physical, false, 1, `Delta invalidate re-read: ${it.docId}`);
 
-        if (!snap.exists()) {
+      const readPromise = (async (): Promise<TakaDeltaItem | null> => {
+        try {
+          const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', physical, it.docId);
+          let snap;
+          try {
+            snap = await getDocFromServer(ref);
+          } catch {
+            snap = await getDoc(ref);
+          }
+          recentlyResolvedAt.set(dedupKey, Date.now());
+          if (recentlyResolvedAt.size > 1000) {
+            const oldestKey = recentlyResolvedAt.keys().next().value;
+            if (oldestKey !== undefined) recentlyResolvedAt.delete(oldestKey);
+          }
+          usePerformanceStore
+            .getState()
+            .trackGetDoc(physical, false, 1, `Delta invalidate re-read: ${it.docId}`);
+
+          if (!snap.exists()) {
+            return {
+              docId: it.docId,
+              collectionName: it.collectionName,
+              action: 'delete',
+              isPatch: false,
+              data: { id: it.docId, isDeleted: true },
+            };
+          }
+          const data = snap.data() as Record<string, any>;
+          if (data?.isDeleted) {
+            return {
+              docId: it.docId,
+              collectionName: it.collectionName,
+              action: 'delete',
+              isPatch: false,
+              data: { id: it.docId, isDeleted: true, ...data },
+            };
+          }
           return {
             docId: it.docId,
             collectionName: it.collectionName,
-            action: 'delete',
+            action: 'create',
             isPatch: false,
-            data: { id: it.docId, isDeleted: true },
+            data: { id: it.docId, ...data },
+            year: String(data.year || data.projectYear || it.year || ''),
           };
+        } catch (err) {
+          console.warn('[deltaSync] Failed to re-read invalidated doc:', it.collectionName, it.docId, err);
+          return null;
+        } finally {
+          inFlightDocReads.delete(dedupKey);
         }
-        const data = snap.data() as Record<string, any>;
-        if (data?.isDeleted) {
-          return {
-            docId: it.docId,
-            collectionName: it.collectionName,
-            action: 'delete',
-            isPatch: false,
-            data: { id: it.docId, isDeleted: true, ...data },
-          };
-        }
-        return {
-          docId: it.docId,
-          collectionName: it.collectionName,
-          action: 'create',
-          isPatch: false,
-          data: { id: it.docId, ...data },
-          year: String(data.year || data.projectYear || it.year || ''),
-        };
-      } catch (err) {
-        console.warn('[deltaSync] Failed to re-read invalidated doc:', it.collectionName, it.docId, err);
-        return null;
-      }
+      })();
+
+      inFlightDocReads.set(dedupKey, readPromise);
+      return readPromise;
     })
   );
 

@@ -192,14 +192,21 @@ export function useCostsHydration({
         costsPool.current.set(year, () => {});
 
         const localCount = await hydrateCostsFromLocal(year);
-        const currentCosts = useAppStore.getState().costs || [];
+        const storeState = useAppStore.getState();
+        const currentCosts = storeState.costs || [];
         const hasLocalCosts =
           localCount > 0 || currentCosts.some((c) => String(c.projectYear || "") === String(year));
         const isClosedOrPastYear = Number(year) < new Date().getFullYear();
+        const markers = await getLoadedMarkers();
+        const hasFreshCostMarker = hasFreshMarker(markers, 'costs_year', year);
+        const yearHasZeroProjects =
+          hasFreshMarker(markers, 'projects_year', year) &&
+          !(storeState.projects || []).some((p) => String(p.year) === String(year));
 
         const deltaManaged =
           (hasLocalCosts && isClosedOrPastYear) ||
-          (DELTA_FIRST.costs && hasLocalCosts && hasFreshMarker(await getLoadedMarkers(), 'costs_year', year));
+          yearHasZeroProjects ||
+          (DELTA_FIRST.costs && hasFreshCostMarker);
         if (deltaManaged) {
           setIsCostsLoading(false);
           setCloudStatus("online");

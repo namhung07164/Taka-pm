@@ -277,15 +277,20 @@ export function useProjectsHydration({
       );
 
       const isClosedOrPastYear = Number(year) < new Date().getFullYear() - 1;
+      const allStoreProjects = useAppStore.getState().projects || [];
       const hasLocalData =
         localCount > 0 ||
-        (useAppStore.getState().projects || []).some((p) => String(p.year) === String(year));
+        allStoreProjects.some((p) => String(p.year) === String(year));
+      const markers = await getLoadedMarkers();
+      const hasFreshYearMarker = hasFreshMarker(markers, 'projects_year', year);
+      const isVerifiedEmptyOrLoadedYear =
+        hasLocalData ||
+        allStoreProjects.length > 0 ||
+        String(year) !== String(new Date().getFullYear());
 
       const deltaManaged =
         (hasLocalData && isClosedOrPastYear) ||
-        (DELTA_FIRST.projects &&
-          hasLocalData &&
-          hasFreshMarker(await getLoadedMarkers(), 'projects_year', year));
+        (DELTA_FIRST.projects && hasFreshYearMarker && isVerifiedEmptyOrLoadedYear);
       if (deltaManaged) {
         setCloudStatus('online');
         usePerformanceStore

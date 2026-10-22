@@ -114,7 +114,13 @@ export async function handleProjectIdentityChange({
     }
   });
 
-  const storeCosts = useAppStore.getState().costs || [];
+  let storeCosts = useAppStore.getState().costs || [];
+  if (storeCosts.length === 0) {
+    try {
+      const { getLocalCosts } = await import('../../lib/localDb');
+      storeCosts = await getLocalCosts(oldPYear || 'all');
+    } catch {}
+  }
   const relatedCosts = storeCosts.filter(c => {
     const matchesCode = String(c.projectCode || '').trim().toLowerCase() === oldPCode;
     const matchesYear = !c.projectYear || !oldPYear || String(c.projectYear) === oldPYear;

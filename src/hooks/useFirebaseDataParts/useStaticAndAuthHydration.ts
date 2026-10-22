@@ -13,6 +13,7 @@ import { enforceStorageBudget } from "../../lib/storageBudgetService";
 import {
   hydrateProjectsFromLocal,
   hydrateTasksFromLocal,
+  hydrateTasksForProjects,
   hydrateCostsFromLocal,
   hydrateDelegationsFromLocal,
   hydrateDelegationsForProjects,
@@ -128,15 +129,10 @@ export function useStaticAndAuthHydration() {
     ];
     const isChatOnly = isProjectModalOpen && modalInitialTab === "chat";
     const isLayoutTab = activeTab === "layout";
-    const needsTasks =
-      tabsRequiringTasks.includes(activeTab) ||
-      isTaskModalOpen ||
-      (isProjectModalOpen && !isChatOnly && !isLayoutTab);
+    const needsTasks = tabsRequiringTasks.includes(activeTab);
 
     const tabsRequiringCosts: TabId[] = ["cost", "budget"];
-    const needsCosts =
-      tabsRequiringCosts.includes(activeTab) ||
-      (isProjectModalOpen && !isChatOnly && !isLayoutTab);
+    const needsCosts = tabsRequiringCosts.includes(activeTab);
 
     const tabsRequiringDelegations: TabId[] = ["taskDelegation", "taskDelegationCalendar"];
     const needsDelegations = tabsRequiringDelegations.includes(activeTab);
@@ -154,32 +150,36 @@ export function useStaticAndAuthHydration() {
         .catch(() => {});
     };
 
+    const store = useAppStore.getState();
+    const openProjectKeys: string[] = [];
+    if (store.editingProject?.id) openProjectKeys.push(store.editingProject.id);
+    if (store.editingProject?.code) openProjectKeys.push(store.editingProject.code);
+    if (store.editingTask?.projectId) openProjectKeys.push(store.editingTask.projectId);
+    if (store.editingTask?.projectCode) openProjectKeys.push(store.editingTask.projectCode);
+    const targetYr = store.editingProject?.year ?? store.editingTask?.projectYear ?? store.globalYearFilter;
+    const targetSt = store.editingProject?.store ?? store.editingTask?.projectStore ?? store.globalStoreFilter;
+
     if (needsTasks) {
       setIsTasksRequested(true);
-      hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      hydrateTasksFromLocal(store.globalYearFilter).catch(() => {});
       flushGateInvalidations("taka_tasks");
+    } else if ((isTaskModalOpen || (isProjectModalOpen && !isChatOnly && !isLayoutTab)) && openProjectKeys.length > 0) {
+      // Rule 3 & Rule 8: Zero-Query for Modals — hydrate only the target project's tasks from Dexie
+      hydrateTasksForProjects(openProjectKeys, targetYr, targetSt).catch(() => {});
     }
+
     if (needsCosts) {
       setIsCostsRequested(true);
-      hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      hydrateCostsFromLocal(store.globalYearFilter).catch(() => {});
       flushGateInvalidations("taka_costs");
     }
+
     if (needsDelegations) {
       setIsDelegationsRequested(true);
-      hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      hydrateDelegationsFromLocal(store.globalYearFilter).catch(() => {});
       flushGateInvalidations("taka_delegations");
-    } else {
-      const store = useAppStore.getState();
-      const openProjectKeys: string[] = [];
-      if (store.editingProject?.id) openProjectKeys.push(store.editingProject.id);
-      if (store.editingProject?.code) openProjectKeys.push(store.editingProject.code);
-      if (store.editingTask?.projectId) openProjectKeys.push(store.editingTask.projectId);
-      if (store.editingTask?.projectCode) openProjectKeys.push(store.editingTask.projectCode);
-      if (openProjectKeys.length > 0) {
-        const targetYr = store.editingProject?.year ?? store.editingTask?.projectYear ?? store.globalYearFilter;
-        const targetSt = store.editingProject?.store ?? store.editingTask?.projectStore ?? store.globalStoreFilter;
-        hydrateDelegationsForProjects(openProjectKeys, targetYr, targetSt).catch(() => {});
-      }
+    } else if (openProjectKeys.length > 0) {
+      hydrateDelegationsForProjects(openProjectKeys, targetYr, targetSt).catch(() => {});
     }
   }, [
     activeTab,
