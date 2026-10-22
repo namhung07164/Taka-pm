@@ -153,6 +153,11 @@ export function DetailTab({
     taskCodeMap,
     taskActualStatusMap,
     childTasksCountMap,
+    expandedModularTasks,
+    handleToggleModularParent,
+    isAllModularExpanded,
+    handleToggleExpandAllModular,
+    totalChildTasksCount,
     flatTableRows,
     handleSelectAllTasksInProject,
     handleToggleSelectTask,
@@ -418,6 +423,11 @@ export function DetailTab({
         taskActualStatusMap={taskActualStatusMap}
         taskCodeMap={taskCodeMap}
         childTasksCountMap={childTasksCountMap}
+        expandedModularTasks={expandedModularTasks}
+        onToggleModularParent={handleToggleModularParent}
+        isAllModularExpanded={isAllModularExpanded}
+        onToggleExpandAllModular={handleToggleExpandAllModular}
+        totalChildTasksCount={totalChildTasksCount}
         draggingTaskIds={draggingTaskIds}
         dragOverTaskId={dragOverTaskId}
         dropPosition={dropPosition}

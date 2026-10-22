@@ -7,7 +7,7 @@ import {
   matchesAdvancedSearch 
 } from '../../lib/utils';
 import { computeAllTaskCodes } from '../../lib/ganttUtils';
-import { safeGetItemSession } from '../../lib/storage';
+import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
 import { SortConfig } from './detailTypes';
 import { useDetailProjectInfo } from './useDetailProjectInfo';
 import { useDetailFlatRows } from './useDetailFlatRows';
@@ -239,10 +239,62 @@ export function useDetailData({
     for (let idx = 0; idx < tasks.length; idx++) {
       const child = tasks[idx];
       if (child.parentTaskId) {
-        map.set(child.parentTaskId, (map.get(child.parentTaskId) || 0) + 1);
+        const pId = String(child.parentTaskId).trim();
+        map.set(pId, (map.get(pId) || 0) + 1);
       }
     }
     return map;
+  }, [tasks]);
+
+  // Modular parent task expand/collapse state
+  const [expandedModularTasks, setExpandedModularTasks] = useState<string[]>(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem('taka_detail_modular_expanded') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const expandedModularTasksSet = useMemo(() => new Set(expandedModularTasks), [expandedModularTasks]);
+
+  const handleToggleModularParent = useCallback((parentTaskId: string) => {
+    setExpandedModularTasks(prev => {
+      const pId = String(parentTaskId).trim();
+      const next = prev.includes(pId) ? prev.filter(id => id !== pId) : [...prev, pId];
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const currentModularParentIds = useMemo(() => {
+    const set = new Set<string>();
+    filteredProjects.slice(0, visibleCount).forEach(p => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const info = projectInfoMap.get(pKey) || getProjectInfo(p);
+      (info.sortedTasks || []).forEach(t => {
+        if (t.parentTaskId) set.add(String(t.parentTaskId).trim());
+      });
+    });
+    return Array.from(set);
+  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo]);
+
+  const isAllModularExpanded = useMemo(() => {
+    if (currentModularParentIds.length === 0) return false;
+    return currentModularParentIds.some(id => expandedModularTasks.includes(id));
+  }, [currentModularParentIds, expandedModularTasks]);
+
+  const handleToggleExpandAllModular = useCallback(() => {
+    if (isAllModularExpanded) {
+      setExpandedModularTasks([]);
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify([]));
+    } else {
+      setExpandedModularTasks(currentModularParentIds);
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(currentModularParentIds));
+    }
+  }, [isAllModularExpanded, currentModularParentIds]);
+
+  const totalChildTasksCount = useMemo(() => {
+    return tasks.filter(t => Boolean(t.parentTaskId)).length;
   }, [tasks]);
 
   // Virtual Windowing Flat Rows
@@ -253,6 +305,7 @@ export function useDetailData({
     getProjectInfo,
     sortConfig,
     expandedCodes,
+    expandedModularTasks: expandedModularTasksSet,
     delegationGroups,
     lowerSearchTerm,
     taskCodeMap,
@@ -323,6 +376,11 @@ export function useDetailData({
     taskCodeMap,
     taskActualStatusMap,
     childTasksCountMap,
+    expandedModularTasks: expandedModularTasksSet,
+    handleToggleModularParent,
+    isAllModularExpanded,
+    handleToggleExpandAllModular,
+    totalChildTasksCount,
     flatTableRows,
     handleSelectAllTasksInProject,
     handleToggleSelectTask,

@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { Project, Task } from '../../types';
 import { cn, formatDisplayDateTime, formatDisplayDateMain, calculateDays, getActStatusPercent } from '../../lib/utils';
-import { GripVertical, Trash2, Edit3, ArrowUp, ArrowDown } from 'lucide-react';
+import { GripVertical, Trash2, Edit3, ArrowUp, ArrowDown, ChevronRight, ChevronDown } from 'lucide-react';
 import { DetailTableRow } from './detailTypes';
 import { EditableCell } from './EditableCell';
 import { PredecessorEditableCell } from './PredecessorEditableCell';
@@ -24,6 +24,8 @@ interface DetailTaskRowProps {
   delStatusText: string;
   delStatusColorClass: string;
   childTasksCount: number;
+  isModularExpanded?: boolean;
+  onToggleModularParent?: (parentTaskId: string) => void;
   tasks?: Task[];
   projects?: Project[];
   onToggleSelectTask: (id: string, shiftKey: boolean) => void;
@@ -51,6 +53,8 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
   delStatusText,
   delStatusColorClass,
   childTasksCount = 0,
+  isModularExpanded = false,
+  onToggleModularParent,
   tasks,
   projects,
   onToggleSelectTask,
@@ -128,9 +132,27 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
             )}
             <span className="font-semibold">{i + 1}</span>
             {childTasksCount > 0 && (
-              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-950/90 text-purple-700 dark:text-purple-200 border border-purple-300 dark:border-purple-600 shadow-2xs flex items-center gap-0.5 leading-none" title={`${childTasksCount} task con`}>
-                ({childTasksCount})
-              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onToggleModularParent) onToggleModularParent(t.id);
+                }}
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
+                  isModularExpanded
+                    ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                    : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                )}
+                title={isModularExpanded ? `Collapse ${childTasksCount} subtasks` : `Expand ${childTasksCount} subtasks`}
+              >
+                {isModularExpanded ? (
+                  <ChevronDown className="w-3 h-3 text-current font-bold" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 text-current font-bold" />
+                )}
+                <span>({childTasksCount})</span>
+              </button>
             )}
             {isChildTask && (
               <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Task con (Sub-task)">

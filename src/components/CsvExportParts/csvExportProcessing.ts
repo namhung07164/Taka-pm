@@ -94,7 +94,13 @@ export const getCellValue = (
       }
     } else if (colName.toLowerCase() === 'predecessor' && !keepOriginal[colName]) {
       if (val !== undefined && val !== null && String(val).trim() !== '') {
-        val = `${projCode}-${val}`;
+        const strVal = String(val).trim();
+        val = strVal.replace(/^([A-Za-z0-9_]+)-(\d+)(.*)$/, '$1#$2$3');
+        if (projCode && !val.includes('#') && !val.toLowerCase().startsWith(projCode.toLowerCase())) {
+          if (/^\d+/.test(val)) {
+            val = `${projCode}#${val}`;
+          }
+        }
       }
     }
   }

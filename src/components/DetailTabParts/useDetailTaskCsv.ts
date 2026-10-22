@@ -3,7 +3,7 @@ import { Project, Task, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { downloadCSV, generateCSV } from '../../lib/csvUtils';
 import { sortGroupTasks } from '../../lib/ganttUtils';
-import { formatToCSVDate, parseCSVDate } from './detailCsvUtils';
+import { formatToCSVDate, parseCSVDate, formatPredecessorForExport } from './detailCsvUtils';
 import { parseTasksFile } from './detailTaskImportParser';
 import { executeImportTasks } from './detailTaskImportExecutor';
 import { ImportErrorModal } from './ImportErrorModal';
@@ -91,7 +91,7 @@ export function useDetailTaskCsv({
         formatToCSVDate(t.finish), 
         t.duration !== undefined ? t.duration : '',
         t.party || '',
-        t.predecessor || '',
+        formatPredecessorForExport(t.predecessor, t.projectCode || p?.code),
         t.delegation ? 'true' : 'false',
         t.realtimeUpdate ? 'true' : 'false',
         commentsText

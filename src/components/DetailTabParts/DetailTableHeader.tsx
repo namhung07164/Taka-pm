@@ -2,6 +2,7 @@ import React, { memo } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { ResizableHeader } from '../ResizableHeader';
 import { Project } from '../../types';
+import { cn } from '../../lib/utils';
 
 export interface DetailTableHeaderProps {
   columnsWithWidths?: Array<{ id: string; label: string; width?: number }>;
@@ -21,6 +22,9 @@ export interface DetailTableHeaderProps {
   onToggleColumn?: (col: string) => void;
   onSelectAllChange?: (checked: boolean) => void;
   onToggleExpandAll?: () => void;
+  onToggleExpandAllModular?: () => void;
+  isAllModularExpanded?: boolean;
+  totalChildTasksCount?: number;
 }
 
 export const DetailTableHeader = memo(function DetailTableHeader({
@@ -38,6 +42,9 @@ export const DetailTableHeader = memo(function DetailTableHeader({
   onSort,
   onSelectAllChange,
   onToggleExpandAll,
+  onToggleExpandAllModular,
+  isAllModularExpanded = false,
+  totalChildTasksCount,
   onSelectAllVisibleTasks
 }: DetailTableHeaderProps) {
   const isAllSelected = selectedTaskIds.size > 0 && selectedTaskIds.size === allVisibleTaskIds.length;
@@ -97,14 +104,37 @@ export const DetailTableHeader = memo(function DetailTableHeader({
                     {col.label}
                     {isSorted && (sortConfig.direction === 'asc' ? ' ↑' : ' ↓')}
                   </span>
-                  {col.id === 'no' && onToggleExpandAll && (
-                    <button
-                      type="button"
-                      onClick={onToggleExpandAll}
-                      className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8] cursor-pointer ml-1"
-                    >
-                      {expandedCodes.length === 0 ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    </button>
+                  {col.id === 'no' && (
+                    <div className="flex items-center gap-1 ml-1">
+                      {onToggleExpandAll && (
+                        <button
+                          type="button"
+                          onClick={onToggleExpandAll}
+                          className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8] cursor-pointer"
+                          title={expandedCodes.length === 0 ? "Expand All Projects" : "Collapse All Projects"}
+                        >
+                          {expandedCodes.length === 0 ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
+                      {onToggleExpandAllModular && (
+                        <button
+                          type="button"
+                          onClick={onToggleExpandAllModular}
+                          className={cn(
+                            "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
+                            isAllModularExpanded
+                              ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                              : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                          )}
+                          title={isAllModularExpanded ? "Collapse All Group Tasks" : "Expand All Group Tasks"}
+                        >
+                          {isAllModularExpanded ? <ChevronDown className="w-3 h-3 text-current" /> : <ChevronRight className="w-3 h-3 text-current" />}
+                          {totalChildTasksCount !== undefined && totalChildTasksCount > 0 && (
+                            <span>({totalChildTasksCount})</span>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   )}
                   {col.id === 'party' && (
                     <div className="ml-1 inline-flex items-center">
@@ -158,15 +188,36 @@ export const DetailTableHeader = memo(function DetailTableHeader({
                 />
               )}
               No.
-              {onToggleExpandAll && (
-                <button 
-                  type="button"
-                  onClick={onToggleExpandAll} 
-                  className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8] cursor-pointer"
-                >
-                  {expandedCodes.length === 0 ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                </button>
-              )}
+              <div className="flex items-center gap-1 ml-1">
+                {onToggleExpandAll && (
+                  <button 
+                    type="button"
+                    onClick={onToggleExpandAll} 
+                    className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors text-blue-600 dark:text-[#8ab4f8] cursor-pointer"
+                    title={expandedCodes.length === 0 ? "Expand All Projects" : "Collapse All Projects"}
+                  >
+                    {expandedCodes.length === 0 ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+                {onToggleExpandAllModular && (
+                  <button
+                    type="button"
+                    onClick={onToggleExpandAllModular}
+                    className={cn(
+                      "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
+                      isAllModularExpanded
+                        ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                        : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                    )}
+                    title={isAllModularExpanded ? "Collapse All Group Tasks" : "Expand All Group Tasks"}
+                  >
+                    {isAllModularExpanded ? <ChevronDown className="w-3 h-3 text-current" /> : <ChevronRight className="w-3 h-3 text-current" />}
+                    {totalChildTasksCount !== undefined && totalChildTasksCount > 0 && (
+                      <span>({totalChildTasksCount})</span>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </ResizableHeader>
         )}

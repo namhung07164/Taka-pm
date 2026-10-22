@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Project, DelegationGroup } from '../../types';
+import { Project, Task, DelegationGroup } from '../../types';
 import { matchesAdvancedSearch, computePlanProgressPercent, computeActProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { DetailTableRow, SortConfig } from './detailTypes';
 import { ProjectInfo } from './useDetailProjectInfo';
@@ -14,6 +14,7 @@ interface UseDetailFlatRowsParams {
   getProjectInfo: (p: Project) => ProjectInfo;
   sortConfig: SortConfig | null;
   expandedCodes: string[];
+  expandedModularTasks?: Set<string>;
   delegationGroups: DelegationGroup[];
   lowerSearchTerm: string;
   taskCodeMap: Map<string, string>;
@@ -26,6 +27,7 @@ export function useDetailFlatRows({
   getProjectInfo,
   sortConfig,
   expandedCodes,
+  expandedModularTasks = new Set(),
   delegationGroups,
   lowerSearchTerm,
   taskCodeMap,
@@ -160,13 +162,35 @@ export function useDetailFlatRows({
 
       if (isExpanded) {
         const groupTaskIndexMap = new Map<string, number>();
+        const parentTaskMap = new Map<string, Task>();
         groupTasks.forEach((gt, idx) => {
-          if (gt.id) groupTaskIndexMap.set(gt.id, idx);
+          if (gt.id) {
+            groupTaskIndexMap.set(gt.id, idx);
+            parentTaskMap.set(gt.id, gt);
+          }
+          if (gt.taskCodePhu) {
+            parentTaskMap.set(gt.taskCodePhu.trim().toLowerCase(), gt);
+          }
         });
 
         const seenRenderTaskIds = new Set<string>();
         tasksToRender.forEach((t, tIdx) => {
           if (t.id && seenRenderTaskIds.has(t.id)) return;
+
+          // If t is a child task, check if its parent task is expanded
+          if (t.parentTaskId && !lowerSearchTerm) {
+            const rawParentId = String(t.parentTaskId).trim();
+            const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
+            const effectiveParentId = matchedParent ? matchedParent.id : rawParentId;
+            const isParentExpanded =
+              expandedModularTasks.has(effectiveParentId) ||
+              Boolean(matchedParent?.taskCodePhu && expandedModularTasks.has(matchedParent.taskCodePhu));
+
+            if (!isParentExpanded) {
+              return; // Parent task is collapsed -> hide child task
+            }
+          }
+
           if (t.id) seenRenderTaskIds.add(t.id);
           const originalIndex = groupTaskIndexMap.get(t.id);
           const i = originalIndex !== undefined ? originalIndex : tIdx;
@@ -185,7 +209,7 @@ export function useDetailFlatRows({
     });
 
     return rows;
-  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo, sortConfig, expandedCodes, delegationGroups, lowerSearchTerm, taskCodeMap, globalYearFilter]);
+  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo, sortConfig, expandedCodes, expandedModularTasks, delegationGroups, lowerSearchTerm, taskCodeMap, globalYearFilter]);
 
   return flatTableRows;
 }

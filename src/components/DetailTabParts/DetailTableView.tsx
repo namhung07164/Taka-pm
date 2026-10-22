@@ -40,6 +40,11 @@ export interface DetailTableViewProps {
   taskActualStatusMap: Map<string, { label: string; color: string }>;
   taskCodeMap: Map<string, string>;
   childTasksCountMap?: Map<string, number>;
+  expandedModularTasks?: Set<string>;
+  onToggleModularParent?: (parentTaskId: string) => void;
+  isAllModularExpanded?: boolean;
+  onToggleExpandAllModular?: () => void;
+  totalChildTasksCount?: number;
   draggingTaskIds: string[];
   dragOverTaskId: string | null;
   dropPosition: 'before' | 'after' | null;
@@ -96,6 +101,11 @@ export const DetailTableView = memo(function DetailTableView({
   taskActualStatusMap,
   taskCodeMap,
   childTasksCountMap,
+  expandedModularTasks,
+  onToggleModularParent,
+  isAllModularExpanded,
+  onToggleExpandAllModular,
+  totalChildTasksCount,
   draggingTaskIds,
   dragOverTaskId,
   dropPosition,
@@ -149,6 +159,9 @@ export const DetailTableView = memo(function DetailTableView({
               }
             }}
             onToggleExpandAll={() => setExpandedCodes(expandedCodes.length === 0 ? filteredProjects.map(p => String(p.id!)) : [])}
+            onToggleExpandAllModular={onToggleExpandAllModular}
+            isAllModularExpanded={isAllModularExpanded}
+            totalChildTasksCount={totalChildTasksCount}
           />
           <tbody>
             {paddingTop > 0 && (
@@ -198,6 +211,8 @@ export const DetailTableView = memo(function DetailTableView({
                   delStatusText={actStatus.label}
                   delStatusColorClass={actStatus.color}
                   childTasksCount={childCount}
+                  isModularExpanded={expandedModularTasks ? (expandedModularTasks.has(t.id) || (!!t.taskCodePhu && expandedModularTasks.has(t.taskCodePhu))) : false}
+                  onToggleModularParent={onToggleModularParent}
                   onToggleSelectTask={handleToggleSelectTask}
                   onEditTask={onEditTask}
                   onUpdateTask={handleUpdateTask}
