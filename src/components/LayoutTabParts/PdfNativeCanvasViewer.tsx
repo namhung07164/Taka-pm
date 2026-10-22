@@ -101,13 +101,14 @@ export function PdfNativeCanvasViewer({
           cMapPacked: true,
           standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@6.3.289/standard_fonts/',
           disableAutoFetch: false,
-          disableStream: true,
+          disableStream: false,
+          rangeChunkSize: 65536,
         };
 
         if (binaryData && binaryData.byteLength > 0) {
           docConfig.data = binaryData;
         } else {
-          // Use normalized direct URL (never /api/pdf-proxy which could return SPA index.html)
+          // Use normalized direct URL (supports HTTP 206 streaming chunks)
           docConfig.url = normalizePdfSourceUrl(url);
         }
 
@@ -436,6 +437,7 @@ export function PdfNativeCanvasViewer({
             pdfDoc={pdfDoc}
             numPages={numPages}
             zoomScale={zoomScale}
+            initialPage={currentPage}
             onVisiblePageChange={(p) => {
               setCurrentPage(p);
               setPageInput(String(p));

@@ -16,15 +16,21 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
 
   try {
     const driveUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+    const fetchHeaders = new Headers({
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'application/pdf,*/*',
+    });
+    const clientRange = context.request.headers.get('range');
+    if (clientRange) {
+      fetchHeaders.set('range', clientRange);
+    }
+
     const response = await fetch(driveUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/pdf,*/*',
-      },
+      headers: fetchHeaders,
       redirect: 'follow',
     });
 
-    if (!response.ok) {
+    if (!response.ok && response.status !== 206) {
       return new Response('Failed to retrieve file from Google Drive', {
         status: response.status,
         headers: { 'Access-Control-Allow-Origin': '*' },
@@ -35,13 +41,24 @@ export const onRequestGet = async (context: { request: Request; env: Env }) => {
     const responseHeaders = new Headers();
     responseHeaders.set('Access-Control-Allow-Origin', '*');
     responseHeaders.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    responseHeaders.set('Access-Control-Allow-Headers', '*');
+    responseHeaders.set('Access-Control-Allow-Headers', 'Range, Content-Type, Accept');
+    responseHeaders.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
     responseHeaders.set('Content-Type', ct);
+    responseHeaders.set('Accept-Ranges', 'bytes');
     responseHeaders.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
     responseHeaders.set('Content-Disposition', 'inline; filename="document.pdf"');
 
+    const contentRange = response.headers.get('content-range');
+    if (contentRange) {
+      responseHeaders.set('Content-Range', contentRange);
+    }
+    const cl = response.headers.get('content-length');
+    if (cl) {
+      responseHeaders.set('Content-Length', cl);
+    }
+
     return new Response(response.body, {
-      status: 200,
+      status: response.status,
       headers: responseHeaders,
     });
   } catch (err: any) {

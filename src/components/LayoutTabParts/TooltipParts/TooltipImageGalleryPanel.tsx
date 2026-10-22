@@ -10,13 +10,16 @@ import {
   Copy, 
   Trash2,
   Upload,
-  Loader2
+  Loader2,
+  Crop,
+  Camera
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { TooltipImageItem } from './tooltipTypes';
 import { normalizeImageUrl } from '../LayoutUnitLightboxModal';
 import { uploadPictureToTakaFolder } from '../../../lib/r2StorageUtils';
 import { TooltipZoomableThumbnail } from './TooltipZoomableThumbnail';
+import { ScreenshotCropModal } from './ScreenshotCropModal';
 
 interface TooltipImageGalleryPanelProps {
   showImagePanel: boolean;
@@ -57,6 +60,7 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccessUrl, setUploadSuccessUrl] = useState<string | null>(null);
+  const [showScreenshotModal, setShowScreenshotModal] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!showImagePanel && !showAddLinkInput) return null;
@@ -252,6 +256,17 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
                   <span>{isUploading ? "Đang upload lên R2..." : "Chọn Ảnh Từ Máy / Chụp Ảnh"}</span>
                 </button>
 
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  onClick={() => setShowScreenshotModal(true)}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs shrink-0"
+                  title="Chụp màn hình (Desktop/iOS) và Cắt ảnh (Crop) tải lên R2"
+                >
+                  <Crop className="w-3.5 h-3.5" />
+                  <span>Screenshot & Crop</span>
+                </button>
+
                 <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-mono shrink-0 truncate max-w-[210px]">
                   <span>Thư mục R2:</span>
                   <span className="font-bold text-purple-600 dark:text-purple-400">Taka-Pm-folder/</span>
@@ -354,6 +369,22 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
             </div>
           ))}
         </div>
+      )}
+
+      {/* Screenshot & Interactive Crop Modal */}
+      {showScreenshotModal && (
+        <ScreenshotCropModal
+          isOpen={showScreenshotModal}
+          onClose={() => setShowScreenshotModal(false)}
+          onSuccess={(publicUrl) => {
+            setUploadSuccessUrl(publicUrl);
+            setNewLinkInput(publicUrl);
+            handleAddCustomImage(undefined, publicUrl);
+            setTimeout(() => setUploadSuccessUrl(null), 4500);
+          }}
+          unitCode={unitCode}
+          activeStore={activeStore}
+        />
       )}
     </div>
   );

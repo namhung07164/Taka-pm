@@ -215,105 +215,90 @@ export const LightboxIframeViewer: React.FC<LightboxIframeViewerProps> = ({
     };
   }, [touchZoomMode, updateScrollIndicators]);
 
-  if (touchZoomMode === 'pinch') {
-    return (
-      <div className={`w-full h-full relative ${className}`}>
-        <TouchPinchZoomStage
-          ref={zoomStageRef}
-          initialScale={1}
-          minScale={0.5}
-          maxScale={8}
-          onScaleChange={onScaleChange}
-          captureOverlay={true}
-          allowNativeTouch={false}
-          className="w-full h-full flex items-center justify-center"
-        >
-          <div className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-white">
-            <iframe
-              ref={iframeRef}
-              src={safeEmbedUrl}
-              onLoad={handleIframeLoad}
-              className="w-full h-full border-0 bg-white block"
-              title={title}
-              allow="autoplay; fullscreen"
-            />
-          </div>
-        </TouchPinchZoomStage>
-      </div>
-    );
-  }
-
-  // Scroll Pages Mode: Native hardware-accelerated scroll container with dedicated Quick-Scroll Controls
   return (
     <div className={`w-full h-full relative flex flex-col items-center justify-center p-0.5 sm:p-1 ${className}`}>
-      {/* Scrollable Container with iOS WebKit touch scrolling */}
-      <div
-        ref={scrollWrapperRef}
-        className="w-full h-full rounded-xl border border-slate-800 bg-white relative overflow-y-auto overflow-x-auto select-auto"
-        style={{
-          WebkitOverflowScrolling: 'touch',
-          overscrollBehavior: 'contain',
-          touchAction: 'pan-y pan-x',
-        }}
+      <TouchPinchZoomStage
+        ref={zoomStageRef}
+        initialScale={1}
+        minScale={0.5}
+        maxScale={8}
+        onScaleChange={onScaleChange}
+        captureOverlay={touchZoomMode === 'pinch'}
+        allowNativeTouch={touchZoomMode === 'scroll'}
+        className="w-full h-full flex items-center justify-center"
       >
-        <iframe
-          ref={iframeRef}
-          src={safeEmbedUrl}
-          onLoad={handleIframeLoad}
-          scrolling="yes"
-          className="w-full h-full border-0 bg-white block"
-          title={title}
-          allow="autoplay; fullscreen"
-          style={{
-            minWidth: '100%',
-            minHeight: '100%',
-            touchAction: 'auto',
-          }}
-        />
-      </div>
-
-      {/* Floating Quick-Scroll Pill Buttons (Right Edge) for 100% Reliable Page Traversal on iPad / Mobile */}
-      <div className="absolute right-3 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-2 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-700 shadow-2xl">
-        <button
-          type="button"
-          onClick={handleScrollToTop}
-          className="p-2 rounded-xl bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white transition-all active:scale-95 touch-manipulation cursor-pointer flex flex-col items-center gap-0.5 group shadow-sm"
-          title="Scroll to Top (Lên đầu trang)"
+        <div
+          ref={scrollWrapperRef}
+          className="w-full h-full rounded-xl overflow-hidden border border-slate-800 bg-white relative"
+          style={touchZoomMode === 'scroll' ? {
+            overflowY: 'auto',
+            overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehavior: 'contain',
+            touchAction: 'pan-y pan-x',
+          } : undefined}
         >
-          <ArrowUpToLine className="w-4 h-4 text-blue-400 group-hover:text-white" />
-          <span className="text-[9px] font-bold tracking-tight">Top</span>
-        </button>
+          <iframe
+            ref={iframeRef}
+            src={safeEmbedUrl}
+            onLoad={handleIframeLoad}
+            scrolling={touchZoomMode === 'scroll' ? 'yes' : 'no'}
+            className="w-full h-full border-0 bg-white block"
+            title={title}
+            allow="autoplay; fullscreen"
+            style={{
+              minWidth: '100%',
+              minHeight: '100%',
+              touchAction: touchZoomMode === 'scroll' ? 'auto' : 'none',
+            }}
+          />
+        </div>
+      </TouchPinchZoomStage>
 
-        <button
-          type="button"
-          onClick={() => handleScrollUp(450)}
-          className="p-2 rounded-xl bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white transition-all active:scale-95 touch-manipulation cursor-pointer flex flex-col items-center gap-0.5 group shadow-sm"
-          title="Scroll Up (Cuộn lên)"
-        >
-          <ChevronUp className="w-4 h-4 text-emerald-400 group-hover:text-white" />
-          <span className="text-[9px] font-bold tracking-tight">Up</span>
-        </button>
+      {/* Floating Quick-Scroll Pill Buttons for Scroll Mode */}
+      {touchZoomMode === 'scroll' && (
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-2 bg-slate-900/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-700 shadow-2xl">
+          <button
+            type="button"
+            onClick={handleScrollToTop}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white transition-all active:scale-95 touch-manipulation cursor-pointer flex flex-col items-center gap-0.5 group shadow-sm"
+            title="Scroll to Top (Lên đầu trang)"
+          >
+            <ArrowUpToLine className="w-4 h-4 text-blue-400 group-hover:text-white" />
+            <span className="text-[9px] font-bold tracking-tight">Top</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => handleScrollDown(450)}
-          className="p-2 rounded-xl bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white transition-all active:scale-95 touch-manipulation cursor-pointer flex flex-col items-center gap-0.5 group shadow-sm"
-          title="Scroll Down (Cuộn xuống)"
-        >
-          <ChevronDown className="w-4 h-4 text-indigo-400 group-hover:text-white" />
-          <span className="text-[9px] font-bold tracking-tight">Down</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => handleScrollUp(450)}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white transition-all active:scale-95 touch-manipulation cursor-pointer flex flex-col items-center gap-0.5 group shadow-sm"
+            title="Scroll Up (Cuộn lên)"
+          >
+            <ChevronUp className="w-4 h-4 text-emerald-400 group-hover:text-white" />
+            <span className="text-[9px] font-bold tracking-tight">Up</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={handleScrollToBottom}
-          className="p-2 rounded-xl bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white transition-all active:scale-95 touch-manipulation cursor-pointer flex flex-col items-center gap-0.5 group shadow-sm"
-          title="Scroll to Bottom (Xuống cuối trang)"
-        >
-          <ArrowDownToLine className="w-4 h-4 text-slate-400 group-hover:text-white" />
-          <span className="text-[9px] font-bold tracking-tight">End</span>
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => handleScrollDown(450)}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white transition-all active:scale-95 touch-manipulation cursor-pointer flex flex-col items-center gap-0.5 group shadow-sm"
+            title="Scroll Down (Cuộn xuống)"
+          >
+            <ChevronDown className="w-4 h-4 text-indigo-400 group-hover:text-white" />
+            <span className="text-[9px] font-bold tracking-tight">Down</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleScrollToBottom}
+            className="p-2 rounded-xl bg-slate-800 hover:bg-blue-600 text-slate-200 hover:text-white transition-all active:scale-95 touch-manipulation cursor-pointer flex flex-col items-center gap-0.5 group shadow-sm"
+            title="Scroll to Bottom (Xuống cuối trang)"
+          >
+            <ArrowDownToLine className="w-4 h-4 text-slate-400 group-hover:text-white" />
+            <span className="text-[9px] font-bold tracking-tight">End</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
