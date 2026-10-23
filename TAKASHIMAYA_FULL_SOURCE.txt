@@ -43204,8 +43204,8 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
             </button>
           )}
 
-          {/* Edit URL for Admin */}
-          {isAdmin && (
+          {/* Edit URL for Admin / Write.layout */}
+          {canWrite && (
             <button 
               onClick={() => { setEditUrl(url); setIsEditing(true); }}
               className="h-9 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-bold transition-colors border border-blue-200 dark:border-blue-800 shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
@@ -43226,8 +43226,8 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
         </div>
       </div>
 
-      {/* Admin URL Edit Bar */}
-      {isAdmin && isEditing && (
+      {/* URL Edit Bar */}
+      {canWrite && isEditing && (
         <div className="flex items-center gap-2 w-full max-w-xl">
           <div className="flex items-center gap-1 flex-grow">
             <input 
@@ -43274,7 +43274,6 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
     </div>
   );
 });
-
 
 
 ================================================================================
@@ -44580,6 +44579,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     positionTooltip: (force) => positionTooltipRef.current(force),
     storeFilter: storeDisplay,
     quickImageMode: isQuickImageView,
+    canWrite,
   });
 
   // Hook 1: Position & Dragging management
@@ -44732,6 +44732,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             unitCode={unitCode || data.code || ''}
             activeStore={storeDisplay}
             isQuickMode={true}
+            canWrite={canWrite}
           />
         </>
       ) : (
@@ -44789,6 +44790,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           <TooltipMetaRow
             v={v}
             p={p}
+            canWrite={canWrite}
             floorValue={floorValue}
             dataSize={data.size}
             commentsCount={commentsCount}
@@ -44822,6 +44824,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             setEnlargedImage={setEnlargedImage}
             unitCode={unitCode || data.code || ''}
             activeStore={storeDisplay}
+            canWrite={canWrite}
           />
         </>
       )}
@@ -44846,7 +44849,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
 };
 
 export default LayoutUnitTooltip;
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutZoomControls.tsx
@@ -44989,6 +44991,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
   const resetLayoutTooltipVisibility = useAppStore(state => state.resetLayoutTooltipVisibility);
   const setEditingProject = useAppStore(state => state.setEditingProject);
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
+  const setIsReadOnlyModal = useAppStore(state => state.setIsReadOnlyModal);
   const isProjectModalOpen = useAppStore(state => state.isProjectModalOpen);
   const quickNavTarget = useAppStore(state => state.quickNavTarget);
   const setModalInitialTab = useAppStore(state => state.setModalInitialTab);
@@ -45340,7 +45343,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
               }
               setMiniGanttProject(project);
             }}
-            onEditProject={(project, _isReadOnly, tab) => {
+            onEditProject={(project, isReadOnly, tab) => {
               if (stageInteractions.hoverInfo && stageInteractions.hoverInfo.visible) {
                 savedTooltipStateRef.current = {
                   hoverInfo: stageInteractions.hoverInfo,
@@ -45348,6 +45351,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
                 };
               }
               setEditingProject(project);
+              setIsReadOnlyModal(Boolean(isReadOnly ?? !canWrite));
               setModalInitialTab(tab || 'details');
               setIsProjectModalOpen(true);
             }}
@@ -45418,7 +45422,6 @@ export const LiveCanvas = React.memo(function LiveCanvas({
     </div>
   );
 });
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/MiniGanttHeader.tsx
@@ -47427,6 +47430,7 @@ interface TooltipImageGalleryPanelProps {
   unitCode?: string;
   activeStore?: string;
   isQuickMode?: boolean;
+  canWrite?: boolean;
 }
 
 export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> = ({
@@ -47445,6 +47449,7 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
   unitCode,
   activeStore = 'HCM',
   isQuickMode = false,
+  canWrite = false,
 }) => {
   const [addMode, setAddMode] = useState<'link' | 'picture'>('link');
   const [isUploading, setIsUploading] = useState(false);
@@ -47507,21 +47512,23 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
             </span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            {/* Top "+ Thêm" Button */}
-            <button
-              type="button"
-              onClick={() => setShowAddLinkInput(prev => !prev)}
-              className={cn(
-                "px-2 py-0.5 rounded text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs",
-                showAddLinkInput 
-                  ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200" 
-                  : "bg-blue-600 hover:bg-blue-700 text-white"
-              )}
-              title={showAddLinkInput ? "Đóng ô nhập link" : "Thêm link ảnh / bài viết"}
-            >
-              <Plus className="w-3 h-3" />
-              <span>Thêm</span>
-            </button>
+            {/* Top "+ Thêm" Button (Only when canWrite) */}
+            {canWrite && (
+              <button
+                type="button"
+                onClick={() => setShowAddLinkInput(prev => !prev)}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs",
+                  showAddLinkInput 
+                    ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200" 
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                )}
+                title={showAddLinkInput ? "Đóng ô nhập link" : "Thêm link ảnh / bài viết"}
+              >
+                <Plus className="w-3 h-3" />
+                <span>Thêm</span>
+              </button>
+            )}
             {/* Close Image Panel Button */}
             <button
               type="button"
@@ -47538,8 +47545,8 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
         </div>
       )}
 
-      {/* Add / Post Link Input or Upload Picture Section (Hidden in Quick Mode) */}
-      {!isQuickMode && showAddLinkInput && (
+      {/* Add / Post Link Input or Upload Picture Section (Hidden in Quick Mode or Read-Only Mode) */}
+      {!isQuickMode && canWrite && showAddLinkInput && (
         <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-top-1 duration-150 py-1 bg-white dark:bg-[#1a1a1c] border border-blue-300 dark:border-blue-900 rounded-xl p-2 shadow-xs">
           {/* Mode Switcher Tabs */}
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-1.5 gap-1">
@@ -47736,7 +47743,7 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
                     >
                       <ExternalLink className="w-3 h-3" />
                     </a>
-                    {img.isCustom && (
+                    {canWrite && img.isCustom && (
                       <button
                         type="button"
                         onPointerDown={(e) => {
@@ -47780,7 +47787,6 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
   );
 };
 
-
 ================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/TooltipMetaRow.tsx
 ================================================================================
@@ -47792,6 +47798,7 @@ import { cn, parseDateTime } from '../../../lib/utils';
 interface TooltipMetaRowProps {
   v: any;
   p?: Project;
+  canWrite?: boolean;
   floorValue?: any;
   dataSize?: number;
   commentsCount: number;
@@ -47804,6 +47811,7 @@ interface TooltipMetaRowProps {
 export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
   v,
   p,
+  canWrite = false,
   floorValue,
   dataSize = 0,
   commentsCount,
@@ -47842,7 +47850,7 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onEditProject?.(p, false, 'chat');
+              onEditProject?.(p, !canWrite, 'chat');
             }}
             className={cn(
               "flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border transition-all active:scale-95 touch-manipulation cursor-pointer shrink-0",
@@ -48660,16 +48668,11 @@ interface UseTooltipImagesParams {
   positionTooltip: (forceRecalculate?: boolean) => void;
   storeFilter?: string;
   quickImageMode?: boolean;
+  canWrite?: boolean;
 }
 
 export function useTooltipImages({
-  p,
-  data,
-  unitCode,
-  tooltipRef,
-  positionTooltip,
-  storeFilter,
-  quickImageMode = false,
+  p, data, unitCode, tooltipRef, positionTooltip, storeFilter, quickImageMode = false, canWrite = false,
 }: UseTooltipImagesParams) {
   const [showImagePanel, setShowImagePanel] = useState<boolean>(Boolean(quickImageMode));
   const [showAddLinkInput, setShowAddLinkInput] = useState(false);
@@ -48754,6 +48757,7 @@ export function useTooltipImages({
 
   const handleAddCustomImage = (e?: React.FormEvent, customUrl?: string) => {
     if (e) e.preventDefault();
+    if (!canWrite) return;
     const targetUrl = customUrl || newLinkInput;
     const trimmed = targetUrl.trim();
     if (!trimmed) return;
@@ -48847,6 +48851,7 @@ export function useTooltipImages({
   };
 
   const handleDeleteCustomImage = (id: string, urlToDelete?: string) => {
+    if (!canWrite) return;
     const updated = customUnitImages.filter(item => item.id !== id && (urlToDelete ? item.url !== urlToDelete : true));
     setCustomUnitImages(updated);
     try {
@@ -49138,7 +49143,6 @@ export function useTooltipImages({
     handleCopyLink,
   };
 }
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/useTooltipPosition.ts
@@ -50766,21 +50770,42 @@ export function buildUnitSuggestions(
   projects: any[],
   activeStore: string,
   availableLocations: string[],
-  isAdmin: boolean
+  isAdmin: boolean,
+  isPartyRestricted = false
 ): UnitSuggestionItem[] {
   const map = new globalThis.Map<string, UnitSuggestionItem>();
   const allowedLocsSet = new Set(availableLocations.map(l => String(l).toLowerCase().trim()));
 
+  const permittedUnitNamesSet = new Set<string>();
+  if (!isAdmin && isPartyRestricted) {
+    projects.forEach((p: any) => {
+      if (!p.store || String(p.store).toUpperCase().trim() === activeStore.toUpperCase().trim() || activeStore === 'all') {
+        const rawCodes = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
+        rawCodes.split(/[+;,/]/).forEach(c => {
+          const clean = c.trim().toLowerCase();
+          if (clean) permittedUnitNamesSet.add(clean);
+        });
+        if ((p as any).unit) {
+          permittedUnitNamesSet.add(String((p as any).unit).trim().toLowerCase());
+        }
+      }
+    });
+  }
+
   storeUnits.forEach((u: any) => {
     if (u?.name) {
+      const uName = String(u.name).trim();
+      const uLower = uName.toLowerCase();
+      if (!isAdmin && isPartyRestricted && !permittedUnitNamesSet.has(uLower)) {
+        return;
+      }
       let loc = u.location || '';
       if (!loc) {
-        const m = String(u.name).match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
+        const m = uName.match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
         if (m) loc = m[1].toUpperCase();
       }
-      if (isAdmin || !loc || allowedLocsSet.has(loc.toLowerCase().trim())) {
-        const uName = String(u.name).trim();
-        const key = `${uName.toLowerCase()}_${loc.toLowerCase().trim()}`;
+      if (isAdmin || (!loc && !isPartyRestricted) || (loc && allowedLocsSet.has(loc.toLowerCase().trim()))) {
+        const key = `${uLower}_${loc.toLowerCase().trim()}`;
         map.set(key, {
           unit: uName,
           location: loc,
@@ -50934,39 +50959,50 @@ export function resolveInitialTargetLocation(
   projects: any[],
   tasks: any[],
   allStoreVersions: any[],
-  unitInfo: any[]
+  unitInfo: any[],
+  targetStore?: string
 ): string {
   let targetLoc = (initialLocation && initialLocation !== 'all') ? String(initialLocation).trim().toUpperCase() : '';
   if (!initialProjectCode || targetLoc) return targetLoc;
 
   const qCode = String(initialProjectCode).trim().toLowerCase();
+  const normStore = targetStore && targetStore.toLowerCase() !== 'all' ? targetStore.trim().toUpperCase() : '';
 
-  // 1. Search in projects
-  const matched = projects.find(p => 
-    (p.code && String(p.code).trim().toLowerCase() === qCode) ||
-    ((p as any).unit && String((p as any).unit).trim().toLowerCase() === qCode) ||
-    (p.name && String(p.name).trim().toLowerCase() === qCode) ||
-    (p.id && String(p.id).trim().toLowerCase() === qCode)
-  );
+  // 1. Search in projects (strictly scoped by targetStore if provided)
+  const matched = projects.find(p => {
+    if (normStore && p.store && String(p.store).trim().toUpperCase() !== normStore) return false;
+    return (
+      (p.code && String(p.code).trim().toLowerCase() === qCode) ||
+      ((p as any).unit && String((p as any).unit).trim().toLowerCase() === qCode) ||
+      (p.name && String(p.name).trim().toLowerCase() === qCode) ||
+      (p.id && String(p.id).trim().toLowerCase() === qCode)
+    );
+  });
   if (matched?.location && matched.location.toLowerCase() !== 'all') {
     return String(matched.location).trim().toUpperCase();
   }
 
-  // 2. Search in project tasks
-  const matchedTask = tasks.find(t => 
-    (t.projectCode && String(t.projectCode).trim().toLowerCase() === qCode) ||
-    (matched?.id && (t as any).projectId === matched.id)
-  );
+  // 2. Search in project tasks (strictly scoped by targetStore if provided)
+  const matchedTask = tasks.find(t => {
+    if (normStore && t.projectStore && String(t.projectStore).trim().toUpperCase() !== normStore) return false;
+    return (
+      (t.projectCode && String(t.projectCode).trim().toLowerCase() === qCode) ||
+      (matched?.id && (t as any).projectId === matched.id)
+    );
+  });
   if ((matchedTask as any)?.location && (matchedTask as any).location.toLowerCase() !== 'all') {
     return String((matchedTask as any).location).trim().toUpperCase();
   }
 
-  // 3. Search in unitInfo
-  const matchedUInfo = unitInfo.find((u: any) => 
-    (u.unit && String(u.unit).trim().toLowerCase() === qCode) ||
-    (u.name && String(u.name).trim().toLowerCase() === qCode) ||
-    (u.unitId && String(u.unitId).trim().toLowerCase() === qCode)
-  );
+  // 3. Search in unitInfo (strictly scoped by targetStore if provided)
+  const matchedUInfo = unitInfo.find((u: any) => {
+    if (normStore && u.store && String(u.store).trim().toUpperCase() !== normStore) return false;
+    return (
+      (u.unit && String(u.unit).trim().toLowerCase() === qCode) ||
+      (u.name && String(u.name).trim().toLowerCase() === qCode) ||
+      (u.unitId && String(u.unitId).trim().toLowerCase() === qCode)
+    );
+  });
   if (matchedUInfo?.floor || matchedUInfo?.location) {
     return String(matchedUInfo.floor || matchedUInfo.location).trim().toUpperCase();
   }
@@ -50974,6 +51010,7 @@ export function resolveInitialTargetLocation(
   // 4. Search in store versions
   for (const v of allStoreVersions) {
     if (!v.location) continue;
+    if (normStore && v.store && String(v.store).trim().toUpperCase() !== normStore) continue;
     if (v.groupMappings) {
       const hasUnit = Object.values(v.groupMappings).some((arr: any) => 
         Array.isArray(arr) && arr.some(id => String(id).trim().toLowerCase() === qCode)
@@ -51024,6 +51061,115 @@ export function sortLocationsByFloorRank(locList: string[]): string[] {
   return [...locList].sort((a, b) => floorRank(a) - floorRank(b) || a.localeCompare(b));
 }
 
+export function computeAvailableLayoutYears(params: {
+  projects: any[]; tasks: any[]; allStoreVersions: any[]; activeStore: string; isAdmin: boolean; isPartyRestricted: boolean; role: string;
+}): string[] {
+  const { projects, tasks, allStoreVersions, activeStore, isAdmin, isPartyRestricted, role } = params;
+  const userPermittedYears = new Set<string>();
+
+  projects.forEach(p => {
+    if (activeStore && activeStore !== 'all' && String(p.store || 'HCM').toUpperCase().trim() !== activeStore) return;
+    const y = String(p.year || '').trim();
+    if (/^\d{4}$/.test(y)) userPermittedYears.add(y);
+  });
+
+  tasks.forEach(t => {
+    if (activeStore && activeStore !== 'all' && String(t.projectStore || 'HCM').toUpperCase().trim() !== activeStore) return;
+    const y = String(t.projectYear || '').trim();
+    if (/^\d{4}$/.test(y)) userPermittedYears.add(y);
+  });
+
+  const versionYears = allStoreVersions
+    .filter(v => !activeStore || activeStore === 'all' || String(v.store || (activeStore === 'HN' ? 'HN' : 'HCM')).toUpperCase().trim() === activeStore)
+    .map(v => (v.year ? String(v.year).trim() : ''))
+    .filter(y => /^\d{4}$/.test(y));
+
+  const defaultStoreYears = activeStore === 'HN' ? ['2027'] : ['2026', '2027'];
+  const combinedYears = (!isAdmin && (isPartyRestricted || role === 'External') && userPermittedYears.size > 0)
+    ? Array.from(userPermittedYears)
+    : [...userPermittedYears, ...versionYears, ...defaultStoreYears];
+
+  return Array.from(new Set(combinedYears)).filter(Boolean).sort((a, b) => Number(b) - Number(a));
+}
+
+export function computeAvailableLayoutLocations(params: {
+  allStoreVersions: any[]; storeLocationData: Record<string, any> | undefined; activeStore: string; currentUser: any;
+  locationVisibility: Record<string, boolean>; locations: string[]; isPartyRestricted: boolean; role: string;
+  projects: any[]; tasks: any[]; effectiveYear: string;
+}): string[] {
+  const { allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility, locations, isPartyRestricted, role, projects, tasks, effectiveYear } = params;
+  const storeParam = activeStore === 'HN' ? 'HN' : 'HCM';
+  const isUserAdmin = currentUser?.role === 'admin';
+  const locPerms = currentUser?.locationPermissions || {};
+  const hasAll = isUserAdmin || locPerms['all'] === true;
+  const nonFloors = ['BUDGET', 'COST', 'ALL', 'SUMMARY', 'GENERAL', 'SETTING'];
+
+  const isLocationVisible = (loc: string) => {
+    const lUpper = loc.toUpperCase().trim();
+    const lLower = loc.toLowerCase().trim();
+    if (locationVisibility[loc] === false || locationVisibility[lUpper] === false || locationVisibility[lLower] === false) return false;
+    for (const [k, v] of Object.entries(locationVisibility)) {
+      if (k.toUpperCase().trim() === lUpper && v === false) return false;
+    }
+    return true;
+  };
+
+  const isPermitted = (loc: string) => {
+    if (!loc || nonFloors.includes(loc.toUpperCase().trim()) || !isLocationVisible(loc)) return false;
+    if (hasAll) return true;
+    const lLower = loc.toLowerCase().trim();
+    const cleanLoc = lLower.replace(/^md-/, '');
+    return !!(locPerms[cleanLoc] || locPerms[`md-${cleanLoc}`] || locPerms[lLower] || locPerms[loc.toUpperCase().trim()]);
+  };
+
+  const pmLocationsSet = new Set<string>();
+  allStoreVersions.forEach(v => {
+    const loc = String(v.location || '').toUpperCase().trim();
+    if (loc && isPermitted(loc)) pmLocationsSet.add(loc);
+  });
+
+  if (storeLocationData) {
+    Object.entries(storeLocationData).forEach(([key, partition]) => {
+      if (key.startsWith(`${storeParam}_`)) {
+        const loc = key.replace(`${storeParam}_`, '').toUpperCase().trim();
+        if (loc && isPermitted(loc) && ((partition?.mapVersions?.length > 0) || (partition?.mapUnits?.length > 0) || partition?.activeMapVersionId)) {
+          pmLocationsSet.add(loc);
+        }
+      }
+    });
+  }
+
+  let finalLocations = pmLocationsSet.size > 0
+    ? Array.from(pmLocationsSet)
+    : (locations || []).map(l => String(l).toUpperCase().trim()).filter(isPermitted);
+
+  if (!isUserAdmin && (isPartyRestricted || role === 'External')) {
+    const activePartyLocs = new Set<string>();
+    let hasStorewide = false;
+    projects.forEach(p => {
+      const pStore = String(p.store || '').toUpperCase().trim();
+      if (storeParam && pStore && pStore !== storeParam) return;
+      const pYear = String(p.year || '').trim();
+      if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== effectiveYear) return;
+      const pLoc = String(p.location || (p as any).floor || '').toUpperCase().trim();
+      if (['ALL', 'STORE', 'STOREWIDE', 'WHOLE STORE', 'ALL FLOORS'].includes(pLoc)) hasStorewide = true;
+      else if (pLoc) activePartyLocs.add(pLoc.replace(/^MD-/, ''));
+    });
+    tasks.forEach(t => {
+      const tStore = String(t.projectStore || '').toUpperCase().trim();
+      if (storeParam && tStore && tStore !== storeParam) return;
+      const tYear = String(t.projectYear || '').trim();
+      if (effectiveYear && effectiveYear !== 'all' && tYear && tYear !== effectiveYear) return;
+      const tLoc = String((t as any).location || '').toUpperCase().trim();
+      if (tLoc && !['ALL', 'STORE', 'STOREWIDE'].includes(tLoc)) activePartyLocs.add(tLoc.replace(/^MD-/, ''));
+    });
+    if (!hasStorewide) {
+      finalLocations = finalLocations.filter(loc => activePartyLocs.has(loc.toUpperCase().trim().replace(/^MD-/, '')));
+    }
+  }
+
+  return sortLocationsByFloorRank(finalLocations);
+}
 
 ================================================================================
 FILE: src/components/LayoutTabParts/layoutViewerTypes.ts
@@ -51112,6 +51258,7 @@ import { useSummaryData } from '../PictureMapping/lib/summaryData';
 import { useDataStore } from '../PictureMapping/DataContext';
 import { useDynamicUnitSummary } from '../PictureMapping/lib/dynamicSummaryEngine';
 import { buildAggregatedUnitData } from './layoutDataAggregator';
+import { extractAllProjectCodes, extractProjectMetadata, getUserAllowedStores, projectMatchesScope, projectMatchesUnitCode } from '../../lib/utils';
 
 const EMPTY_RESTRICTED_SET = new Set<string>();
 
@@ -51151,37 +51298,84 @@ export function useLayoutAggregates({
   const { enrichedProjects, filteredTasks: tasks } = useEnrichedData();
   const allProjects = useAppStore(state => state.projects);
   const currUser = useAppStore(state => state.currentUser);
+  const locationVisibility = useAppStore(state => state.locationVisibility);
   const delegationGroups = useAppStore(state => state.delegationGroups);
   const layoutTooltipVisibility = useAppStore(state => state.layoutTooltipVisibility);
   const summaryData = useSummaryData({ store: storeFilter, location: targetLoc, year: effectiveLayoutYear });
 
-  // Compute set of project codes that the current user is NOT allowed to access (RBAC)
+  // Compute set of project/unit codes that the current user is NOT allowed to access (Acc Control RBAC)
   const restrictedProjectCodes = useMemo(() => {
     if (!currUser || currUser.role === 'admin') return EMPTY_RESTRICTED_SET;
 
-    const allowedCodeSet = new Set<string>();
-    enrichedProjects.forEach(p => {
-      if (p.code) allowedCodeSet.add(String(p.code).trim().toLowerCase());
-      if (p.linkCodes) {
-        p.linkCodes.split(/[+;,/]/).forEach(c => {
-          if (c.trim()) allowedCodeSet.add(c.trim().toLowerCase());
-        });
+    const projectLinkData = useDataStore.getState().projectLink || [];
+    const unitToProjectCodesMap = new Map<string, string[]>();
+    projectLinkData.forEach((pl: any) => {
+      const u = String(pl?.unit || '').trim().toLowerCase();
+      const pCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
+      if (u && pCode) {
+        if (!unitToProjectCodesMap.has(u)) unitToProjectCodesMap.set(u, []);
+        unitToProjectCodesMap.get(u)!.push(pCode);
       }
     });
 
+    const allowedCodeSet = new Set<string>();
+    enrichedProjects.forEach(p => {
+      const pMeta = extractProjectMetadata(p);
+      if (!projectMatchesScope(pMeta, { store: storeFilter, location: targetLoc, year: effectiveLayoutYear })) return;
+      const pCodes = extractAllProjectCodes(p);
+      pCodes.forEach(c => {
+        if (c) allowedCodeSet.add(c.toLowerCase());
+      });
+      units.forEach((u: any) => {
+        const uName = String(u?.name || '').trim().toLowerCase();
+        const uId = String(u?.id || '').trim().toLowerCase();
+        const linkedCodes = [
+          ...(unitToProjectCodesMap.get(uName) || []),
+          ...(unitToProjectCodesMap.get(uId) || []),
+        ];
+        const isLinked = linkedCodes.some(lc =>
+          pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
+        );
+        const isExact = pCodes.some(c => c.toLowerCase() === uName || c.toLowerCase() === uId);
+        if (isExact || isLinked || projectMatchesUnitCode(pCodes, uName || uId)) {
+          if (uName) allowedCodeSet.add(uName);
+          if (uId) allowedCodeSet.add(uId);
+        }
+      });
+    });
+
     const restrictedSet = new Set<string>();
+    const isPartyRestricted = currUser.byPartyAccess === true && currUser.partyPermissions?.['all'] !== true;
+
+    if (isPartyRestricted) {
+      units.forEach((u: any) => {
+        const uName = String(u?.name || '').trim().toLowerCase();
+        const uId = String(u?.id || '').trim().toLowerCase();
+        if (uName && !allowedCodeSet.has(uName)) restrictedSet.add(uName);
+        if (uId && !allowedCodeSet.has(uId)) restrictedSet.add(uId);
+      });
+    }
+
     allProjects.forEach(p => {
-      const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
-      const pCodes = rawCodes.split(/[+;,/]/).map(c => c.trim().toLowerCase()).filter(Boolean);
+      const pMeta = extractProjectMetadata(p);
+      if (!projectMatchesScope(pMeta, { store: storeFilter, location: targetLoc, year: effectiveLayoutYear })) return;
+      const pCodes = extractAllProjectCodes(p).map(c => c.toLowerCase());
       pCodes.forEach(code => {
         if (!allowedCodeSet.has(code)) {
           restrictedSet.add(code);
         }
       });
+      units.forEach((u: any) => {
+        const uName = String(u?.name || '').trim().toLowerCase();
+        if (!uName || allowedCodeSet.has(uName)) return;
+        if (pCodes.includes(uName) || projectMatchesUnitCode(pCodes, uName)) {
+          restrictedSet.add(uName);
+        }
+      });
     });
 
     return restrictedSet;
-  }, [allProjects, enrichedProjects, currUser]);
+  }, [allProjects, enrichedProjects, currUser, units, storeFilter, targetLoc, effectiveLayoutYear]);
 
   // Build aggregatedData using pure aggregation engine
   const aggregatedData = useMemo(() => {
@@ -51439,28 +51633,46 @@ export function useLayoutAggregates({
     return filtered;
   }, [displayedUnits, stageScale, stagePos.x, stagePos.y, dimensions.width, dimensions.height, focusedUnitId, deferredSearchQuery, effectiveLayoutYear, storeFilter, targetLoc]);
 
-  // Security defense: If non-admin user has NO accessible tasks or projects in this store & year, do not render layout
+  // Security defense: Enforce Store, Location, Visibility, and Party permissions from Acc Control
   const hasUserAccessInStoreYear = useMemo(() => {
     if (!currUser || currUser.role === 'admin') return true;
 
-    const isInternalRole = ['manager', 'staff', 'cp'].includes(String(currUser.role || '').toLowerCase());
-    const hasStorePerm = storeFilter === 'HN'
-      ? Boolean(currUser.storePermissions?.hn)
-      : (storeFilter === 'HCM' ? Boolean(currUser.storePermissions?.hcm) : true);
+    const allowedStores = getUserAllowedStores(currUser);
+    const normStore = storeFilter && storeFilter !== 'all' ? storeFilter.toUpperCase().trim() : '';
+    if (normStore && !allowedStores.includes(normStore)) {
+      return false;
+    }
 
-    if (isInternalRole && hasStorePerm && !currUser.byPartyAccess) {
+    if (targetLoc && targetLoc.toLowerCase() !== 'all') {
+      const lUpper = targetLoc.toUpperCase().trim();
+      const lLower = targetLoc.toLowerCase().trim();
+      if (locationVisibility[targetLoc] === false || locationVisibility[lUpper] === false || locationVisibility[lLower] === false) {
+        return false;
+      }
+      for (const [k, v] of Object.entries(locationVisibility)) {
+        if (k.toUpperCase().trim() === lUpper && v === false) return false;
+      }
+      const locPerms = currUser.locationPermissions || {};
+      if (!locPerms['all']) {
+        const cleanLoc = lLower.replace(/^md-/, '');
+        if (!(locPerms[cleanLoc] || locPerms[`md-${cleanLoc}`] || locPerms[lLower] || locPerms[lUpper])) {
+          return false;
+        }
+      }
+    }
+
+    const isInternalRole = ['manager', 'staff', 'cp'].includes(String(currUser.role || '').toLowerCase());
+    const isPartyRestricted = currUser.byPartyAccess === true && currUser.partyPermissions?.['all'] !== true;
+
+    if (isInternalRole && !isPartyRestricted) {
       return true;
     }
 
     const yr = effectiveLayoutYear;
     if (yr === 'all') return true;
     const hasProj = enrichedProjects.some(p => {
-      if (storeFilter !== 'all') {
-        const pStore = String(p.store || '').toUpperCase().trim();
-        if (pStore && pStore !== storeFilter.toUpperCase()) return false;
-      }
-      const pYear = String(p.year || '').trim();
-      return pYear === yr;
+      const pMeta = extractProjectMetadata(p);
+      return projectMatchesScope(pMeta, { store: storeFilter, location: targetLoc, year: yr });
     });
     if (hasProj) return true;
     const hasTask = tasks.some(t => {
@@ -51472,7 +51684,7 @@ export function useLayoutAggregates({
       return tYear === yr;
     });
     return hasTask;
-  }, [currUser, enrichedProjects, tasks, storeFilter, effectiveLayoutYear]);
+  }, [currUser, locationVisibility, enrichedProjects, tasks, storeFilter, targetLoc, effectiveLayoutYear]);
 
   return {
     aggregatedData,
@@ -51485,7 +51697,6 @@ export function useLayoutAggregates({
     restrictedProjectCodes,
   };
 }
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/useLayoutFloorData.ts
@@ -52868,7 +53079,8 @@ import {
   scoreAndFilterUnitSuggestions, 
   resolveTargetFloorForUnit, 
   resolveInitialTargetLocation,
-  sortLocationsByFloorRank
+  computeAvailableLayoutYears,
+  computeAvailableLayoutLocations
 } from './layoutTabSearchUtils';
 
 export interface UseLayoutTabDataProps {
@@ -52903,7 +53115,20 @@ export function useLayoutTabData({
   const [projectCodeFilter, setProjectCodeFilter] = useState(initialProjectCode);
   
   const isAdmin = currentUser.role === 'admin';
-  const role = currentUser.role as AppRole;
+  const role = (
+    currentUser?.role === 'admin'
+      ? 'admin'
+      : (currentUser?.role as string)?.toUpperCase() === 'CP'
+      ? 'CP'
+      : (currentUser?.role as string)?.toLowerCase() === 'manager'
+      ? 'Manager'
+      : (currentUser?.role as string)?.toLowerCase() === 'staff'
+      ? 'Staff'
+      : (currentUser?.role as string)?.toLowerCase() === 'external'
+      ? 'External'
+      : currentUser?.role || 'viewer'
+  ) as AppRole;
+  const isPartyRestricted = !isAdmin && currentUser?.byPartyAccess === true && currentUser?.partyPermissions?.['all'] !== true;
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
@@ -52943,6 +53168,9 @@ export function useLayoutTabData({
   const hasSyncedInitialRef = useRef(false);
   const lastInitialPropKeyRef = useRef('');
 
+  // Track whether filter changes came from initial deep-link/notification props
+  const isSyncingInitialPropsRef = useRef(false);
+
   useEffect(() => {
     const activeStoreParam = propInitialStore !== undefined ? propInitialStore : (layoutTabFilters?.store || '');
     const activeLocParam = propInitialLocation !== undefined ? propInitialLocation : (layoutTabFilters?.location || '');
@@ -52955,91 +53183,58 @@ export function useLayoutTabData({
     }
     hasSyncedInitialRef.current = true;
     lastInitialPropKeyRef.current = propKey;
+    isSyncingInitialPropsRef.current = true;
 
-    if (activeStoreParam && activeStoreParam !== 'all') {
-      setGlobalStoreFilter(activeStoreParam);
+    const normalizedStoreParam =
+      activeStoreParam && activeStoreParam !== 'all'
+        ? activeStoreParam.toUpperCase().trim()
+        : '';
+
+    if (normalizedStoreParam && allowedStores.includes(normalizedStoreParam)) {
+      setGlobalStoreFilter(normalizedStoreParam);
     }
-    
-    if (activeLocParam && activeLocParam !== 'all' && activeLocParam !== 'ALL') {
+
+    const unitInfo = useDataStore.getState().unitInfo || [];
+    const targetLoc = resolveInitialTargetLocation(
+      activeLocParam,
+      activeCodeParam,
+      projects,
+      tasks,
+      allStoreVersions,
+      unitInfo,
+      (normalizedStoreParam && allowedStores.includes(normalizedStoreParam)) ? normalizedStoreParam : activeStore
+    );
+
+    if (targetLoc && targetLoc.toLowerCase() !== 'all') {
+      setIsLiveMapMode(true);
+      setGlobalLocationFilter([targetLoc.toUpperCase().trim()]);
+    } else if (activeLocParam && activeLocParam !== 'all' && activeLocParam !== 'ALL') {
       setIsLiveMapMode(true);
       setGlobalLocationFilter([activeLocParam.toUpperCase().trim()]);
     }
-    
+
     if (activeCodeParam) {
       setProjectCodeFilter(activeCodeParam);
       setUnitSearchInput(activeCodeParam);
       setTargetUnitSearch(activeCodeParam);
       setIsLiveMapMode(true);
     }
-
-    const unitInfo = useDataStore.getState().unitInfo || [];
-    const targetLoc = resolveInitialTargetLocation(
-      activeLocParam, 
-      activeCodeParam, 
-      projects, 
-      tasks, 
-      allStoreVersions, 
-      unitInfo
-    );
-
-    if (targetLoc && targetLoc.toLowerCase() !== 'all') {
-      setGlobalLocationFilter([targetLoc]);
-    }
-  }, [propInitialStore, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions, setGlobalStoreFilter, setGlobalLocationFilter]);
+  }, [propInitialStore, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions, activeStore, allowedStores, setGlobalStoreFilter, setGlobalLocationFilter]);
 
   // Available years: based on user permissions, projects, tasks, and store versions
   const prevAvailableYearsRef = useRef<string[]>([]);
   const prevAvailableYearsKeyRef = useRef<string>('');
 
   const availableYears = useMemo(() => {
-    const storeProjects = projects.filter(p => {
-      if (!activeStore || activeStore === 'all') return true;
-      const pStore = String(p.store || 'HCM').toUpperCase().trim();
-      return pStore === activeStore;
+    const finalYears = computeAvailableLayoutYears({
+      projects,
+      tasks,
+      allStoreVersions,
+      activeStore,
+      isAdmin,
+      isPartyRestricted,
+      role,
     });
-
-    const projectYearsSet = new Set<string>();
-    storeProjects.forEach(p => {
-      const y = String(p.year || '').trim();
-      if (y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y)) {
-        projectYearsSet.add(y);
-      }
-    });
-
-    const storeTasks = tasks.filter(t => {
-      if (!activeStore || activeStore === 'all') return true;
-      const tStore = String(t.projectStore || 'HCM').toUpperCase().trim();
-      return tStore === activeStore;
-    });
-    const taskYearsSet = new Set<string>();
-    storeTasks.forEach(t => {
-      const y = String(t.projectYear || '').trim();
-      if (y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y)) {
-        taskYearsSet.add(y);
-      }
-    });
-
-    const userPermittedYears = new Set([...projectYearsSet, ...taskYearsSet]);
-
-    const versionYears = Array.from(
-      new Set(
-        allStoreVersions
-          .filter(v => {
-            if (!activeStore || activeStore === 'all') return true;
-            const vStore = String(v.store || (activeStore === 'HN' ? 'HN' : 'HCM')).toUpperCase().trim();
-            return vStore === activeStore;
-          })
-          .map(v => (v.year ? String(v.year).trim() : ''))
-          .filter(y => y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y))
-      )
-    );
-
-    const defaultStoreYears = activeStore === 'HN' ? ['2027'] : ['2026', '2027'];
-
-    const finalYears = Array.from(new Set([...userPermittedYears, ...versionYears, ...defaultStoreYears]))
-      .filter(Boolean)
-      .sort((a, b) => Number(b) - Number(a));
-
     const key = finalYears.join('|');
     if (key === prevAvailableYearsKeyRef.current) {
       return prevAvailableYearsRef.current;
@@ -53047,11 +53242,15 @@ export function useLayoutTabData({
     prevAvailableYearsKeyRef.current = key;
     prevAvailableYearsRef.current = finalYears;
     return finalYears;
-  }, [allStoreVersions, projects, tasks, activeStore]);
+  }, [allStoreVersions, projects, tasks, activeStore, isAdmin, isPartyRestricted, role]);
 
   const effectiveYear = useMemo(() => {
     if (globalYearFilter && globalYearFilter !== 'all' && availableYears.includes(globalYearFilter)) {
       return globalYearFilter;
+    }
+    const currentCalendarYear = String(new Date().getFullYear());
+    if (availableYears.includes(currentCalendarYear)) {
+      return currentCalendarYear;
     }
     return availableYears[0] || '';
   }, [globalYearFilter, availableYears]);
@@ -53075,62 +53274,19 @@ export function useLayoutTabData({
   const prevAvailableLocationsKeyRef = useRef<string>('');
 
   const availableLocations = useMemo(() => {
-    const storeParam = (activeStore === 'HN' ? 'HN' : 'HCM');
-    const isUserAdmin = currentUser?.role === 'admin';
-    const locPerms = currentUser?.locationPermissions || {};
-    const hasAll = isUserAdmin || locPerms['all'] === true;
-
-    const isFloorName = (name: string) => {
-      if (!name) return false;
-      const n = name.toUpperCase().trim();
-      const nonFloors = ['BUDGET', 'COST', 'ALL', 'SUMMARY', 'GENERAL', 'SETTING'];
-      if (nonFloors.includes(n)) return false;
-      return true;
-    };
-
-    const isPermitted = (loc: string) => {
-      if (!loc || !isFloorName(loc)) return false;
-      if (locationVisibility[loc] === false) return false;
-      if (hasAll) return true;
-      const lLower = loc.toLowerCase().trim();
-      const cleanLoc = lLower.replace(/^md-/, '');
-      return !!(locPerms[cleanLoc] || locPerms[`md-${cleanLoc}`] || locPerms[lLower]);
-    };
-
-    const pmLocationsSet = new Set<string>();
-
-    allStoreVersions.forEach(v => {
-      const loc = String(v.location || '').toUpperCase().trim();
-      if (loc && isPermitted(loc)) {
-        pmLocationsSet.add(loc);
-      }
+    const sorted = computeAvailableLayoutLocations({
+      allStoreVersions,
+      storeLocationData,
+      activeStore,
+      currentUser,
+      locationVisibility,
+      locations,
+      isPartyRestricted,
+      role,
+      projects,
+      tasks,
+      effectiveYear,
     });
-
-    if (storeLocationData) {
-      Object.entries(storeLocationData).forEach(([key, partition]) => {
-        if (key.startsWith(`${storeParam}_`)) {
-          const loc = key.replace(`${storeParam}_`, '').toUpperCase().trim();
-          if (loc && isPermitted(loc)) {
-            if (
-              (partition?.mapVersions && partition.mapVersions.length > 0) ||
-              (partition?.mapUnits && partition.mapUnits.length > 0) ||
-              partition?.activeMapVersionId
-            ) {
-              pmLocationsSet.add(loc);
-            }
-          }
-        }
-      });
-    }
-
-    let finalLocations: string[] = [];
-    if (pmLocationsSet.size > 0) {
-      finalLocations = Array.from(pmLocationsSet);
-    } else {
-      finalLocations = (locations || []).map(l => String(l).toUpperCase().trim()).filter(isPermitted);
-    }
-
-    const sorted = sortLocationsByFloorRank(finalLocations);
     const key = sorted.join('|');
     if (key === prevAvailableLocationsKeyRef.current) {
       return prevAvailableLocationsRef.current;
@@ -53138,7 +53294,7 @@ export function useLayoutTabData({
     prevAvailableLocationsKeyRef.current = key;
     prevAvailableLocationsRef.current = sorted;
     return sorted;
-  }, [allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility, locations]);
+  }, [allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility, locations, isPartyRestricted, role, projects, tasks, effectiveYear]);
 
   // Ensure globalLocationFilter is never 'all' or empty in Layout tab
   useEffect(() => {
@@ -53208,7 +53364,7 @@ export function useLayoutTabData({
     fallbackSvg,
     cacheBuster,
     setCacheBuster,
-  } = useLayoutTabSettings({ activeStore, locFilterStr });
+  } = useLayoutTabSettings({ activeStore, locFilterStr, canWrite });
 
   // Search Unit functionality next to Trigger Export
   const [unitSearchInput, setUnitSearchInput] = useState('');
@@ -53224,8 +53380,8 @@ export function useLayoutTabData({
       return [];
     }
     const storeUnits: any[] = typeof getAllStoreUnits === 'function' ? (getAllStoreUnits as any)(activeStore) || [] : [];
-    return buildUnitSuggestions(storeUnits, projects, activeStore, availableLocations, isAdmin);
-  }, [getAllStoreUnits, activeStore, projects, availableLocations, isAdmin, showSuggestions, unitSearchInput]);
+    return buildUnitSuggestions(storeUnits, projects, activeStore, availableLocations, isAdmin, isPartyRestricted);
+  }, [getAllStoreUnits, activeStore, projects, availableLocations, isAdmin, isPartyRestricted, showSuggestions, unitSearchInput]);
 
   const filteredUnitSuggestions = useMemo(() => {
     if (!unitSearchInput.trim()) return [];
@@ -53267,12 +53423,16 @@ export function useLayoutTabData({
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  // When activeStore, locFilterStr, or effectiveYear changes, reset search & focus states to default
+  // When activeStore, locFilterStr, or effectiveYear changes manually, reset search & focus states to default
   const prevFilterStateRef = useRef({ store: activeStore, loc: locFilterStr, yr: effectiveYear });
   useEffect(() => {
     const prev = prevFilterStateRef.current;
     if (prev.store !== activeStore || prev.loc !== locFilterStr || prev.yr !== effectiveYear) {
       prevFilterStateRef.current = { store: activeStore, loc: locFilterStr, yr: effectiveYear };
+      if (isSyncingInitialPropsRef.current) {
+        isSyncingInitialPropsRef.current = false;
+        return;
+      }
       setUnitSearchInput('');
       setTargetUnitSearch(null);
       setShowSuggestions(false);
@@ -53295,7 +53455,6 @@ export function useLayoutTabData({
   };
 }
 
-
 ================================================================================
 FILE: src/components/LayoutTabParts/useLayoutTabSettings.ts
 ================================================================================
@@ -53310,9 +53469,10 @@ import { isValidUrl } from './layoutTabSearchUtils';
 interface UseLayoutTabSettingsProps {
   activeStore: string;
   locFilterStr: string;
+  canWrite?: boolean;
 }
 
-export function useLayoutTabSettings({ activeStore, locFilterStr }: UseLayoutTabSettingsProps) {
+export function useLayoutTabSettings({ activeStore, locFilterStr, canWrite = false }: UseLayoutTabSettingsProps) {
   const [layoutSettings, setLayoutSettings] = useState<Record<string, any>>({});
   const [url, setUrl] = useState<string>('https://drive.google.com/file/d/1hxzPKKhQWhQ-tAThmgan8eNqqy5GN-Ds/preview');
   const [isEditing, setIsEditing] = useState(false);
@@ -53391,6 +53551,7 @@ export function useLayoutTabSettings({ activeStore, locFilterStr }: UseLayoutTab
   }, [isExporting]);
 
   const handleSave = async () => {
+    if (!canWrite) return;
     try {
       const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout');
       const updates: Record<string, any> = { [docKey]: editUrl };
@@ -53403,7 +53564,7 @@ export function useLayoutTabSettings({ activeStore, locFilterStr }: UseLayoutTab
   };
 
   const handleTriggerReExport = async () => {
-    if (isExporting) return;
+    if (!canWrite || isExporting) return;
     try {
       setIsExporting(true);
       setExportStatusMessage('Bước 1/4: Đang tải dữ liệu từ Cloudflare R2...');
@@ -53456,7 +53617,6 @@ export function useLayoutTabSettings({ activeStore, locFilterStr }: UseLayoutTab
     setCacheBuster,
   };
 }
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/useLayoutWindowListeners.ts
@@ -53593,6 +53753,7 @@ FILE: src/components/LayoutTabParts/useMiniGanttData.ts
 import React, { useEffect, useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
+import { useEnrichedData } from '../../hooks/useEnrichedData';
 import { parseDateTime, getTaskStatus } from '../../lib/utils';
 import { sortGroupTasks, extractSubtaskIndex } from '../../lib/ganttUtils';
 import { safeSetItemLocal, safeSetItemSession } from '../../lib/storage';
@@ -53650,8 +53811,8 @@ export interface MiniGanttRow {
 }
 
 export function useMiniGanttData(project: Project | null, onClose: () => void) {
-  const tasks = useAppStore((state) => state.tasks);
-  const projects = useAppStore((state) => state.projects);
+  const { enrichedProjects: projects, filteredTasks: tasks } = useEnrichedData();
+  const currentUser = useAppStore((state) => state.currentUser);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const isTasksRequested = useAppStore((state) => state.isTasksRequested);
   const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
@@ -53718,10 +53879,24 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
       return true;
     });
 
-    const summaryItems =
+    const rawSummaryItems =
       (currentProj.taskSummaries && Array.isArray(currentProj.taskSummaries) && currentProj.taskSummaries.length > 0)
         ? currentProj.taskSummaries
         : (project?.taskSummaries || []);
+
+    const isPartyRestricted = currentUser && currentUser.role !== 'admin' && currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true;
+    const summaryItems = isPartyRestricted
+      ? rawSummaryItems.filter((ts: any) => {
+          const userParties = currentUser.partyPermissions
+            ? Object.keys(currentUser.partyPermissions).filter(k => currentUser.partyPermissions![k] && k.toLowerCase() !== 'all').map(k => k.toLowerCase().trim())
+            : [];
+          const username = String(currentUser.username || '').toLowerCase().trim();
+          const userId = String(currentUser.id || '').toLowerCase().trim();
+          const partyStr = String(ts.party || currentProj.party || '').toLowerCase();
+          const pList = partyStr.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean);
+          return pList.some(p => userParties.includes(p) || p === username || p === userId);
+        })
+      : rawSummaryItems;
 
     const mapSummaryToTask = (ts: any, idx: number): Task => {
       const subtaskNum = extractSubtaskIndex(ts.taskCodePhu);
@@ -53793,7 +53968,7 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
     }
 
     return matchedZustandTasks;
-  }, [liveProject, project, tasks]);
+  }, [liveProject, project, tasks, currentUser]);
 
   // Exact Main Gantt (useGanttVirtualization.ts) task ordering & hierarchy
   const orderedGanttRows: MiniGanttRow[] = useMemo(() => {
@@ -54031,7 +54206,6 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
     handleOpenFullGantt,
   };
 }
-
 
 ================================================================================
 FILE: src/components/LazyImage.tsx
@@ -55004,7 +55178,7 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
       : currentUser?.role || 'viewer'
   ) as AppRole;
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
-  const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout || !!permissionMatrix[role]?.Write?.pictureMapping) && !isArchiveYear;
+  const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout) && !isArchiveYear;
 
   const {
     config,
@@ -55036,12 +55210,14 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
           >
             <RefreshCw className="w-3.5 h-3.5" /> Thử lại
           </button>
-          <button 
-            onClick={() => { initFormFromStorage(); setShowConfigModal(true); }} 
-            className="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition"
-          >
-            Cấu hình R2 Manual
-          </button>
+          {canWrite && (
+            <button 
+              onClick={() => { initFormFromStorage(); setShowConfigModal(true); }} 
+              className="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition"
+            >
+              Cấu hình R2 Manual
+            </button>
+          )}
         </div>
       </div>
     );
@@ -55064,7 +55240,6 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
 });
 
 export default LiveLayoutViewer;
-
 
 ================================================================================
 FILE: src/components/LoginModal.tsx
@@ -68384,168 +68559,17 @@ export async function executeTriggerExportProcess(
 ================================================================================
 FILE: src/components/PictureMapping/lib/dynamicSummaryEngine.ts
 ================================================================================
-import React, { useMemo } from "react";
-import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
+import { useMemo } from "react";
+import { UnitShape, MapVersion } from '../components/DataMapping/types';
 import { useAppStore } from '../../../store/useAppStore';
+import { useEnrichedData } from '../../../hooks/useEnrichedData';
 import { useDataStore } from '../DataContext';
-import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
+import { getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
 import { calculateSummaryData, SummaryDataItem } from './summaryData';
+import { DynamicUnitSummaryItem, matchSingleRule } from './dynamicRuleMatcher';
 
-export interface DynamicUnitSummaryItem {
-  unitId: string;
-  unitName: string;
-  store: string;
-  location: string;
-  year: string;
-  // Real-time App Project Data (Strictly from Zustand tasks & projects)
-  hasAppProject: boolean;
-  appProjectCode: string;
-  projectName: string;
-  appProjectStatus: string; // 'On process' | 'Upcoming' | 'Completed' | 'Delay' | ''
-  appProjectYear: string;
-  appProjectMdStatus: string;
-  appProjectActStatus: string;
-  appProjectDetail: string;
-  appProjectDescription: string;
-  appProjectParty: string;
-  appProjectBudget: number;
-  appProjectActual: number;
-  planProgress: number;
-  actProgress: number;
-  matchedTasksCount: number;
-  task: string;
-  activeTasks?: string[];
-  // Excel / Master Business Data
-  size: number;
-  sales: number;
-  salesByCp: number;
-  profit: number;
-  profitByCp: number;
-  margin: number;
-  marginByCp: number;
-  hcmSalesEffi: number;
-  hcmMargin: number;
-  mdStatus: string;
-  mdNotes: string;
-  excelProjectStatus: string;
-  vendorCode: string;
-  brandCode: string;
-  brandName: string;
-  classCode: string;
-  // Dynamic Evaluation Result
-  matchedGroupId: string | null;
-  matchedGroupName: string | null;
-  color: string; // Hex color
-  opacity: number;
-  matchedRuleReason: string;
-  isRestricted?: boolean;
-}
-
-/**
- * Pure function to evaluate if a rule matches a unit's aggregated data
- */
-export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): boolean {
-  let val: any = (data as any)[rule.field];
-
-  if (val === undefined || val === null || String(val).trim() === '') {
-    const f = String(rule.field || '').toLowerCase().trim();
-    if (f === 'floor' || f === 'location') {
-      val = data.location || '';
-    } else if (f === 'app: floor' || f === 'appfloor' || f === 'appprojectfloor') {
-      val = data.hasAppProject ? (data.location || '') : '';
-    } else if (f === 'year') {
-      val = data.year || '';
-    } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear') {
-      val = data.hasAppProject ? (data.appProjectYear || '') : '';
-    } else if (f === 'status' || f === 'projectstatus' || f === 'appprojectstatus' || f === 'app: status' || f === 'appstatus') {
-      val = (data.hasAppProject && data.appProjectStatus) ? data.appProjectStatus : '';
-    } else if (f === 'unit' || f === 'code') {
-      val = data.unitName || '';
-    } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {
-      val = data.hasAppProject ? (data.appProjectCode || '') : '';
-    } else if (f === 'mdstatus') {
-      val = data.hasAppProject ? (data.appProjectMdStatus || '') : (data.mdStatus || '');
-    } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
-      val = data.hasAppProject ? (data.appProjectMdStatus || '') : '';
-    } else if (f === 'actstatus' || f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
-      val = data.hasAppProject ? (data.appProjectActStatus || '') : '';
-    } else if (f === 'detail' || f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
-      val = data.hasAppProject ? (data.appProjectDetail || '') : '';
-    } else if (f === 'description (project)' || f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
-      val = data.hasAppProject ? (data.appProjectDescription || '') : '';
-    } else if (f === 'party' || f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
-      val = data.hasAppProject ? (data.appProjectParty || '') : '';
-    } else if (f === 'budget' || f === 'appbudget' || f === 'appprojectbudget' || f === 'app: budget') {
-      val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
-    } else if (f === 'actual' || f === 'appactual' || f === 'appprojectactual' || f === 'app: actual') {
-      val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
-    } else if (f === 'apptask' || f === 'app: task' || f === 'app: task summarize' || f === 'app: task summaries' || f === 'app: tasks' || f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
-      val = (data.hasAppProject && data.task) ? data.task : '';
-    } else if (f === 'actprogress' || f === 'act progress') {
-      val = data.hasAppProject ? (data.actProgress ?? 0) : 0;
-    } else if (f === 'planprogress' || f === 'plan progress') {
-      val = data.hasAppProject ? (data.planProgress ?? 0) : 0;
-    }
-  }
-
-  if (rule.field === 'margin' || rule.field === 'marginByCp' || rule.field === 'hcmMargin') {
-    val = Number(val || 0) * 100;
-  }
-
-  const numVal = Number(rule.value);
-  const isNum = !isNaN(numVal) && String(rule.value || '').trim() !== '';
-
-  let compareValStr = String(val ?? '').toLowerCase().trim();
-  let compareRuleStr = String(rule.value ?? '').toLowerCase().trim();
-
-  // Normalize synonym status strings
-  if (compareRuleStr === 'in progress') compareRuleStr = 'on process';
-  if (compareValStr === 'in progress') compareValStr = 'on process';
-
-  switch (rule.operator) {
-    case '>':
-      return isNum ? Number(val) > numVal : false;
-    case '<':
-      return isNum ? Number(val) < numVal : false;
-    case '>=':
-      return isNum ? Number(val) >= numVal : false;
-    case '<=':
-      return isNum ? Number(val) <= numVal : false;
-    case '=':
-      return compareValStr === compareRuleStr;
-    case 'contains': {
-      const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
-      return searchTerms.every((term) => compareValStr.includes(term));
-    }
-    case 'or':
-    case 'OR': {
-      const orTerms = compareRuleStr
-        .split(/[\r\n\t,;+/&|]+|\s{2,}/)
-        .map((t) => {
-          let tr = t.trim();
-          if (tr === 'in progress') tr = 'on process';
-          return tr;
-        })
-        .filter(Boolean);
-      if (orTerms.length === 0) {
-        const spaceTerms = compareRuleStr.split(/\s+/).filter(Boolean);
-        return spaceTerms.some((term) => compareValStr === term || compareValStr.includes(term));
-      }
-      return orTerms.some((term) => {
-        if (compareValStr === term) return true;
-        if (compareValStr.includes(term)) return true;
-        if (isNum && !isNaN(Number(term)) && Number(val) === Number(term)) return true;
-        return false;
-      });
-    }
-    case 'exclude': {
-      const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
-      return !searchTerms.some((term) => compareValStr.includes(term));
-    }
-    default:
-      return false;
-  }
-}
+export type { DynamicUnitSummaryItem };
+export { matchSingleRule };
 
 /**
  * Event-Driven Unit Summary Engine Hook
@@ -68564,8 +68588,8 @@ export function useDynamicUnitSummary({
   location?: string;
   year?: string;
 }) {
-  const projects = useAppStore((state) => state.projects);
-  const tasks = useAppStore((state) => state.tasks);
+  const { enrichedProjects, filteredTasks: tasks } = useEnrichedData();
+  const allProjects = useAppStore((state) => state.projects);
   const delegationGroups = useAppStore((state) => state.delegationGroups);
   const globalYearFilter = useAppStore((state) => state.globalYearFilter);
   const currentUser = useAppStore((state) => state.currentUser);
@@ -68600,38 +68624,80 @@ export function useDynamicUnitSummary({
     });
   }, [unitInfo, classInfo, actualClassInfo, sales, profits, subFees, mdStatus, projectStatus, projectLink, basePlan, units]);
 
-  // 2. Pre-enrich projects with live tasks
-  const enrichedProjects = useMemo(() => {
-    return enrichProjects(projects, tasks, delegationGroups);
-  }, [projects, tasks, delegationGroups]);
-
-  // 3. Compute restricted project codes (RBAC)
+  // 2. Compute restricted project/unit codes (RBAC from Acc Control)
   const restrictedProjectCodes = useMemo(() => {
     if (!currentUser || currentUser.role === 'admin') return new Set<string>();
-    const allowedCodeSet = new Set<string>();
-    enrichedProjects.forEach((p) => {
-      if (p.code) allowedCodeSet.add(String(p.code).trim().toLowerCase());
-      if (p.linkCodes) {
-        p.linkCodes.split(/[+;,/]/).forEach((c) => {
-          if (c.trim()) allowedCodeSet.add(c.trim().toLowerCase());
-        });
+
+    const unitToProjectCodesMap = new Map<string, string[]>();
+    (projectLink || []).forEach((pl: any) => {
+      const u = String(pl?.unit || '').trim().toLowerCase();
+      const pCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
+      if (u && pCode) {
+        if (!unitToProjectCodesMap.has(u)) unitToProjectCodesMap.set(u, []);
+        unitToProjectCodesMap.get(u)!.push(pCode);
       }
     });
 
+    const allowedCodeSet = new Set<string>();
+    enrichedProjects.forEach((p) => {
+      const pMeta = extractProjectMetadata(p);
+      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) return;
+      const pCodes = extractAllProjectCodes(p);
+      pCodes.forEach((c) => {
+        if (c) allowedCodeSet.add(c.toLowerCase());
+      });
+      units.forEach((u) => {
+        const uName = String(u.name || '').trim().toLowerCase();
+        const uId = String(u.id || '').trim().toLowerCase();
+        const linkedCodes = [
+          ...(unitToProjectCodesMap.get(uName) || []),
+          ...(unitToProjectCodesMap.get(uId) || []),
+        ];
+        const isLinked = linkedCodes.some((lc) =>
+          pCodes.some((pc) => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
+        );
+        const isExact = pCodes.some((c) => c.toLowerCase() === uName || c.toLowerCase() === uId);
+        if (isExact || isLinked || projectMatchesUnitCode(pCodes, uName || uId)) {
+          if (uName) allowedCodeSet.add(uName);
+          if (uId) allowedCodeSet.add(uId);
+        }
+      });
+    });
+
     const restrictedSet = new Set<string>();
-    projects.forEach((p) => {
-      const rawCodes = p.linkCodes && p.linkCodes.trim() ? p.linkCodes : String(p.code || '');
-      const pCodes = rawCodes.split(/[+;,/]/).map((c) => c.trim().toLowerCase()).filter(Boolean);
+    const isPartyRestricted = currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true;
+
+    if (isPartyRestricted) {
+      units.forEach((u) => {
+        const uName = String(u.name || '').trim().toLowerCase();
+        const uId = String(u.id || '').trim().toLowerCase();
+        if (uName && !allowedCodeSet.has(uName)) restrictedSet.add(uName);
+        if (uId && !allowedCodeSet.has(uId)) restrictedSet.add(uId);
+      });
+    }
+
+    allProjects.forEach((p) => {
+      const pMeta = extractProjectMetadata(p);
+      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) return;
+      const pCodes = extractAllProjectCodes(p).map((c) => c.toLowerCase());
       pCodes.forEach((code) => {
         if (!allowedCodeSet.has(code)) {
           restrictedSet.add(code);
         }
       });
+      units.forEach((u) => {
+        const uName = String(u.name || '').trim().toLowerCase();
+        if (!uName || allowedCodeSet.has(uName)) return;
+        if (pCodes.includes(uName) || projectMatchesUnitCode(pCodes, uName)) {
+          restrictedSet.add(uName);
+        }
+      });
     });
-    return restrictedSet;
-  }, [projects, enrichedProjects, currentUser]);
 
-  // 4. Main Event-Driven Rollup calculation
+    return restrictedSet;
+  }, [allProjects, enrichedProjects, currentUser, units, projectLink, store, location, effectiveYear]);
+
+  // 3. Main Event-Driven Rollup calculation
   const { summaryMap, summaryList, groupStats } = useMemo(() => {
     const sMap = new Map<string, DynamicUnitSummaryItem>();
     const sList: DynamicUnitSummaryItem[] = [];
@@ -68814,6 +68880,7 @@ export function useDynamicUnitSummary({
 
       const targetUnitKeys = new Set<string>();
       sList.forEach(item => {
+        if (item.isRestricted) return;
         // Unit must match store, location, and year
         const itemStore = (item.store || store || '').toUpperCase().trim();
         const itemLoc = (item.location || location || '').toUpperCase().trim();
@@ -68844,7 +68911,7 @@ export function useDynamicUnitSummary({
 
       targetUnitKeys.forEach((code) => {
         const item = sMap.get(code);
-        if (item) {
+        if (item && !item.isRestricted) {
           item.hasAppProject = true;
           item.appProjectCode = String(p.code || code);
           item.projectName = p.name || '';
@@ -68909,7 +68976,7 @@ export function useDynamicUnitSummary({
       summaryList: sList,
       groupStats: Object.values(stats),
     };
-  }, [units, activeVersion, store, location, effectiveYear, summaryData, enrichedProjects, tasks, projects, restrictedProjectCodes, delegationGroups]);
+  }, [units, activeVersion, store, location, effectiveYear, summaryData, enrichedProjects, tasks, allProjects, restrictedProjectCodes, delegationGroups, projectLink]);
 
   return {
     summaryMap,
@@ -68918,7 +68985,6 @@ export function useDynamicUnitSummary({
     effectiveYear,
   };
 }
-
 
 ================================================================================
 FILE: src/components/PictureMapping/lib/r2Upload.ts
@@ -116178,22 +116244,16 @@ export const getUserAllowedStores = (
 ): string[] => {
   if (!currentUser || currentUser.role === "admin") return ["HCM", "HN"];
 
-  if (currentUser.role === "CP" || currentUser.role === "Manager") {
-    const list: string[] = [];
-    if (currentUser.storePermissions?.hcm !== false) list.push("HCM");
-    if (currentUser.storePermissions?.hn !== false) list.push("HN");
-    return list.length > 0 ? list : ["HCM", "HN"];
-  }
-
-  const list: string[] = [];
-  if (currentUser.storePermissions?.hcm) list.push("HCM");
-  if (currentUser.storePermissions?.hn) list.push("HN");
-
-  if (list.length === 0 && (!currentUser.storePermissions || (currentUser.storePermissions.hcm === undefined && currentUser.storePermissions.hn === undefined))) {
+  const sp = currentUser.storePermissions;
+  if (!sp || (sp.hcm === undefined && sp.hn === undefined)) {
     return ["HCM", "HN"];
   }
 
-  return list.length > 0 ? list : ["HCM", "HN"];
+  const list: string[] = [];
+  if (sp.hcm) list.push("HCM");
+  if (sp.hn) list.push("HN");
+
+  return list;
 };
 
 export const getEffectiveStoreFilter = (
@@ -132488,3 +132548,164 @@ export async function syncAffectedProjectsSummaries(
     }
   }
 }
+================================================================================
+FILE: src/components/PictureMapping/lib/dynamicRuleMatcher.ts
+================================================================================
+import { GroupRule } from '../components/DataMapping/types';
+
+export interface DynamicUnitSummaryItem {
+  unitId: string;
+  unitName: string;
+  store: string;
+  location: string;
+  year: string;
+  // Real-time App Project Data (Strictly from Zustand tasks & projects)
+  hasAppProject: boolean;
+  appProjectCode: string;
+  projectName: string;
+  appProjectStatus: string; // 'On process' | 'Upcoming' | 'Completed' | 'Delay' | ''
+  appProjectYear: string;
+  appProjectMdStatus: string;
+  appProjectActStatus: string;
+  appProjectDetail: string;
+  appProjectDescription: string;
+  appProjectParty: string;
+  appProjectBudget: number;
+  appProjectActual: number;
+  planProgress: number;
+  actProgress: number;
+  matchedTasksCount: number;
+  task: string;
+  activeTasks?: string[];
+  // Excel / Master Business Data
+  size: number;
+  sales: number;
+  salesByCp: number;
+  profit: number;
+  profitByCp: number;
+  margin: number;
+  marginByCp: number;
+  hcmSalesEffi: number;
+  hcmMargin: number;
+  mdStatus: string;
+  mdNotes: string;
+  excelProjectStatus: string;
+  vendorCode: string;
+  brandCode: string;
+  brandName: string;
+  classCode: string;
+  // Dynamic Evaluation Result
+  matchedGroupId: string | null;
+  matchedGroupName: string | null;
+  color: string; // Hex color
+  opacity: number;
+  matchedRuleReason: string;
+  isRestricted?: boolean;
+}
+
+/**
+ * Pure function to evaluate if a rule matches a unit's aggregated data
+ */
+export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): boolean {
+  let val: any = (data as any)[rule.field];
+
+  if (val === undefined || val === null || String(val).trim() === '') {
+    const f = String(rule.field || '').toLowerCase().trim();
+    if (f === 'floor' || f === 'location') {
+      val = data.location || '';
+    } else if (f === 'app: floor' || f === 'appfloor' || f === 'appprojectfloor') {
+      val = data.hasAppProject ? (data.location || '') : '';
+    } else if (f === 'year') {
+      val = data.year || '';
+    } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear') {
+      val = data.hasAppProject ? (data.appProjectYear || '') : '';
+    } else if (f === 'status' || f === 'projectstatus' || f === 'appprojectstatus' || f === 'app: status' || f === 'appstatus') {
+      val = (data.hasAppProject && data.appProjectStatus) ? data.appProjectStatus : '';
+    } else if (f === 'unit' || f === 'code') {
+      val = data.unitName || '';
+    } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {
+      val = data.hasAppProject ? (data.appProjectCode || '') : '';
+    } else if (f === 'mdstatus') {
+      val = data.hasAppProject ? (data.appProjectMdStatus || '') : (data.mdStatus || '');
+    } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
+      val = data.hasAppProject ? (data.appProjectMdStatus || '') : '';
+    } else if (f === 'actstatus' || f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
+      val = data.hasAppProject ? (data.appProjectActStatus || '') : '';
+    } else if (f === 'detail' || f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
+      val = data.hasAppProject ? (data.appProjectDetail || '') : '';
+    } else if (f === 'description (project)' || f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
+      val = data.hasAppProject ? (data.appProjectDescription || '') : '';
+    } else if (f === 'party' || f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
+      val = data.hasAppProject ? (data.appProjectParty || '') : '';
+    } else if (f === 'budget' || f === 'appbudget' || f === 'appprojectbudget' || f === 'app: budget') {
+      val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
+    } else if (f === 'actual' || f === 'appactual' || f === 'appprojectactual' || f === 'app: actual') {
+      val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
+    } else if (f === 'apptask' || f === 'app: task' || f === 'app: task summarize' || f === 'app: task summaries' || f === 'app: tasks' || f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
+      val = (data.hasAppProject && data.task) ? data.task : '';
+    } else if (f === 'actprogress' || f === 'act progress') {
+      val = data.hasAppProject ? (data.actProgress ?? 0) : 0;
+    } else if (f === 'planprogress' || f === 'plan progress') {
+      val = data.hasAppProject ? (data.planProgress ?? 0) : 0;
+    }
+  }
+
+  if (rule.field === 'margin' || rule.field === 'marginByCp' || rule.field === 'hcmMargin') {
+    val = Number(val || 0) * 100;
+  }
+
+  const numVal = Number(rule.value);
+  const isNum = !isNaN(numVal) && String(rule.value || '').trim() !== '';
+
+  let compareValStr = String(val ?? '').toLowerCase().trim();
+  let compareRuleStr = String(rule.value ?? '').toLowerCase().trim();
+
+  // Normalize synonym status strings
+  if (compareRuleStr === 'in progress') compareRuleStr = 'on process';
+  if (compareValStr === 'in progress') compareValStr = 'on process';
+
+  switch (rule.operator) {
+    case '>':
+      return isNum ? Number(val) > numVal : false;
+    case '<':
+      return isNum ? Number(val) < numVal : false;
+    case '>=':
+      return isNum ? Number(val) >= numVal : false;
+    case '<=':
+      return isNum ? Number(val) <= numVal : false;
+    case '=':
+      return compareValStr === compareRuleStr;
+    case 'contains': {
+      const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
+      return searchTerms.every((term) => compareValStr.includes(term));
+    }
+    case 'or':
+    case 'OR': {
+      const orTerms = compareRuleStr
+        .split(/[\r\n\t,;+/&|]+|\s{2,}/)
+        .map((t) => {
+          let tr = t.trim();
+          if (tr === 'in progress') tr = 'on process';
+          return tr;
+        })
+        .filter(Boolean);
+      if (orTerms.length === 0) {
+        const spaceTerms = compareRuleStr.split(/\s+/).filter(Boolean);
+        return spaceTerms.some((term) => compareValStr === term || compareValStr.includes(term));
+      }
+      return orTerms.some((term) => {
+        if (compareValStr === term) return true;
+        if (compareValStr.includes(term)) return true;
+        if (isNum && !isNaN(Number(term)) && Number(val) === Number(term)) return true;
+        return false;
+      });
+    }
+    case 'exclude': {
+      const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
+      return !searchTerms.some((term) => compareValStr.includes(term));
+    }
+    default:
+      return false;
+  }
+}
+

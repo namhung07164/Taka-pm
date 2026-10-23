@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
+import { useEnrichedData } from '../../hooks/useEnrichedData';
 import { parseDateTime, getTaskStatus } from '../../lib/utils';
 import { sortGroupTasks, extractSubtaskIndex } from '../../lib/ganttUtils';
 import { safeSetItemLocal, safeSetItemSession } from '../../lib/storage';
@@ -58,8 +59,8 @@ export interface MiniGanttRow {
 }
 
 export function useMiniGanttData(project: Project | null, onClose: () => void) {
-  const tasks = useAppStore((state) => state.tasks);
-  const projects = useAppStore((state) => state.projects);
+  const { enrichedProjects: projects, filteredTasks: tasks } = useEnrichedData();
+  const currentUser = useAppStore((state) => state.currentUser);
   const setActiveTab = useAppStore((state) => state.setActiveTab);
   const isTasksRequested = useAppStore((state) => state.isTasksRequested);
   const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
@@ -126,10 +127,24 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
       return true;
     });
 
-    const summaryItems =
+    const rawSummaryItems =
       (currentProj.taskSummaries && Array.isArray(currentProj.taskSummaries) && currentProj.taskSummaries.length > 0)
         ? currentProj.taskSummaries
         : (project?.taskSummaries || []);
+
+    const isPartyRestricted = currentUser && currentUser.role !== 'admin' && currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true;
+    const summaryItems = isPartyRestricted
+      ? rawSummaryItems.filter((ts: any) => {
+          const userParties = currentUser.partyPermissions
+            ? Object.keys(currentUser.partyPermissions).filter(k => currentUser.partyPermissions![k] && k.toLowerCase() !== 'all').map(k => k.toLowerCase().trim())
+            : [];
+          const username = String(currentUser.username || '').toLowerCase().trim();
+          const userId = String(currentUser.id || '').toLowerCase().trim();
+          const partyStr = String(ts.party || currentProj.party || '').toLowerCase();
+          const pList = partyStr.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean);
+          return pList.some(p => userParties.includes(p) || p === username || p === userId);
+        })
+      : rawSummaryItems;
 
     const mapSummaryToTask = (ts: any, idx: number): Task => {
       const subtaskNum = extractSubtaskIndex(ts.taskCodePhu);
@@ -201,7 +216,7 @@ export function useMiniGanttData(project: Project | null, onClose: () => void) {
     }
 
     return matchedZustandTasks;
-  }, [liveProject, project, tasks]);
+  }, [liveProject, project, tasks, currentUser]);
 
   // Exact Main Gantt (useGanttVirtualization.ts) task ordering & hierarchy
   const orderedGanttRows: MiniGanttRow[] = useMemo(() => {

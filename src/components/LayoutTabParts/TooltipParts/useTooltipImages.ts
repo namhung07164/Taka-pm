@@ -17,16 +17,11 @@ interface UseTooltipImagesParams {
   positionTooltip: (forceRecalculate?: boolean) => void;
   storeFilter?: string;
   quickImageMode?: boolean;
+  canWrite?: boolean;
 }
 
 export function useTooltipImages({
-  p,
-  data,
-  unitCode,
-  tooltipRef,
-  positionTooltip,
-  storeFilter,
-  quickImageMode = false,
+  p, data, unitCode, tooltipRef, positionTooltip, storeFilter, quickImageMode = false, canWrite = false,
 }: UseTooltipImagesParams) {
   const [showImagePanel, setShowImagePanel] = useState<boolean>(Boolean(quickImageMode));
   const [showAddLinkInput, setShowAddLinkInput] = useState(false);
@@ -111,6 +106,7 @@ export function useTooltipImages({
 
   const handleAddCustomImage = (e?: React.FormEvent, customUrl?: string) => {
     if (e) e.preventDefault();
+    if (!canWrite) return;
     const targetUrl = customUrl || newLinkInput;
     const trimmed = targetUrl.trim();
     if (!trimmed) return;
@@ -204,6 +200,7 @@ export function useTooltipImages({
   };
 
   const handleDeleteCustomImage = (id: string, urlToDelete?: string) => {
+    if (!canWrite) return;
     const updated = customUnitImages.filter(item => item.id !== id && (urlToDelete ? item.url !== urlToDelete : true));
     setCustomUnitImages(updated);
     try {

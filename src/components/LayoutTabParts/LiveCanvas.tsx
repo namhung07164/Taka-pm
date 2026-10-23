@@ -54,6 +54,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
   const resetLayoutTooltipVisibility = useAppStore(state => state.resetLayoutTooltipVisibility);
   const setEditingProject = useAppStore(state => state.setEditingProject);
   const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
+  const setIsReadOnlyModal = useAppStore(state => state.setIsReadOnlyModal);
   const isProjectModalOpen = useAppStore(state => state.isProjectModalOpen);
   const quickNavTarget = useAppStore(state => state.quickNavTarget);
   const setModalInitialTab = useAppStore(state => state.setModalInitialTab);
@@ -405,7 +406,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
               }
               setMiniGanttProject(project);
             }}
-            onEditProject={(project, _isReadOnly, tab) => {
+            onEditProject={(project, isReadOnly, tab) => {
               if (stageInteractions.hoverInfo && stageInteractions.hoverInfo.visible) {
                 savedTooltipStateRef.current = {
                   hoverInfo: stageInteractions.hoverInfo,
@@ -413,6 +414,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
                 };
               }
               setEditingProject(project);
+              setIsReadOnlyModal(Boolean(isReadOnly ?? !canWrite));
               setModalInitialTab(tab || 'details');
               setIsProjectModalOpen(true);
             }}

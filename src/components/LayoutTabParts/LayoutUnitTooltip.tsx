@@ -199,6 +199,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     positionTooltip: (force) => positionTooltipRef.current(force),
     storeFilter: storeDisplay,
     quickImageMode: isQuickImageView,
+    canWrite,
   });
 
   // Hook 1: Position & Dragging management
@@ -351,6 +352,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             unitCode={unitCode || data.code || ''}
             activeStore={storeDisplay}
             isQuickMode={true}
+            canWrite={canWrite}
           />
         </>
       ) : (
@@ -408,6 +410,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
           <TooltipMetaRow
             v={v}
             p={p}
+            canWrite={canWrite}
             floorValue={floorValue}
             dataSize={data.size}
             commentsCount={commentsCount}
@@ -441,6 +444,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             setEnlargedImage={setEnlargedImage}
             unitCode={unitCode || data.code || ''}
             activeStore={storeDisplay}
+            canWrite={canWrite}
           />
         </>
       )}

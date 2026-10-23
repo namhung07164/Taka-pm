@@ -126,22 +126,16 @@ export const getUserAllowedStores = (
 ): string[] => {
   if (!currentUser || currentUser.role === "admin") return ["HCM", "HN"];
 
-  if (currentUser.role === "CP" || currentUser.role === "Manager") {
-    const list: string[] = [];
-    if (currentUser.storePermissions?.hcm !== false) list.push("HCM");
-    if (currentUser.storePermissions?.hn !== false) list.push("HN");
-    return list.length > 0 ? list : ["HCM", "HN"];
-  }
-
-  const list: string[] = [];
-  if (currentUser.storePermissions?.hcm) list.push("HCM");
-  if (currentUser.storePermissions?.hn) list.push("HN");
-
-  if (list.length === 0 && (!currentUser.storePermissions || (currentUser.storePermissions.hcm === undefined && currentUser.storePermissions.hn === undefined))) {
+  const sp = currentUser.storePermissions;
+  if (!sp || (sp.hcm === undefined && sp.hn === undefined)) {
     return ["HCM", "HN"];
   }
 
-  return list.length > 0 ? list : ["HCM", "HN"];
+  const list: string[] = [];
+  if (sp.hcm) list.push("HCM");
+  if (sp.hn) list.push("HN");
+
+  return list;
 };
 
 export const getEffectiveStoreFilter = (

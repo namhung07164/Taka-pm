@@ -5,6 +5,7 @@ import { useSummaryData } from '../PictureMapping/lib/summaryData';
 import { useDataStore } from '../PictureMapping/DataContext';
 import { useDynamicUnitSummary } from '../PictureMapping/lib/dynamicSummaryEngine';
 import { buildAggregatedUnitData } from './layoutDataAggregator';
+import { extractAllProjectCodes, extractProjectMetadata, getUserAllowedStores, projectMatchesScope, projectMatchesUnitCode } from '../../lib/utils';
 
 const EMPTY_RESTRICTED_SET = new Set<string>();
 
@@ -44,37 +45,84 @@ export function useLayoutAggregates({
   const { enrichedProjects, filteredTasks: tasks } = useEnrichedData();
   const allProjects = useAppStore(state => state.projects);
   const currUser = useAppStore(state => state.currentUser);
+  const locationVisibility = useAppStore(state => state.locationVisibility);
   const delegationGroups = useAppStore(state => state.delegationGroups);
   const layoutTooltipVisibility = useAppStore(state => state.layoutTooltipVisibility);
   const summaryData = useSummaryData({ store: storeFilter, location: targetLoc, year: effectiveLayoutYear });
 
-  // Compute set of project codes that the current user is NOT allowed to access (RBAC)
+  // Compute set of project/unit codes that the current user is NOT allowed to access (Acc Control RBAC)
   const restrictedProjectCodes = useMemo(() => {
     if (!currUser || currUser.role === 'admin') return EMPTY_RESTRICTED_SET;
 
-    const allowedCodeSet = new Set<string>();
-    enrichedProjects.forEach(p => {
-      if (p.code) allowedCodeSet.add(String(p.code).trim().toLowerCase());
-      if (p.linkCodes) {
-        p.linkCodes.split(/[+;,/]/).forEach(c => {
-          if (c.trim()) allowedCodeSet.add(c.trim().toLowerCase());
-        });
+    const projectLinkData = useDataStore.getState().projectLink || [];
+    const unitToProjectCodesMap = new Map<string, string[]>();
+    projectLinkData.forEach((pl: any) => {
+      const u = String(pl?.unit || '').trim().toLowerCase();
+      const pCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
+      if (u && pCode) {
+        if (!unitToProjectCodesMap.has(u)) unitToProjectCodesMap.set(u, []);
+        unitToProjectCodesMap.get(u)!.push(pCode);
       }
     });
 
+    const allowedCodeSet = new Set<string>();
+    enrichedProjects.forEach(p => {
+      const pMeta = extractProjectMetadata(p);
+      if (!projectMatchesScope(pMeta, { store: storeFilter, location: targetLoc, year: effectiveLayoutYear })) return;
+      const pCodes = extractAllProjectCodes(p);
+      pCodes.forEach(c => {
+        if (c) allowedCodeSet.add(c.toLowerCase());
+      });
+      units.forEach((u: any) => {
+        const uName = String(u?.name || '').trim().toLowerCase();
+        const uId = String(u?.id || '').trim().toLowerCase();
+        const linkedCodes = [
+          ...(unitToProjectCodesMap.get(uName) || []),
+          ...(unitToProjectCodesMap.get(uId) || []),
+        ];
+        const isLinked = linkedCodes.some(lc =>
+          pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
+        );
+        const isExact = pCodes.some(c => c.toLowerCase() === uName || c.toLowerCase() === uId);
+        if (isExact || isLinked || projectMatchesUnitCode(pCodes, uName || uId)) {
+          if (uName) allowedCodeSet.add(uName);
+          if (uId) allowedCodeSet.add(uId);
+        }
+      });
+    });
+
     const restrictedSet = new Set<string>();
+    const isPartyRestricted = currUser.byPartyAccess === true && currUser.partyPermissions?.['all'] !== true;
+
+    if (isPartyRestricted) {
+      units.forEach((u: any) => {
+        const uName = String(u?.name || '').trim().toLowerCase();
+        const uId = String(u?.id || '').trim().toLowerCase();
+        if (uName && !allowedCodeSet.has(uName)) restrictedSet.add(uName);
+        if (uId && !allowedCodeSet.has(uId)) restrictedSet.add(uId);
+      });
+    }
+
     allProjects.forEach(p => {
-      const rawCodes = (p.linkCodes && p.linkCodes.trim()) ? p.linkCodes : String(p.code || '');
-      const pCodes = rawCodes.split(/[+;,/]/).map(c => c.trim().toLowerCase()).filter(Boolean);
+      const pMeta = extractProjectMetadata(p);
+      if (!projectMatchesScope(pMeta, { store: storeFilter, location: targetLoc, year: effectiveLayoutYear })) return;
+      const pCodes = extractAllProjectCodes(p).map(c => c.toLowerCase());
       pCodes.forEach(code => {
         if (!allowedCodeSet.has(code)) {
           restrictedSet.add(code);
         }
       });
+      units.forEach((u: any) => {
+        const uName = String(u?.name || '').trim().toLowerCase();
+        if (!uName || allowedCodeSet.has(uName)) return;
+        if (pCodes.includes(uName) || projectMatchesUnitCode(pCodes, uName)) {
+          restrictedSet.add(uName);
+        }
+      });
     });
 
     return restrictedSet;
-  }, [allProjects, enrichedProjects, currUser]);
+  }, [allProjects, enrichedProjects, currUser, units, storeFilter, targetLoc, effectiveLayoutYear]);
 
   // Build aggregatedData using pure aggregation engine
   const aggregatedData = useMemo(() => {
@@ -332,28 +380,46 @@ export function useLayoutAggregates({
     return filtered;
   }, [displayedUnits, stageScale, stagePos.x, stagePos.y, dimensions.width, dimensions.height, focusedUnitId, deferredSearchQuery, effectiveLayoutYear, storeFilter, targetLoc]);
 
-  // Security defense: If non-admin user has NO accessible tasks or projects in this store & year, do not render layout
+  // Security defense: Enforce Store, Location, Visibility, and Party permissions from Acc Control
   const hasUserAccessInStoreYear = useMemo(() => {
     if (!currUser || currUser.role === 'admin') return true;
 
-    const isInternalRole = ['manager', 'staff', 'cp'].includes(String(currUser.role || '').toLowerCase());
-    const hasStorePerm = storeFilter === 'HN'
-      ? Boolean(currUser.storePermissions?.hn)
-      : (storeFilter === 'HCM' ? Boolean(currUser.storePermissions?.hcm) : true);
+    const allowedStores = getUserAllowedStores(currUser);
+    const normStore = storeFilter && storeFilter !== 'all' ? storeFilter.toUpperCase().trim() : '';
+    if (normStore && !allowedStores.includes(normStore)) {
+      return false;
+    }
 
-    if (isInternalRole && hasStorePerm && !currUser.byPartyAccess) {
+    if (targetLoc && targetLoc.toLowerCase() !== 'all') {
+      const lUpper = targetLoc.toUpperCase().trim();
+      const lLower = targetLoc.toLowerCase().trim();
+      if (locationVisibility[targetLoc] === false || locationVisibility[lUpper] === false || locationVisibility[lLower] === false) {
+        return false;
+      }
+      for (const [k, v] of Object.entries(locationVisibility)) {
+        if (k.toUpperCase().trim() === lUpper && v === false) return false;
+      }
+      const locPerms = currUser.locationPermissions || {};
+      if (!locPerms['all']) {
+        const cleanLoc = lLower.replace(/^md-/, '');
+        if (!(locPerms[cleanLoc] || locPerms[`md-${cleanLoc}`] || locPerms[lLower] || locPerms[lUpper])) {
+          return false;
+        }
+      }
+    }
+
+    const isInternalRole = ['manager', 'staff', 'cp'].includes(String(currUser.role || '').toLowerCase());
+    const isPartyRestricted = currUser.byPartyAccess === true && currUser.partyPermissions?.['all'] !== true;
+
+    if (isInternalRole && !isPartyRestricted) {
       return true;
     }
 
     const yr = effectiveLayoutYear;
     if (yr === 'all') return true;
     const hasProj = enrichedProjects.some(p => {
-      if (storeFilter !== 'all') {
-        const pStore = String(p.store || '').toUpperCase().trim();
-        if (pStore && pStore !== storeFilter.toUpperCase()) return false;
-      }
-      const pYear = String(p.year || '').trim();
-      return pYear === yr;
+      const pMeta = extractProjectMetadata(p);
+      return projectMatchesScope(pMeta, { store: storeFilter, location: targetLoc, year: yr });
     });
     if (hasProj) return true;
     const hasTask = tasks.some(t => {
@@ -365,7 +431,7 @@ export function useLayoutAggregates({
       return tYear === yr;
     });
     return hasTask;
-  }, [currUser, enrichedProjects, tasks, storeFilter, effectiveLayoutYear]);
+  }, [currUser, locationVisibility, enrichedProjects, tasks, storeFilter, targetLoc, effectiveLayoutYear]);
 
   return {
     aggregatedData,

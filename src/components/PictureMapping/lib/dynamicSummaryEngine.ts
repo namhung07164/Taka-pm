@@ -1,165 +1,14 @@
-import React, { useMemo } from "react";
-import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
+import { useMemo } from "react";
+import { UnitShape, MapVersion } from '../components/DataMapping/types';
 import { useAppStore } from '../../../store/useAppStore';
+import { useEnrichedData } from '../../../hooks/useEnrichedData';
 import { useDataStore } from '../DataContext';
-import { enrichProjects, getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
+import { getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
 import { calculateSummaryData, SummaryDataItem } from './summaryData';
+import { DynamicUnitSummaryItem, matchSingleRule } from './dynamicRuleMatcher';
 
-export interface DynamicUnitSummaryItem {
-  unitId: string;
-  unitName: string;
-  store: string;
-  location: string;
-  year: string;
-  // Real-time App Project Data (Strictly from Zustand tasks & projects)
-  hasAppProject: boolean;
-  appProjectCode: string;
-  projectName: string;
-  appProjectStatus: string; // 'On process' | 'Upcoming' | 'Completed' | 'Delay' | ''
-  appProjectYear: string;
-  appProjectMdStatus: string;
-  appProjectActStatus: string;
-  appProjectDetail: string;
-  appProjectDescription: string;
-  appProjectParty: string;
-  appProjectBudget: number;
-  appProjectActual: number;
-  planProgress: number;
-  actProgress: number;
-  matchedTasksCount: number;
-  task: string;
-  activeTasks?: string[];
-  // Excel / Master Business Data
-  size: number;
-  sales: number;
-  salesByCp: number;
-  profit: number;
-  profitByCp: number;
-  margin: number;
-  marginByCp: number;
-  hcmSalesEffi: number;
-  hcmMargin: number;
-  mdStatus: string;
-  mdNotes: string;
-  excelProjectStatus: string;
-  vendorCode: string;
-  brandCode: string;
-  brandName: string;
-  classCode: string;
-  // Dynamic Evaluation Result
-  matchedGroupId: string | null;
-  matchedGroupName: string | null;
-  color: string; // Hex color
-  opacity: number;
-  matchedRuleReason: string;
-  isRestricted?: boolean;
-}
-
-/**
- * Pure function to evaluate if a rule matches a unit's aggregated data
- */
-export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): boolean {
-  let val: any = (data as any)[rule.field];
-
-  if (val === undefined || val === null || String(val).trim() === '') {
-    const f = String(rule.field || '').toLowerCase().trim();
-    if (f === 'floor' || f === 'location') {
-      val = data.location || '';
-    } else if (f === 'app: floor' || f === 'appfloor' || f === 'appprojectfloor') {
-      val = data.hasAppProject ? (data.location || '') : '';
-    } else if (f === 'year') {
-      val = data.year || '';
-    } else if (f === 'appprojectyear' || f === 'app: year' || f === 'appyear') {
-      val = data.hasAppProject ? (data.appProjectYear || '') : '';
-    } else if (f === 'status' || f === 'projectstatus' || f === 'appprojectstatus' || f === 'app: status' || f === 'appstatus') {
-      val = (data.hasAppProject && data.appProjectStatus) ? data.appProjectStatus : '';
-    } else if (f === 'unit' || f === 'code') {
-      val = data.unitName || '';
-    } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {
-      val = data.hasAppProject ? (data.appProjectCode || '') : '';
-    } else if (f === 'mdstatus') {
-      val = data.hasAppProject ? (data.appProjectMdStatus || '') : (data.mdStatus || '');
-    } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
-      val = data.hasAppProject ? (data.appProjectMdStatus || '') : '';
-    } else if (f === 'actstatus' || f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status') {
-      val = data.hasAppProject ? (data.appProjectActStatus || '') : '';
-    } else if (f === 'detail' || f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)') {
-      val = data.hasAppProject ? (data.appProjectDetail || '') : '';
-    } else if (f === 'description (project)' || f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)') {
-      val = data.hasAppProject ? (data.appProjectDescription || '') : '';
-    } else if (f === 'party' || f === 'appprojectparty' || f === 'appparty' || f === 'app: party') {
-      val = data.hasAppProject ? (data.appProjectParty || '') : '';
-    } else if (f === 'budget' || f === 'appbudget' || f === 'appprojectbudget' || f === 'app: budget') {
-      val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
-    } else if (f === 'actual' || f === 'appactual' || f === 'appprojectactual' || f === 'app: actual') {
-      val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
-    } else if (f === 'apptask' || f === 'app: task' || f === 'app: task summarize' || f === 'app: task summaries' || f === 'app: tasks' || f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
-      val = (data.hasAppProject && data.task) ? data.task : '';
-    } else if (f === 'actprogress' || f === 'act progress') {
-      val = data.hasAppProject ? (data.actProgress ?? 0) : 0;
-    } else if (f === 'planprogress' || f === 'plan progress') {
-      val = data.hasAppProject ? (data.planProgress ?? 0) : 0;
-    }
-  }
-
-  if (rule.field === 'margin' || rule.field === 'marginByCp' || rule.field === 'hcmMargin') {
-    val = Number(val || 0) * 100;
-  }
-
-  const numVal = Number(rule.value);
-  const isNum = !isNaN(numVal) && String(rule.value || '').trim() !== '';
-
-  let compareValStr = String(val ?? '').toLowerCase().trim();
-  let compareRuleStr = String(rule.value ?? '').toLowerCase().trim();
-
-  // Normalize synonym status strings
-  if (compareRuleStr === 'in progress') compareRuleStr = 'on process';
-  if (compareValStr === 'in progress') compareValStr = 'on process';
-
-  switch (rule.operator) {
-    case '>':
-      return isNum ? Number(val) > numVal : false;
-    case '<':
-      return isNum ? Number(val) < numVal : false;
-    case '>=':
-      return isNum ? Number(val) >= numVal : false;
-    case '<=':
-      return isNum ? Number(val) <= numVal : false;
-    case '=':
-      return compareValStr === compareRuleStr;
-    case 'contains': {
-      const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
-      return searchTerms.every((term) => compareValStr.includes(term));
-    }
-    case 'or':
-    case 'OR': {
-      const orTerms = compareRuleStr
-        .split(/[\r\n\t,;+/&|]+|\s{2,}/)
-        .map((t) => {
-          let tr = t.trim();
-          if (tr === 'in progress') tr = 'on process';
-          return tr;
-        })
-        .filter(Boolean);
-      if (orTerms.length === 0) {
-        const spaceTerms = compareRuleStr.split(/\s+/).filter(Boolean);
-        return spaceTerms.some((term) => compareValStr === term || compareValStr.includes(term));
-      }
-      return orTerms.some((term) => {
-        if (compareValStr === term) return true;
-        if (compareValStr.includes(term)) return true;
-        if (isNum && !isNaN(Number(term)) && Number(val) === Number(term)) return true;
-        return false;
-      });
-    }
-    case 'exclude': {
-      const searchTerms = compareRuleStr.split(/\s+/).filter(Boolean);
-      return !searchTerms.some((term) => compareValStr.includes(term));
-    }
-    default:
-      return false;
-  }
-}
+export type { DynamicUnitSummaryItem };
+export { matchSingleRule };
 
 /**
  * Event-Driven Unit Summary Engine Hook
@@ -178,8 +27,8 @@ export function useDynamicUnitSummary({
   location?: string;
   year?: string;
 }) {
-  const projects = useAppStore((state) => state.projects);
-  const tasks = useAppStore((state) => state.tasks);
+  const { enrichedProjects, filteredTasks: tasks } = useEnrichedData();
+  const allProjects = useAppStore((state) => state.projects);
   const delegationGroups = useAppStore((state) => state.delegationGroups);
   const globalYearFilter = useAppStore((state) => state.globalYearFilter);
   const currentUser = useAppStore((state) => state.currentUser);
@@ -214,38 +63,80 @@ export function useDynamicUnitSummary({
     });
   }, [unitInfo, classInfo, actualClassInfo, sales, profits, subFees, mdStatus, projectStatus, projectLink, basePlan, units]);
 
-  // 2. Pre-enrich projects with live tasks
-  const enrichedProjects = useMemo(() => {
-    return enrichProjects(projects, tasks, delegationGroups);
-  }, [projects, tasks, delegationGroups]);
-
-  // 3. Compute restricted project codes (RBAC)
+  // 2. Compute restricted project/unit codes (RBAC from Acc Control)
   const restrictedProjectCodes = useMemo(() => {
     if (!currentUser || currentUser.role === 'admin') return new Set<string>();
-    const allowedCodeSet = new Set<string>();
-    enrichedProjects.forEach((p) => {
-      if (p.code) allowedCodeSet.add(String(p.code).trim().toLowerCase());
-      if (p.linkCodes) {
-        p.linkCodes.split(/[+;,/]/).forEach((c) => {
-          if (c.trim()) allowedCodeSet.add(c.trim().toLowerCase());
-        });
+
+    const unitToProjectCodesMap = new Map<string, string[]>();
+    (projectLink || []).forEach((pl: any) => {
+      const u = String(pl?.unit || '').trim().toLowerCase();
+      const pCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
+      if (u && pCode) {
+        if (!unitToProjectCodesMap.has(u)) unitToProjectCodesMap.set(u, []);
+        unitToProjectCodesMap.get(u)!.push(pCode);
       }
     });
 
+    const allowedCodeSet = new Set<string>();
+    enrichedProjects.forEach((p) => {
+      const pMeta = extractProjectMetadata(p);
+      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) return;
+      const pCodes = extractAllProjectCodes(p);
+      pCodes.forEach((c) => {
+        if (c) allowedCodeSet.add(c.toLowerCase());
+      });
+      units.forEach((u) => {
+        const uName = String(u.name || '').trim().toLowerCase();
+        const uId = String(u.id || '').trim().toLowerCase();
+        const linkedCodes = [
+          ...(unitToProjectCodesMap.get(uName) || []),
+          ...(unitToProjectCodesMap.get(uId) || []),
+        ];
+        const isLinked = linkedCodes.some((lc) =>
+          pCodes.some((pc) => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
+        );
+        const isExact = pCodes.some((c) => c.toLowerCase() === uName || c.toLowerCase() === uId);
+        if (isExact || isLinked || projectMatchesUnitCode(pCodes, uName || uId)) {
+          if (uName) allowedCodeSet.add(uName);
+          if (uId) allowedCodeSet.add(uId);
+        }
+      });
+    });
+
     const restrictedSet = new Set<string>();
-    projects.forEach((p) => {
-      const rawCodes = p.linkCodes && p.linkCodes.trim() ? p.linkCodes : String(p.code || '');
-      const pCodes = rawCodes.split(/[+;,/]/).map((c) => c.trim().toLowerCase()).filter(Boolean);
+    const isPartyRestricted = currentUser.byPartyAccess === true && currentUser.partyPermissions?.['all'] !== true;
+
+    if (isPartyRestricted) {
+      units.forEach((u) => {
+        const uName = String(u.name || '').trim().toLowerCase();
+        const uId = String(u.id || '').trim().toLowerCase();
+        if (uName && !allowedCodeSet.has(uName)) restrictedSet.add(uName);
+        if (uId && !allowedCodeSet.has(uId)) restrictedSet.add(uId);
+      });
+    }
+
+    allProjects.forEach((p) => {
+      const pMeta = extractProjectMetadata(p);
+      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) return;
+      const pCodes = extractAllProjectCodes(p).map((c) => c.toLowerCase());
       pCodes.forEach((code) => {
         if (!allowedCodeSet.has(code)) {
           restrictedSet.add(code);
         }
       });
+      units.forEach((u) => {
+        const uName = String(u.name || '').trim().toLowerCase();
+        if (!uName || allowedCodeSet.has(uName)) return;
+        if (pCodes.includes(uName) || projectMatchesUnitCode(pCodes, uName)) {
+          restrictedSet.add(uName);
+        }
+      });
     });
-    return restrictedSet;
-  }, [projects, enrichedProjects, currentUser]);
 
-  // 4. Main Event-Driven Rollup calculation
+    return restrictedSet;
+  }, [allProjects, enrichedProjects, currentUser, units, projectLink, store, location, effectiveYear]);
+
+  // 3. Main Event-Driven Rollup calculation
   const { summaryMap, summaryList, groupStats } = useMemo(() => {
     const sMap = new Map<string, DynamicUnitSummaryItem>();
     const sList: DynamicUnitSummaryItem[] = [];
@@ -428,6 +319,7 @@ export function useDynamicUnitSummary({
 
       const targetUnitKeys = new Set<string>();
       sList.forEach(item => {
+        if (item.isRestricted) return;
         // Unit must match store, location, and year
         const itemStore = (item.store || store || '').toUpperCase().trim();
         const itemLoc = (item.location || location || '').toUpperCase().trim();
@@ -458,7 +350,7 @@ export function useDynamicUnitSummary({
 
       targetUnitKeys.forEach((code) => {
         const item = sMap.get(code);
-        if (item) {
+        if (item && !item.isRestricted) {
           item.hasAppProject = true;
           item.appProjectCode = String(p.code || code);
           item.projectName = p.name || '';
@@ -523,7 +415,7 @@ export function useDynamicUnitSummary({
       summaryList: sList,
       groupStats: Object.values(stats),
     };
-  }, [units, activeVersion, store, location, effectiveYear, summaryData, enrichedProjects, tasks, projects, restrictedProjectCodes, delegationGroups]);
+  }, [units, activeVersion, store, location, effectiveYear, summaryData, enrichedProjects, tasks, allProjects, restrictedProjectCodes, delegationGroups, projectLink]);
 
   return {
     summaryMap,

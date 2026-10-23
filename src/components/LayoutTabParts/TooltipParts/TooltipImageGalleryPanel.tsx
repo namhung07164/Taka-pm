@@ -37,6 +37,7 @@ interface TooltipImageGalleryPanelProps {
   unitCode?: string;
   activeStore?: string;
   isQuickMode?: boolean;
+  canWrite?: boolean;
 }
 
 export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> = ({
@@ -55,6 +56,7 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
   unitCode,
   activeStore = 'HCM',
   isQuickMode = false,
+  canWrite = false,
 }) => {
   const [addMode, setAddMode] = useState<'link' | 'picture'>('link');
   const [isUploading, setIsUploading] = useState(false);
@@ -117,21 +119,23 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
             </span>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            {/* Top "+ Thêm" Button */}
-            <button
-              type="button"
-              onClick={() => setShowAddLinkInput(prev => !prev)}
-              className={cn(
-                "px-2 py-0.5 rounded text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs",
-                showAddLinkInput 
-                  ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200" 
-                  : "bg-blue-600 hover:bg-blue-700 text-white"
-              )}
-              title={showAddLinkInput ? "Đóng ô nhập link" : "Thêm link ảnh / bài viết"}
-            >
-              <Plus className="w-3 h-3" />
-              <span>Thêm</span>
-            </button>
+            {/* Top "+ Thêm" Button (Only when canWrite) */}
+            {canWrite && (
+              <button
+                type="button"
+                onClick={() => setShowAddLinkInput(prev => !prev)}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs",
+                  showAddLinkInput 
+                    ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200" 
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                )}
+                title={showAddLinkInput ? "Đóng ô nhập link" : "Thêm link ảnh / bài viết"}
+              >
+                <Plus className="w-3 h-3" />
+                <span>Thêm</span>
+              </button>
+            )}
             {/* Close Image Panel Button */}
             <button
               type="button"
@@ -148,8 +152,8 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
         </div>
       )}
 
-      {/* Add / Post Link Input or Upload Picture Section (Hidden in Quick Mode) */}
-      {!isQuickMode && showAddLinkInput && (
+      {/* Add / Post Link Input or Upload Picture Section (Hidden in Quick Mode or Read-Only Mode) */}
+      {!isQuickMode && canWrite && showAddLinkInput && (
         <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-top-1 duration-150 py-1 bg-white dark:bg-[#1a1a1c] border border-blue-300 dark:border-blue-900 rounded-xl p-2 shadow-xs">
           {/* Mode Switcher Tabs */}
           <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-1.5 gap-1">
@@ -346,7 +350,7 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
                     >
                       <ExternalLink className="w-3 h-3" />
                     </a>
-                    {img.isCustom && (
+                    {canWrite && img.isCustom && (
                       <button
                         type="button"
                         onPointerDown={(e) => {

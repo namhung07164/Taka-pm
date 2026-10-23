@@ -35,21 +35,42 @@ export function buildUnitSuggestions(
   projects: any[],
   activeStore: string,
   availableLocations: string[],
-  isAdmin: boolean
+  isAdmin: boolean,
+  isPartyRestricted = false
 ): UnitSuggestionItem[] {
   const map = new globalThis.Map<string, UnitSuggestionItem>();
   const allowedLocsSet = new Set(availableLocations.map(l => String(l).toLowerCase().trim()));
 
+  const permittedUnitNamesSet = new Set<string>();
+  if (!isAdmin && isPartyRestricted) {
+    projects.forEach((p: any) => {
+      if (!p.store || String(p.store).toUpperCase().trim() === activeStore.toUpperCase().trim() || activeStore === 'all') {
+        const rawCodes = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
+        rawCodes.split(/[+;,/]/).forEach(c => {
+          const clean = c.trim().toLowerCase();
+          if (clean) permittedUnitNamesSet.add(clean);
+        });
+        if ((p as any).unit) {
+          permittedUnitNamesSet.add(String((p as any).unit).trim().toLowerCase());
+        }
+      }
+    });
+  }
+
   storeUnits.forEach((u: any) => {
     if (u?.name) {
+      const uName = String(u.name).trim();
+      const uLower = uName.toLowerCase();
+      if (!isAdmin && isPartyRestricted && !permittedUnitNamesSet.has(uLower)) {
+        return;
+      }
       let loc = u.location || '';
       if (!loc) {
-        const m = String(u.name).match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
+        const m = uName.match(/^(L\d|B\d|\d+F|\d+L|GF|MF|RF)/i);
         if (m) loc = m[1].toUpperCase();
       }
-      if (isAdmin || !loc || allowedLocsSet.has(loc.toLowerCase().trim())) {
-        const uName = String(u.name).trim();
-        const key = `${uName.toLowerCase()}_${loc.toLowerCase().trim()}`;
+      if (isAdmin || (!loc && !isPartyRestricted) || (loc && allowedLocsSet.has(loc.toLowerCase().trim()))) {
+        const key = `${uLower}_${loc.toLowerCase().trim()}`;
         map.set(key, {
           unit: uName,
           location: loc,
@@ -303,4 +324,114 @@ export function sortLocationsByFloorRank(locList: string[]): string[] {
   };
 
   return [...locList].sort((a, b) => floorRank(a) - floorRank(b) || a.localeCompare(b));
+}
+
+export function computeAvailableLayoutYears(params: {
+  projects: any[]; tasks: any[]; allStoreVersions: any[]; activeStore: string; isAdmin: boolean; isPartyRestricted: boolean; role: string;
+}): string[] {
+  const { projects, tasks, allStoreVersions, activeStore, isAdmin, isPartyRestricted, role } = params;
+  const userPermittedYears = new Set<string>();
+
+  projects.forEach(p => {
+    if (activeStore && activeStore !== 'all' && String(p.store || 'HCM').toUpperCase().trim() !== activeStore) return;
+    const y = String(p.year || '').trim();
+    if (/^\d{4}$/.test(y)) userPermittedYears.add(y);
+  });
+
+  tasks.forEach(t => {
+    if (activeStore && activeStore !== 'all' && String(t.projectStore || 'HCM').toUpperCase().trim() !== activeStore) return;
+    const y = String(t.projectYear || '').trim();
+    if (/^\d{4}$/.test(y)) userPermittedYears.add(y);
+  });
+
+  const versionYears = allStoreVersions
+    .filter(v => !activeStore || activeStore === 'all' || String(v.store || (activeStore === 'HN' ? 'HN' : 'HCM')).toUpperCase().trim() === activeStore)
+    .map(v => (v.year ? String(v.year).trim() : ''))
+    .filter(y => /^\d{4}$/.test(y));
+
+  const defaultStoreYears = activeStore === 'HN' ? ['2027'] : ['2026', '2027'];
+  const combinedYears = (!isAdmin && (isPartyRestricted || role === 'External') && userPermittedYears.size > 0)
+    ? Array.from(userPermittedYears)
+    : [...userPermittedYears, ...versionYears, ...defaultStoreYears];
+
+  return Array.from(new Set(combinedYears)).filter(Boolean).sort((a, b) => Number(b) - Number(a));
+}
+
+export function computeAvailableLayoutLocations(params: {
+  allStoreVersions: any[]; storeLocationData: Record<string, any> | undefined; activeStore: string; currentUser: any;
+  locationVisibility: Record<string, boolean>; locations: string[]; isPartyRestricted: boolean; role: string;
+  projects: any[]; tasks: any[]; effectiveYear: string;
+}): string[] {
+  const { allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility, locations, isPartyRestricted, role, projects, tasks, effectiveYear } = params;
+  const storeParam = activeStore === 'HN' ? 'HN' : 'HCM';
+  const isUserAdmin = currentUser?.role === 'admin';
+  const locPerms = currentUser?.locationPermissions || {};
+  const hasAll = isUserAdmin || locPerms['all'] === true;
+  const nonFloors = ['BUDGET', 'COST', 'ALL', 'SUMMARY', 'GENERAL', 'SETTING'];
+
+  const isLocationVisible = (loc: string) => {
+    const lUpper = loc.toUpperCase().trim();
+    const lLower = loc.toLowerCase().trim();
+    if (locationVisibility[loc] === false || locationVisibility[lUpper] === false || locationVisibility[lLower] === false) return false;
+    for (const [k, v] of Object.entries(locationVisibility)) {
+      if (k.toUpperCase().trim() === lUpper && v === false) return false;
+    }
+    return true;
+  };
+
+  const isPermitted = (loc: string) => {
+    if (!loc || nonFloors.includes(loc.toUpperCase().trim()) || !isLocationVisible(loc)) return false;
+    if (hasAll) return true;
+    const lLower = loc.toLowerCase().trim();
+    const cleanLoc = lLower.replace(/^md-/, '');
+    return !!(locPerms[cleanLoc] || locPerms[`md-${cleanLoc}`] || locPerms[lLower] || locPerms[loc.toUpperCase().trim()]);
+  };
+
+  const pmLocationsSet = new Set<string>();
+  allStoreVersions.forEach(v => {
+    const loc = String(v.location || '').toUpperCase().trim();
+    if (loc && isPermitted(loc)) pmLocationsSet.add(loc);
+  });
+
+  if (storeLocationData) {
+    Object.entries(storeLocationData).forEach(([key, partition]) => {
+      if (key.startsWith(`${storeParam}_`)) {
+        const loc = key.replace(`${storeParam}_`, '').toUpperCase().trim();
+        if (loc && isPermitted(loc) && ((partition?.mapVersions?.length > 0) || (partition?.mapUnits?.length > 0) || partition?.activeMapVersionId)) {
+          pmLocationsSet.add(loc);
+        }
+      }
+    });
+  }
+
+  let finalLocations = pmLocationsSet.size > 0
+    ? Array.from(pmLocationsSet)
+    : (locations || []).map(l => String(l).toUpperCase().trim()).filter(isPermitted);
+
+  if (!isUserAdmin && (isPartyRestricted || role === 'External')) {
+    const activePartyLocs = new Set<string>();
+    let hasStorewide = false;
+    projects.forEach(p => {
+      const pStore = String(p.store || '').toUpperCase().trim();
+      if (storeParam && pStore && pStore !== storeParam) return;
+      const pYear = String(p.year || '').trim();
+      if (effectiveYear && effectiveYear !== 'all' && pYear && pYear !== effectiveYear) return;
+      const pLoc = String(p.location || (p as any).floor || '').toUpperCase().trim();
+      if (['ALL', 'STORE', 'STOREWIDE', 'WHOLE STORE', 'ALL FLOORS'].includes(pLoc)) hasStorewide = true;
+      else if (pLoc) activePartyLocs.add(pLoc.replace(/^MD-/, ''));
+    });
+    tasks.forEach(t => {
+      const tStore = String(t.projectStore || '').toUpperCase().trim();
+      if (storeParam && tStore && tStore !== storeParam) return;
+      const tYear = String(t.projectYear || '').trim();
+      if (effectiveYear && effectiveYear !== 'all' && tYear && tYear !== effectiveYear) return;
+      const tLoc = String((t as any).location || '').toUpperCase().trim();
+      if (tLoc && !['ALL', 'STORE', 'STOREWIDE'].includes(tLoc)) activePartyLocs.add(tLoc.replace(/^MD-/, ''));
+    });
+    if (!hasStorewide) {
+      finalLocations = finalLocations.filter(loc => activePartyLocs.has(loc.toUpperCase().trim().replace(/^MD-/, '')));
+    }
+  }
+
+  return sortLocationsByFloorRank(finalLocations);
 }

@@ -258,8 +258,8 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
             </button>
           )}
 
-          {/* Edit URL for Admin */}
-          {isAdmin && (
+          {/* Edit URL for Admin / Write.layout */}
+          {canWrite && (
             <button 
               onClick={() => { setEditUrl(url); setIsEditing(true); }}
               className="h-9 flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-bold transition-colors border border-blue-200 dark:border-blue-800 shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
@@ -280,8 +280,8 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
         </div>
       </div>
 
-      {/* Admin URL Edit Bar */}
-      {isAdmin && isEditing && (
+      {/* URL Edit Bar */}
+      {canWrite && isEditing && (
         <div className="flex items-center gap-2 w-full max-w-xl">
           <div className="flex items-center gap-1 flex-grow">
             <input 

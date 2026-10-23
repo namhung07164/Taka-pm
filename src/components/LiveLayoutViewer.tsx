@@ -38,7 +38,7 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
       : currentUser?.role || 'viewer'
   ) as AppRole;
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
-  const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout || !!permissionMatrix[role]?.Write?.pictureMapping) && !isArchiveYear;
+  const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout) && !isArchiveYear;
 
   const {
     config,
@@ -70,12 +70,14 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
           >
             <RefreshCw className="w-3.5 h-3.5" /> Thử lại
           </button>
-          <button 
-            onClick={() => { initFormFromStorage(); setShowConfigModal(true); }} 
-            className="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition"
-          >
-            Cấu hình R2 Manual
-          </button>
+          {canWrite && (
+            <button 
+              onClick={() => { initFormFromStorage(); setShowConfigModal(true); }} 
+              className="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition"
+            >
+              Cấu hình R2 Manual
+            </button>
+          )}
         </div>
       </div>
     );

@@ -9,9 +9,10 @@ import { isValidUrl } from './layoutTabSearchUtils';
 interface UseLayoutTabSettingsProps {
   activeStore: string;
   locFilterStr: string;
+  canWrite?: boolean;
 }
 
-export function useLayoutTabSettings({ activeStore, locFilterStr }: UseLayoutTabSettingsProps) {
+export function useLayoutTabSettings({ activeStore, locFilterStr, canWrite = false }: UseLayoutTabSettingsProps) {
   const [layoutSettings, setLayoutSettings] = useState<Record<string, any>>({});
   const [url, setUrl] = useState<string>('https://drive.google.com/file/d/1hxzPKKhQWhQ-tAThmgan8eNqqy5GN-Ds/preview');
   const [isEditing, setIsEditing] = useState(false);
@@ -90,6 +91,7 @@ export function useLayoutTabSettings({ activeStore, locFilterStr }: UseLayoutTab
   }, [isExporting]);
 
   const handleSave = async () => {
+    if (!canWrite) return;
     try {
       const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout');
       const updates: Record<string, any> = { [docKey]: editUrl };
@@ -102,7 +104,7 @@ export function useLayoutTabSettings({ activeStore, locFilterStr }: UseLayoutTab
   };
 
   const handleTriggerReExport = async () => {
-    if (isExporting) return;
+    if (!canWrite || isExporting) return;
     try {
       setIsExporting(true);
       setExportStatusMessage('Bước 1/4: Đang tải dữ liệu từ Cloudflare R2...');

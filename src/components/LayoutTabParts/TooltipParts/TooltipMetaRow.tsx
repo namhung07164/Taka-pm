@@ -6,6 +6,7 @@ import { cn, parseDateTime } from '../../../lib/utils';
 interface TooltipMetaRowProps {
   v: any;
   p?: Project;
+  canWrite?: boolean;
   floorValue?: any;
   dataSize?: number;
   commentsCount: number;
@@ -18,6 +19,7 @@ interface TooltipMetaRowProps {
 export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
   v,
   p,
+  canWrite = false,
   floorValue,
   dataSize = 0,
   commentsCount,
@@ -56,7 +58,7 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onEditProject?.(p, false, 'chat');
+              onEditProject?.(p, !canWrite, 'chat');
             }}
             className={cn(
               "flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border transition-all active:scale-95 touch-manipulation cursor-pointer shrink-0",

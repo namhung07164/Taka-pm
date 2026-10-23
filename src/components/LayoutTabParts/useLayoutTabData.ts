@@ -10,7 +10,8 @@ import {
   scoreAndFilterUnitSuggestions, 
   resolveTargetFloorForUnit, 
   resolveInitialTargetLocation,
-  sortLocationsByFloorRank
+  computeAvailableLayoutYears,
+  computeAvailableLayoutLocations
 } from './layoutTabSearchUtils';
 
 export interface UseLayoutTabDataProps {
@@ -45,7 +46,20 @@ export function useLayoutTabData({
   const [projectCodeFilter, setProjectCodeFilter] = useState(initialProjectCode);
   
   const isAdmin = currentUser.role === 'admin';
-  const role = currentUser.role as AppRole;
+  const role = (
+    currentUser?.role === 'admin'
+      ? 'admin'
+      : (currentUser?.role as string)?.toUpperCase() === 'CP'
+      ? 'CP'
+      : (currentUser?.role as string)?.toLowerCase() === 'manager'
+      ? 'Manager'
+      : (currentUser?.role as string)?.toLowerCase() === 'staff'
+      ? 'Staff'
+      : (currentUser?.role as string)?.toLowerCase() === 'external'
+      ? 'External'
+      : currentUser?.role || 'viewer'
+  ) as AppRole;
+  const isPartyRestricted = !isAdmin && currentUser?.byPartyAccess === true && currentUser?.partyPermissions?.['all'] !== true;
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
@@ -107,7 +121,7 @@ export function useLayoutTabData({
         ? activeStoreParam.toUpperCase().trim()
         : '';
 
-    if (normalizedStoreParam) {
+    if (normalizedStoreParam && allowedStores.includes(normalizedStoreParam)) {
       setGlobalStoreFilter(normalizedStoreParam);
     }
 
@@ -119,7 +133,7 @@ export function useLayoutTabData({
       tasks,
       allStoreVersions,
       unitInfo,
-      normalizedStoreParam || activeStore
+      (normalizedStoreParam && allowedStores.includes(normalizedStoreParam)) ? normalizedStoreParam : activeStore
     );
 
     if (targetLoc && targetLoc.toLowerCase() !== 'all') {
@@ -136,61 +150,22 @@ export function useLayoutTabData({
       setTargetUnitSearch(activeCodeParam);
       setIsLiveMapMode(true);
     }
-  }, [propInitialStore, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions, activeStore, setGlobalStoreFilter, setGlobalLocationFilter]);
+  }, [propInitialStore, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions, activeStore, allowedStores, setGlobalStoreFilter, setGlobalLocationFilter]);
 
   // Available years: based on user permissions, projects, tasks, and store versions
   const prevAvailableYearsRef = useRef<string[]>([]);
   const prevAvailableYearsKeyRef = useRef<string>('');
 
   const availableYears = useMemo(() => {
-    const storeProjects = projects.filter(p => {
-      if (!activeStore || activeStore === 'all') return true;
-      const pStore = String(p.store || 'HCM').toUpperCase().trim();
-      return pStore === activeStore;
+    const finalYears = computeAvailableLayoutYears({
+      projects,
+      tasks,
+      allStoreVersions,
+      activeStore,
+      isAdmin,
+      isPartyRestricted,
+      role,
     });
-
-    const projectYearsSet = new Set<string>();
-    storeProjects.forEach(p => {
-      const y = String(p.year || '').trim();
-      if (y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y)) {
-        projectYearsSet.add(y);
-      }
-    });
-
-    const storeTasks = tasks.filter(t => {
-      if (!activeStore || activeStore === 'all') return true;
-      const tStore = String(t.projectStore || 'HCM').toUpperCase().trim();
-      return tStore === activeStore;
-    });
-    const taskYearsSet = new Set<string>();
-    storeTasks.forEach(t => {
-      const y = String(t.projectYear || '').trim();
-      if (y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y)) {
-        taskYearsSet.add(y);
-      }
-    });
-
-    const userPermittedYears = new Set([...projectYearsSet, ...taskYearsSet]);
-
-    const versionYears = Array.from(
-      new Set(
-        allStoreVersions
-          .filter(v => {
-            if (!activeStore || activeStore === 'all') return true;
-            const vStore = String(v.store || (activeStore === 'HN' ? 'HN' : 'HCM')).toUpperCase().trim();
-            return vStore === activeStore;
-          })
-          .map(v => (v.year ? String(v.year).trim() : ''))
-          .filter(y => y && y.toLowerCase() !== 'all' && /^\d{4}$/.test(y))
-      )
-    );
-
-    const defaultStoreYears = activeStore === 'HN' ? ['2027'] : ['2026', '2027'];
-
-    const finalYears = Array.from(new Set([...userPermittedYears, ...versionYears, ...defaultStoreYears]))
-      .filter(Boolean)
-      .sort((a, b) => Number(b) - Number(a));
-
     const key = finalYears.join('|');
     if (key === prevAvailableYearsKeyRef.current) {
       return prevAvailableYearsRef.current;
@@ -198,11 +173,15 @@ export function useLayoutTabData({
     prevAvailableYearsKeyRef.current = key;
     prevAvailableYearsRef.current = finalYears;
     return finalYears;
-  }, [allStoreVersions, projects, tasks, activeStore]);
+  }, [allStoreVersions, projects, tasks, activeStore, isAdmin, isPartyRestricted, role]);
 
   const effectiveYear = useMemo(() => {
     if (globalYearFilter && globalYearFilter !== 'all' && availableYears.includes(globalYearFilter)) {
       return globalYearFilter;
+    }
+    const currentCalendarYear = String(new Date().getFullYear());
+    if (availableYears.includes(currentCalendarYear)) {
+      return currentCalendarYear;
     }
     return availableYears[0] || '';
   }, [globalYearFilter, availableYears]);
@@ -226,62 +205,19 @@ export function useLayoutTabData({
   const prevAvailableLocationsKeyRef = useRef<string>('');
 
   const availableLocations = useMemo(() => {
-    const storeParam = (activeStore === 'HN' ? 'HN' : 'HCM');
-    const isUserAdmin = currentUser?.role === 'admin';
-    const locPerms = currentUser?.locationPermissions || {};
-    const hasAll = isUserAdmin || locPerms['all'] === true;
-
-    const isFloorName = (name: string) => {
-      if (!name) return false;
-      const n = name.toUpperCase().trim();
-      const nonFloors = ['BUDGET', 'COST', 'ALL', 'SUMMARY', 'GENERAL', 'SETTING'];
-      if (nonFloors.includes(n)) return false;
-      return true;
-    };
-
-    const isPermitted = (loc: string) => {
-      if (!loc || !isFloorName(loc)) return false;
-      if (locationVisibility[loc] === false) return false;
-      if (hasAll) return true;
-      const lLower = loc.toLowerCase().trim();
-      const cleanLoc = lLower.replace(/^md-/, '');
-      return !!(locPerms[cleanLoc] || locPerms[`md-${cleanLoc}`] || locPerms[lLower]);
-    };
-
-    const pmLocationsSet = new Set<string>();
-
-    allStoreVersions.forEach(v => {
-      const loc = String(v.location || '').toUpperCase().trim();
-      if (loc && isPermitted(loc)) {
-        pmLocationsSet.add(loc);
-      }
+    const sorted = computeAvailableLayoutLocations({
+      allStoreVersions,
+      storeLocationData,
+      activeStore,
+      currentUser,
+      locationVisibility,
+      locations,
+      isPartyRestricted,
+      role,
+      projects,
+      tasks,
+      effectiveYear,
     });
-
-    if (storeLocationData) {
-      Object.entries(storeLocationData).forEach(([key, partition]) => {
-        if (key.startsWith(`${storeParam}_`)) {
-          const loc = key.replace(`${storeParam}_`, '').toUpperCase().trim();
-          if (loc && isPermitted(loc)) {
-            if (
-              (partition?.mapVersions && partition.mapVersions.length > 0) ||
-              (partition?.mapUnits && partition.mapUnits.length > 0) ||
-              partition?.activeMapVersionId
-            ) {
-              pmLocationsSet.add(loc);
-            }
-          }
-        }
-      });
-    }
-
-    let finalLocations: string[] = [];
-    if (pmLocationsSet.size > 0) {
-      finalLocations = Array.from(pmLocationsSet);
-    } else {
-      finalLocations = (locations || []).map(l => String(l).toUpperCase().trim()).filter(isPermitted);
-    }
-
-    const sorted = sortLocationsByFloorRank(finalLocations);
     const key = sorted.join('|');
     if (key === prevAvailableLocationsKeyRef.current) {
       return prevAvailableLocationsRef.current;
@@ -289,7 +225,7 @@ export function useLayoutTabData({
     prevAvailableLocationsKeyRef.current = key;
     prevAvailableLocationsRef.current = sorted;
     return sorted;
-  }, [allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility, locations]);
+  }, [allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility, locations, isPartyRestricted, role, projects, tasks, effectiveYear]);
 
   // Ensure globalLocationFilter is never 'all' or empty in Layout tab
   useEffect(() => {
@@ -359,7 +295,7 @@ export function useLayoutTabData({
     fallbackSvg,
     cacheBuster,
     setCacheBuster,
-  } = useLayoutTabSettings({ activeStore, locFilterStr });
+  } = useLayoutTabSettings({ activeStore, locFilterStr, canWrite });
 
   // Search Unit functionality next to Trigger Export
   const [unitSearchInput, setUnitSearchInput] = useState('');
@@ -375,8 +311,8 @@ export function useLayoutTabData({
       return [];
     }
     const storeUnits: any[] = typeof getAllStoreUnits === 'function' ? (getAllStoreUnits as any)(activeStore) || [] : [];
-    return buildUnitSuggestions(storeUnits, projects, activeStore, availableLocations, isAdmin);
-  }, [getAllStoreUnits, activeStore, projects, availableLocations, isAdmin, showSuggestions, unitSearchInput]);
+    return buildUnitSuggestions(storeUnits, projects, activeStore, availableLocations, isAdmin, isPartyRestricted);
+  }, [getAllStoreUnits, activeStore, projects, availableLocations, isAdmin, isPartyRestricted, showSuggestions, unitSearchInput]);
 
   const filteredUnitSuggestions = useMemo(() => {
     if (!unitSearchInput.trim()) return [];
