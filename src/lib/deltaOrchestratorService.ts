@@ -93,13 +93,13 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
       hiddenSince = 0;
       lastActivityTime = Date.now();
       startPolling();
-      // Give deltaRealtimeListener 150ms to re-attach onSnapshot(taka_deltas); only fallback to getDocsFromServer if still disconnected
-      if (hiddenDuration >= 15 * 60 * 1000) {
+      // Give deltaRealtimeListener 250ms to re-attach onSnapshot(taka_deltas); fallback to getDocsFromServer if disconnected
+      if (hiddenDuration >= 2000) {
         setTimeout(() => {
           if (!isDeltaRealtimeConnected()) {
             wakeAndSync(true);
           }
-        }, 150);
+        }, 250);
       }
     } else {
       hiddenSince = Date.now();

@@ -52,19 +52,6 @@ export function useDetailTaskMutations({
         try {
           // 1. Xóa tức thì khỏi Zustand store & đồng bộ nguyên tử Batch Firestore + Delta Sync
           await deleteTaskStateUnified([t]);
-          
-          // 2. Phát tín hiệu Delta XÓA với đầy đủ 4 khóa định danh (CỰC KỲ QUAN TRỌNG)
-          const { recordDelta } = await import('../../lib/deltaSyncService');
-          recordDelta({
-            docId: t.id,
-            collectionName: 'taka_tasks',
-            action: 'delete',
-            data: { id: t.id, isDeleted: true },
-            projectId: t.projectId,
-            projectCode: t.projectCode,
-            year: t.projectYear ? String(t.projectYear) : undefined,
-            store: t.projectStore
-          }).catch(console.error);
 
           undoManager.push({
             description: `Delete Task: ${t.name}`,

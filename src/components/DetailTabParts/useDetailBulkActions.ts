@@ -68,8 +68,10 @@ export function useDetailBulkActions({
       setSelectedTaskIds(new Set());
       lastCheckedTaskIdRef.current = null;
 
-      // 2. Update Dexie (IndexedDB)
+      // 2. Sync project summaries + Update Dexie (IndexedDB)
       try {
+        const { saveTaskStateUnified } = await import('../../lib/taskStateService');
+        await saveTaskStateUnified(updatedTasks.filter(t => allIdsToUnlink.has(t.id)));
         const { localDb } = await import('../../lib/localDb');
         await Promise.all(
           unlinkedArray.map(id => (localDb.tasks.update as any)(id, { parentTaskId: null, parentId: null, updatedAt: now }))

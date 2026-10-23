@@ -5,8 +5,11 @@ import { doc, deleteField } from 'firebase/firestore';
 import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { recordBatchDeltas, recordDelta } from '../../lib/deltaSyncService';
-import { deleteTaskStateUnified } from '../../lib/taskStateService';
-import { extractStorageUrls, deleteStorageFiles } from '../../lib/storageUtils';
+import {
+  deleteTaskStateUnified,
+  deleteProjectStateUnified,
+  saveTaskStateUnified,
+} from '../../lib/taskStateService';
 import { addPendingUpdate, isPermanentWriteError } from '../../lib/syncQueue';
 import { calculateParentTaskPredecessorsAndDates } from '../../lib/parentTaskPredecessorService';
 
@@ -63,6 +66,9 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
     const updatedTasks = mapped.map((t) => (String(t.id) === parentIdStr ? { ...t, ...finalParentData } : t));
 
     useAppStore.getState().setTasks(updatedTasks);
+    saveTaskStateUnified(
+      updatedTasks.filter((t) => childIdSet.has(String(t.id)) || String(t.id) === parentIdStr)
+    ).catch(() => {});
 
     setExpandedModularTasks(prev => {
       const nextSet = new Set(prev.map(String));
@@ -166,6 +172,7 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
       return copy as Task;
     });
     useAppStore.getState().setTasks(updatedTasks);
+    saveTaskStateUnified(updatedTasks.filter((t) => allIdsToUnlink.has(String(t.id)))).catch(() => {});
     setIsTaskModularModalOpen(false);
     setSelectedTaskIds([]);
 
@@ -219,7 +226,6 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
     const now = new Date().toISOString();
     const selSet = new Set(selectedTaskIds.map(String));
 
-    // 0ms Optimistic UI update (Rule 2)
     const prevTasks = useAppStore.getState().tasks;
     useAppStore.getState().setTasks(
       prevTasks.map(t => (selSet.has(String(t.id)) ? { ...t, textColor: color || undefined, updatedAt: now } : t))
@@ -269,7 +275,6 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
     const now = new Date().toISOString();
     const selSet = new Set(selectedTaskIds.map(String));
 
-    // 0ms Optimistic UI update (Rule 2)
     const prevTasks = useAppStore.getState().tasks;
     useAppStore.getState().setTasks(
       prevTasks.map(t =>
@@ -321,7 +326,6 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
     const now = new Date().toISOString();
     const selSet = new Set(selectedTaskIds.map(String));
 
-    // 0ms Optimistic UI update (Rule 2)
     const prevTasks = useAppStore.getState().tasks;
     useAppStore.getState().setTasks(
       prevTasks.map(t =>
@@ -369,7 +373,6 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
     const now = new Date().toISOString();
     const nextPin = !p.isPinned;
 
-    // 0ms Optimistic UI update (Rule 2)
     const prevProjects = useAppStore.getState().projects;
     useAppStore.getState().setProjects(
       prevProjects.map(item => (item.id === p.id ? { ...item, isPinned: nextPin, updatedAt: now } : item))
@@ -415,58 +418,26 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
         const deletedProjectIds = [...selectedProjectIds];
         const projSet = new Set(deletedProjectIds.map(String));
 
-        if (deletedTaskIds.length > 0) {
-          const taskObjsToDelete = currentTasks.filter(t => deletedTaskIds.includes(String(t.id)));
-          deleteTaskStateUnified(taskObjsToDelete.length > 0 ? taskObjsToDelete : deletedTaskIds).catch(() => {});
-        }
-
-        if (deletedProjectIds.length > 0) {
-          const deletedProjectsObjs = currentProjects.filter(
-            p => projSet.has(String(p.id)) || projSet.has(String(p.no))
-          );
-          // Storage Deep Clean (Rule 4)
-          deletedProjectsObjs.forEach(p => {
-            const urls = extractStorageUrls(p);
-            if (urls.length > 0) deleteStorageFiles(urls).catch(() => {});
-          });
-
-          const remainingProjects = currentProjects.filter(
-            p => !projSet.has(String(p.id)) && !projSet.has(String(p.no))
-          );
-          useAppStore.getState().setProjects(remainingProjects);
-          try {
-            const { localDb } = await import('../../lib/localDb');
-            await localDb.projects.bulkDelete(deletedProjectIds);
-          } catch {}
-        }
-
         setSelectedTaskIds([]);
         setSelectedProjectIds([]);
 
         try {
-          if (deletedProjectIds.length > 0) {
-            const batch = writeBatch(db);
-            deletedProjectIds.forEach(id => {
-              const p = currentProjects.find(item => String(item.id) === id || String(item.no) === id);
-              const docId = p?.id ? String(p.id) : id;
-              const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId);
-              batch.delete(docRef);
-            });
-            await batch.commit();
+          if (deletedTaskIds.length > 0) {
+            const taskObjsToDelete = currentTasks.filter(t => deletedTaskIds.includes(String(t.id)));
+            await deleteTaskStateUnified(taskObjsToDelete.length > 0 ? taskObjsToDelete : deletedTaskIds);
+          }
 
-            const deltaItems: TakaDeltaItem[] = deletedProjectIds.map(id => {
-              const p = currentProjects.find(item => String(item.id) === id || String(item.no) === id);
-              const docId = p?.id ? String(p.id) : id;
-              return {
-                docId,
-                collectionName: 'taka_projects' as const,
-                action: 'delete' as const,
-                isPatch: false,
-                data: null,
-              };
+          if (deletedProjectIds.length > 0) {
+            const matchedProjects = currentProjects.filter((p) => {
+              const pKey = `${p.code || ''}__${p.store || ''}__${p.year || ''}`;
+              return (
+                (p.id && projSet.has(String(p.id))) ||
+                (p.no !== undefined && projSet.has(String(p.no))) ||
+                projSet.has(pKey)
+              );
             });
-            if (deltaItems.length > 0) {
-              recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+            for (const p of matchedProjects) {
+              await deleteProjectStateUnified(String(p.id || p.code || p.no), p);
             }
           }
 
@@ -495,3 +466,4 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
     handleDeleteSelected,
   };
 }
+

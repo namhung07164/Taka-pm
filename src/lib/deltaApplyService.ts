@@ -20,6 +20,9 @@ import { markTasksDeleted } from './taskDeletedTracker';
 import {
   tsOf,
   buildDeltaProjectsIndex,
+  purgeProjectAndTasksOnDeleteDelta,
+  unlinkChildTasksOnTaskDeleteDelta,
+  removeDeletedTaskSummaryFromProjects,
   reconcileTasksAgainstIncomingProjectSummaries,
   upsertTaskSummaryIntoMatchingProjects,
   recalculateTouchedProjectsAfterDeltas,
@@ -99,10 +102,15 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       case 'taka_projects': {
         const idx = projectsIndex.byId.get(String(docId)) ?? updatedProjects.findIndex((p) => p.id === docId);
         if (isDelete || data?.isDeleted) {
-          if (idx !== -1) {
+          const purged = purgeProjectAndTasksOnDeleteDelta(docId, data, updatedProjects, updatedTasks);
+          if (purged.projectsChanged) {
             projectsChanged = true;
-            updatedProjects = updatedProjects.filter((p) => p.id !== docId);
+            updatedProjects = purged.nextProjects;
             projectsIndex = buildDeltaProjectsIndex(updatedProjects);
+          }
+          if (purged.tasksChanged) {
+            tasksChanged = true;
+            updatedTasks = purged.nextTasks;
           }
           break;
         }
@@ -184,46 +192,28 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             .trim()
             .toLowerCase();
 
-          updatedProjects = updatedProjects.map((p) => {
-            if (Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-              const isSameProjectForFallback = pIdHint
-                ? String(p.id) === String(pIdHint)
-                : (!delProjCodeLower ||
-                    String(p.code || '').trim().toLowerCase() === delProjCodeLower) &&
-                  (!delProjStoreLower ||
-                    !p.store ||
-                    String(p.store).trim().toLowerCase() === delProjStoreLower) &&
-                  (!delProjYearStr ||
-                    p.year === undefined ||
-                    String(p.year).trim() === delProjYearStr);
+          const unlinkedRes = unlinkChildTasksOnTaskDeleteDelta(docIdLower, delCodeLower, pIdHint, updatedTasks);
+          if (unlinkedRes.tasksChanged) {
+            tasksChanged = true;
+            updatedTasks = unlinkedRes.nextTasks;
+          }
 
-              const filteredSummaries = p.taskSummaries.filter((s: any) => {
-                const sId = s?.id ? String(s.id).trim().toLowerCase() : '';
-                if (sId && sId === docIdLower) return false;
-                if (
-                  !sId &&
-                  isSameProjectForFallback &&
-                  delNameLower &&
-                  String(s?.name || '').trim().toLowerCase() === delNameLower
-                ) {
-                  const sCode = s?.taskCodePhu ? String(s.taskCodePhu).trim().toLowerCase() : '';
-                  if (!delCodeLower || !sCode || sCode === delCodeLower) return false;
-                }
-                return true;
-              });
-              if (filteredSummaries.length !== p.taskSummaries.length) {
-                projectsChanged = true;
-                markTasksDeleted([docId], p.id ? String(p.id) : undefined);
-                noteTouchedProject({ projectId: p.id, projectCode: p.code, projectStore: p.store, projectYear: p.year });
-                return {
-                  ...p,
-                  taskSummaries: filteredSummaries,
-                  taskCount: filteredSummaries.length,
-                };
-              }
-            }
-            return p;
+          const summaryRes = removeDeletedTaskSummaryFromProjects({
+            docId,
+            docIdLower,
+            delNameLower,
+            delCodeLower,
+            pIdHint,
+            delProjCodeLower,
+            delProjStoreLower,
+            delProjYearStr,
+            updatedProjects,
+            noteTouchedProject,
           });
+          if (summaryRes.projectsChanged) {
+            projectsChanged = true;
+            updatedProjects = summaryRes.nextProjects;
+          }
           break;
         }
         if (idx !== -1 && isStaleVsLocal(updatedTasks[idx])) return;

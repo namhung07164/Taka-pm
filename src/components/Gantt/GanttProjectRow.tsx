@@ -221,16 +221,15 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
                     }}
                     type="checkbox"
                     checked={isChecked}
-                    onChange={(e) => {
-                      // If not all tasks are selected, clicking toggles ON to select all.
-                      // If all tasks were already selected, clicking toggles OFF to deselect all.
-                      const willCheck = !isAllTasksSelected;
+                    onChange={() => {
+                      const willCheck = pTaskIds.length > 0 ? !isAllTasksSelected : !isChecked;
                       const currentProjectIds = (selectedProjectIds || []).map(String);
+                      const canonicalProjKey = String(p.id || pKey);
                       const projectKeys = [pKey, String(p.id), String(p.no)].filter(Boolean).map(String);
 
                       if (willCheck) {
                         if (setSelectedProjectIds) {
-                          setSelectedProjectIds(Array.from(new Set([...currentProjectIds, ...projectKeys])));
+                          setSelectedProjectIds(Array.from(new Set([...currentProjectIds, canonicalProjKey])));
                         }
                         if (setSelectedTaskIds) {
                           setSelectedTaskIds((prev: any) => Array.from(new Set([...(prev || []).map(String), ...pTaskIds])));

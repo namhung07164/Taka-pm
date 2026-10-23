@@ -17,6 +17,7 @@ import {
   tsOf, buildZombieProjectIndex, isZombieTaskAgainstProjects,
   hydrateCostsFromLocal, hydrateDelegationsFromLocal, hydrateDelegationsForProjects, hydrateDelegationsForTasks,
 } from './backgroundSyncParts/localHydrationHelpers';
+import { isProjectDeletedInTracker } from './taskDeletedTracker';
 
 export { hydrateCostsFromLocal, hydrateDelegationsFromLocal, hydrateDelegationsForProjects, hydrateDelegationsForTasks };
 
@@ -69,8 +70,9 @@ export function bootstrapLocalStore(): Promise<{
         store.isDelegationsRequested ? getLocalDelegations(currentYear) : Promise.resolve([]),
       ]);
 
-      if (projects.length > 0 && (!store.projects || store.projects.length === 0)) {
-        const normalizedProjects = projects
+      const validProjects = projects.filter((p) => p && !p.isDeleted && !isProjectDeletedInTracker(p.id));
+      if (validProjects.length > 0 && (!store.projects || store.projects.length === 0)) {
+        const normalizedProjects = validProjects
           .map((p) => ({
             ...p,
             taskCount:
@@ -82,11 +84,11 @@ export function bootstrapLocalStore(): Promise<{
         store.setProjects(normalizedProjects);
       }
       if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
-        const zombieIndex = buildZombieProjectIndex(projects);
+        const zombieIndex = buildZombieProjectIndex(validProjects);
         const cleanTasks = tasks.filter(
-          (t) => !isZombieTaskAgainstProjects(t, projects, zombieIndex)
+          (t) => !isZombieTaskAgainstProjects(t, validProjects, zombieIndex)
         );
-        store.setTasks(deduplicateTasks(cleanTasks, projects));
+        store.setTasks(deduplicateTasks(cleanTasks, validProjects));
       }
       if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
         store.setCosts(costs);
@@ -100,10 +102,10 @@ export function bootstrapLocalStore(): Promise<{
       }
 
       const duration = Math.round(performance.now() - start);
-      if (projects.length > 0) {
+      if (validProjects.length > 0) {
         usePerformanceStore
           .getState()
-          .trackGetDoc('dexie_local_db', true, projects.length, `Local-First Boot in ${duration}ms`);
+          .trackGetDoc('dexie_local_db', true, validProjects.length, `Local-First Boot in ${duration}ms`);
       }
 
       setTimeout(() => {
@@ -111,7 +113,7 @@ export function bootstrapLocalStore(): Promise<{
       }, 1000);
 
       return {
-        projectCount: projects.length,
+        projectCount: validProjects.length,
         taskCount: tasks.length,
         costCount: costs.length,
       };
@@ -137,21 +139,28 @@ export async function hydrateProjectsFromLocal(
     if (activeLocalDeltaWritePromise) await activeLocalDeltaWritePromise;
     const store = useAppStore.getState();
     const targetYear = year || store.globalYearFilter;
+    const preHydrateIds = new Set((store.projects || []).map((p) => String(p.id)));
 
     const localProjects = await getLocalProjects(targetYear);
+    if (activeLocalDeltaWritePromise) await activeLocalDeltaWritePromise;
     const currentProjects = useAppStore.getState().projects || [];
     const mergedMap = new Map<string, Project>();
 
     currentProjects.forEach((p) => {
-      if (p && p.id && !p.isDeleted) mergedMap.set(String(p.id), p);
+      if (p && p.id && !p.isDeleted && !isProjectDeletedInTracker(p.id)) {
+        mergedMap.set(String(p.id), p);
+      }
     });
 
     if (localProjects && localProjects.length > 0) {
       localProjects.forEach((p) => {
-        if (p && p.id && !p.isDeleted) {
-          const existing = mergedMap.get(String(p.id));
+        if (p && p.id && !p.isDeleted && !isProjectDeletedInTracker(p.id)) {
+          const pIdStr = String(p.id);
+          const existing = mergedMap.get(pIdStr);
+          // Do not resurrect a project that was in memory before getLocalProjects and removed concurrently by a delta
+          if (!existing && preHydrateIds.has(pIdStr)) return;
           if (!existing || tsOf(p.updatedAt) > tsOf(existing.updatedAt)) {
-            mergedMap.set(String(p.id), {
+            mergedMap.set(pIdStr, {
               ...(existing || {}),
               ...p,
               taskCount:

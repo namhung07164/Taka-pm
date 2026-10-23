@@ -139,14 +139,19 @@ export function startDeltaRealtimeListener(): () => void {
 
   if (signedIn) attach();
 
+  let hiddenAt = 0;
   const onVisibility = () => {
     if (document.visibilityState === 'hidden') {
+      hiddenAt = Date.now();
       if (detachTimer) clearTimeout(detachTimer);
       detachTimer = setTimeout(detach, DETACH_AFTER_HIDDEN_MS);
     } else {
       if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
-      // If listener is still attached (hidden < 15 minutes), keep existing WebChannel socket (0 extra reads)
-      if (unsub) return;
+      const hiddenMs = hiddenAt > 0 ? Date.now() - hiddenAt : 0;
+      hiddenAt = 0;
+      // On iOS Safari / PWA, backgrounding >= 2s silently freezes WebChannel sockets without firing onError.
+      // Re-attaching with since = lastSyncTime - OVERLAP_MS only reads new deltas (0 extra reads if none).
+      if (unsub && hiddenMs < 2000) return;
       scheduleReconnect();
     }
   };
@@ -159,10 +164,8 @@ export function startDeltaRealtimeListener(): () => void {
     scheduleReconnect();
   };
 
-  const handlePageShow = (e: PageTransitionEvent) => {
-    if (e.persisted) {
-      scheduleReconnect();
-    }
+  const handlePageShow = () => {
+    scheduleReconnect();
   };
 
   const handleOnline = () => {

@@ -8,7 +8,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { usePerformanceStore } from '../../store/usePerformanceStore';
 import { Project, Task, Cost } from '../../types';
 import { isTaskBelongsToProject, isDelegationGroupBelongsToProject } from '../utils';
-import { isTaskDeletedInTracker } from '../taskDeletedTracker';
+import { isTaskDeletedInTracker, isProjectDeletedInTracker } from '../taskDeletedTracker';
 
 export const tsOf = (v: any): number => {
   if (!v) return 0;
@@ -30,6 +30,7 @@ export const tsOf = (v: any): number => {
 export interface IndexedProjectSummaryEntry {
   project: Project;
   allSummariesHaveIds: boolean;
+  isZeroTaskProject: boolean;
   summaryIds: Set<string>;
 }
 
@@ -52,9 +53,12 @@ export function buildZombieProjectIndex(projects: Project[]): ZombieProjectIndex
 
   for (let i = 0; i < projects.length; i++) {
     const p = projects[i];
-    if (!p || p.isDeleted) continue;
+    if (!p || p.isDeleted || isProjectDeletedInTracker(p.id)) continue;
 
     const summaries = Array.isArray(p.taskSummaries) ? p.taskSummaries : null;
+    const isZeroTaskProject = Boolean(
+      summaries && summaries.length === 0 && (p.taskCount ?? 0) === 0
+    );
     const allSummariesHaveIds = Boolean(
       summaries && summaries.length > 0 && summaries.every((s: any) => Boolean(s?.id))
     );
@@ -71,6 +75,7 @@ export function buildZombieProjectIndex(projects: Project[]): ZombieProjectIndex
     const entry: IndexedProjectSummaryEntry = {
       project: p,
       allSummariesHaveIds,
+      isZeroTaskProject,
       summaryIds,
     };
 
@@ -147,6 +152,7 @@ export function isZombieTaskAgainstProjects(
   }
 
   if (!matchedEntry) return false;
+  if (matchedEntry.isZeroTaskProject) return true;
   if (!matchedEntry.allSummariesHaveIds || matchedEntry.summaryIds.size === 0) return false;
 
   return !matchedEntry.summaryIds.has(String(t.id).trim().toLowerCase());

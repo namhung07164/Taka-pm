@@ -243,13 +243,16 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
         const localUpdatedMs = tsOf(localT.updatedAt);
         const isRecentlyEditedLocally = localUpdatedMs > 0 && nowMs - localUpdatedMs <= 30000;
         if (!isRecentlyEditedLocally) {
+          const sParent = s.parentTaskId || undefined;
+          const localParent = localT.parentTaskId || undefined;
           const summaryDiffers =
             (s.name !== undefined && s.name !== localT.name) ||
             (s.start !== undefined && s.start !== localT.start) ||
             (s.finish !== undefined && s.finish !== localT.finish) ||
             (s.runningStatus !== undefined && s.runningStatus !== localT.runningStatus) ||
             (s.approval !== undefined && s.approval !== localT.approval) ||
-            (s.party !== undefined && s.party !== localT.party);
+            (s.party !== undefined && s.party !== localT.party) ||
+            sParent !== localParent;
           if (summaryDiffers) {
             // Patch summary fields directly in memory (and Dexie via background reconciliation) to avoid getDocFromServer
             if (s.name !== undefined) localT.name = s.name;
@@ -258,6 +261,8 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
             if (s.runningStatus !== undefined) localT.runningStatus = s.runningStatus;
             if (s.approval !== undefined) localT.approval = s.approval;
             if (s.party !== undefined) localT.party = s.party;
+            localT.parentTaskId = sParent;
+            if (!sParent) delete (localT as any).parentId;
           }
         }
       }
@@ -332,11 +337,14 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           } else {
             const s = summaryById.get(tidLower);
             if (s) {
+              const sParent = s.parentTaskId || undefined;
+              const tParent = t.parentTaskId || undefined;
               const needsPatch =
                 (s.name !== undefined && s.name !== t.name) ||
                 (s.start !== undefined && s.start !== t.start) ||
                 (s.finish !== undefined && s.finish !== t.finish) ||
-                (s.runningStatus !== undefined && s.runningStatus !== t.runningStatus);
+                (s.runningStatus !== undefined && s.runningStatus !== t.runningStatus) ||
+                sParent !== tParent;
               if (needsPatch) {
                 await patchLocalRecord('taka_tasks', tid, {
                   name: s.name ?? t.name,
@@ -345,6 +353,8 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
                   ...(s.runningStatus !== undefined ? { runningStatus: s.runningStatus } : {}),
                   ...(s.duration !== undefined ? { duration: s.duration } : {}),
                   ...(s.orderIndex !== undefined ? { orderIndex: s.orderIndex } : {}),
+                  parentTaskId: sParent ?? null,
+                  parentId: sParent ?? null,
                 });
               }
             }

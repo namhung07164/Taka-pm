@@ -2,6 +2,13 @@ import { Project, Task, DelegationGroup } from '../../types';
 import { localDb } from '../localDb';
 import { getTasksForProject, calculateProjectComputedDates } from '../projectDatesService';
 import { markTasksDeleted } from '../taskDeletedTracker';
+import { runBackgroundDexieProjectTaskReconciliation } from '../../hooks/useFirebaseDataParts/projectsHydrationHelpers';
+
+export {
+  purgeProjectAndTasksOnDeleteDelta,
+  unlinkChildTasksOnTaskDeleteDelta,
+  removeDeletedTaskSummaryFromProjects,
+} from './deltaDeleteReconciler';
 
 export const tsOf = (v: any): number => {
   if (!v) return 0;
@@ -30,7 +37,7 @@ export interface DeltaProjectsIndex {
  */
 export function buildDeltaProjectsIndex(projects: Project[]): DeltaProjectsIndex {
   const byId = new Map<string, number>();
-  const byCodePart = new Map<string, number[]>();
+  const byCodePart = new Map<string, number[]>;
 
   for (let i = 0; i < projects.length; i++) {
     const p = projects[i];
@@ -73,6 +80,9 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
   if (!hasReliableIds) {
     return { nextTasks: updatedTasks, tasksChanged: false };
   }
+
+  // Always reconcile Dexie localDb.tasks in background (crucial when iOS is on GeneralTab with updatedTasks = [])
+  runBackgroundDexieProjectTaskReconciliation([nextProj]);
 
   const summaryByIdLower = new Map<string, any>();
   rawTaskSummaries.forEach((s: any) => {
@@ -126,6 +136,8 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
     if (validIdsLower.has(tIdLower)) {
       const s = summaryByIdLower.get(tIdLower);
       if (s && !isRecentLocal) {
+        const sParent = s.parentTaskId || undefined;
+        const tParent = t.parentTaskId || undefined;
         const summaryDiffers =
           (s.name !== undefined && s.name !== t.name) ||
           (s.start !== undefined && s.start !== t.start) ||
@@ -133,7 +145,8 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
           (s.runningStatus !== undefined && s.runningStatus !== t.runningStatus) ||
           (s.approval !== undefined && s.approval !== t.approval) ||
           (s.party !== undefined && s.party !== t.party) ||
-          (s.duration !== undefined && s.duration !== t.duration);
+          (s.duration !== undefined && s.duration !== t.duration) ||
+          sParent !== tParent;
         if (summaryDiffers) {
           const patched: Task = {
             ...t,
@@ -145,7 +158,9 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
             ...(s.party !== undefined ? { party: s.party } : {}),
             ...(s.duration !== undefined ? { duration: s.duration } : {}),
             ...(s.orderIndex !== undefined ? { orderIndex: s.orderIndex } : {}),
+            parentTaskId: sParent,
           };
+          if (!sParent) delete (patched as any).parentId;
           anyTaskPatched = true;
           patchedTasksForDexie.push(patched);
           nextTasks.push(patched);
@@ -266,7 +281,7 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
 
     if (!effName || !effStart || !effFinish) return;
 
-    const summaryItem = {
+    const summaryItem: any = {
       ...(existingSummary || {}),
       id: docId,
       name: effName,
@@ -280,11 +295,16 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
       ...(mergedTask.approval !== undefined ? { approval: mergedTask.approval } : {}),
       ...(mergedTask.party !== undefined ? { party: mergedTask.party } : {}),
       ...(mergedTask.taskCodePhu ? { taskCodePhu: mergedTask.taskCodePhu } : {}),
-      ...(mergedTask.parentTaskId !== undefined ? { parentTaskId: mergedTask.parentTaskId } : {}),
       ...(mergedTask.duration !== undefined ? { duration: mergedTask.duration } : {}),
       ...(mergedTask.runningStatus !== undefined ? { runningStatus: mergedTask.runningStatus } : {}),
       ...(mergedTask.delegation !== undefined ? { delegation: mergedTask.delegation } : {}),
     };
+    if (mergedTask.parentTaskId) {
+      summaryItem.parentTaskId = mergedTask.parentTaskId;
+    } else {
+      delete summaryItem.parentTaskId;
+      delete summaryItem.parentId;
+    }
 
     if (sIdx !== -1) {
       currentSummaries[sIdx] = summaryItem;

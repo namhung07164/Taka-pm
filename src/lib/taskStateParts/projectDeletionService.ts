@@ -1,11 +1,11 @@
-import { Project } from '../../types';
+import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { matchProjectCode } from '../projectDatesService';
-import { markTasksDeleted } from '../taskDeletedTracker';
+import { markTasksDeleted, markProjectsDeleted } from '../taskDeletedTracker';
 import { isTaskBelongsToProject as isTaskBelongsToProjectCore } from '../utils';
 
 /**
- * Shared State Handler: Xóa Dự Án đồng bộ giữa mọi Tab (DetailTab, ProjectModal, QuickNav)
+ * Shared State Handler: Xóa Dự Án đồng bộ giữa mọi Tab (DetailTab, ProjectModal, QuickNav, Gantt)
  */
 export async function deleteProjectStateUnified(
   projectIdOrCode: string,
@@ -34,17 +34,43 @@ export async function deleteProjectStateUnified(
       ? String(targetProject.no)
       : projectIdOrCode;
 
+  markProjectsDeleted([pId, targetProject?.id ? String(targetProject.id) : undefined]);
+
   const pStore = targetProject?.store ? String(targetProject.store).trim().toLowerCase() : '';
   const pYear =
     targetProject?.year !== undefined && targetProject?.year !== null
       ? String(targetProject.year).trim()
       : '';
 
-  const relatedTasks = currentTasks.filter((t) => {
-    if (!targetProject) return false;
-    return isTaskBelongsToProjectCore(t, targetProject);
+  const relatedTaskMap = new Map<string, Task>();
+  currentTasks.forEach((t) => {
+    if (!targetProject || !t?.id) return;
+    if (isTaskBelongsToProjectCore(t, targetProject)) {
+      relatedTaskMap.set(String(t.id), t);
+    }
   });
-  const relatedTaskIds = new Set(relatedTasks.map((t) => String(t.id)));
+
+  // Also include task IDs from targetProject.taskSummaries (critical when project is collapsed and store.tasks is empty)
+  if (Array.isArray(targetProject?.taskSummaries)) {
+    targetProject.taskSummaries.forEach((s: any) => {
+      const sId = s?.id ? String(s.id).trim() : '';
+      if (sId && !sId.startsWith('ts_') && !relatedTaskMap.has(sId)) {
+        relatedTaskMap.set(sId, {
+          id: sId,
+          name: s.name || '',
+          start: s.start || '',
+          finish: s.finish || '',
+          projectId: pId,
+          projectCode: targetProject?.code || '',
+          projectStore: targetProject?.store,
+          projectYear: targetProject?.year,
+          taskCodePhu: s.taskCodePhu,
+        } as Task);
+      }
+    });
+  }
+
+  const relatedTaskIds = new Set<string>(relatedTaskMap.keys());
 
   const relatedCosts = currentCosts.filter((c) => {
     const cStore = (c as any).projectStore ? String((c as any).projectStore).trim().toLowerCase() : '';
@@ -110,11 +136,25 @@ export async function deleteProjectStateUnified(
 
   try {
     const { localDb } = await import('../localDb');
+    // Also discover any tasks in Dexie belonging to this project that were not in store.tasks or taskSummaries
+    if (targetProject) {
+      const [dexieById, dexieByCode] = await Promise.all([
+        localDb.tasks.where('projectId').equals(pId).toArray().catch(() => []),
+        targetProject.code
+          ? localDb.tasks.where('projectCode').equals(String(targetProject.code).trim()).toArray().catch(() => [])
+          : Promise.resolve([]),
+      ]);
+      [...dexieById, ...dexieByCode].forEach((dt) => {
+        if (dt?.id && isTaskBelongsToProjectCore(dt, targetProject)) {
+          relatedTaskIds.add(String(dt.id));
+          if (!relatedTaskMap.has(String(dt.id))) {
+            relatedTaskMap.set(String(dt.id), dt);
+          }
+        }
+      });
+    }
     await localDb.projects.delete(pId);
     if (targetProject?.id) await localDb.projects.delete(targetProject.id);
-    if (pCode) {
-      await localDb.projects.where('code').equalsIgnoreCase(pCode).delete().catch(() => {});
-    }
     if (relatedTaskIds.size > 0) {
       await localDb.tasks.bulkDelete(Array.from(relatedTaskIds));
     }
@@ -128,11 +168,13 @@ export async function deleteProjectStateUnified(
     console.warn('[taskStateService] Dexie project delete error:', e);
   }
 
+  const allRelatedTasks = Array.from(relatedTaskMap.values());
+
   try {
     const { extractStorageUrls, deleteStorageFiles } = await import('../storageUtils');
     const urls: string[] = [];
     if (targetProject) urls.push(...extractStorageUrls(targetProject));
-    relatedTasks.forEach((t) => urls.push(...extractStorageUrls(t)));
+    allRelatedTasks.forEach((t) => urls.push(...extractStorageUrls(t)));
     relatedCosts.forEach((c) => urls.push(...extractStorageUrls(c)));
     if (urls.length > 0) {
       deleteStorageFiles(urls).catch(() => {});
@@ -153,11 +195,16 @@ export async function deleteProjectStateUnified(
     const batch = writeBatch(db);
 
     const projectDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', pId);
-    batch.set(projectDocRef, { id: pId, isDeleted: true, updatedAt: nowIso }, { merge: true });
+    batch.set(
+      projectDocRef,
+      { id: pId, isDeleted: true, taskSummaries: [], taskCount: 0, updatedAt: nowIso },
+      { merge: true }
+    );
 
-    relatedTasks.forEach((t) => {
-      const taskRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-      batch.set(taskRef, { id: t.id, isDeleted: true, updatedAt: nowIso }, { merge: true });
+    allRelatedTasks.forEach((t) => {
+      if (!t?.id || String(t.id).startsWith('ts_')) return;
+      const taskRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', String(t.id));
+      batch.delete(taskRef);
     });
 
     relatedCosts.forEach((c) => {
@@ -177,17 +224,32 @@ export async function deleteProjectStateUnified(
         collectionName: 'taka_projects',
         action: 'delete',
         isPatch: false,
-        data: { id: pId, isDeleted: true },
+        data: {
+          id: pId,
+          isDeleted: true,
+          code: targetProject?.code || pCode,
+          store: targetProject?.store || pStore,
+          ...(pYear ? { year: pYear } : {}),
+        },
         ...(pYear ? { year: pYear } : {}),
       },
-      ...relatedTasks.map((t) => ({
-        docId: t.id,
-        collectionName: 'taka_tasks',
-        action: 'delete',
-        isPatch: false,
-        data: { id: t.id, isDeleted: true, projectId: pId },
-        ...(t.projectYear ? { year: String(t.projectYear) } : {}),
-      })),
+      ...allRelatedTasks
+        .filter((t) => t?.id && !String(t.id).startsWith('ts_'))
+        .map((t) => ({
+          docId: String(t.id),
+          collectionName: 'taka_tasks',
+          action: 'delete',
+          isPatch: false,
+          data: {
+            id: String(t.id),
+            isDeleted: true,
+            projectId: pId,
+            projectCode: t.projectCode || targetProject?.code || pCode,
+            projectStore: t.projectStore || targetProject?.store || pStore,
+            projectYear: t.projectYear ?? targetProject?.year ?? pYear,
+          },
+          ...(t.projectYear || pYear ? { year: String(t.projectYear || pYear) } : {}),
+        })),
       ...relatedCosts.map((c) => ({
         docId: c.id,
         collectionName: 'taka_costs',
@@ -214,3 +276,4 @@ export async function deleteProjectStateUnified(
     console.error('[taskStateService] deleteProjectStateUnified Firestore batch commit failed:', err);
   }
 }
+

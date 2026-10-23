@@ -54,11 +54,15 @@ export async function deleteTaskStateUnified(
   });
 
   const deletedTaskIds = new Set<string>();
+  const deletedTaskCodes = new Set<string>();
   tasksToDelete.forEach((t) => {
     if (t.id) {
       const cleanId = String(t.id).trim().toLowerCase();
       deletedTaskIds.add(cleanId);
       markTasksDeleted([cleanId], t.projectId ? String(t.projectId) : undefined);
+    }
+    if (t.taskCodePhu) {
+      deletedTaskCodes.add(String(t.taskCodePhu).trim().toLowerCase());
     }
   });
   rawIds.forEach((id) => {
@@ -67,18 +71,41 @@ export async function deleteTaskStateUnified(
     markTasksDeleted([cleanId]);
   });
 
+  const isParentMatchedByDeleted = (rawParentVal: any, childTaskOrProj?: any): boolean => {
+    if (!rawParentVal) return false;
+    const cleanParent = String(rawParentVal).trim().toLowerCase();
+    if (deletedTaskIds.has(cleanParent)) return true;
+    if (deletedTaskCodes.has(cleanParent)) {
+      return tasksToDelete.some((dt) => {
+        if (!dt.taskCodePhu || String(dt.taskCodePhu).trim().toLowerCase() !== cleanParent) {
+          return false;
+        }
+        if (!childTaskOrProj) return true;
+        return isTaskBelongsToProjectCore(childTaskOrProj, {
+          id: dt.projectId,
+          code: dt.projectCode,
+          store: dt.projectStore,
+          year: dt.projectYear,
+        });
+      });
+    }
+    return false;
+  };
+
   const now = new Date().toISOString();
   const tasksAfterDeletion = currentTasks.filter((t) => !idSet.has(String(t.id)));
 
   const unlinkedChildTasks: Task[] = [];
+  const unlinkedChildIdSet = new Set<string>();
   const cleanedTasks = tasksAfterDeletion.map((t) => {
     let updated = t;
 
     const rawParent = t.parentTaskId || (t as any).parentId;
-    if (rawParent && deletedTaskIds.has(String(rawParent).trim().toLowerCase())) {
+    if (rawParent && isParentMatchedByDeleted(rawParent, t)) {
       updated = { ...updated, parentTaskId: undefined, updatedAt: now };
       delete (updated as any).parentId;
       unlinkedChildTasks.push(updated);
+      unlinkedChildIdSet.add(String(updated.id));
     }
 
     if (updated.predecessor && typeof updated.predecessor === 'string') {
@@ -119,32 +146,6 @@ export async function deleteTaskStateUnified(
 
   useAppStore.getState().setTasks(cleanedTasks);
 
-  // Pre-group cleanedTasks by projectId and projectCode for O(1) lookup during project summary recalculation
-  const cleanedByProjId = new Map<string, Task[]>();
-  const cleanedByCodeLower = new Map<string, Task[]>();
-  for (let i = 0; i < cleanedTasks.length; i++) {
-    const ct = cleanedTasks[i];
-    if (!ct || ct.isDeleted) continue;
-    if (ct.projectId) {
-      const pid = String(ct.projectId).trim();
-      let list = cleanedByProjId.get(pid);
-      if (!list) {
-        list = [];
-        cleanedByProjId.set(pid, list);
-      }
-      list.push(ct);
-    }
-    if (ct.projectCode) {
-      const cLower = String(ct.projectCode).trim().toLowerCase();
-      let list = cleanedByCodeLower.get(cLower);
-      if (!list) {
-        list = [];
-        cleanedByCodeLower.set(cLower, list);
-      }
-      list.push(ct);
-    }
-  }
-
   // 2. Clear matching summary items from p.taskSummaries and recalculate project computed dates
   const modifiedProjectsForDexie: Project[] = [];
   const delegationGroups = useAppStore.getState().delegationGroups || [];
@@ -164,35 +165,52 @@ export async function deleteTaskStateUnified(
     let newSummaries = p.taskSummaries ? [...p.taskSummaries] : [];
 
     if (p.taskSummaries && p.taskSummaries.length > 0) {
-      newSummaries = p.taskSummaries.filter((ts) => {
-        const tsId = ts?.id ? String(ts.id).trim().toLowerCase() : '';
-        if (tsId && deletedTaskIds.has(tsId)) {
-          summaryModified = true;
-          return false;
-        }
-        const matchedDeleted = tasksToDelete.some((dt) => {
-          if (dt.projectId && p.id && String(dt.projectId) !== String(p.id)) return false;
-          if (!dt.projectId && !isTaskBelongsToProjectCore(dt, p)) return false;
-          const dtId = dt.id ? String(dt.id).trim().toLowerCase() : '';
-          if (dtId && tsId && dtId === tsId) return true;
-          if (!tsId) {
+      newSummaries = p.taskSummaries
+        .filter((ts) => {
+          const tsId = ts?.id ? String(ts.id).trim().toLowerCase() : '';
+          if (tsId && deletedTaskIds.has(tsId)) {
+            summaryModified = true;
+            return false;
+          }
+          const matchedDeleted = tasksToDelete.some((dt) => {
+            if (dt.projectId && p.id && String(dt.projectId) !== String(p.id)) return false;
+            if (!dt.projectId && !isTaskBelongsToProjectCore(dt, p)) return false;
+            const dtId = dt.id ? String(dt.id).trim().toLowerCase() : '';
+            if (dtId && tsId && dtId === tsId) return true;
             const tsName = String(ts?.name || '').trim().toLowerCase();
             const dtName = String(dt.name || '').trim().toLowerCase();
             const tsCode = String(ts?.taskCodePhu || '').trim().toLowerCase();
             const dtCode = String(dt.taskCodePhu || '').trim().toLowerCase();
             if (tsName && dtName && tsName === dtName && (!tsCode || !dtCode || tsCode === dtCode)) {
-              return true;
+              if (!tsId || tsId.startsWith('ts_') || dtId.startsWith('ts_')) {
+                if (tsId && !tsId.startsWith('ts_')) {
+                  idSet.add(String(ts.id));
+                  deletedTaskIds.add(tsId);
+                  markTasksDeleted([tsId], pIdStr);
+                }
+                return true;
+              }
             }
-          }
-          return false;
-        });
+            return false;
+          });
 
-        if (matchedDeleted) {
-          summaryModified = true;
-          return false;
-        }
-        return true;
-      });
+          if (matchedDeleted) {
+            summaryModified = true;
+            return false;
+          }
+          return true;
+        })
+        .map((ts: any) => {
+          const rawP = ts?.parentTaskId || ts?.parentId;
+          if (rawP && (deletedTaskIds.has(String(rawP).trim().toLowerCase()) || deletedTaskCodes.has(String(rawP).trim().toLowerCase()))) {
+            summaryModified = true;
+            const copy = { ...ts };
+            delete copy.parentTaskId;
+            delete copy.parentId;
+            return copy;
+          }
+          return ts;
+        });
     }
 
     const isProjectAffected = summaryModified || affectedProjectIds.has(pIdStr);
@@ -219,6 +237,38 @@ export async function deleteTaskStateUnified(
   // 3. Xóa tức thì khỏi Dexie (IndexedDB) & lưu Projects mới xuống Dexie
   try {
     const { localDb } = await import('../localDb');
+    // Also check Dexie for any virtual ts_ tasks or unloaded child tasks of deleted parents
+    if (affectedProjects.length > 0) {
+      for (const ap of affectedProjects) {
+        if (!ap?.id) continue;
+        const dexieTasks = await localDb.tasks.where('projectId').equals(String(ap.id)).toArray().catch(() => []);
+        for (const dt of dexieTasks) {
+          if (!dt?.id) continue;
+          const dtIdStr = String(dt.id);
+          const dtIdLower = dtIdStr.trim().toLowerCase();
+          if (idSet.has(dtIdStr)) continue;
+          // Resolve virtual ts_ task to real Dexie task if name/code matches
+          const matchedVirtual = tasksToDelete.some(
+            (v) =>
+              String(v.id || '').startsWith('ts_') &&
+              isTaskBelongsToProjectCore(dt, ap) &&
+              String(v.name || '').trim().toLowerCase() === String(dt.name || '').trim().toLowerCase()
+          );
+          if (matchedVirtual) {
+            idSet.add(dtIdStr);
+            deletedTaskIds.add(dtIdLower);
+            markTasksDeleted([dtIdStr], String(ap.id));
+            tasksToDelete.push(dt);
+            continue;
+          }
+          const rawP = dt.parentTaskId || (dt as any).parentId;
+          if (rawP && !unlinkedChildIdSet.has(dtIdStr) && isParentMatchedByDeleted(rawP, dt)) {
+            unlinkedChildIdSet.add(dtIdStr);
+            unlinkedChildTasks.push({ ...dt, parentTaskId: undefined, updatedAt: now });
+          }
+        }
+      }
+    }
     await localDb.tasks.bulkDelete(Array.from(idSet));
     if (modifiedProjectsForDexie.length > 0) {
       await localDb.projects.bulkPut(modifiedProjectsForDexie);

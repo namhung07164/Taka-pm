@@ -177,14 +177,18 @@ export function useTaskModalLogic({
     const prevTasks = useAppStore.getState().tasks;
 
     // 1. Optimistic update
+    const unlinkedTask: Task = { ...task, parentTaskId: undefined, updatedAt: now };
+    delete (unlinkedTask as any).parentId;
     const updatedTasks = prevTasks.map(t =>
-      t.id === task.id ? { ...t, parentTaskId: undefined, parentId: undefined, updatedAt: now } : t
+      t.id === task.id ? unlinkedTask : t
     );
     useAppStore.getState().setTasks(updatedTasks);
     setFormData((prev: any) => ({ ...prev, parentTaskId: undefined, parentId: undefined }));
 
-    // 2. Dexie update
+    // 2. Sync project summaries + Dexie
     try {
+      const { saveTaskStateUnified } = await import('../lib/taskStateService');
+      await saveTaskStateUnified([unlinkedTask]);
       const { localDb } = await import('../lib/localDb');
       await (localDb.tasks.update as any)(task.id, { parentTaskId: null, parentId: null, updatedAt: now });
     } catch (e) {}
@@ -206,6 +210,9 @@ export function useTaskModalLogic({
         action: 'update',
         isPatch: true,
         data: { parentTaskId: null, parentId: null, updatedAt: now },
+        projectId: task.projectId,
+        projectCode: task.projectCode,
+        store: task.projectStore,
         year: task.projectYear ? String(task.projectYear) : undefined,
         updatedBy: currentUser?.email || currentUser?.username,
       }).catch(() => {});
