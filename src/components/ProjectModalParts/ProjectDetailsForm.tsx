@@ -254,11 +254,11 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
               )}
             </label>
             <FastInput
-              type="number"
+              type="text"
               inputMode="decimal"
               value={formData.sizeM2 !== undefined && formData.sizeM2 !== null ? String(formData.sizeM2) : ''}
               onChange={(val) => {
-                const trimmed = val.trim();
+                const trimmed = val.trim().replace(',', '.');
                 const num = trimmed === '' ? undefined : parseFloat(trimmed);
                 setFormData({ ...formData, sizeM2: isNaN(num as number) ? undefined : num });
               }}

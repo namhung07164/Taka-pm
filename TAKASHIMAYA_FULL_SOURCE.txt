@@ -28368,7 +28368,6 @@ export function useExecutiveDashboardData({
 }
 ================================================================================
 FILE: src/components/FastInput.tsx
-================================================================================
 import React, { forwardRef, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 
@@ -28379,7 +28378,7 @@ export interface FastInputProps
 }
 
 export const FastInput = React.forwardRef<HTMLInputElement, FastInputProps>(
-  ({ value, onChange, className = '', ...props }, ref) => {
+  ({ value, onChange, className = '', type, inputMode, ...props }, ref) => {
     const [local, setLocal] = useState(value);
     const isCanceling = useRef(false);
 
@@ -28393,34 +28392,81 @@ export const FastInput = React.forwardRef<HTMLInputElement, FastInputProps>(
         : `${className} pr-10`
       : 'pr-10';
 
+    const isDecimal = inputMode === 'decimal' || type === 'number';
+    const effectiveType = isDecimal ? 'text' : type;
+    const effectiveInputMode = isDecimal ? 'decimal' : inputMode;
+
+    const normalizeValue = (val: string) => {
+      if (isDecimal) {
+        return val.replace(/,/g, '.');
+      }
+      return val;
+    };
+
     return (
       <div className="relative w-full">
         <input
           {...props}
+          type={effectiveType}
+          inputMode={effectiveInputMode}
           className={inputClassName}
           ref={ref}
           value={local}
+          onBeforeInput={(e: any) => {
+            if (isDecimal && e.data === ',') {
+              e.preventDefault();
+              const target = e.currentTarget as HTMLInputElement;
+              const start = target.selectionStart ?? target.value.length;
+              const end = target.selectionEnd ?? target.value.length;
+              const newVal = target.value.slice(0, start) + '.' + target.value.slice(end);
+              setLocal(newVal);
+              onChange(newVal);
+              setTimeout(() => {
+                try {
+                  target.setSelectionRange(start + 1, start + 1);
+                } catch (_) {}
+              }, 0);
+            }
+          }}
           onChange={(e) => {
-            const val = e.target.value;
+            const val = normalizeValue(e.target.value);
             setLocal(val);
             onChange(val);
             if (props.onChangeCapture) props.onChangeCapture(e);
           }}
           onBlur={(e) => {
             if (!isCanceling.current) {
-              onChange(local);
+              const val = normalizeValue(local);
+              setLocal(val);
+              onChange(val);
             }
             isCanceling.current = false;
             if (props.onBlur) props.onBlur(e);
           }}
           onKeyDown={(e) => {
+            if (isDecimal && e.key === ',') {
+              e.preventDefault();
+              const target = e.currentTarget as HTMLInputElement;
+              const start = target.selectionStart ?? target.value.length;
+              const end = target.selectionEnd ?? target.value.length;
+              const newVal = target.value.slice(0, start) + '.' + target.value.slice(end);
+              setLocal(newVal);
+              onChange(newVal);
+              setTimeout(() => {
+                try {
+                  target.setSelectionRange(start + 1, start + 1);
+                } catch (_) {}
+              }, 0);
+              return;
+            }
             if (e.key === 'Escape') {
               isCanceling.current = true;
               setLocal(value);
               onChange(value);
               e.currentTarget.blur();
             } else if (e.key === 'Enter') {
-              onChange(local);
+              const val = normalizeValue(local);
+              onChange(val);
             }
             if (props.onKeyDown) props.onKeyDown(e);
           }}
@@ -28447,7 +28493,6 @@ export const FastInput = React.forwardRef<HTMLInputElement, FastInputProps>(
 FastInput.displayName = 'FastInput';
 
 
-================================================================================
 FILE: src/components/FirestorePerformanceDashboard.tsx
 ================================================================================
 import React, { useEffect, useMemo, useState } from 'react';
@@ -73966,7 +74011,6 @@ ProjectDelegationSubTaskItem.displayName = 'ProjectDelegationSubTaskItem';
 
 ================================================================================
 FILE: src/components/ProjectModalParts/ProjectDetailsForm.tsx
-================================================================================
 import React, { Dispatch, SetStateAction, memo } from 'react';
 import { Target, Plus } from 'lucide-react';
 import { Project, AppUser } from '../../types';
@@ -73976,6 +74020,7 @@ import { MultiSelect } from '../MultiSelect';
 import { getStatus, cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
 import { LinkCodesValidationError } from './projectModalTypes';
+import { MatchedUnitSizeResult } from '../../lib/unitSizeResolver';
 
 interface ProjectDetailsFormProps {
   formData: Partial<Project>;
@@ -73996,6 +74041,7 @@ interface ProjectDetailsFormProps {
   handleDelete: () => Promise<void>;
   onClose: () => void;
   yearRef: React.RefObject<HTMLInputElement | null>;
+  matchedUnitSizeInfo?: MatchedUnitSizeResult;
 }
 
 export const ProjectDetailsForm = memo(function ProjectDetailsForm({
@@ -74016,7 +74062,8 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
   handleSubmit,
   handleDelete,
   onClose,
-  yearRef
+  yearRef,
+  matchedUnitSizeInfo
 }: ProjectDetailsFormProps) {
   const { t } = useLanguage();
 
@@ -74205,20 +74252,31 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
           </div>
 
           <div className="sm:col-span-4 md:col-span-3">
-            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
-              Size (m²)
+            <label className="flex items-center justify-between text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1 gap-1">
+              <span>Size (m²)</span>
+              {matchedUnitSizeInfo?.sizeM2 !== undefined && matchedUnitSizeInfo.sizeM2 > 0 && (
+                <button
+                  type="button"
+                  disabled={!canWrite}
+                  onClick={() => setFormData(prev => ({ ...prev, sizeM2: matchedUnitSizeInfo.sizeM2 }))}
+                  className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer truncate max-w-[110px]"
+                  title={`Auto-matched from Picture Mapping unit (${matchedUnitSizeInfo.matchedUnitNames.join(', ')})${matchedUnitSizeInfo.versionName ? ` • ${matchedUnitSizeInfo.versionName}` : ''}. Click to sync.`}
+                >
+                  Unit: {matchedUnitSizeInfo.sizeM2}m²
+                </button>
+              )}
             </label>
             <FastInput
-              type="number"
+              type="text"
               inputMode="decimal"
               value={formData.sizeM2 !== undefined && formData.sizeM2 !== null ? String(formData.sizeM2) : ''}
               onChange={(val) => {
-                const trimmed = val.trim();
+                const trimmed = val.trim().replace(',', '.');
                 const num = trimmed === '' ? undefined : parseFloat(trimmed);
                 setFormData({ ...formData, sizeM2: isNaN(num as number) ? undefined : num });
               }}
               readOnly={!canWrite}
-              placeholder="e.g. 150"
+              placeholder={matchedUnitSizeInfo?.sizeM2 ? `${matchedUnitSizeInfo.sizeM2} (Unit)` : "e.g. 150"}
               className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
             />
           </div>
@@ -74401,7 +74459,8 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
     </form>
   );
 });
-================================================================================
+
+
 FILE: src/components/ProjectModalParts/ProjectModalHeader.tsx
 ================================================================================
 import React, { memo } from 'react';

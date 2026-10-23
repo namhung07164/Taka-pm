@@ -8,7 +8,7 @@ export interface FastInputProps
 }
 
 export const FastInput = React.forwardRef<HTMLInputElement, FastInputProps>(
-  ({ value, onChange, className = '', ...props }, ref) => {
+  ({ value, onChange, className = '', type, inputMode, ...props }, ref) => {
     const [local, setLocal] = useState(value);
     const isCanceling = useRef(false);
 
@@ -22,34 +22,81 @@ export const FastInput = React.forwardRef<HTMLInputElement, FastInputProps>(
         : `${className} pr-10`
       : 'pr-10';
 
+    const isDecimal = inputMode === 'decimal' || type === 'number';
+    const effectiveType = isDecimal ? 'text' : type;
+    const effectiveInputMode = isDecimal ? 'decimal' : inputMode;
+
+    const normalizeValue = (val: string) => {
+      if (isDecimal) {
+        return val.replace(/,/g, '.');
+      }
+      return val;
+    };
+
     return (
       <div className="relative w-full">
         <input
           {...props}
+          type={effectiveType}
+          inputMode={effectiveInputMode}
           className={inputClassName}
           ref={ref}
           value={local}
+          onBeforeInput={(e: any) => {
+            if (isDecimal && e.data === ',') {
+              e.preventDefault();
+              const target = e.currentTarget as HTMLInputElement;
+              const start = target.selectionStart ?? target.value.length;
+              const end = target.selectionEnd ?? target.value.length;
+              const newVal = target.value.slice(0, start) + '.' + target.value.slice(end);
+              setLocal(newVal);
+              onChange(newVal);
+              setTimeout(() => {
+                try {
+                  target.setSelectionRange(start + 1, start + 1);
+                } catch (_) {}
+              }, 0);
+            }
+          }}
           onChange={(e) => {
-            const val = e.target.value;
+            const val = normalizeValue(e.target.value);
             setLocal(val);
             onChange(val);
             if (props.onChangeCapture) props.onChangeCapture(e);
           }}
           onBlur={(e) => {
             if (!isCanceling.current) {
-              onChange(local);
+              const val = normalizeValue(local);
+              setLocal(val);
+              onChange(val);
             }
             isCanceling.current = false;
             if (props.onBlur) props.onBlur(e);
           }}
           onKeyDown={(e) => {
+            if (isDecimal && e.key === ',') {
+              e.preventDefault();
+              const target = e.currentTarget as HTMLInputElement;
+              const start = target.selectionStart ?? target.value.length;
+              const end = target.selectionEnd ?? target.value.length;
+              const newVal = target.value.slice(0, start) + '.' + target.value.slice(end);
+              setLocal(newVal);
+              onChange(newVal);
+              setTimeout(() => {
+                try {
+                  target.setSelectionRange(start + 1, start + 1);
+                } catch (_) {}
+              }, 0);
+              return;
+            }
             if (e.key === 'Escape') {
               isCanceling.current = true;
               setLocal(value);
               onChange(value);
               e.currentTarget.blur();
             } else if (e.key === 'Enter') {
-              onChange(local);
+              const val = normalizeValue(local);
+              onChange(val);
             }
             if (props.onKeyDown) props.onKeyDown(e);
           }}
