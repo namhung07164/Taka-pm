@@ -6,6 +6,7 @@ import { ProjectInfo } from './useDetailProjectInfo';
 import { useAppStore } from '../../store/useAppStore';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { doesTaskMatchSearchTerm } from './useDetailFilterSync';
 
 interface UseDetailFlatRowsParams {
   filteredProjects: Project[];
@@ -165,11 +166,26 @@ export function useDetailFlatRows({
         const parentTaskMap = new Map<string, Task>();
         groupTasks.forEach((gt, idx) => {
           if (gt.id) {
-            groupTaskIndexMap.set(gt.id, idx);
-            parentTaskMap.set(gt.id, gt);
+            const idStr = String(gt.id).trim();
+            groupTaskIndexMap.set(idStr, idx);
+            parentTaskMap.set(idStr, gt);
+            parentTaskMap.set(idStr.toLowerCase(), gt);
           }
           if (gt.taskCodePhu) {
-            parentTaskMap.set(gt.taskCodePhu.trim().toLowerCase(), gt);
+            const codeStr = String(gt.taskCodePhu).trim().toLowerCase();
+            parentTaskMap.set(codeStr, gt);
+            const numMatch = codeStr.match(/[-#]?(\d+)$/);
+            if (numMatch) {
+              parentTaskMap.set(numMatch[1], gt);
+              parentTaskMap.set(`#${numMatch[1]}`, gt);
+            }
+          }
+          if (gt.orderIndex !== undefined && gt.orderIndex !== null) {
+            parentTaskMap.set(String(Number(gt.orderIndex) + 1), gt);
+            parentTaskMap.set(`#${Number(gt.orderIndex) + 1}`, gt);
+          }
+          if (gt.name) {
+            parentTaskMap.set(String(gt.name).trim().toLowerCase(), gt);
           }
         });
 
@@ -178,22 +194,31 @@ export function useDetailFlatRows({
           if (t.id && seenRenderTaskIds.has(t.id)) return;
 
           // If t is a child task, check if its parent task is expanded
-          if (t.parentTaskId && !lowerSearchTerm) {
-            const rawParentId = String(t.parentTaskId).trim();
-            const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-            const effectiveParentId = matchedParent ? String(matchedParent.id) : rawParentId;
-            const isParentExpanded =
-              expandedModularTasks.has(effectiveParentId) ||
-              expandedModularTasks.has(effectiveParentId.toLowerCase()) ||
-              expandedModularTasks.has(rawParentId) ||
-              expandedModularTasks.has(rawParentId.toLowerCase()) ||
-              Boolean(matchedParent?.taskCodePhu && (
-                expandedModularTasks.has(matchedParent.taskCodePhu) ||
-                expandedModularTasks.has(matchedParent.taskCodePhu.trim().toLowerCase())
-              ));
+          if (t.parentTaskId) {
+            // Only bypass collapse if user explicitly searched for a term that directly matches this child task and does not match the project as a whole
+            const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
+            if (!isDirectChildSearchHit) {
+              const rawParentId = String(t.parentTaskId).trim();
+              const matchedParent =
+                parentTaskMap.get(rawParentId) ||
+                parentTaskMap.get(rawParentId.toLowerCase());
 
-            if (!isParentExpanded) {
-              return; // Parent task is collapsed -> hide child task
+              const candidateIds: string[] = [rawParentId, rawParentId.toLowerCase()];
+              if (matchedParent) {
+                if (matchedParent.id) {
+                  candidateIds.push(String(matchedParent.id).trim());
+                  candidateIds.push(String(matchedParent.id).trim().toLowerCase());
+                }
+                if (matchedParent.taskCodePhu) {
+                  candidateIds.push(String(matchedParent.taskCodePhu).trim());
+                  candidateIds.push(String(matchedParent.taskCodePhu).trim().toLowerCase());
+                }
+              }
+
+              const isParentExpanded = candidateIds.some(cid => expandedModularTasks.has(cid));
+              if (!isParentExpanded) {
+                return; // Parent task is collapsed -> hide child task
+              }
             }
           }
 

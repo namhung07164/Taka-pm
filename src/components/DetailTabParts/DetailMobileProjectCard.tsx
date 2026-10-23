@@ -17,6 +17,7 @@ import {
 } from '../../lib/utils';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import { useAppStore } from '../../store/useAppStore';
+import { doesTaskMatchSearchTerm } from './useDetailFilterSync';
 
 export function parseStackedDate(dateStr: string | undefined): { month: string; day: string; year: string } | null {
   if (!dateStr) return null;
@@ -186,22 +187,31 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
 
   const parentTaskMap = new Map<string, Task>();
   groupTasks.forEach(gt => {
-    if (gt.id) parentTaskMap.set(gt.id, gt);
-    if (gt.taskCodePhu) parentTaskMap.set(gt.taskCodePhu.trim().toLowerCase(), gt);
+    if (gt.id) {
+      parentTaskMap.set(gt.id, gt);
+      parentTaskMap.set(gt.id.toLowerCase(), gt);
+    }
+    if (gt.taskCodePhu) {
+      const codeLower = gt.taskCodePhu.trim().toLowerCase();
+      parentTaskMap.set(codeLower, gt);
+      const numMatch = codeLower.match(/[-#]?(\d+)$/);
+      if (numMatch) { parentTaskMap.set(numMatch[1], gt); parentTaskMap.set(`#${numMatch[1]}`, gt); }
+    }
+    if (gt.name) parentTaskMap.set(String(gt.name).trim().toLowerCase(), gt);
   });
 
-  const visibleTasksToRender = tasksToRender.filter(t => {
-    if (t.parentTaskId && !lowerSearchTerm) {
-      const rawParentId = String(t.parentTaskId).trim();
-      const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-      const effectiveParentId = matchedParent ? String(matchedParent.id) : rawParentId;
-      const isParentExpanded =
-        expandedModularTasks?.has(effectiveParentId) ||
-        expandedModularTasks?.has(effectiveParentId.toLowerCase()) ||
-        expandedModularTasks?.has(rawParentId) ||
-        (matchedParent?.taskCodePhu ? (expandedModularTasks?.has(matchedParent.taskCodePhu) || expandedModularTasks?.has(matchedParent.taskCodePhu.trim().toLowerCase())) : false);
-
-      if (!isParentExpanded) return false;
+  const visibleTasksToRender = tasksToRender.filter((t, tIdx) => {
+    if (t.parentTaskId) {
+      const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
+      if (!isDirectChildSearchHit) {
+        const rawParentId = String(t.parentTaskId).trim();
+        const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
+        const candidateIds: string[] = [rawParentId, rawParentId.toLowerCase()];
+        if (matchedParent?.id) { candidateIds.push(String(matchedParent.id).trim(), String(matchedParent.id).trim().toLowerCase()); }
+        if (matchedParent?.taskCodePhu) { candidateIds.push(String(matchedParent.taskCodePhu).trim(), String(matchedParent.taskCodePhu).trim().toLowerCase()); }
+        const isParentExpanded = candidateIds.some(cid => expandedModularTasks?.has(cid));
+        if (!isParentExpanded) return false;
+      }
     }
     return true;
   });

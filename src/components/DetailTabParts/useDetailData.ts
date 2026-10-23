@@ -262,6 +262,11 @@ export function useDetailData({
       const idStr = String(id).trim();
       set.add(idStr);
       set.add(idStr.toLowerCase());
+      const numMatch = idStr.match(/[-#]?(\d+)$/);
+      if (numMatch) {
+        set.add(numMatch[1]);
+        set.add(`#${numMatch[1]}`);
+      }
     });
     return set;
   }, [expandedModularTasks]);
@@ -294,7 +299,12 @@ export function useDetailData({
         next = prev.filter(id => !aliases.has(id) && !aliases.has(String(id).trim().toLowerCase()));
       } else {
         const canonicalId = targetTask?.id ? String(targetTask.id).trim() : pId;
-        next = [...prev.filter(id => !aliases.has(id) && !aliases.has(String(id).trim().toLowerCase())), canonicalId];
+        const cleaned = prev.filter(id => !aliases.has(id) && !aliases.has(String(id).trim().toLowerCase()));
+        cleaned.push(canonicalId);
+        if (targetTask?.taskCodePhu) {
+          cleaned.push(String(targetTask.taskCodePhu).trim());
+        }
+        next = cleaned;
       }
       safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(next));
       return next;

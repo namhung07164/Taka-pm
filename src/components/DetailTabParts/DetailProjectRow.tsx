@@ -53,8 +53,27 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
   const parentTaskMap = React.useMemo(() => {
     const map = new Map<string, Task>();
     (groupTasks || []).forEach((gt) => {
-      if (gt.id) map.set(String(gt.id), gt);
-      if (gt.taskCodePhu) map.set(gt.taskCodePhu.trim().toLowerCase(), gt);
+      if (gt.id) {
+        const idStr = String(gt.id).trim();
+        map.set(idStr, gt);
+        map.set(idStr.toLowerCase(), gt);
+      }
+      if (gt.taskCodePhu) {
+        const codeStr = String(gt.taskCodePhu).trim().toLowerCase();
+        map.set(codeStr, gt);
+        const numMatch = codeStr.match(/[-#]?(\d+)$/);
+        if (numMatch) {
+          map.set(numMatch[1], gt);
+          map.set(`#${numMatch[1]}`, gt);
+        }
+      }
+      if (gt.orderIndex !== undefined && gt.orderIndex !== null) {
+        map.set(String(Number(gt.orderIndex) + 1), gt);
+        map.set(`#${Number(gt.orderIndex) + 1}`, gt);
+      }
+      if (gt.name) {
+        map.set(String(gt.name).trim().toLowerCase(), gt);
+      }
     });
     return map;
   }, [groupTasks]);

@@ -19535,6 +19535,7 @@ import {
 } from '../../lib/utils';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import { useAppStore } from '../../store/useAppStore';
+import { doesTaskMatchSearchTerm } from './useDetailFilterSync';
 
 export function parseStackedDate(dateStr: string | undefined): { month: string; day: string; year: string } | null {
   if (!dateStr) return null;
@@ -19704,20 +19705,31 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
 
   const parentTaskMap = new Map<string, Task>();
   groupTasks.forEach(gt => {
-    if (gt.id) parentTaskMap.set(gt.id, gt);
-    if (gt.taskCodePhu) parentTaskMap.set(gt.taskCodePhu.trim().toLowerCase(), gt);
+    if (gt.id) {
+      parentTaskMap.set(gt.id, gt);
+      parentTaskMap.set(gt.id.toLowerCase(), gt);
+    }
+    if (gt.taskCodePhu) {
+      const codeLower = gt.taskCodePhu.trim().toLowerCase();
+      parentTaskMap.set(codeLower, gt);
+      const numMatch = codeLower.match(/[-#]?(\d+)$/);
+      if (numMatch) { parentTaskMap.set(numMatch[1], gt); parentTaskMap.set(`#${numMatch[1]}`, gt); }
+    }
+    if (gt.name) parentTaskMap.set(String(gt.name).trim().toLowerCase(), gt);
   });
 
-  const visibleTasksToRender = tasksToRender.filter(t => {
-    if (t.parentTaskId && !lowerSearchTerm) {
-      const rawParentId = String(t.parentTaskId).trim();
-      const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-      const effectiveParentId = matchedParent ? matchedParent.id : rawParentId;
-      const isParentExpanded =
-        expandedModularTasks?.has(effectiveParentId) ||
-        Boolean(matchedParent?.taskCodePhu && expandedModularTasks?.has(matchedParent.taskCodePhu));
-
-      if (!isParentExpanded) return false;
+  const visibleTasksToRender = tasksToRender.filter((t, tIdx) => {
+    if (t.parentTaskId) {
+      const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
+      if (!isDirectChildSearchHit) {
+        const rawParentId = String(t.parentTaskId).trim();
+        const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
+        const candidateIds: string[] = [rawParentId, rawParentId.toLowerCase()];
+        if (matchedParent?.id) { candidateIds.push(String(matchedParent.id).trim(), String(matchedParent.id).trim().toLowerCase()); }
+        if (matchedParent?.taskCodePhu) { candidateIds.push(String(matchedParent.taskCodePhu).trim(), String(matchedParent.taskCodePhu).trim().toLowerCase()); }
+        const isParentExpanded = candidateIds.some(cid => expandedModularTasks?.has(cid));
+        if (!isParentExpanded) return false;
+      }
     }
     return true;
   });
@@ -19728,8 +19740,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
       if (t.parentTaskId) {
         const rawParentId = String(t.parentTaskId).trim();
         const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-        const effectiveId = matchedParent ? matchedParent.id : rawParentId;
-        parentIds.add(effectiveId);
+        parentIds.add(matchedParent ? String(matchedParent.id) : rawParentId);
       }
     });
     return Array.from(parentIds);
@@ -19738,7 +19749,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   const hasModularTasks = projectModularParentIds.length > 0;
   const isProjectModularExpanded =
     hasModularTasks &&
-    projectModularParentIds.some((id) => expandedModularTasks?.has(id));
+    projectModularParentIds.some((id) => expandedModularTasks?.has(id) || expandedModularTasks?.has(id.toLowerCase()));
 
   const projectChildTasksCount = React.useMemo(() => {
     return groupTasks.filter((t) => Boolean(t.parentTaskId)).length;
@@ -19751,15 +19762,10 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
       toggleGroup(String(p.id || p.code || p.no || ''));
     }
     if (onToggleModularParent) {
-      if (isProjectModularExpanded) {
-        projectModularParentIds.forEach((id) => {
-          if (expandedModularTasks?.has(id)) onToggleModularParent(id);
-        });
-      } else {
-        projectModularParentIds.forEach((id) => {
-          if (!expandedModularTasks?.has(id)) onToggleModularParent(id);
-        });
-      }
+      projectModularParentIds.forEach((id) => {
+        const isExp = expandedModularTasks?.has(id) || expandedModularTasks?.has(id.toLowerCase());
+        if (isProjectModularExpanded ? isExp : !isExp) onToggleModularParent(id);
+      });
     }
   };
 
@@ -19959,7 +19965,11 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
           ) : (
             visibleTasksToRender.map((t, index) => {
               const childCount = (childTasksCountMap?.get(t.id) || 0) + (t.taskCodePhu && t.taskCodePhu !== t.id ? (childTasksCountMap?.get(t.taskCodePhu) || 0) : 0);
-              const isModularExpanded = expandedModularTasks ? (expandedModularTasks.has(t.id) || (!!t.taskCodePhu && expandedModularTasks.has(t.taskCodePhu))) : false;
+              const isModularExpanded = expandedModularTasks
+                ? (expandedModularTasks.has(String(t.id)) ||
+                   expandedModularTasks.has(String(t.id).toLowerCase()) ||
+                   (!!t.taskCodePhu && (expandedModularTasks.has(t.taskCodePhu) || expandedModularTasks.has(t.taskCodePhu.trim().toLowerCase()))))
+                : false;
 
               return (
                 <DetailMobileTaskItem
@@ -20388,6 +20398,9 @@ interface DetailProjectRowProps {
   onEditProject: (p: Project) => void;
   onAddTask: (p: Project) => void;
   onDeleteProject: (p: Project) => void;
+  expandedModularTasks?: Set<string>;
+  onToggleModularParent?: (parentTaskId: string) => void;
+  onToggleProjectModularTasks?: (parentTaskIds: string[], expand: boolean) => void;
 }
 
 export const DetailProjectRow = React.memo(function DetailProjectRow({
@@ -20404,11 +20417,87 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
   onEditProject,
   onAddTask,
   onDeleteProject,
+  expandedModularTasks,
+  onToggleModularParent,
+  onToggleProjectModularTasks,
 }: DetailProjectRowProps) {
   const p = item.project;
   const isExpanded = item.isExpanded;
   const groupTasks = item.groupTasks;
   const effectiveTaskCount = item.effectiveTaskCount;
+
+  const parentTaskMap = React.useMemo(() => {
+    const map = new Map<string, Task>();
+    (groupTasks || []).forEach((gt) => {
+      if (gt.id) {
+        const idStr = String(gt.id).trim();
+        map.set(idStr, gt);
+        map.set(idStr.toLowerCase(), gt);
+      }
+      if (gt.taskCodePhu) {
+        const codeStr = String(gt.taskCodePhu).trim().toLowerCase();
+        map.set(codeStr, gt);
+        const numMatch = codeStr.match(/[-#]?(\d+)$/);
+        if (numMatch) {
+          map.set(numMatch[1], gt);
+          map.set(`#${numMatch[1]}`, gt);
+        }
+      }
+      if (gt.orderIndex !== undefined && gt.orderIndex !== null) {
+        map.set(String(Number(gt.orderIndex) + 1), gt);
+        map.set(`#${Number(gt.orderIndex) + 1}`, gt);
+      }
+      if (gt.name) {
+        map.set(String(gt.name).trim().toLowerCase(), gt);
+      }
+    });
+    return map;
+  }, [groupTasks]);
+
+  const projectModularParentIds = React.useMemo(() => {
+    const parentIds = new Set<string>();
+    (groupTasks || []).forEach((t) => {
+      if (t.parentTaskId) {
+        const rawParentId = String(t.parentTaskId).trim();
+        const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
+        const effectiveId = matchedParent ? String(matchedParent.id) : rawParentId;
+        parentIds.add(effectiveId);
+      }
+    });
+    return Array.from(parentIds);
+  }, [groupTasks, parentTaskMap]);
+
+  const hasModularTasks = projectModularParentIds.length > 0;
+  const isProjectModularExpanded =
+    hasModularTasks &&
+    projectModularParentIds.some((id) => 
+      expandedModularTasks?.has(id) || 
+      expandedModularTasks?.has(id.toLowerCase())
+    );
+
+  const projectChildTasksCount = React.useMemo(() => {
+    return (groupTasks || []).filter((t) => Boolean(t.parentTaskId)).length;
+  }, [groupTasks]);
+
+  const handleToggleProjectModular = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!hasModularTasks) return;
+    if (!isExpanded) {
+      onToggleGroup(String(p.id || p.code || p.no || ''));
+    }
+    if (onToggleProjectModularTasks) {
+      onToggleProjectModularTasks(projectModularParentIds, !isProjectModularExpanded);
+    } else if (onToggleModularParent) {
+      projectModularParentIds.forEach((id) => {
+        const isExp = expandedModularTasks?.has(id) || expandedModularTasks?.has(id.toLowerCase());
+        if (isProjectModularExpanded) {
+          if (isExp) onToggleModularParent(id);
+        } else {
+          if (!isExp) onToggleModularParent(id);
+        }
+      });
+    }
+  };
   const isProjDelegationOn = item.isProjDelegationOn;
   const planProgressPercent = item.planProgressPercent;
   const actProgressPercent = item.actProgressPercent;
@@ -20476,7 +20565,7 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
       )}
       {visibleColumns.includes('no') && (
         <td className="px-3 py-2 font-bold text-slate-800 dark:text-[#f5f5f7]">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-col items-center justify-center gap-1">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -20495,6 +20584,26 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
               {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
               <span className="text-[10px]">({effectiveTaskCount})</span>
             </button>
+            {hasModularTasks && (
+              <button
+                type="button"
+                onClick={handleToggleProjectModular}
+                className={cn(
+                  "flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all active:scale-95 touch-manipulation cursor-pointer border shadow-2xs select-none",
+                  isProjectModularExpanded
+                    ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                    : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                )}
+                title={isProjectModularExpanded ? "Collapse modular tasks of this project" : `Expand modular tasks (${projectChildTasksCount})`}
+              >
+                {isProjectModularExpanded ? (
+                  <ChevronDown className="w-3 h-3 text-current pointer-events-none" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 text-current pointer-events-none" />
+                )}
+                <span>({projectChildTasksCount})</span>
+              </button>
+            )}
           </div>
         </td>
       )}
@@ -20682,7 +20791,6 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
     </tr>
   );
 });
-
 
 ================================================================================
 FILE: src/components/DetailTabParts/DetailTableHeader.tsx
@@ -21052,6 +21160,12 @@ export interface DetailTableViewProps {
   taskActualStatusMap: Map<string, { label: string; color: string }>;
   taskCodeMap: Map<string, string>;
   childTasksCountMap?: Map<string, number>;
+  expandedModularTasks?: Set<string>;
+  onToggleModularParent?: (parentTaskId: string) => void;
+  onToggleProjectModularTasks?: (parentTaskIds: string[], expand: boolean) => void;
+  isAllModularExpanded?: boolean;
+  onToggleExpandAllModular?: () => void;
+  totalChildTasksCount?: number;
   draggingTaskIds: string[];
   dragOverTaskId: string | null;
   dropPosition: 'before' | 'after' | null;
@@ -21108,6 +21222,12 @@ export const DetailTableView = memo(function DetailTableView({
   taskActualStatusMap,
   taskCodeMap,
   childTasksCountMap,
+  expandedModularTasks,
+  onToggleModularParent,
+  onToggleProjectModularTasks,
+  isAllModularExpanded,
+  onToggleExpandAllModular,
+  totalChildTasksCount,
   draggingTaskIds,
   dragOverTaskId,
   dropPosition,
@@ -21161,6 +21281,9 @@ export const DetailTableView = memo(function DetailTableView({
               }
             }}
             onToggleExpandAll={() => setExpandedCodes(expandedCodes.length === 0 ? filteredProjects.map(p => String(p.id!)) : [])}
+            onToggleExpandAllModular={onToggleExpandAllModular}
+            isAllModularExpanded={isAllModularExpanded}
+            totalChildTasksCount={totalChildTasksCount}
           />
           <tbody>
             {paddingTop > 0 && (
@@ -21188,12 +21311,21 @@ export const DetailTableView = memo(function DetailTableView({
                     onEditProject={onEditProject || (() => {})}
                     onAddTask={onAddTask}
                     onDeleteProject={handleDeleteProject}
+                    expandedModularTasks={expandedModularTasks}
+                    onToggleModularParent={onToggleModularParent}
+                    onToggleProjectModularTasks={onToggleProjectModularTasks}
                   />
                 );
               }
               const t = item.task;
               const actStatus = taskActualStatusMap.get(t.id) || { label: 'Pending', color: 'bg-slate-50 text-slate-600' };
               const childCount = (childTasksCountMap?.get(t.id) || 0) + (t.taskCodePhu && t.taskCodePhu !== t.id ? (childTasksCountMap?.get(t.taskCodePhu) || 0) : 0);
+              const isModularExpanded = expandedModularTasks
+                ? (expandedModularTasks.has(String(t.id)) ||
+                   expandedModularTasks.has(String(t.id).toLowerCase()) ||
+                   (!!t.taskCodePhu && (expandedModularTasks.has(t.taskCodePhu) || expandedModularTasks.has(t.taskCodePhu.trim().toLowerCase()))) ||
+                   (t.orderIndex !== undefined && (expandedModularTasks.has(String(Number(t.orderIndex) + 1)) || expandedModularTasks.has(`#${Number(t.orderIndex) + 1}`))))
+                : false;
               return (
                 <DetailTaskRow
                   key={item.key}
@@ -21210,6 +21342,8 @@ export const DetailTableView = memo(function DetailTableView({
                   delStatusText={actStatus.label}
                   delStatusColorClass={actStatus.color}
                   childTasksCount={childCount}
+                  isModularExpanded={isModularExpanded}
+                  onToggleModularParent={onToggleModularParent}
                   onToggleSelectTask={handleToggleSelectTask}
                   onEditTask={onEditTask}
                   onUpdateTask={handleUpdateTask}
@@ -21246,7 +21380,6 @@ export const DetailTableView = memo(function DetailTableView({
     </div>
   );
 });
-
 
 ================================================================================
 FILE: src/components/DetailTabParts/DetailTaskRow.tsx
@@ -24019,7 +24152,7 @@ import {
   matchesAdvancedSearch 
 } from '../../lib/utils';
 import { computeAllTaskCodes } from '../../lib/ganttUtils';
-import { safeGetItemSession } from '../../lib/storage';
+import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
 import { SortConfig } from './detailTypes';
 import { useDetailProjectInfo } from './useDetailProjectInfo';
 import { useDetailFlatRows } from './useDetailFlatRows';
@@ -24251,11 +24384,162 @@ export function useDetailData({
     for (let idx = 0; idx < tasks.length; idx++) {
       const child = tasks[idx];
       if (child.parentTaskId) {
-        map.set(child.parentTaskId, (map.get(child.parentTaskId) || 0) + 1);
+        const pId = String(child.parentTaskId).trim();
+        map.set(pId, (map.get(pId) || 0) + 1);
       }
     }
     return map;
   }, [tasks]);
+
+  // Modular parent task expand/collapse state (isolated to Detail Tab)
+  const [expandedModularTasks, setExpandedModularTasks] = useState<string[]>(() => {
+    try {
+      const saved = safeGetItemSession('taka_detail_modular_expanded') || sessionStorage.getItem('taka_detail_modular_expanded');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const expandedModularTasksSet = useMemo(() => {
+    const set = new Set<string>();
+    expandedModularTasks.forEach(id => {
+      const idStr = String(id).trim();
+      set.add(idStr);
+      set.add(idStr.toLowerCase());
+      const numMatch = idStr.match(/[-#]?(\d+)$/);
+      if (numMatch) {
+        set.add(numMatch[1]);
+        set.add(`#${numMatch[1]}`);
+      }
+    });
+    return set;
+  }, [expandedModularTasks]);
+
+  const handleToggleModularParent = useCallback((parentTaskId: string) => {
+    const pId = String(parentTaskId).trim();
+    if (!pId) return;
+
+    // Find the task object to get all identifier aliases (id, taskCodePhu)
+    const targetTask = tasks.find(
+      t => String(t.id) === pId ||
+           (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pId.toLowerCase())
+    );
+    const aliases = new Set<string>([pId, pId.toLowerCase()]);
+    if (targetTask) {
+      if (targetTask.id) {
+        aliases.add(String(targetTask.id).trim());
+        aliases.add(String(targetTask.id).trim().toLowerCase());
+      }
+      if (targetTask.taskCodePhu) {
+        aliases.add(String(targetTask.taskCodePhu).trim());
+        aliases.add(String(targetTask.taskCodePhu).trim().toLowerCase());
+      }
+    }
+
+    setExpandedModularTasks(prev => {
+      const isCurrentlyExpanded = prev.some(id => aliases.has(id) || aliases.has(String(id).trim().toLowerCase()));
+      let next: string[];
+      if (isCurrentlyExpanded) {
+        next = prev.filter(id => !aliases.has(id) && !aliases.has(String(id).trim().toLowerCase()));
+      } else {
+        const canonicalId = targetTask?.id ? String(targetTask.id).trim() : pId;
+        const cleaned = prev.filter(id => !aliases.has(id) && !aliases.has(String(id).trim().toLowerCase()));
+        cleaned.push(canonicalId);
+        if (targetTask?.taskCodePhu) {
+          cleaned.push(String(targetTask.taskCodePhu).trim());
+        }
+        next = cleaned;
+      }
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(next));
+      return next;
+    });
+  }, [tasks]);
+
+  const handleToggleProjectModularTasks = useCallback((parentTaskIds: string[], expand: boolean) => {
+    setExpandedModularTasks(prev => {
+      const prevSet = new Set(prev);
+      const toUpdateIds: string[] = [];
+      parentTaskIds.forEach(pId => {
+        const idStr = String(pId).trim();
+        const targetTask = tasks.find(
+          t => String(t.id) === idStr ||
+               (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === idStr.toLowerCase())
+        );
+        if (targetTask?.id) toUpdateIds.push(String(targetTask.id).trim());
+        if (targetTask?.taskCodePhu) toUpdateIds.push(String(targetTask.taskCodePhu).trim());
+        toUpdateIds.push(idStr);
+      });
+
+      if (expand) {
+        toUpdateIds.forEach(id => prevSet.add(id));
+      } else {
+        toUpdateIds.forEach(id => {
+          prevSet.delete(id);
+          prevSet.delete(id.toLowerCase());
+        });
+      }
+      const next = Array.from(prevSet);
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(next));
+      return next;
+    });
+  }, [tasks]);
+
+  const currentModularParentIds = useMemo(() => {
+    const parentIdSet = new Set<string>();
+    filteredProjects.slice(0, visibleCount).forEach(p => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const info = projectInfoMap.get(pKey) || getProjectInfo(p);
+      const pTasks = info.sortedTasks || [];
+      const taskById = new Map<string, Task>();
+      const taskByCode = new Map<string, Task>();
+
+      pTasks.forEach(t => {
+        if (t.id) taskById.set(String(t.id), t);
+        if (t.taskCodePhu) taskByCode.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+      });
+
+      pTasks.forEach(t => {
+        const rawParentId = t.parentTaskId;
+        if (rawParentId) {
+          const parentKey = String(rawParentId).trim().toLowerCase();
+          const matchedParent = taskById.get(String(rawParentId)) || taskByCode.get(parentKey);
+          if (matchedParent && String(matchedParent.id) !== String(t.id)) {
+            parentIdSet.add(String(matchedParent.id));
+          } else {
+            parentIdSet.add(String(rawParentId).trim());
+          }
+        }
+      });
+    });
+
+    return Array.from(parentIdSet);
+  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo]);
+
+  const isAllModularExpanded = useMemo(() => {
+    if (currentModularParentIds.length === 0) return false;
+    return currentModularParentIds.some(id => 
+      expandedModularTasksSet.has(id) || expandedModularTasksSet.has(id.toLowerCase())
+    );
+  }, [currentModularParentIds, expandedModularTasksSet]);
+
+  const handleToggleExpandAllModular = useCallback(() => {
+    if (isAllModularExpanded) {
+      setExpandedModularTasks([]);
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify([]));
+    } else {
+      setExpandedModularTasks(currentModularParentIds);
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(currentModularParentIds));
+    }
+  }, [isAllModularExpanded, currentModularParentIds]);
+
+  const totalChildTasksCount = useMemo(() => {
+    return tasks.filter(t => Boolean(t.parentTaskId)).length;
+  }, [tasks]);
+
+  const modularParentsCount = useMemo(() => {
+    return currentModularParentIds.length;
+  }, [currentModularParentIds]);
 
   // Virtual Windowing Flat Rows
   const flatTableRows = useDetailFlatRows({
@@ -24265,6 +24549,7 @@ export function useDetailData({
     getProjectInfo,
     sortConfig,
     expandedCodes,
+    expandedModularTasks: expandedModularTasksSet,
     delegationGroups,
     lowerSearchTerm,
     taskCodeMap,
@@ -24335,6 +24620,13 @@ export function useDetailData({
     taskCodeMap,
     taskActualStatusMap,
     childTasksCountMap,
+    expandedModularTasks: expandedModularTasksSet,
+    handleToggleModularParent,
+    handleToggleProjectModularTasks,
+    isAllModularExpanded,
+    handleToggleExpandAllModular,
+    totalChildTasksCount,
+    modularParentsCount,
     flatTableRows,
     handleSelectAllTasksInProject,
     handleToggleSelectTask,
@@ -24342,7 +24634,6 @@ export function useDetailData({
     handleBackToGantt,
   };
 }
-
 
 ================================================================================
 FILE: src/components/DetailTabParts/useDetailFilterSync.ts
@@ -24683,13 +24974,14 @@ export function useDetailFilterSync({
 FILE: src/components/DetailTabParts/useDetailFlatRows.ts
 ================================================================================
 import React, { useMemo } from 'react';
-import { Project, DelegationGroup } from '../../types';
+import { Project, Task, DelegationGroup } from '../../types';
 import { matchesAdvancedSearch, computePlanProgressPercent, computeActProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { DetailTableRow, SortConfig } from './detailTypes';
 import { ProjectInfo } from './useDetailProjectInfo';
 import { useAppStore } from '../../store/useAppStore';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { doesTaskMatchSearchTerm } from './useDetailFilterSync';
 
 interface UseDetailFlatRowsParams {
   filteredProjects: Project[];
@@ -24698,6 +24990,7 @@ interface UseDetailFlatRowsParams {
   getProjectInfo: (p: Project) => ProjectInfo;
   sortConfig: SortConfig | null;
   expandedCodes: string[];
+  expandedModularTasks?: Set<string>;
   delegationGroups: DelegationGroup[];
   lowerSearchTerm: string;
   taskCodeMap: Map<string, string>;
@@ -24710,6 +25003,7 @@ export function useDetailFlatRows({
   getProjectInfo,
   sortConfig,
   expandedCodes,
+  expandedModularTasks = new Set(),
   delegationGroups,
   lowerSearchTerm,
   taskCodeMap,
@@ -24844,13 +25138,65 @@ export function useDetailFlatRows({
 
       if (isExpanded) {
         const groupTaskIndexMap = new Map<string, number>();
+        const parentTaskMap = new Map<string, Task>();
         groupTasks.forEach((gt, idx) => {
-          if (gt.id) groupTaskIndexMap.set(gt.id, idx);
+          if (gt.id) {
+            const idStr = String(gt.id).trim();
+            groupTaskIndexMap.set(idStr, idx);
+            parentTaskMap.set(idStr, gt);
+            parentTaskMap.set(idStr.toLowerCase(), gt);
+          }
+          if (gt.taskCodePhu) {
+            const codeStr = String(gt.taskCodePhu).trim().toLowerCase();
+            parentTaskMap.set(codeStr, gt);
+            const numMatch = codeStr.match(/[-#]?(\d+)$/);
+            if (numMatch) {
+              parentTaskMap.set(numMatch[1], gt);
+              parentTaskMap.set(`#${numMatch[1]}`, gt);
+            }
+          }
+          if (gt.orderIndex !== undefined && gt.orderIndex !== null) {
+            parentTaskMap.set(String(Number(gt.orderIndex) + 1), gt);
+            parentTaskMap.set(`#${Number(gt.orderIndex) + 1}`, gt);
+          }
+          if (gt.name) {
+            parentTaskMap.set(String(gt.name).trim().toLowerCase(), gt);
+          }
         });
 
         const seenRenderTaskIds = new Set<string>();
         tasksToRender.forEach((t, tIdx) => {
           if (t.id && seenRenderTaskIds.has(t.id)) return;
+
+          // If t is a child task, check if its parent task is expanded
+          if (t.parentTaskId) {
+            // Only bypass collapse if user explicitly searched for a term that directly matches this child task and does not match the project as a whole
+            const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
+            if (!isDirectChildSearchHit) {
+              const rawParentId = String(t.parentTaskId).trim();
+              const matchedParent =
+                parentTaskMap.get(rawParentId) ||
+                parentTaskMap.get(rawParentId.toLowerCase());
+
+              const candidateIds: string[] = [rawParentId, rawParentId.toLowerCase()];
+              if (matchedParent) {
+                if (matchedParent.id) {
+                  candidateIds.push(String(matchedParent.id).trim());
+                  candidateIds.push(String(matchedParent.id).trim().toLowerCase());
+                }
+                if (matchedParent.taskCodePhu) {
+                  candidateIds.push(String(matchedParent.taskCodePhu).trim());
+                  candidateIds.push(String(matchedParent.taskCodePhu).trim().toLowerCase());
+                }
+              }
+
+              const isParentExpanded = candidateIds.some(cid => expandedModularTasks.has(cid));
+              if (!isParentExpanded) {
+                return; // Parent task is collapsed -> hide child task
+              }
+            }
+          }
+
           if (t.id) seenRenderTaskIds.add(t.id);
           const originalIndex = groupTaskIndexMap.get(t.id);
           const i = originalIndex !== undefined ? originalIndex : tIdx;
@@ -24869,11 +25215,10 @@ export function useDetailFlatRows({
     });
 
     return rows;
-  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo, sortConfig, expandedCodes, delegationGroups, lowerSearchTerm, taskCodeMap, globalYearFilter]);
+  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo, sortConfig, expandedCodes, expandedModularTasks, delegationGroups, lowerSearchTerm, taskCodeMap, globalYearFilter]);
 
   return flatTableRows;
 }
-
 
 ================================================================================
 FILE: src/components/DetailTabParts/useDetailFocusTracking.ts
