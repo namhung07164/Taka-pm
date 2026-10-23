@@ -134170,10 +134170,10 @@ import { db, APP_ID } from './firebase';
 
 let _hasAttemptedLocalRestore = false;
 let _hasAttemptedFirestoreRestore = false;
+let _cachedLocalBackup: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId: string | null }> | null = null;
 
 /**
- * Ensures Picture Mapping storeLocationData is hydrated in memory (0ms from localStorage backup,
- * with a non-blocking Firestore fallback if localStorage was empty).
+ * Ensures Picture Mapping storeLocationData is hydrated in memory without mutating Zustand during React render.
  */
 export function ensureMappingConfigHydrated(): void {
   if (typeof window === 'undefined') return;
@@ -134189,14 +134189,21 @@ export function ensureMappingConfigHydrated(): void {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (parsed?.storeLocationData && Object.keys(parsed.storeLocationData).length > 0) {
-          state.loadFullCloudData({
-            storeLocationData: parsed.storeLocationData,
-            store: parsed.store || state.store,
-            location: parsed.location || state.location,
-            activeMapVersionId: parsed.activeMapVersionId || state.activeMapVersionId,
-            reviewSelectedLabels: parsed.reviewSelectedLabels || state.reviewSelectedLabels,
-            reviewLabelColors: parsed.reviewLabelColors || state.reviewLabelColors,
-          });
+          _cachedLocalBackup = parsed.storeLocationData;
+          // Defer Zustand setState to macrotask to avoid updating store during component render
+          setTimeout(() => {
+            const cur = useDataStore.getState();
+            if (!cur.storeLocationData || Object.keys(cur.storeLocationData).length === 0) {
+              cur.loadFullCloudData({
+                storeLocationData: parsed.storeLocationData,
+                store: parsed.store || cur.store,
+                location: parsed.location || cur.location,
+                activeMapVersionId: parsed.activeMapVersionId || cur.activeMapVersionId,
+                reviewSelectedLabels: parsed.reviewSelectedLabels || cur.reviewSelectedLabels,
+                reviewLabelColors: parsed.reviewLabelColors || cur.reviewLabelColors,
+              });
+            }
+          }, 0);
           return;
         }
       }
@@ -134219,6 +134226,7 @@ export function ensureMappingConfigHydrated(): void {
         if (snap.exists()) {
           const fsData = snap.data() as any;
           if (fsData?.storeLocationData && Object.keys(fsData.storeLocationData).length > 0) {
+            _cachedLocalBackup = fsData.storeLocationData;
             useDataStore.getState().loadFullCloudData({
               storeLocationData: fsData.storeLocationData,
               store: fsData.store || current.store,
@@ -134331,10 +134339,14 @@ export function resolveMatchedUnitSizeM2(projectOrInput: {
     }
   });
 
-  // Build merged partitions dictionary including active in-memory partition
+  // Build merged partitions dictionary including cached localStorage backup and active in-memory partition
   const activeKey = `${state.store}_${normalizeFloorCode(state.location)}`;
+  const basePartitions =
+    state.storeLocationData && Object.keys(state.storeLocationData).length > 0
+      ? state.storeLocationData
+      : (_cachedLocalBackup || {});
   const allPartitions: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId: string | null }> = {
-    ...(state.storeLocationData || {}),
+    ...basePartitions,
   };
   if ((state.mapUnits && state.mapUnits.length > 0) || (state.mapVersions && state.mapVersions.length > 0)) {
     const existing = allPartitions[activeKey];
