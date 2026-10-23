@@ -305,10 +305,12 @@ export function useProjectsHydration({
       // Skip Firestore when we have local projects for the year, or when this exact (querySignature, year)
       // was already verified against Firestore server (within 24h TTL or current session) and is kept in sync via taka_deltas.
       const deltaManaged =
+        hasLocalDataForActiveStore ||
+        hasLocalDataForYear ||
+        hasVerifiedSigMarker ||
+        isVerifiedInThisSession ||
         ((hasLocalDataForActiveStore || hasVerifiedSigMarker) && isClosedOrPastYear) ||
-        (DELTA_FIRST.projects &&
-          hasFreshYearMarker &&
-          (hasLocalDataForActiveStore || hasLocalDataForYear || hasVerifiedSigMarker || isVerifiedInThisSession));
+        (DELTA_FIRST.projects && hasFreshYearMarker);
 
       if (deltaManaged) {
         setCloudStatus('online');
@@ -396,7 +398,7 @@ export function useProjectsHydration({
           const localCount = await hydrateProjectsFromLocal(year);
           const markers = await getLoadedMarkers();
           const hasVerifiedSecSig = hasFreshMarker(markers, 'projects_year', secKey);
-          if ((localCount > 0 || hasVerifiedSecSig) && hasFreshMarker(markers, 'projects_year', year)) {
+          if (localCount > 0 || hasVerifiedSecSig || hasFreshMarker(markers, 'projects_year', year)) {
             return;
           }
 

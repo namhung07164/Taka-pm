@@ -339,8 +339,8 @@ export function useTasksHydration({
 
           const deltaManaged =
             isZeroTaskProject ||
-            (hasLocalProjTasks && isArchivedPastYear) ||
-            (DELTA_FIRST.tasks && hasLocalProjTasks && isProjMarkerFresh);
+            hasLocalProjTasks ||
+            (DELTA_FIRST.tasks && isProjMarkerFresh);
 
           if (deltaManaged) {
             knownHydratedProjectCodes.current.add(String(p.id));

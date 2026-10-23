@@ -204,7 +204,7 @@ export function useCostsHydration({
           !(storeState.projects || []).some((p) => String(p.year) === String(year));
 
         const deltaManaged =
-          (hasLocalCosts && isClosedOrPastYear) ||
+          hasLocalCosts ||
           yearHasZeroProjects ||
           (DELTA_FIRST.costs && hasFreshCostMarker);
         if (deltaManaged) {
