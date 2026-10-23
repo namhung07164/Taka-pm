@@ -5,15 +5,18 @@ import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { undoManager } from '../../lib/undoManager';
 import { formatToDatetimeLocal, getDefaultDatetimeLocal } from '../../lib/utils';
-import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../../lib/projectDatesService';
+import { getTasksForProject, calculateProjectComputedDates, matchProjectCode } from '../../lib/projectDatesService';
 import { 
   calculateDatesFromPredecessorsAndDuration, 
   rollupParentTaskDates, 
   batchSaveTasksToFirestore 
 } from '../../lib/taskImportService';
 import { healAllTasksPredecessors } from '../../lib/ganttUtils';
+import { extractSubtaskIndex } from '../../lib/ganttUtilsParts/taskSortingAndCodes';
 import { findAffectedProjects } from '../../lib/taskStateService';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
+import { resolveParentChildHierarchy } from './detailTaskImportHierarchy';
+import { syncAffectedProjectsSummaries } from './detailTaskImportProjectSync';
 
 interface ExecuteImportTasksParams {
   rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
@@ -30,27 +33,45 @@ export async function executeImportTasks({
   appUsers,
   currentUser
 }: ExecuteImportTasksParams): Promise<{ count: number; projectCount?: number }> {
-  // Build fast multi-index maps for existing tasks
+  // 1. Gather all tasks across memory and local storage to guarantee 100% presence
+  const allInitialTasks = [...useAppStore.getState().tasks];
+  tasks.forEach(t => {
+    if (!allInitialTasks.some(existing => existing.id === t.id)) {
+      allInitialTasks.push(t);
+    }
+  });
+
+  try {
+    const { localDb } = await import('../../lib/localDb');
+    const dbTasks = await localDb.tasks.toArray();
+    dbTasks.forEach(t => {
+      if (!allInitialTasks.some(existing => existing.id === t.id)) {
+        allInitialTasks.push(t);
+      }
+    });
+  } catch {
+    // localDb fallback
+  }
+
+  // 2. Build multi-index maps for existing tasks
   const existingTasksById = new Map<string, Task>();
   const existingTasksByName = new Map<string, Task>();
   const existingTasksByNorm = new Map<string, Task>();
   const existingTasksByCode = new Map<string, Task>();
 
-  tasks.forEach(tsk => {
+  allInitialTasks.forEach(tsk => {
+    if (!tsk || !tsk.id) return;
     existingTasksById.set(tsk.id, tsk);
     const prjKey = buildCanonicalProjectKey(tsk.projectCode, tsk.projectYear, tsk.projectStore, projects);
-    const pCode = String(tsk.projectCode || '').trim().toLowerCase();
     if (tsk.name) {
-      const nameKey = `${prjKey}:::${String(tsk.name).trim().toLowerCase()}`;
-      existingTasksByName.set(nameKey, tsk);
+      existingTasksByName.set(`${prjKey}:::${String(tsk.name).trim().toLowerCase()}`, tsk);
       const norm = normalizeTaskNameForComparison(tsk.name);
       if (norm) {
         existingTasksByNorm.set(`${prjKey}:::norm:::${norm}`, tsk);
       }
     }
     if (tsk.taskCodePhu) {
-      const codeKey = `${prjKey}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`;
-      existingTasksByCode.set(codeKey, tsk);
+      existingTasksByCode.set(`${prjKey}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`, tsk);
     }
   });
 
@@ -59,16 +80,47 @@ export async function executeImportTasks({
   const tasksToImport: Task[] = [];
   const processedImportTasksMap = new Map<string, Task>();
 
-  // Process rows project by project
+  // 3. Process rows project by project
   rawParsedRowsByProject.forEach((items, prjKey) => {
+    const sample = items[0]?.rowData;
+    const targetProject = projects.find(p => {
+      const codeMatch = matchProjectCode(p.code, sample?.projectCode);
+      const storeMatch = !sample?.projectStore || !p.store || String(p.store).trim().toLowerCase() === String(sample.projectStore).trim().toLowerCase();
+      const yearMatch = !sample?.projectYear || p.year === undefined || p.year === null || String(p.year).trim() === String(sample.projectYear).trim();
+      return codeMatch && storeMatch && yearMatch;
+    });
+
+    const projectExistingTasks = targetProject
+      ? getTasksForProject(targetProject, allInitialTasks)
+      : allInitialTasks.filter(t => buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects) === prjKey);
+
+    // Compute maximum existing subtask code number and max orderIndex for this project
+    let maxExistingSubtaskNum = 0;
+    let maxExistingOrderIndex = -1;
+
+    projectExistingTasks.forEach(pt => {
+      if (pt.orderIndex !== undefined && pt.orderIndex !== null) {
+        const ord = Number(pt.orderIndex);
+        if (!isNaN(ord) && ord > maxExistingOrderIndex) {
+          maxExistingOrderIndex = ord;
+        }
+      }
+      if (pt.taskCodePhu) {
+        const n = extractSubtaskIndex(pt.taskCodePhu);
+        if (n !== null && n > maxExistingSubtaskNum) {
+          maxExistingSubtaskNum = n;
+        }
+      }
+    });
+
+    let nextAutoNumber = Math.max(maxExistingSubtaskNum, maxExistingOrderIndex + 1);
+
     const sortedItems = [...items].sort((a, b) => {
       const codeA = String(a.rowData.taskCodePhu || '').trim();
       const codeB = String(b.rowData.taskCodePhu || '').trim();
-      const numMatchA = codeA.match(/[-#](\d+)$/);
-      const numMatchB = codeB.match(/[-#](\d+)$/);
-      if (numMatchA && numMatchB) {
-        const numA = parseInt(numMatchA[1], 10);
-        const numB = parseInt(numMatchB[1], 10);
+      const numA = extractSubtaskIndex(codeA);
+      const numB = extractSubtaskIndex(codeB);
+      if (numA !== null && numB !== null) {
         if (numA !== numB) return numA - numB;
       } else if (codeA && codeB) {
         const comp = codeA.localeCompare(codeB, undefined, { numeric: true });
@@ -87,36 +139,73 @@ export async function executeImportTasks({
       return a.originalCsvIndex - b.originalCsvIndex;
     });
 
-    sortedItems.forEach((item, index) => {
+    sortedItems.forEach((item) => {
       const t = item.rowData;
-      // Dùng index thực tế của dòng trong file CSV để đánh số lại, đảm bảo không nhảy cóc
-      const taskOrderIndex = index; 
-      const exactProjectCode = String(t.projectCode || '').trim();
-      
-      // Ép buộc tạo Subtask code: Lấy tuyệt đối Project Code + # + (Thứ tự dòng + 1)
-      const taskCodePhu = `${exactProjectCode}#${taskOrderIndex + 1}`;
-
+      const exactProjectCode = String(t.projectCode || targetProject?.code || '').trim();
       const canonicalPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
+
+      // Determine taskCodePhu and orderIndex: respect explicit subtask number from CSV
+      const rawCode = String(t.taskCodePhu || '').trim();
+      const explicitNum = extractSubtaskIndex(rawCode);
+      const hasExplicitSubtaskNumber = explicitNum !== null;
+
+      let taskCodePhu: string;
+      let taskOrderIndex: number;
+
+      if (explicitNum !== null) {
+        taskCodePhu = `${exactProjectCode}#${explicitNum}`;
+        nextAutoNumber = Math.max(nextAutoNumber, explicitNum);
+        taskOrderIndex = t.orderIndex !== undefined && t.orderIndex !== '' && !isNaN(Number(t.orderIndex))
+          ? Number(t.orderIndex)
+          : explicitNum - 1;
+      } else if (rawCode) {
+        taskCodePhu = rawCode.startsWith(exactProjectCode) ? rawCode : `${exactProjectCode}#${rawCode}`;
+        nextAutoNumber += 1;
+        taskOrderIndex = t.orderIndex !== undefined && t.orderIndex !== '' && !isNaN(Number(t.orderIndex))
+          ? Number(t.orderIndex)
+          : nextAutoNumber - 1;
+      } else {
+        // No code specified in CSV -> auto-continue after max existing task
+        nextAutoNumber += 1;
+        taskCodePhu = `${exactProjectCode}#${nextAutoNumber}`;
+        taskOrderIndex = t.orderIndex !== undefined && t.orderIndex !== '' && !isNaN(Number(t.orderIndex))
+          ? Number(t.orderIndex)
+          : nextAutoNumber - 1;
+      }
+
       const rawName = String(t.name || '').trim().toLowerCase();
       const normName = normalizeTaskNameForComparison(t.name);
       const nameKey = `${canonicalPrjKey}:::${rawName}`;
       const normKey = `${canonicalPrjKey}:::norm:::${normName}`;
-      const codeKey = `${canonicalPrjKey}:::code:::${String(taskCodePhu).trim().toLowerCase()}`;
+      const codeKey = `${canonicalPrjKey}:::code:::${taskCodePhu.toLowerCase()}`;
 
-      let existing: Task | undefined = processedImportTasksMap.get(nameKey) ||
-                                       (normName ? processedImportTasksMap.get(normKey) : undefined) ||
-                                       (taskCodePhu ? processedImportTasksMap.get(codeKey) : undefined);
+      let existing: Task | undefined = undefined;
+
+      // Priority 1: Match within current import batch
+      if (hasExplicitSubtaskNumber) {
+        existing = processedImportTasksMap.get(codeKey);
+      } else {
+        existing = processedImportTasksMap.get(codeKey) ||
+                   processedImportTasksMap.get(nameKey) ||
+                   (normName ? processedImportTasksMap.get(normKey) : undefined);
+      }
+
+      // Priority 2: Direct ID match if row contains ID
       if (!existing && t.id) {
         existing = existingTasksById.get(t.id);
       }
-      if (!existing && nameKey) {
-        existing = existingTasksByName.get(nameKey);
-      }
-      if (!existing && normKey) {
-        existing = existingTasksByNorm.get(normKey);
-      }
-      if (!existing && taskCodePhu) {
+
+      // Priority 3: When explicit subtask code was provided, ONLY match existing task with exact same code!
+      // NEVER match by name if code does not match!
+      if (!existing && hasExplicitSubtaskNumber) {
         existing = existingTasksByCode.get(codeKey);
+      }
+
+      // Priority 4: When NO explicit subtask code was provided, match by name
+      if (!existing && !hasExplicitSubtaskNumber) {
+        if (nameKey) existing = existingTasksByName.get(nameKey);
+        if (!existing && normKey) existing = existingTasksByNorm.get(normKey);
+        if (!existing && codeKey) existing = existingTasksByCode.get(codeKey);
       }
 
       const id = existing ? existing.id : `t_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${tasksToImport.length}`;
@@ -274,92 +363,23 @@ export async function executeImportTasks({
     });
   });
 
-  // Resolve parent-child hierarchy across imported tasks and existing tasks in O(1) via pre-built maps
-  const lookupTaskMap = new Map<string, Task>();
-  const parentByCode = new Map<string, Task>();
-  const parentBySuffix = new Map<string, Task>();
-  const parentByOrder = new Map<string, Task>();
-  const parentByName = new Map<string, Task>();
+  // 4. Resolve parent-child hierarchy across imported tasks and existing tasks
+  resolveParentChildHierarchy(tasksToImport, allInitialTasks);
 
-  const buildScopeKey = (tk: Partial<Task>) =>
-    `${String(tk.projectCode || '').trim().toLowerCase()}|${String(tk.projectYear ?? '').trim()}|${String(tk.projectStore || '').trim().toLowerCase()}`;
-
-  const indexTaskForParentLookup = (pt: Task) => {
-    lookupTaskMap.set(pt.id, pt);
-    const scope = buildScopeKey(pt);
-    if (pt.taskCodePhu) {
-      const cLower = String(pt.taskCodePhu).trim().toLowerCase();
-      parentByCode.set(`${scope}:::${cLower}`, pt);
-      const suffixMatch = cLower.match(/[#-](\d+)$/);
-      if (suffixMatch) {
-        parentBySuffix.set(`${scope}:::${suffixMatch[1]}`, pt);
-      }
-    }
-    if (pt.orderIndex !== undefined && pt.orderIndex !== null) {
-      parentByOrder.set(`${scope}:::${pt.orderIndex}`, pt);
-    }
-    if (pt.name) {
-      parentByName.set(`${scope}:::${String(pt.name).trim().toLowerCase()}`, pt);
-    }
-  };
-
-  tasks.forEach(indexTaskForParentLookup);
-  tasksToImport.forEach(indexTaskForParentLookup);
-
-  tasksToImport.forEach(t => {
-    let resolvedParentId: string | undefined = undefined;
-    const scope = buildScopeKey(t);
-
-    if (t.parentTaskId && lookupTaskMap.has(t.parentTaskId)) {
-      resolvedParentId = t.parentTaskId;
-    } else if ((t as any).parentTaskCode) {
-      const pCode = String((t as any).parentTaskCode).trim().toLowerCase();
-      const cleanNumMatch = pCode.match(/^#?(\d+)$/);
-      const targetIndex = cleanNumMatch ? parseInt(cleanNumMatch[1], 10) - 1 : -1;
-
-      const matchedParent =
-        parentByCode.get(`${scope}:::${pCode}`) ||
-        lookupTaskMap.get(String((t as any).parentTaskCode).trim()) ||
-        (cleanNumMatch ? parentBySuffix.get(`${scope}:::${cleanNumMatch[1]}`) : undefined) ||
-        (targetIndex >= 0 ? parentByOrder.get(`${scope}:::${targetIndex}`) : undefined);
-
-      if (matchedParent && matchedParent.id !== t.id) {
-        resolvedParentId = matchedParent.id;
-      }
-    } else if ((t as any).parentTaskName) {
-      const pName = String((t as any).parentTaskName).trim().toLowerCase();
-      const matchedParent = parentByName.get(`${scope}:::${pName}`);
-      if (matchedParent && matchedParent.id !== t.id) {
-        resolvedParentId = matchedParent.id;
-      }
-    }
-
-    if (resolvedParentId && resolvedParentId !== t.id) {
-      t.parentTaskId = resolvedParentId;
-      (t as any).parentId = resolvedParentId;
-    } else if (resolvedParentId === t.id) {
-      delete t.parentTaskId;
-      delete (t as any).parentId;
-    }
-
-    delete (t as any).parentTaskCode;
-    delete (t as any).parentTaskName;
-    delete (t as any).isParent;
-    delete (t as any).level;
-  });
-
-  // Calculate dates from predecessors and duration
+  // 5. Calculate dates from predecessors and duration
   useAppStore.getState().optimisticUpdateTasks(tasksToImport);
 
   const allCurrentTasks = useAppStore.getState().tasks;
+  const tasksMapAfterCalc = new Map<string, Task>();
+  allInitialTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
+  allCurrentTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
+
   const calculatedTasks = calculateDatesFromPredecessorsAndDuration(
     tasksToImport,
-    allCurrentTasks,
+    Array.from(tasksMapAfterCalc.values()),
     projects
   );
 
-  const tasksMapAfterCalc = new Map<string, Task>();
-  allCurrentTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
   calculatedTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
   const allTasksWithCalc = Array.from(tasksMapAfterCalc.values());
   const { updatedParents, allTasksMap } = rollupParentTaskDates(allTasksWithCalc, undefined, projects);
@@ -375,6 +395,13 @@ export async function executeImportTasks({
 
   // Optimistic update (0ms UI)
   useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
+
+  // Persist tasks to LocalDB (Dexie) immediately
+  if (finalTasksToSave.length > 0) {
+    import('../../lib/localDb')
+      .then(({ bulkPersistTasks }) => bulkPersistTasks(finalTasksToSave))
+      .catch(() => {});
+  }
 
   // Compute & sync project summaries in memory BEFORE overwriting store.projects
   const finalFullTasksList = Array.from(allTasksMap.values());
@@ -405,63 +432,7 @@ export async function executeImportTasks({
 
   // Save tasks & project summaries to Firestore + Delta bus in parallel chunks
   const activeUser = useAppStore.getState().currentUser || currentUser;
-
-  const syncProjectsBatchPromise = (async () => {
-    if (affectedProjects.length === 0) return;
-    const { recordBatchDeltas } = await import('../../lib/deltaSyncService');
-    const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
-    const nowIso = new Date().toISOString();
-    const PROJ_BATCH_LIMIT = 100;
-
-    for (let i = 0; i < affectedProjects.length; i += PROJ_BATCH_LIMIT) {
-      const projChunk = affectedProjects.slice(i, i + PROJ_BATCH_LIMIT).filter(p => Boolean(p?.id));
-      if (projChunk.length === 0) continue;
-
-      markExplicitDelta(projChunk.map(p => ({ docId: p.id, collectionName: 'taka_projects' as const })));
-      const pBatch = writeBatch(db);
-      const projDeltaItems: any[] = [];
-
-      projChunk.forEach(p => {
-        const computed = computedByProjectId.get(p.id);
-        if (!computed) return;
-        const cleanSummaries = (computed.taskSummaries || []).map((ts: any) => {
-          const item: Record<string, any> = {};
-          for (const [k, v] of Object.entries(ts)) {
-            if (v !== undefined) item[k] = v;
-          }
-          return item;
-        });
-        const updatePayload: Record<string, any> = {
-          updatedAt: nowIso,
-          ...(computed.computedTakStart !== undefined ? { computedTakStart: computed.computedTakStart } : {}),
-          ...(computed.computedTakCompl !== undefined ? { computedTakCompl: computed.computedTakCompl } : {}),
-          ...(computed.computedOpening !== undefined ? { computedOpening: computed.computedOpening } : {}),
-          ...(computed.computedPlanProgress !== undefined ? { computedPlanProgress: computed.computedPlanProgress } : {}),
-          ...(computed.computedActProgress !== undefined ? { computedActProgress: computed.computedActProgress } : {}),
-          ...(computed.taskCount !== undefined ? { taskCount: computed.taskCount } : {}),
-          taskSummaries: cleanSummaries,
-        };
-
-        const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', p.id);
-        pBatch.set(pRef, updatePayload, { merge: true });
-        projDeltaItems.push({
-          docId: p.id,
-          collectionName: 'taka_projects' as const,
-          action: 'update' as const,
-          isPatch: true,
-          data: updatePayload,
-          year: p.year ? String(p.year) : undefined,
-        });
-      });
-
-      try {
-        await pBatch.commit();
-        await recordBatchDeltas(projDeltaItems, activeUser?.username || activeUser?.id);
-      } catch (err) {
-        console.warn('[detailTaskImportExecutor] Project summary batch commit failed:', err);
-      }
-    }
-  })();
+  const syncProjectsBatchPromise = syncAffectedProjectsSummaries(affectedProjects, computedByProjectId, activeUser);
 
   const cloudSyncPromise = Promise.all([
     batchSaveTasksToFirestore(finalTasksToSave, activeUser),
@@ -492,4 +463,3 @@ export async function executeImportTasks({
 
   return { count: tasksToImport.length, projectCount: affectedProjects.length };
 }
-
