@@ -28,27 +28,21 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
   onEditProject,
   onOpenMiniGantt,
 }) => {
-  if (!v.floor && !v.area && !v.startDate && !v.endDate && commentsCount === 0) {
+  const effectiveSize = p?.sizeM2 ?? (p as any)?.size ?? (p as any)?.area ?? dataSize ?? 0;
+
+  if (!v.floor && !v.area && !v.startDate && !v.endDate && commentsCount === 0 && !onOpenMiniGantt && effectiveSize === 0) {
     return null;
   }
 
   return (
     <div className="flex items-center justify-between gap-2 px-0.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 flex-wrap sm:flex-nowrap">
-      {/* Left Side: Floor, Area & Comment Symbol */}
+      {/* Left Side: Floor, Comment Symbol, Mini Gantt & Area/Size */}
       <div className="flex items-center gap-1.5 flex-wrap">
         {/* Floor Badge */}
         {v.floor && floorValue && (
           <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
             <span className="text-[9px] text-slate-400 font-medium uppercase">Floor:</span>
             <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{floorValue}</span>
-          </div>
-        )}
-
-        {/* Area (if available) */}
-        {v.area && dataSize > 0 && (
-          <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
-            <span className="text-[9px] text-slate-400 font-medium uppercase">DT:</span>
-            <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{Number(dataSize).toLocaleString('en-US')} m²</span>
           </div>
         )}
 
@@ -73,7 +67,7 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
           </button>
         )}
 
-        {/* Modular Mini Gantt Button (Next to comments button) */}
+        {/* Modular Mini Gantt Button */}
         {p && onOpenMiniGantt && (
           <button
             type="button"
@@ -87,6 +81,17 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
             <BarChartHorizontal className="w-3.5 h-3.5" />
             <span>Gantt</span>
           </button>
+        )}
+
+        {/* Area / Size (m²) Badge - Displayed right next to mini gantt */}
+        {(v.area !== false) && effectiveSize > 0 && (
+          <div 
+            className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0"
+            title={`Size (m²): ${Number(effectiveSize).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²`}
+          >
+            <span className="text-[9px] text-slate-400 font-medium uppercase">Size:</span>
+            <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{Number(effectiveSize).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²</span>
+          </div>
         )}
       </div>
 

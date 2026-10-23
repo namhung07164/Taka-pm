@@ -304,6 +304,12 @@ export function buildAggregatedUnitData({
           dataMap[code].appProjectParty = partyStr;
           dataMap[code].appParty = partyStr;
 
+          dataMap[code].sizeM2 = p.sizeM2 || dataMap[code].sizeM2 || 0;
+          dataMap[code].appProjectSizeM2 = p.sizeM2 || 0;
+          if (p.sizeM2 && !dataMap[code].size) {
+            dataMap[code].size = p.sizeM2;
+          }
+
           dataMap[code].matchedTasks = allMatchedTasks;
           dataMap[code].subTasks = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
 

@@ -44832,7 +44832,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             p={p}
             canWrite={canWrite}
             floorValue={floorValue}
-            dataSize={data.size}
+            dataSize={p?.sizeM2 ?? (p as any)?.size ?? (p as any)?.area ?? data.sizeM2 ?? data.size ?? data.area ?? 0}
             commentsCount={commentsCount}
             computedTakStart={computedTakStart}
             computedTakCompl={computedTakCompl}
@@ -44889,7 +44889,6 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
 };
 
 export default LayoutUnitTooltip;
-
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutZoomControls.tsx
 ================================================================================
@@ -45505,6 +45504,11 @@ export const MiniGanttHeader: React.FC<MiniGanttHeaderProps> = ({ project, onClo
           <span className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100 truncate max-w-[200px] sm:max-w-[320px]">
             {project.name}
           </span>
+          {Boolean(project.sizeM2 && project.sizeM2 > 0) && (
+            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/80 shrink-0">
+              {project.sizeM2} m²
+            </span>
+          )}
         </div>
       </div>
 
@@ -45531,8 +45535,6 @@ export const MiniGanttHeader: React.FC<MiniGanttHeaderProps> = ({ project, onClo
     </div>
   );
 };
-
-
 ================================================================================
 FILE: src/components/LayoutTabParts/MiniGanttRowItem.tsx
 ================================================================================
@@ -47860,27 +47862,21 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
   onEditProject,
   onOpenMiniGantt,
 }) => {
-  if (!v.floor && !v.area && !v.startDate && !v.endDate && commentsCount === 0) {
+  const effectiveSize = p?.sizeM2 ?? (p as any)?.size ?? (p as any)?.area ?? dataSize ?? 0;
+
+  if (!v.floor && !v.area && !v.startDate && !v.endDate && commentsCount === 0 && !onOpenMiniGantt && effectiveSize === 0) {
     return null;
   }
 
   return (
     <div className="flex items-center justify-between gap-2 px-0.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 flex-wrap sm:flex-nowrap">
-      {/* Left Side: Floor, Area & Comment Symbol */}
+      {/* Left Side: Floor, Comment Symbol, Mini Gantt & Area/Size */}
       <div className="flex items-center gap-1.5 flex-wrap">
         {/* Floor Badge */}
         {v.floor && floorValue && (
           <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
             <span className="text-[9px] text-slate-400 font-medium uppercase">Floor:</span>
             <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{floorValue}</span>
-          </div>
-        )}
-
-        {/* Area (if available) */}
-        {v.area && dataSize > 0 && (
-          <div className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0">
-            <span className="text-[9px] text-slate-400 font-medium uppercase">DT:</span>
-            <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{Number(dataSize).toLocaleString('en-US')} m²</span>
           </div>
         )}
 
@@ -47905,7 +47901,7 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
           </button>
         )}
 
-        {/* Modular Mini Gantt Button (Next to comments button) */}
+        {/* Modular Mini Gantt Button */}
         {p && onOpenMiniGantt && (
           <button
             type="button"
@@ -47919,6 +47915,17 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
             <BarChartHorizontal className="w-3.5 h-3.5" />
             <span>Gantt</span>
           </button>
+        )}
+
+        {/* Area / Size (m²) Badge - Displayed right next to mini gantt */}
+        {(v.area !== false) && effectiveSize > 0 && (
+          <div 
+            className="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700/80 flex items-center gap-1 shrink-0"
+            title={`Size (m²): ${Number(effectiveSize).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²`}
+          >
+            <span className="text-[9px] text-slate-400 font-medium uppercase">Size:</span>
+            <span className="font-bold text-xs text-slate-700 dark:text-slate-200">{Number(effectiveSize).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²</span>
+          </div>
         )}
       </div>
 
@@ -47958,7 +47965,6 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
     </div>
   );
 });
-
 ================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/TooltipProgressBars.tsx
 ================================================================================
@@ -50221,6 +50227,12 @@ export function buildAggregatedUnitData({
           dataMap[code].appProjectParty = partyStr;
           dataMap[code].appParty = partyStr;
 
+          dataMap[code].sizeM2 = p.sizeM2 || dataMap[code].sizeM2 || 0;
+          dataMap[code].appProjectSizeM2 = p.sizeM2 || 0;
+          if (p.sizeM2 && !dataMap[code].size) {
+            dataMap[code].size = p.sizeM2;
+          }
+
           dataMap[code].matchedTasks = allMatchedTasks;
           dataMap[code].subTasks = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
 
@@ -50351,8 +50363,6 @@ export function buildAggregatedUnitData({
 
   return dataMap;
 }
-
-
 ================================================================================
 FILE: src/components/LayoutTabParts/layoutStageUtils.ts
 ================================================================================

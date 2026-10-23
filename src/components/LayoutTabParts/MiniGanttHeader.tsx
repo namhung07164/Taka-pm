@@ -37,6 +37,11 @@ export const MiniGanttHeader: React.FC<MiniGanttHeaderProps> = ({ project, onClo
           <span className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100 truncate max-w-[200px] sm:max-w-[320px]">
             {project.name}
           </span>
+          {Boolean(project.sizeM2 && project.sizeM2 > 0) && (
+            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/80 shrink-0">
+              {project.sizeM2} m²
+            </span>
+          )}
         </div>
       </div>
 
