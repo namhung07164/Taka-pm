@@ -1,5 +1,6 @@
 import { Task, Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
+import { normalizeDashes } from '../utils';
 import { parsePredecessorToken } from '../predecessorMatchUtils';
 import { computeTaskCode } from './taskSortingAndCodes';
 
@@ -12,7 +13,7 @@ export function splitPredecessors(
   knownCodes?: Iterable<string> | Map<string, any> | Set<string>
 ): string[] {
   if (!predecessorString || typeof predecessorString !== 'string') return [];
-  const raw = predecessorString.trim();
+  const raw = normalizeDashes(predecessorString).trim();
   if (!raw) return [];
 
   if (!raw.includes(',')) return [raw];
@@ -26,7 +27,11 @@ export function splitPredecessors(
     }
   }
   codeList = codeList
-    .map(c => String(c).trim().toLowerCase())
+    .flatMap(c => {
+      const s = String(c).trim().toLowerCase();
+      const norm = normalizeDashes(s);
+      return norm !== s ? [s, norm] : [s];
+    })
     .filter(Boolean)
     .sort((a, b) => b.length - a.length);
 
@@ -99,7 +104,7 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
   const taskIds = contextTask?.predecessorTaskIds || [];
 
   return preds.map((pMatches, index) => {
-    const lowerMatches = pMatches.toLowerCase();
+    const lowerMatches = normalizeDashes(pMatches).toLowerCase();
     const hardLinkedId = taskIds[index];
 
     if (hardLinkedId) {
@@ -129,8 +134,10 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
 
     let longestMatch = "";
     for (const code of taskNoMap.keys()) {
-      if (lowerMatches.startsWith(code) && code.length > longestMatch.length) {
-        const remainderCheck = lowerMatches.substring(code.length);
+      const codeNorm = normalizeDashes(code).toLowerCase();
+      if ((lowerMatches.startsWith(code) || lowerMatches.startsWith(codeNorm)) && code.length > longestMatch.length) {
+        const prefixLen = lowerMatches.startsWith(code) ? code.length : codeNorm.length;
+        const remainderCheck = lowerMatches.substring(prefixLen);
         if (remainderCheck.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s+\d|$)/i.test(remainderCheck)) {
           longestMatch = code;
         }

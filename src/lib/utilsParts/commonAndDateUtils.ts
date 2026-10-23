@@ -74,6 +74,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function normalizeDashes(str: string | undefined | null): string {
+  if (!str) return '';
+  return String(str).replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+}
+
 export function formatToDatetimeLocal(d: Date): string {
   if (!d || isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");

@@ -106,7 +106,8 @@ export function calculateTaskDatesFromPredecessors(
     let newDuration = "0";
 
     if (diffDays >= 0) {
-      newDuration = String(Number(diffDays.toFixed(2)));
+      const rounded = Math.round(diffDays);
+      newDuration = Math.abs(diffDays - rounded) < 0.45 ? String(rounded) : String(Number(diffDays.toFixed(2)));
     } else {
       newFinish = newStart;
       newDuration = "0";

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Project, Task } from '../../types';
 import { getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime } from '../../lib/utils';
-import { calculateTaskDatesFromPredecessors, parsePredecessors, buildTaskNoMap } from '../../lib/ganttUtils';
+import { calculateTaskDatesFromPredecessors, parsePredecessors, buildTaskNoMap, splitPredecessors } from '../../lib/ganttUtils';
 import { useAppStore } from '../../store/useAppStore';
 
 export interface UseTaskModalFormStateProps {
@@ -137,8 +137,8 @@ export function useTaskModalFormState({
 
     if (isFilled) {
       try {
-        const currentTasks = useAppStore.getState().tasks || tasks || [];
-        const taskNoMap = buildTaskNoMap(projects || [], currentTasks);
+        let currentTasks = useAppStore.getState().tasks || tasks || [];
+        let taskNoMap = buildTaskNoMap(projects || [], currentTasks);
         const dummyTask: Task = {
           id: task?.id || 'temp',
           projectId: updated.projectId || task?.projectId || currentProject?.id,
@@ -151,9 +151,50 @@ export function useTaskModalFormState({
           finish: updated.finish,
           duration: updated.duration,
           durationManual: updated.durationManual ?? (parts.length >= 2 ? false : true),
-          finishManual: updated.finishManual ?? false
+          finishManual: updated.finishManual ?? false,
+          predecessorTaskIds: updated.predecessorTaskIds || formData.predecessorTaskIds || task?.predecessorTaskIds
         };
-        const parsed = parsePredecessors(val, taskNoMap, dummyTask);
+        let parsed = parsePredecessors(val, taskNoMap, dummyTask);
+
+        if (isFilled && (!parsed.length || parsed.some(p => !p.task))) {
+          const predParts = splitPredecessors(val, Array.from(taskNoMap.keys()));
+          import('../../lib/utils').then(({ normalizeDashes }) => {
+            import('../../lib/taskStateService').then(({ ensureProjectTasksLoaded }) => {
+              for (const token of predParts) {
+                const cleanToken = normalizeDashes(token).replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+                const cleanTokenLower = cleanToken.toLowerCase();
+                const matchedProj = (projects || []).find(
+                  (p) =>
+                    p.code &&
+                    cleanTokenLower.startsWith(normalizeDashes(p.code).toLowerCase())
+                );
+                if (matchedProj && (matchedProj.id !== dummyTask.projectId || matchedProj.code !== dummyTask.projectCode)) {
+                  ensureProjectTasksLoaded(matchedProj.code, {
+                    projectId: matchedProj.id,
+                    store: matchedProj.store,
+                    year: matchedProj.year,
+                  }).then((loaded) => {
+                    if (loaded.length > 0) {
+                      const refreshedTasks = useAppStore.getState().tasks || currentTasks;
+                      const refreshedMap = buildTaskNoMap(projects || [], refreshedTasks);
+                      const refreshedParsed = parsePredecessors(val, refreshedMap, dummyTask);
+                      const calcResult = calculateTaskDatesFromPredecessors(dummyTask, refreshedParsed);
+                      if (calcResult) {
+                        setFormData((prev: any) => ({
+                          ...prev,
+                          start: calcResult.start,
+                          finish: calcResult.finish,
+                          duration: calcResult.duration,
+                          durationManual: calcResult.durationManual,
+                        }));
+                      }
+                    }
+                  });
+                }
+              }
+            });
+          });
+        }
 
         if (parsed.length > 0) {
           const calcResult = calculateTaskDatesFromPredecessors(dummyTask, parsed);

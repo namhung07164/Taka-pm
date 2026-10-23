@@ -8,7 +8,7 @@ import {
   syncProjectDatesToFirestore,
 } from './projectDatesService';
 import { isTaskDeletedInTracker } from './taskDeletedTracker';
-import { isTaskBelongsToProject as isTaskBelongsToProjectCore } from './utils';
+import { isTaskBelongsToProject as isTaskBelongsToProjectCore, normalizeDashes } from './utils';
 import {
   deleteTaskStateUnified,
   deleteProjectStateUnified,
@@ -41,7 +41,7 @@ export async function ensureProjectTasksLoaded(
   context?: EnsureProjectTasksContext
 ): Promise<Task[]> {
   if (!projectCode && !context?.projectId) return [];
-  const cleanCode = (projectCode || '').trim();
+  const cleanCode = normalizeDashes(projectCode || '').trim();
   const cleanCodeLower = cleanCode.toLowerCase();
   const ctxProjectId = context?.projectId ? String(context.projectId).trim() : '';
   const ctxStoreLower = context?.store ? String(context.store).trim().toLowerCase() : '';
@@ -53,8 +53,9 @@ export async function ensureProjectTasksLoaded(
     if (ctxProjectId && t.projectId) {
       return String(t.projectId).trim() === ctxProjectId;
     }
+    const tCodeLower = t.projectCode ? normalizeDashes(t.projectCode).trim().toLowerCase() : '';
     if (ctxProjectId && !t.projectId) {
-      if (cleanCodeLower && (!t.projectCode || t.projectCode.trim().toLowerCase() !== cleanCodeLower)) {
+      if (cleanCodeLower && (!tCodeLower || tCodeLower !== cleanCodeLower)) {
         return false;
       }
       if (ctxStoreLower && t.projectStore && t.projectStore.trim().toLowerCase() !== ctxStoreLower) {
@@ -70,7 +71,7 @@ export async function ensureProjectTasksLoaded(
       }
       return Boolean(cleanCodeLower);
     }
-    if (cleanCodeLower && (!t.projectCode || t.projectCode.trim().toLowerCase() !== cleanCodeLower)) {
+    if (cleanCodeLower && (!tCodeLower || tCodeLower !== cleanCodeLower)) {
       return false;
     }
     if (ctxStoreLower && t.projectStore && t.projectStore.trim().toLowerCase() !== ctxStoreLower) {

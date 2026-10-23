@@ -91,4 +91,50 @@ describe('Cross-Project Predecessor Resolution & Date Calculation', () => {
     expect(result?.finish).toBe('2026-09-29T06:00');
     expect(result?.duration).toBe('2');
   });
+
+  it('handles simultaneous SS and FF from cross-project task with en-dash (HN–TKV–01#27SS, HN–TKV–01#27FF)', () => {
+    const p1: Project = { id: 'p_hn', code: 'HN-TKV-01', year: 2026, store: 'HN' } as Project;
+    const p2: Project = { id: 'p_b1', code: 'B1-B101', year: 2027, store: 'HCM' } as Project;
+    const task27: Task = {
+      id: 't_27',
+      projectId: 'p_hn',
+      projectCode: 'HN-TKV-01',
+      projectYear: 2026,
+      projectStore: 'HN',
+      name: 'Tenant - Design guidline',
+      orderIndex: 26,
+      start: '2026-06-15T08:00:00',
+      finish: '2026-10-28T17:00:00',
+      duration: '135'
+    } as Task;
+    const task35: Task = {
+      id: 't_35',
+      projectId: 'p_b1',
+      projectCode: 'B1-B101',
+      projectYear: 2027,
+      projectStore: 'HCM',
+      name: 'Tenant - Design guidline',
+      orderIndex: 34,
+      start: '2027-01-02T08:00:00',
+      finish: '2027-01-02T17:00:00',
+      duration: '0',
+      predecessor: 'HN\u2013TKV\u201301#27SS, HN\u2013TKV\u201301#27FF'
+    } as Task;
+
+    const map = buildTaskNoMap([p1, p2], [task27, task35]);
+    const parsed = parsePredecessors(task35.predecessor!, map, task35);
+
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].type).toBe('SS');
+    expect(parsed[0].task?.id).toBe('t_27');
+    expect(parsed[1].type).toBe('FF');
+    expect(parsed[1].task?.id).toBe('t_27');
+
+    const result = calculateTaskDatesFromPredecessors(task35, parsed);
+    expect(result).not.toBeNull();
+    expect(result?.start).toBe('2026-06-15T08:00');
+    expect(result?.finish).toBe('2026-10-28T17:00');
+    expect(result?.duration).toBe('135');
+    expect(result?.durationManual).toBe(false);
+  });
 });

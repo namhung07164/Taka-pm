@@ -1,5 +1,5 @@
 import { Task, Project } from '../../types';
-import { isTaskBelongsToProject } from '../utils';
+import { isTaskBelongsToProject, normalizeDashes } from '../utils';
 import { sortGroupTasks } from './taskSortingAndCodes';
 
 let _lastProjectsForNoMapRef: Project[] | null = null;
@@ -21,15 +21,23 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
 
   const addKey = (t: Task, rawKey?: string | number | null) => {
     if (rawKey === undefined || rawKey === null) return;
-    const k = String(rawKey).trim().toLowerCase();
-    if (!k) return;
-    let existing = map.get(k);
-    if (!existing) {
-      existing = [t];
-      map.set(k, existing);
-    } else if (!existing.some(item => item.id === t.id)) {
-      existing.push(t);
-    }
+    const rawStr = String(rawKey).trim();
+    if (!rawStr) return;
+    const k = rawStr.toLowerCase();
+    const normK = normalizeDashes(k);
+
+    const insert = (key: string) => {
+      let existing = map.get(key);
+      if (!existing) {
+        existing = [t];
+        map.set(key, existing);
+      } else if (!existing.some(item => item.id === t.id)) {
+        existing.push(t);
+      }
+    };
+
+    insert(k);
+    if (normK !== k) insert(normK);
   };
 
   const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);

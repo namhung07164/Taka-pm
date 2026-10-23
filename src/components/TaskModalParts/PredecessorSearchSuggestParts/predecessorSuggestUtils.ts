@@ -3,6 +3,7 @@ import { useAppStore } from '../../../store/useAppStore';
 import {
   buildTaskNoMap,
   parsePredecessors,
+  splitPredecessors,
   calculateTaskDatesFromPredecessors,
   scheduleDependentTasks,
   addDays,
@@ -139,7 +140,7 @@ export async function persistDefault(
     throw new Error('Please save the task before linking a predecessor.');
   }
   const store = useAppStore.getState() as any;
-  const currentTasks: Task[] = store.tasks || [];
+  let currentTasks: Task[] = store.tasks || [];
   const now = new Date().toISOString();
 
   const updatedTask: Task = {
@@ -151,8 +152,35 @@ export async function persistDefault(
     updatedAt: now,
   } as Task;
 
-  const taskNoMap = buildTaskNoMap(projects, currentTasks);
-  const parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
+  let taskNoMap = buildTaskNoMap(projects, currentTasks);
+  let parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
+
+  if (change.predecessor.trim() && (!parsed.length || parsed.some((p) => !p.task))) {
+    const parts = splitPredecessors(change.predecessor, Array.from(taskNoMap.keys()));
+    const { normalizeDashes } = await import('../../../lib/utils');
+    const { ensureProjectTasksLoaded } = await import('../../../lib/taskStateService');
+    for (const token of parts) {
+      const cleanToken = normalizeDashes(token).replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+      const matchedProj = projects.find(
+        (p) =>
+          p.code &&
+          cleanToken.toLowerCase().startsWith(normalizeDashes(p.code).toLowerCase())
+      );
+      if (matchedProj && (matchedProj.id !== source.projectId || matchedProj.code !== source.projectCode)) {
+        const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
+          projectId: matchedProj.id,
+          store: matchedProj.store,
+          year: matchedProj.year,
+        });
+        if (loaded.length > 0) {
+          currentTasks = (useAppStore.getState() as any).tasks || currentTasks;
+          taskNoMap = buildTaskNoMap(projects, currentTasks);
+          parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
+        }
+      }
+    }
+  }
+
   if (parsed.length >= 2) updatedTask.durationManual = false;
 
   const calc = calculateTaskDatesFromPredecessors(updatedTask, parsed as any);

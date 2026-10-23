@@ -9,10 +9,11 @@ import {
   computeTaskCode,
   buildTaskNoMap,
   scheduleDependentTasks,
-  splitPredecessors
+  splitPredecessors,
+  calculateTaskDatesFromPredecessors
 } from '../../lib/ganttUtils';
 import { resolvePredecessorString, PredecessorContext } from '../../lib/predecessorMatchUtils';
-import { generateId, getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime, isTaskBelongsToProject } from '../../lib/utils';
+import { generateId, getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime, isTaskBelongsToProject, normalizeDashes } from '../../lib/utils';
 import { syncProjectDatesByCode } from '../../lib/projectDatesService';
 import { saveTaskStateUnified } from '../../lib/taskStateService';
 import { useAppStore } from '../../store/useAppStore';
@@ -156,6 +157,7 @@ export async function executeTaskSave({
 
   if (formData.predecessor !== undefined && (!task || formData.predecessor !== task.predecessor)) {
     if (formData.predecessor) {
+      const normPred = normalizeDashes(formData.predecessor);
       const predContext: PredecessorContext = {
         projectId: formData.projectId || task?.projectId || currentProject?.id,
         projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
@@ -163,8 +165,8 @@ export async function executeTaskSave({
         projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
         projectLocation: formData.location || task?.location || currentProject?.location
       };
-      formData.predecessor = resolvePredecessorString(formData.predecessor, tasks, projects, formData.projectCode, predContext, formData.predecessorTaskIds);
-      const taskNoMap = buildTaskNoMap(projects, tasks);
+      formData.predecessor = resolvePredecessorString(normPred, tasks, projects, formData.projectCode, predContext, formData.predecessorTaskIds);
+      let taskNoMap = buildTaskNoMap(projects, tasks);
       let parts = splitPredecessors(formData.predecessor, taskNoMap);
       if (parts.length >= 2) {
         if (!/FF|SF/i.test(parts[1])) {
@@ -173,16 +175,50 @@ export async function executeTaskSave({
         }
         formData.predecessor = parts.join(", ");
       }
+
+      const dummyTask: any = {
+        projectId: formData.projectId || task?.projectId || currentProject?.id,
+        projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
+        projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
+        projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
+        location: formData.location || task?.location || currentProject?.location
+      };
+      let parsed = parsePredecessors(formData.predecessor, taskNoMap, dummyTask);
+
+      if (formData.predecessor.trim() && (!parsed.length || parsed.some((p: any) => !p.task))) {
+        for (const token of parts) {
+          const cleanToken = normalizeDashes(token).replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+          const cleanTokenLower = cleanToken.toLowerCase();
+          const matchedProj = projects.find(
+            (p) =>
+              p.code &&
+              cleanTokenLower.startsWith(normalizeDashes(p.code).toLowerCase())
+          );
+          if (matchedProj && (matchedProj.id !== dummyTask.projectId || matchedProj.code !== dummyTask.projectCode)) {
+            const { ensureProjectTasksLoaded } = await import('../../lib/taskStateService');
+            const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
+              projectId: matchedProj.id,
+              store: matchedProj.store,
+              year: matchedProj.year,
+            });
+            if (loaded.length > 0) {
+              tasks = useAppStore.getState().tasks || tasks;
+              taskNoMap = buildTaskNoMap(projects, tasks);
+              parsed = parsePredecessors(formData.predecessor, taskNoMap, dummyTask);
+            }
+          }
+        }
+      }
+
+      if (parsed.length >= 2) formData.durationManual = false;
+      const calcResult = calculateTaskDatesFromPredecessors(formData, parsed);
+      if (calcResult) {
+        formData.start = calcResult.start;
+        formData.finish = calcResult.finish;
+        formData.duration = calcResult.duration;
+        formData.durationManual = calcResult.durationManual;
+      }
     }
-    const taskNoMap = buildTaskNoMap(projects, tasks);
-    const dummyTask: any = {
-      projectId: formData.projectId || task?.projectId || currentProject?.id,
-      projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
-      projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
-      projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
-      location: formData.location || task?.location || currentProject?.location
-    };
-    parsePredecessors(formData.predecessor, taskNoMap, dummyTask);
   }
 
   try {

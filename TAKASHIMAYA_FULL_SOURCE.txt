@@ -32868,8 +32868,8 @@ import { useAppStore } from '../../store/useAppStore';
 import { doc } from 'firebase/firestore';
 import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
-import { Edit2, Check, X, Link, Plus } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { Edit2, Check, X, Link, Plus, RefreshCw } from 'lucide-react';
+import { cn, normalizeDashes } from '../../lib/utils';
 
 interface GanttTooltipPredecessorProps {
   task: Task;
@@ -32935,15 +32935,9 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
         projectLocation: task?.location,
       };
 
-      const resolved = resolvePredecessorString(rawVal, tasks, projects, task?.projectCode, context);
+      const normRawVal = normalizeDashes(rawVal);
+      const resolved = resolvePredecessorString(normRawVal, tasks, projects, task?.projectCode, context);
       setVal(resolved);
-
-      if (resolved === (task.predecessor || '')) {
-        setIsEditing(false);
-        onEditingChange?.(false);
-        setIsSaving(false);
-        return;
-      }
 
       let currentTasks = useAppStore.getState().tasks || tasks;
       const updatedTask: Task = {
@@ -32961,10 +32955,19 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
       if (resolved.trim() && (!parsed.length || parsed.some((p) => !p.task))) {
         const parts = splitPredecessors(resolved, Array.from(taskNoMap.keys()));
         for (const token of parts) {
-          const cleanToken = token.replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
-          const matchedProj = projects.find((p) => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
-          if (matchedProj && matchedProj.code !== task.projectCode) {
-            const loaded = await ensureProjectTasksLoaded(matchedProj.code);
+          const cleanToken = normalizeDashes(token).replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+          const cleanTokenLower = cleanToken.toLowerCase();
+          const matchedProj = projects.find(
+            (p) =>
+              p.code &&
+              cleanTokenLower.startsWith(normalizeDashes(p.code).toLowerCase())
+          );
+          if (matchedProj && (matchedProj.id !== task.projectId || matchedProj.code !== task.projectCode)) {
+            const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
+              projectId: matchedProj.id,
+              store: matchedProj.store,
+              year: matchedProj.year,
+            });
             if (loaded.length > 0) {
               currentTasks = useAppStore.getState().tasks || currentTasks;
               taskNoMap = buildTaskNoMap(projects, currentTasks);
@@ -33166,7 +33169,6 @@ export const GanttTooltipPredecessor = React.memo(function GanttTooltipPredecess
     </div>
   );
 });
-
 
 ================================================================================
 FILE: src/components/Gantt/GanttUtils.tsx
@@ -83216,6 +83218,7 @@ import { useAppStore } from '../../../store/useAppStore';
 import {
   buildTaskNoMap,
   parsePredecessors,
+  splitPredecessors,
   calculateTaskDatesFromPredecessors,
   scheduleDependentTasks,
   addDays,
@@ -83352,7 +83355,7 @@ export async function persistDefault(
     throw new Error('Please save the task before linking a predecessor.');
   }
   const store = useAppStore.getState() as any;
-  const currentTasks: Task[] = store.tasks || [];
+  let currentTasks: Task[] = store.tasks || [];
   const now = new Date().toISOString();
 
   const updatedTask: Task = {
@@ -83364,8 +83367,35 @@ export async function persistDefault(
     updatedAt: now,
   } as Task;
 
-  const taskNoMap = buildTaskNoMap(projects, currentTasks);
-  const parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
+  let taskNoMap = buildTaskNoMap(projects, currentTasks);
+  let parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
+
+  if (change.predecessor.trim() && (!parsed.length || parsed.some((p) => !p.task))) {
+    const parts = splitPredecessors(change.predecessor, Array.from(taskNoMap.keys()));
+    const { normalizeDashes } = await import('../../../lib/utils');
+    const { ensureProjectTasksLoaded } = await import('../../../lib/taskStateService');
+    for (const token of parts) {
+      const cleanToken = normalizeDashes(token).replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+      const matchedProj = projects.find(
+        (p) =>
+          p.code &&
+          cleanToken.toLowerCase().startsWith(normalizeDashes(p.code).toLowerCase())
+      );
+      if (matchedProj && (matchedProj.id !== source.projectId || matchedProj.code !== source.projectCode)) {
+        const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
+          projectId: matchedProj.id,
+          store: matchedProj.store,
+          year: matchedProj.year,
+        });
+        if (loaded.length > 0) {
+          currentTasks = (useAppStore.getState() as any).tasks || currentTasks;
+          taskNoMap = buildTaskNoMap(projects, currentTasks);
+          parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
+        }
+      }
+    }
+  }
+
   if (parsed.length >= 2) updatedTask.durationManual = false;
 
   const calc = calculateTaskDatesFromPredecessors(updatedTask, parsed as any);
@@ -83409,7 +83439,6 @@ export async function persistDefault(
     type: 'success',
   });
 }
-
 
 ================================================================================
 FILE: src/components/TaskModalParts/TaskBasicInfo.tsx
@@ -89536,10 +89565,11 @@ import {
   computeTaskCode,
   buildTaskNoMap,
   scheduleDependentTasks,
-  splitPredecessors
+  splitPredecessors,
+  calculateTaskDatesFromPredecessors
 } from '../../lib/ganttUtils';
 import { resolvePredecessorString, PredecessorContext } from '../../lib/predecessorMatchUtils';
-import { generateId, getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime, isTaskBelongsToProject } from '../../lib/utils';
+import { generateId, getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime, isTaskBelongsToProject, normalizeDashes } from '../../lib/utils';
 import { syncProjectDatesByCode } from '../../lib/projectDatesService';
 import { saveTaskStateUnified } from '../../lib/taskStateService';
 import { useAppStore } from '../../store/useAppStore';
@@ -89643,7 +89673,11 @@ export async function executeTaskSave({
         const sameIdentity = (x: Task) =>
           String(x.projectStore || '').trim().toLowerCase() === String(currentProject.store || '').trim().toLowerCase() &&
           String(x.projectYear ?? '').trim() === String(currentProject.year ?? '').trim();
-        const loaded: Task[] = await ensureProjectTasksLoaded(currentProject.code);
+        const loaded: Task[] = await ensureProjectTasksLoaded(currentProject.code, {
+          projectId: currentProject.id,
+          store: currentProject.store,
+          year: currentProject.year,
+        });
         const loadedSame = loaded.filter(sameIdentity);
         if (loadedSame.length > 0) {
           realTask = loadedSame.find(t =>
@@ -89679,6 +89713,7 @@ export async function executeTaskSave({
 
   if (formData.predecessor !== undefined && (!task || formData.predecessor !== task.predecessor)) {
     if (formData.predecessor) {
+      const normPred = normalizeDashes(formData.predecessor);
       const predContext: PredecessorContext = {
         projectId: formData.projectId || task?.projectId || currentProject?.id,
         projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
@@ -89686,8 +89721,8 @@ export async function executeTaskSave({
         projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
         projectLocation: formData.location || task?.location || currentProject?.location
       };
-      formData.predecessor = resolvePredecessorString(formData.predecessor, tasks, projects, formData.projectCode, predContext, formData.predecessorTaskIds);
-      const taskNoMap = buildTaskNoMap(projects, tasks);
+      formData.predecessor = resolvePredecessorString(normPred, tasks, projects, formData.projectCode, predContext, formData.predecessorTaskIds);
+      let taskNoMap = buildTaskNoMap(projects, tasks);
       let parts = splitPredecessors(formData.predecessor, taskNoMap);
       if (parts.length >= 2) {
         if (!/FF|SF/i.test(parts[1])) {
@@ -89696,16 +89731,50 @@ export async function executeTaskSave({
         }
         formData.predecessor = parts.join(", ");
       }
+
+      const dummyTask: any = {
+        projectId: formData.projectId || task?.projectId || currentProject?.id,
+        projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
+        projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
+        projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
+        location: formData.location || task?.location || currentProject?.location
+      };
+      let parsed = parsePredecessors(formData.predecessor, taskNoMap, dummyTask);
+
+      if (formData.predecessor.trim() && (!parsed.length || parsed.some((p: any) => !p.task))) {
+        for (const token of parts) {
+          const cleanToken = normalizeDashes(token).replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+          const cleanTokenLower = cleanToken.toLowerCase();
+          const matchedProj = projects.find(
+            (p) =>
+              p.code &&
+              cleanTokenLower.startsWith(normalizeDashes(p.code).toLowerCase())
+          );
+          if (matchedProj && (matchedProj.id !== dummyTask.projectId || matchedProj.code !== dummyTask.projectCode)) {
+            const { ensureProjectTasksLoaded } = await import('../../lib/taskStateService');
+            const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
+              projectId: matchedProj.id,
+              store: matchedProj.store,
+              year: matchedProj.year,
+            });
+            if (loaded.length > 0) {
+              tasks = useAppStore.getState().tasks || tasks;
+              taskNoMap = buildTaskNoMap(projects, tasks);
+              parsed = parsePredecessors(formData.predecessor, taskNoMap, dummyTask);
+            }
+          }
+        }
+      }
+
+      if (parsed.length >= 2) formData.durationManual = false;
+      const calcResult = calculateTaskDatesFromPredecessors(formData, parsed);
+      if (calcResult) {
+        formData.start = calcResult.start;
+        formData.finish = calcResult.finish;
+        formData.duration = calcResult.duration;
+        formData.durationManual = calcResult.durationManual;
+      }
     }
-    const taskNoMap = buildTaskNoMap(projects, tasks);
-    const dummyTask: any = {
-      projectId: formData.projectId || task?.projectId || currentProject?.id,
-      projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
-      projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
-      projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
-      location: formData.location || task?.location || currentProject?.location
-    };
-    parsePredecessors(formData.predecessor, taskNoMap, dummyTask);
   }
 
   try {
@@ -89951,14 +90020,13 @@ export async function executeTaskSave({
   }
 }
 
-
 ================================================================================
 FILE: src/hooks/taskModal/useTaskModalFormState.ts
 ================================================================================
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Project, Task } from '../../types';
 import { getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime } from '../../lib/utils';
-import { calculateTaskDatesFromPredecessors, parsePredecessors, buildTaskNoMap } from '../../lib/ganttUtils';
+import { calculateTaskDatesFromPredecessors, parsePredecessors, buildTaskNoMap, splitPredecessors } from '../../lib/ganttUtils';
 import { useAppStore } from '../../store/useAppStore';
 
 export interface UseTaskModalFormStateProps {
@@ -90094,8 +90162,8 @@ export function useTaskModalFormState({
 
     if (isFilled) {
       try {
-        const currentTasks = useAppStore.getState().tasks || tasks || [];
-        const taskNoMap = buildTaskNoMap(projects || [], currentTasks);
+        let currentTasks = useAppStore.getState().tasks || tasks || [];
+        let taskNoMap = buildTaskNoMap(projects || [], currentTasks);
         const dummyTask: Task = {
           id: task?.id || 'temp',
           projectId: updated.projectId || task?.projectId || currentProject?.id,
@@ -90108,9 +90176,50 @@ export function useTaskModalFormState({
           finish: updated.finish,
           duration: updated.duration,
           durationManual: updated.durationManual ?? (parts.length >= 2 ? false : true),
-          finishManual: updated.finishManual ?? false
+          finishManual: updated.finishManual ?? false,
+          predecessorTaskIds: updated.predecessorTaskIds || formData.predecessorTaskIds || task?.predecessorTaskIds
         };
-        const parsed = parsePredecessors(val, taskNoMap, dummyTask);
+        let parsed = parsePredecessors(val, taskNoMap, dummyTask);
+
+        if (isFilled && (!parsed.length || parsed.some(p => !p.task))) {
+          const predParts = splitPredecessors(val, Array.from(taskNoMap.keys()));
+          import('../../lib/utils').then(({ normalizeDashes }) => {
+            import('../../lib/taskStateService').then(({ ensureProjectTasksLoaded }) => {
+              for (const token of predParts) {
+                const cleanToken = normalizeDashes(token).replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+                const cleanTokenLower = cleanToken.toLowerCase();
+                const matchedProj = (projects || []).find(
+                  (p) =>
+                    p.code &&
+                    cleanTokenLower.startsWith(normalizeDashes(p.code).toLowerCase())
+                );
+                if (matchedProj && (matchedProj.id !== dummyTask.projectId || matchedProj.code !== dummyTask.projectCode)) {
+                  ensureProjectTasksLoaded(matchedProj.code, {
+                    projectId: matchedProj.id,
+                    store: matchedProj.store,
+                    year: matchedProj.year,
+                  }).then((loaded) => {
+                    if (loaded.length > 0) {
+                      const refreshedTasks = useAppStore.getState().tasks || currentTasks;
+                      const refreshedMap = buildTaskNoMap(projects || [], refreshedTasks);
+                      const refreshedParsed = parsePredecessors(val, refreshedMap, dummyTask);
+                      const calcResult = calculateTaskDatesFromPredecessors(dummyTask, refreshedParsed);
+                      if (calcResult) {
+                        setFormData((prev: any) => ({
+                          ...prev,
+                          start: calcResult.start,
+                          finish: calcResult.finish,
+                          duration: calcResult.duration,
+                          durationManual: calcResult.durationManual,
+                        }));
+                      }
+                    }
+                  });
+                }
+              }
+            });
+          });
+        }
 
         if (parsed.length > 0) {
           const calcResult = calculateTaskDatesFromPredecessors(dummyTask, parsed);
@@ -90263,7 +90372,6 @@ export function useTaskModalFormState({
     toggleDurationManual
   };
 }
-
 
 ================================================================================
 FILE: src/hooks/useDeepLinkLogic.ts
@@ -105353,6 +105461,7 @@ FILE: src/lib/ganttUtilsParts/predecessorParsingUtils.ts
 ================================================================================
 import { Task, Project } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
+import { normalizeDashes } from '../utils';
 import { parsePredecessorToken } from '../predecessorMatchUtils';
 import { computeTaskCode } from './taskSortingAndCodes';
 
@@ -105365,7 +105474,7 @@ export function splitPredecessors(
   knownCodes?: Iterable<string> | Map<string, any> | Set<string>
 ): string[] {
   if (!predecessorString || typeof predecessorString !== 'string') return [];
-  const raw = predecessorString.trim();
+  const raw = normalizeDashes(predecessorString).trim();
   if (!raw) return [];
 
   if (!raw.includes(',')) return [raw];
@@ -105379,7 +105488,11 @@ export function splitPredecessors(
     }
   }
   codeList = codeList
-    .map(c => String(c).trim().toLowerCase())
+    .flatMap(c => {
+      const s = String(c).trim().toLowerCase();
+      const norm = normalizeDashes(s);
+      return norm !== s ? [s, norm] : [s];
+    })
     .filter(Boolean)
     .sort((a, b) => b.length - a.length);
 
@@ -105452,7 +105565,7 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
   const taskIds = contextTask?.predecessorTaskIds || [];
 
   return preds.map((pMatches, index) => {
-    const lowerMatches = pMatches.toLowerCase();
+    const lowerMatches = normalizeDashes(pMatches).toLowerCase();
     const hardLinkedId = taskIds[index];
 
     if (hardLinkedId) {
@@ -105482,8 +105595,10 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
 
     let longestMatch = "";
     for (const code of taskNoMap.keys()) {
-      if (lowerMatches.startsWith(code) && code.length > longestMatch.length) {
-        const remainderCheck = lowerMatches.substring(code.length);
+      const codeNorm = normalizeDashes(code).toLowerCase();
+      if ((lowerMatches.startsWith(code) || lowerMatches.startsWith(codeNorm)) && code.length > longestMatch.length) {
+        const prefixLen = lowerMatches.startsWith(code) ? code.length : codeNorm.length;
+        const remainderCheck = lowerMatches.substring(prefixLen);
         if (remainderCheck.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s+\d|$)/i.test(remainderCheck)) {
           longestMatch = code;
         }
@@ -105654,7 +105769,6 @@ export function parsePredecessors(predecessorString: string, taskNoMap: Map<stri
   }).filter(Boolean);
 }
 
-
 ================================================================================
 FILE: src/lib/ganttUtilsParts/scheduleAndReorderEngine.ts
 ================================================================================
@@ -105766,7 +105880,8 @@ export function calculateTaskDatesFromPredecessors(
     let newDuration = "0";
 
     if (diffDays >= 0) {
-      newDuration = String(Number(diffDays.toFixed(2)));
+      const rounded = Math.round(diffDays);
+      newDuration = Math.abs(diffDays - rounded) < 0.45 ? String(rounded) : String(Number(diffDays.toFixed(2)));
     } else {
       newFinish = newStart;
       newDuration = "0";
@@ -106017,12 +106132,11 @@ export function reorderAndCalculateTasks(
   };
 }
 
-
 ================================================================================
 FILE: src/lib/ganttUtilsParts/taskCodeIndexers.ts
 ================================================================================
 import { Task, Project } from '../../types';
-import { isTaskBelongsToProject } from '../utils';
+import { isTaskBelongsToProject, normalizeDashes } from '../utils';
 import { sortGroupTasks } from './taskSortingAndCodes';
 
 let _lastProjectsForNoMapRef: Project[] | null = null;
@@ -106044,15 +106158,23 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
 
   const addKey = (t: Task, rawKey?: string | number | null) => {
     if (rawKey === undefined || rawKey === null) return;
-    const k = String(rawKey).trim().toLowerCase();
-    if (!k) return;
-    let existing = map.get(k);
-    if (!existing) {
-      existing = [t];
-      map.set(k, existing);
-    } else if (!existing.some(item => item.id === t.id)) {
-      existing.push(t);
-    }
+    const rawStr = String(rawKey).trim();
+    if (!rawStr) return;
+    const k = rawStr.toLowerCase();
+    const normK = normalizeDashes(k);
+
+    const insert = (key: string) => {
+      let existing = map.get(key);
+      if (!existing) {
+        existing = [t];
+        map.set(key, existing);
+      } else if (!existing.some(item => item.id === t.id)) {
+        existing.push(t);
+      }
+    };
+
+    insert(k);
+    if (normK !== k) insert(normK);
   };
 
   const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);
@@ -106334,11 +106456,11 @@ export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<str
   return map;
 }
 
-
 ================================================================================
 FILE: src/lib/ganttUtilsParts/taskSortingAndCodes.ts
 ================================================================================
 import { Task, Project } from '../../types';
+import { normalizeDashes } from '../utils';
 import { parsePredecessors } from './predecessorParsingAndCascades';
 import { buildTaskNoMap, computeTaskCode, computeAllTaskCodes } from './taskCodeIndexers';
 
@@ -106350,7 +106472,7 @@ export { buildTaskNoMap, computeTaskCode, computeAllTaskCodes };
  */
 export function extractSubtaskIndex(codeOrPhu?: string | null): number | null {
   if (!codeOrPhu) return null;
-  const str = String(codeOrPhu).trim();
+  const str = normalizeDashes(String(codeOrPhu)).trim();
   if (!str) return null;
 
   const hashMatch = str.match(/#\s*(\d+)/);
@@ -106597,7 +106719,6 @@ export function sortTasksByPredecessorsAndDates(
 
   return sortedComponents.flat();
 }
-
 
 ================================================================================
 FILE: src/lib/icalGenerator.ts
@@ -108342,7 +108463,6 @@ export async function getLocalProjects(year?: string, store?: string): Promise<P
 }
 
 /**
-/**
  * Đọc Tasks từ Local Database theo danh sách Project IDs hoặc Project Codes (hỗ trợ lọc theo year & store)
  */
 export async function getLocalTasksForProjects(
@@ -108352,7 +108472,10 @@ export async function getLocalTasksForProjects(
 ): Promise<Task[]> {
   if (!projectIdsOrCodes || projectIdsOrCodes.length === 0) return [];
   try {
-    const rawIds = projectIdsOrCodes.map(id => String(id).trim()).filter(Boolean);
+    const rawIds = Array.from(new Set(projectIdsOrCodes.flatMap(id => {
+      const s = String(id).trim(), norm = s.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+      return norm !== s ? [s, norm] : [s];
+    }).filter(Boolean)));
     if (rawIds.length === 0) return [];
     const [byProjId, byProjCode, byCode] = await Promise.all([
       localDb.tasks.where('projectId').anyOf(rawIds).toArray().catch(() => []),
@@ -109313,6 +109436,7 @@ describe('Cross-Project Predecessor Resolution & Date Calculation', () => {
 FILE: src/lib/predecessorMatchParts/predecessorContextUtils.ts
 ================================================================================
 import { Task, Project } from '../../types';
+import { normalizeDashes } from '../utils';
 
 /**
  * Extracts a trailing task number from a code or query string.
@@ -109327,7 +109451,7 @@ import { Task, Project } from '../../types';
  */
 export function extractTrailingTaskNumber(str: string): number | null {
   if (!str) return null;
-  const m = str.trim().match(/(?:^|[-_#\s])0*(\d+)\s*$/);
+  const m = normalizeDashes(str).trim().match(/(?:^|[-_#\s])0*(\d+)\s*$/);
   if (m) {
     return parseInt(m[1], 10);
   }
@@ -109384,7 +109508,7 @@ const REL_LAG_REGEX =
  */
 export function parsePredecessorToken(token: string): { query: string; suffix: string } {
   if (!token) return { query: '', suffix: '' };
-  const trimmed = token.trim();
+  const trimmed = normalizeDashes(token).trim();
   if (!trimmed) return { query: '', suffix: '' };
 
   const match = trimmed.match(REL_LAG_REGEX);
@@ -109661,7 +109785,6 @@ export function isTaskDifferentProject(
 ): boolean {
   return getTaskProjectDiffDetails(context, task, projects).isDifferent;
 }
-
 
 ================================================================================
 FILE: src/lib/predecessorMatchUtils.test.ts
@@ -110025,6 +110148,7 @@ describe('predecessorMatchUtils', () => {
 FILE: src/lib/predecessorMatchUtils.ts
 ================================================================================
 import { Task, Project } from '../types';
+import { normalizeDashes } from './utils';
 import { computeTaskCode, computeAllTaskCodes, splitPredecessors } from './ganttUtils';
 import { useAppStore } from '../store/useAppStore';
 import {
@@ -110084,17 +110208,20 @@ export function findTaskByQueryOrCode(
   const { query } = parsePredecessorToken(tokenOrCode);
   if (!query) return null;
 
-  const qLower = query.toLowerCase();
+  const qLower = normalizeDashes(query).toLowerCase();
+  const rawLower = query.toLowerCase();
   const projectIndex = buildProjectLookupIndex(projects);
   const allCodesMap = computeAllTaskCodes(projects, tasks);
 
   for (let i = 0; i < tasks.length; i++) {
     const t = tasks[i];
     if (!t) continue;
-    if (t.id && t.id.toLowerCase() === qLower) return t;
-    if (t.taskCodePhu && t.taskCodePhu.trim().toLowerCase() === qLower) return t;
+    if (t.id && (t.id.toLowerCase() === qLower || t.id.toLowerCase() === rawLower)) return t;
+    const phu = t.taskCodePhu ? normalizeDashes(t.taskCodePhu).trim().toLowerCase() : '';
+    if (phu && (phu === qLower || phu === rawLower)) return t;
     const code = allCodesMap.get(t.id) || computeTaskCode(projects, tasks, t);
-    if (code && code.toLowerCase() === qLower) return t;
+    const codeNorm = code ? normalizeDashes(code).trim().toLowerCase() : '';
+    if (codeNorm && (codeNorm === qLower || codeNorm === rawLower)) return t;
   }
 
   const resolvedContext = resolveProjectContext(context, projects, projectIndex);
@@ -110127,7 +110254,7 @@ export function scoreTaskPredecessorMatch(
   options?: PrecomputedMatchOptions
 ): number {
   if (!rawQuery || !task) return 0;
-  const q = rawQuery.trim().toLowerCase();
+  const q = normalizeDashes(rawQuery).trim().toLowerCase();
   if (!q) return 0;
 
   const computedCode =
@@ -110135,11 +110262,11 @@ export function scoreTaskPredecessorMatch(
     options?.allTaskCodesMap?.get(task.id) ??
     computeTaskCode(projects, allTasks, task);
 
-  const fullCode = (computedCode || task.taskCodePhu || task.id || '').trim().toLowerCase();
-  const codePhu = (task.taskCodePhu || '').trim().toLowerCase();
+  const fullCode = normalizeDashes(computedCode || task.taskCodePhu || task.id || '').trim().toLowerCase();
+  const codePhu = normalizeDashes(task.taskCodePhu || '').trim().toLowerCase();
   const name = (task.name || '').trim().toLowerCase();
-  const taskPCode = (task.projectCode || '').trim().toLowerCase();
-  const currentPCode = (context?.projectCode || currentProjectCode || '').trim().toLowerCase();
+  const taskPCode = normalizeDashes(task.projectCode || '').trim().toLowerCase();
+  const currentPCode = normalizeDashes(context?.projectCode || currentProjectCode || '').trim().toLowerCase();
 
   const projectIndex = options?.projectIndex || buildProjectLookupIndex(projects);
   const ctx = options?.resolvedContext || resolveProjectContext(context, projects, projectIndex);
@@ -110475,7 +110602,8 @@ export function resolvePredecessorString(
     const { query, suffix } = parsePredecessorToken(part);
     if (!query) return part;
 
-    const isAlreadyExact = knownCodes.has(query.toLowerCase());
+    const qLower = normalizeDashes(query).toLowerCase();
+    const isAlreadyExact = knownCodes.has(qLower) || knownCodes.has(query.toLowerCase());
     if (isAlreadyExact) {
       return query + suffix;
     }
@@ -110508,7 +110636,6 @@ export function resolvePredecessorString(
 
   return resolvedParts.join(', ');
 }
-
 
 ================================================================================
 FILE: src/lib/predecessorMultiInput.test.ts
@@ -115388,7 +115515,7 @@ import {
   syncProjectDatesToFirestore,
 } from './projectDatesService';
 import { isTaskDeletedInTracker } from './taskDeletedTracker';
-import { isTaskBelongsToProject as isTaskBelongsToProjectCore } from './utils';
+import { isTaskBelongsToProject as isTaskBelongsToProjectCore, normalizeDashes } from './utils';
 import {
   deleteTaskStateUnified,
   deleteProjectStateUnified,
@@ -115406,37 +115533,92 @@ export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): b
   return isTaskBelongsToProjectCore(t, p);
 }
 
+export interface EnsureProjectTasksContext {
+  projectId?: string;
+  store?: string;
+  year?: string | number;
+}
+
 /**
- * Ensures tasks for a specific projectCode are loaded into Zustand store.
+ * Ensures tasks for a specific projectCode (and optional 4-key context) are loaded into Zustand store.
  * Useful when resolving cross-project predecessors dynamically.
  */
-export async function ensureProjectTasksLoaded(projectCode: string): Promise<Task[]> {
-  if (!projectCode) return [];
-  const cleanCode = projectCode.trim();
+export async function ensureProjectTasksLoaded(
+  projectCode: string,
+  context?: EnsureProjectTasksContext
+): Promise<Task[]> {
+  if (!projectCode && !context?.projectId) return [];
+  const cleanCode = normalizeDashes(projectCode || '').trim();
+  const cleanCodeLower = cleanCode.toLowerCase();
+  const ctxProjectId = context?.projectId ? String(context.projectId).trim() : '';
+  const ctxStoreLower = context?.store ? String(context.store).trim().toLowerCase() : '';
+  const ctxYearStr =
+    context?.year !== undefined && context?.year !== null ? String(context.year).trim() : '';
+
+  const matchesContext = (t: Partial<Task>): boolean => {
+    if (t.isDeleted || (t.id && isTaskDeletedInTracker(t.id))) return false;
+    if (ctxProjectId && t.projectId) {
+      return String(t.projectId).trim() === ctxProjectId;
+    }
+    const tCodeLower = t.projectCode ? normalizeDashes(t.projectCode).trim().toLowerCase() : '';
+    if (ctxProjectId && !t.projectId) {
+      if (cleanCodeLower && (!tCodeLower || tCodeLower !== cleanCodeLower)) {
+        return false;
+      }
+      if (ctxStoreLower && t.projectStore && t.projectStore.trim().toLowerCase() !== ctxStoreLower) {
+        return false;
+      }
+      if (
+        ctxYearStr &&
+        t.projectYear !== undefined &&
+        t.projectYear !== null &&
+        String(t.projectYear).trim() !== ctxYearStr
+      ) {
+        return false;
+      }
+      return Boolean(cleanCodeLower);
+    }
+    if (cleanCodeLower && (!tCodeLower || tCodeLower !== cleanCodeLower)) {
+      return false;
+    }
+    if (ctxStoreLower && t.projectStore && t.projectStore.trim().toLowerCase() !== ctxStoreLower) {
+      return false;
+    }
+    if (
+      ctxYearStr &&
+      t.projectYear !== undefined &&
+      t.projectYear !== null &&
+      String(t.projectYear).trim() !== ctxYearStr
+    ) {
+      return false;
+    }
+    return true;
+  };
+
   const currentTasks = useAppStore.getState().tasks || [];
 
-  // 1. If we already have tasks for this project in memory, return them (0 Read)
-  const existing = currentTasks.filter(
-    (t) =>
-      t.projectCode &&
-      t.projectCode.trim().toLowerCase() === cleanCode.toLowerCase() &&
-      !t.isDeleted
-  );
+  // 1. If we already have tasks for this specific project context in memory, return them (0 Read)
+  const existing = currentTasks.filter(matchesContext);
   if (existing.length > 0) return existing;
 
+  const cacheKey = `${ctxProjectId || '*'}|${cleanCodeLower}|${ctxStoreLower || '*'}|${ctxYearStr || '*'}`;
+
   // If already fetching, return existing promise
-  if (pendingProjectFetches.has(cleanCode.toLowerCase())) {
-    return pendingProjectFetches.get(cleanCode.toLowerCase())!;
+  if (pendingProjectFetches.has(cacheKey)) {
+    return pendingProjectFetches.get(cacheKey)!;
   }
 
   const fetchPromise = (async () => {
     try {
       // 2. Check Dexie Local-First Database before touching Firestore (0 Read)
       const { getLocalTasksForProjects, bulkPersistTasks } = await import('./localDb');
-      const localTasks = await getLocalTasksForProjects([cleanCode]);
-      const validLocal = (localTasks || []).filter(
-        (t) => !t.isDeleted && !isTaskDeletedInTracker(t.id)
+      const lookupKeys = [ctxProjectId, cleanCode].filter(Boolean);
+      const localTasks = await getLocalTasksForProjects(
+        lookupKeys,
+        ctxYearStr || undefined,
+        ctxStoreLower || undefined
       );
+      const validLocal = (localTasks || []).filter(matchesContext);
       if (validLocal.length > 0) {
         const latestTasks = useAppStore.getState().tasks || [];
         const currentIds = new Set(latestTasks.map((t) => t.id));
@@ -115449,9 +115631,14 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
 
       // 3. Check if project has 0 tasks according to project summary (0 Read)
       const projects = useAppStore.getState().projects || [];
-      const matchingProjs = projects.filter(
-        (p) => p.code && p.code.trim().toLowerCase() === cleanCode.toLowerCase()
-      );
+      const matchingProjs = projects.filter((p) => {
+        if (ctxProjectId && p.id === ctxProjectId) return true;
+        if (ctxProjectId && p.id && p.id !== ctxProjectId) return false;
+        if (cleanCodeLower && (!p.code || p.code.trim().toLowerCase() !== cleanCodeLower)) return false;
+        if (ctxStoreLower && p.store && p.store.trim().toLowerCase() !== ctxStoreLower) return false;
+        if (ctxYearStr && p.year !== undefined && String(p.year).trim() !== ctxYearStr) return false;
+        return true;
+      });
       if (
         matchingProjs.length > 0 &&
         matchingProjs.every(
@@ -115463,15 +115650,15 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
       }
 
       // 4. Fallback to Firestore only when Dexie is empty and project expects tasks
-      const q = query(
-        collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks'),
-        where('projectCode', '==', cleanCode)
-      );
+      const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks');
+      const q = ctxProjectId
+        ? query(colRef, where('projectId', '==', ctxProjectId))
+        : query(colRef, where('projectCode', '==', cleanCode));
       const snap = await getDocs(q);
       const loaded: Task[] = [];
       snap.forEach((docSnap) => {
         const d = { id: docSnap.id, ...docSnap.data() } as Task;
-        if (!d.isDeleted && !isTaskDeletedInTracker(d.id)) loaded.push(d);
+        if (matchesContext(d)) loaded.push(d);
       });
 
       if (loaded.length > 0) {
@@ -115488,11 +115675,11 @@ export async function ensureProjectTasksLoaded(projectCode: string): Promise<Tas
       console.warn('Failed to fetch tasks for external project:', cleanCode, err);
       return [];
     } finally {
-      pendingProjectFetches.delete(cleanCode.toLowerCase());
+      pendingProjectFetches.delete(cacheKey);
     }
   })();
 
-  pendingProjectFetches.set(cleanCode.toLowerCase(), fetchPromise);
+  pendingProjectFetches.set(cacheKey, fetchPromise);
   return fetchPromise;
 }
 
@@ -115680,7 +115867,6 @@ export async function reorderTasksStateUnified(
 
   await syncAffectedProjects(targetProjects, allUpdatedTasks);
 }
-
 
 ================================================================================
 FILE: src/lib/undoManager.ts
@@ -115938,6 +116124,11 @@ export function generateId(): string {
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+export function normalizeDashes(str: string | undefined | null): string {
+  if (!str) return '';
+  return String(str).replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
 }
 
 export function formatToDatetimeLocal(d: Date): string {
@@ -116223,7 +116414,6 @@ export function formatCurrencyValue(val: number | undefined, currency: 'VND' | '
   }
   return Math.round(num).toLocaleString("en-US");
 }
-
 
 ================================================================================
 FILE: src/lib/utilsParts/notificationEngineUtils.ts

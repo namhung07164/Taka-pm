@@ -1,4 +1,5 @@
 import { Task, Project } from '../../types';
+import { normalizeDashes } from '../utils';
 
 /**
  * Extracts a trailing task number from a code or query string.
@@ -13,7 +14,7 @@ import { Task, Project } from '../../types';
  */
 export function extractTrailingTaskNumber(str: string): number | null {
   if (!str) return null;
-  const m = str.trim().match(/(?:^|[-_#\s])0*(\d+)\s*$/);
+  const m = normalizeDashes(str).trim().match(/(?:^|[-_#\s])0*(\d+)\s*$/);
   if (m) {
     return parseInt(m[1], 10);
   }
@@ -70,7 +71,7 @@ const REL_LAG_REGEX =
  */
 export function parsePredecessorToken(token: string): { query: string; suffix: string } {
   if (!token) return { query: '', suffix: '' };
-  const trimmed = token.trim();
+  const trimmed = normalizeDashes(token).trim();
   if (!trimmed) return { query: '', suffix: '' };
 
   const match = trimmed.match(REL_LAG_REGEX);

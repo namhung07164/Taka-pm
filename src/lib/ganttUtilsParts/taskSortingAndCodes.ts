@@ -1,4 +1,5 @@
 import { Task, Project } from '../../types';
+import { normalizeDashes } from '../utils';
 import { parsePredecessors } from './predecessorParsingAndCascades';
 import { buildTaskNoMap, computeTaskCode, computeAllTaskCodes } from './taskCodeIndexers';
 
@@ -10,7 +11,7 @@ export { buildTaskNoMap, computeTaskCode, computeAllTaskCodes };
  */
 export function extractSubtaskIndex(codeOrPhu?: string | null): number | null {
   if (!codeOrPhu) return null;
-  const str = String(codeOrPhu).trim();
+  const str = normalizeDashes(String(codeOrPhu)).trim();
   if (!str) return null;
 
   const hashMatch = str.match(/#\s*(\d+)/);

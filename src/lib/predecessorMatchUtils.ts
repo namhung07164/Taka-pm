@@ -1,4 +1,5 @@
 import { Task, Project } from '../types';
+import { normalizeDashes } from './utils';
 import { computeTaskCode, computeAllTaskCodes, splitPredecessors } from './ganttUtils';
 import { useAppStore } from '../store/useAppStore';
 import {
@@ -58,17 +59,20 @@ export function findTaskByQueryOrCode(
   const { query } = parsePredecessorToken(tokenOrCode);
   if (!query) return null;
 
-  const qLower = query.toLowerCase();
+  const qLower = normalizeDashes(query).toLowerCase();
+  const rawLower = query.toLowerCase();
   const projectIndex = buildProjectLookupIndex(projects);
   const allCodesMap = computeAllTaskCodes(projects, tasks);
 
   for (let i = 0; i < tasks.length; i++) {
     const t = tasks[i];
     if (!t) continue;
-    if (t.id && t.id.toLowerCase() === qLower) return t;
-    if (t.taskCodePhu && t.taskCodePhu.trim().toLowerCase() === qLower) return t;
+    if (t.id && (t.id.toLowerCase() === qLower || t.id.toLowerCase() === rawLower)) return t;
+    const phu = t.taskCodePhu ? normalizeDashes(t.taskCodePhu).trim().toLowerCase() : '';
+    if (phu && (phu === qLower || phu === rawLower)) return t;
     const code = allCodesMap.get(t.id) || computeTaskCode(projects, tasks, t);
-    if (code && code.toLowerCase() === qLower) return t;
+    const codeNorm = code ? normalizeDashes(code).trim().toLowerCase() : '';
+    if (codeNorm && (codeNorm === qLower || codeNorm === rawLower)) return t;
   }
 
   const resolvedContext = resolveProjectContext(context, projects, projectIndex);
@@ -101,7 +105,7 @@ export function scoreTaskPredecessorMatch(
   options?: PrecomputedMatchOptions
 ): number {
   if (!rawQuery || !task) return 0;
-  const q = rawQuery.trim().toLowerCase();
+  const q = normalizeDashes(rawQuery).trim().toLowerCase();
   if (!q) return 0;
 
   const computedCode =
@@ -109,11 +113,11 @@ export function scoreTaskPredecessorMatch(
     options?.allTaskCodesMap?.get(task.id) ??
     computeTaskCode(projects, allTasks, task);
 
-  const fullCode = (computedCode || task.taskCodePhu || task.id || '').trim().toLowerCase();
-  const codePhu = (task.taskCodePhu || '').trim().toLowerCase();
+  const fullCode = normalizeDashes(computedCode || task.taskCodePhu || task.id || '').trim().toLowerCase();
+  const codePhu = normalizeDashes(task.taskCodePhu || '').trim().toLowerCase();
   const name = (task.name || '').trim().toLowerCase();
-  const taskPCode = (task.projectCode || '').trim().toLowerCase();
-  const currentPCode = (context?.projectCode || currentProjectCode || '').trim().toLowerCase();
+  const taskPCode = normalizeDashes(task.projectCode || '').trim().toLowerCase();
+  const currentPCode = normalizeDashes(context?.projectCode || currentProjectCode || '').trim().toLowerCase();
 
   const projectIndex = options?.projectIndex || buildProjectLookupIndex(projects);
   const ctx = options?.resolvedContext || resolveProjectContext(context, projects, projectIndex);
@@ -449,7 +453,8 @@ export function resolvePredecessorString(
     const { query, suffix } = parsePredecessorToken(part);
     if (!query) return part;
 
-    const isAlreadyExact = knownCodes.has(query.toLowerCase());
+    const qLower = normalizeDashes(query).toLowerCase();
+    const isAlreadyExact = knownCodes.has(qLower) || knownCodes.has(query.toLowerCase());
     if (isAlreadyExact) {
       return query + suffix;
     }
