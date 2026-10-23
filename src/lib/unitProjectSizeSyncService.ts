@@ -12,9 +12,23 @@ import { doc } from 'firebase/firestore';
 import { setDoc } from './firestoreWrites';
 import { setDoc as rawFirestoreSetDoc } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
-import { recordDelta } from './deltaSyncService';
 
 let _mappingCloudPersistTimer: ReturnType<typeof setTimeout> | null = null;
+const pendingProjectPatches = new Map<string, Record<string, any>>();
+let projectPatchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function queueProjectPatch(docId: string, payload: Record<string, any>) {
+  pendingProjectPatches.set(docId, payload);
+  if (projectPatchTimer) clearTimeout(projectPatchTimer);
+  projectPatchTimer = setTimeout(() => {
+    projectPatchTimer = null;
+    const entries = Array.from(pendingProjectPatches.entries());
+    pendingProjectPatches.clear();
+    entries.forEach(([id, patch]) => {
+      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', id), patch, { merge: true }).catch(console.error);
+    });
+  }, 400);
+}
 
 function sanitizeForFirestore(val: any): any {
   if (val === undefined) return null;
@@ -22,10 +36,7 @@ function sanitizeForFirestore(val: any): any {
   if (Array.isArray(val)) return val.map(sanitizeForFirestore);
   const out: Record<string, any> = {};
   for (const k of Object.keys(val)) {
-    const v = val[k];
-    if (v !== undefined) {
-      out[k] = sanitizeForFirestore(v);
-    }
+    if (val[k] !== undefined) out[k] = sanitizeForFirestore(val[k]);
   }
   return out;
 }
@@ -463,21 +474,10 @@ export function syncUnitSizeToMatchedProjects(params: UnitSizeSyncInput): void {
     anyProjectUpdated = true;
     const docId = p.id || String(p.no);
     if (docId) {
-      const patchPayload: Record<string, any> = {
+      queueProjectPatch(String(docId), {
         sizeM2: nextSizeM2 ?? null,
         updatedAt: nowIso,
-      };
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', String(docId)), patchPayload, {
-        merge: true,
-      }).catch(console.error);
-
-      recordDelta({
-        docId: String(docId),
-        collectionName: 'taka_projects',
-        action: 'update',
-        data: patchPayload,
-        year: String(p.year || targetYear || new Date().getFullYear()),
-      }).catch(console.error);
+      });
     }
 
     return {

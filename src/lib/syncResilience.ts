@@ -82,8 +82,11 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
     if ((e as PageTransitionEvent).persisted) recover();
   };
 
-  // Network came back (e.g. iPhone/Desktop was offline): force a clean reconnect so queued offline writes flush now
-  const handleOnline = () => { recover(); };
+  // Network came back: flush queued offline writes and pull deltas without abruptly cycling Firestore network
+  const handleOnline = () => {
+    processPendingSync().catch(() => {});
+    try { onRecovered?.(); } catch {}
+  };
 
   // Wall-clock sleep detector: catches OS sleep/wake even when tab stayed visible and focused
   const wallClockTimer = setInterval(() => {
@@ -91,7 +94,12 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
     const elapsed = now - lastWallClockTick;
     lastWallClockTick = now;
     if (elapsed > WALL_CLOCK_JUMP_THRESHOLD_MS && document.visibilityState === 'visible') {
-      recover();
+      if (elapsed > 15 * 60 * 1000) {
+        recover();
+      } else {
+        processPendingSync().catch(() => {});
+        try { onRecovered?.(); } catch {}
+      }
     }
   }, WALL_CLOCK_CHECK_INTERVAL_MS);
 
