@@ -9,7 +9,7 @@
  * Quy trình: đọc toàn bộ dự án và task từ SERVER một lần (tốn đúng bằng số tài liệu), rồi so sánh.
  * Chỉ dùng thủ công (admin). Đọc: số dự án + số task. Không ghi gì cho đến khi bấm sửa.
  */
-import { collection, getDocsFromServer, getDocsFromCache } from 'firebase/firestore';
+import { collection, getDocsFromServer } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { Project, Task } from '../types';
@@ -19,7 +19,7 @@ import {
   matchProjectCode,
 } from './projectDatesService';
 import { normalizeStoreCode, normalizeYearString } from './taskDeduplicationService';
-import { bulkPersistTasks, bulkPersistProjects, deleteLocalRecord, getLocalProjects, getLocalTasks } from './localDb';
+import { bulkPersistTasks, bulkPersistProjects, deleteLocalRecord } from './localDb';
 
 const RECENT_EDIT_GUARD_MS = 10 * 60 * 1000; // task sửa trong 10 phút gần đây: không coi là "thừa" trên thiết bị
 
@@ -110,53 +110,23 @@ const isRecent = (t: Task): boolean => {
 };
 
 export async function runSummaryAudit(onProgress?: (msg: string) => void): Promise<AuditReport> {
-  let projects: Project[] = [];
-  try {
-    const localProjects = await getLocalProjects();
-    if (localProjects && localProjects.length > 0) {
-      projects = localProjects;
-    }
-  } catch {}
+  onProgress?.('Đang đọc dự án từ Firestore (server)...');
+  const projSnap = await getDocsFromServer(
+    collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects')
+  );
+  const projects = projSnap.docs
+    .map((d) => ({ ...(d.data() as any), id: d.id } as Project))
+    .filter((p) => !p.isDeleted);
 
-  if (projects.length === 0) {
-    onProgress?.('Đang đọc dự án từ Firestore...');
-    const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects');
-    let projSnap;
-    try {
-      projSnap = await getDocsFromCache(colRef);
-      if (projSnap.empty) projSnap = await getDocsFromServer(colRef);
-    } catch {
-      projSnap = await getDocsFromServer(colRef);
-    }
-    projects = projSnap.docs
-      .map((d) => ({ ...(d.data() as any), id: d.id } as Project))
-      .filter((p) => !p.isDeleted);
-  }
+  onProgress?.(`Đã đọc ${projects.length} dự án. Đang đọc task từ Firestore (server)...`);
+  const taskSnap = await getDocsFromServer(
+    collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks')
+  );
+  const serverTasks = taskSnap.docs
+    .map((d) => ({ ...(d.data() as any), id: d.id } as Task))
+    .filter((t) => !t.isDeleted);
 
-  let serverTasks: Task[] = [];
-  try {
-    const localTasks = await getLocalTasks();
-    if (localTasks && localTasks.length > 0) {
-      serverTasks = localTasks;
-    }
-  } catch {}
-
-  if (serverTasks.length === 0) {
-    onProgress?.(`Đã đọc ${projects.length} dự án. Đang đọc task từ Firestore...`);
-    const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks');
-    let taskSnap;
-    try {
-      taskSnap = await getDocsFromCache(colRef);
-      if (taskSnap.empty) taskSnap = await getDocsFromServer(colRef);
-    } catch {
-      taskSnap = await getDocsFromServer(colRef);
-    }
-    serverTasks = taskSnap.docs
-      .map((d) => ({ ...(d.data() as any), id: d.id } as Task))
-      .filter((t) => !t.isDeleted);
-  }
-
-  onProgress?.(`Đã có ${projects.length} dự án, ${serverTasks.length} task. Đang đối chiếu...`);
+  onProgress?.(`Đã đọc ${serverTasks.length} task. Đang đối chiếu...`);
 
   const resolve = buildOwnerResolver(projects);
   const projectsById = new Map<string, Project>();

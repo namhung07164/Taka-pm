@@ -93472,6 +93472,7 @@ export function attachProjectTasksListener(params: {
 
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts
+================================================================================
 import { useEffect, useRef, useCallback } from "react";
 import { collection, onSnapshot, getDocsFromCache, getDocsFromServer } from "firebase/firestore";
 import { useAppStore } from "../../store/useAppStore";
@@ -93678,9 +93679,9 @@ export function useCostsHydration({
           !(storeState.projects || []).some((p) => String(p.year) === String(year));
 
         const deltaManaged =
-          hasLocalCosts ||
+          (hasLocalCosts && isClosedOrPastYear) ||
           yearHasZeroProjects ||
-          (DELTA_FIRST.costs && hasFreshCostMarker);
+          (DELTA_FIRST.costs && hasFreshCostMarker && hasLocalCosts);
         if (deltaManaged) {
           setIsCostsLoading(false);
           setCloudStatus("online");
@@ -93852,6 +93853,7 @@ export function useCostsHydration({
 }
 
 
+================================================================================
 FILE: src/hooks/useFirebaseDataParts/useDelegationsHydration.ts
 ================================================================================
 import { useEffect, useRef, useCallback } from "react";
@@ -94211,6 +94213,7 @@ export function useDelegationsHydration({
 
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useProjectsHydration.ts
+================================================================================
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { collection, onSnapshot, getDocsFromCache, getDocsFromServer } from 'firebase/firestore';
 import { useAppStore } from '../../store/useAppStore';
@@ -94512,18 +94515,15 @@ export function useProjectsHydration({
 
       const markers = await getLoadedMarkers();
       const hasFreshYearMarker = hasFreshMarker(markers, 'projects_year', year);
-      const hasVerifiedSigMarker = hasFreshMarker(markers, 'projects_year', sessionYearKey);
       const isVerifiedInThisSession = serverVerifiedProjectYearsInSession.has(sessionYearKey);
 
-      // Skip Firestore when we have local projects for the year, or when this exact (querySignature, year)
-      // was already verified against Firestore server (within 24h TTL or current session) and is kept in sync via taka_deltas.
+      // Only skip Firestore when we ACTUALLY have local projects for the selected year + store,
+      // OR when this exact (querySignature, year) was already verified against Firestore server in this session.
       const deltaManaged =
-        hasLocalDataForActiveStore ||
-        hasLocalDataForYear ||
-        hasVerifiedSigMarker ||
-        isVerifiedInThisSession ||
-        ((hasLocalDataForActiveStore || hasVerifiedSigMarker) && isClosedOrPastYear) ||
-        (DELTA_FIRST.projects && hasFreshYearMarker);
+        (hasLocalDataForActiveStore && isClosedOrPastYear) ||
+        (DELTA_FIRST.projects &&
+          hasFreshYearMarker &&
+          (hasLocalDataForActiveStore || isVerifiedInThisSession));
 
       if (deltaManaged) {
         setCloudStatus('online');
@@ -94579,7 +94579,6 @@ export function useProjectsHydration({
           if (!fromCache) {
             serverVerifiedProjectYearsInSession.add(sessionYearKey);
             markLoaded('projects_year', year).catch(() => {});
-            markLoaded('projects_year', sessionYearKey).catch(() => {});
           }
 
           if (DELTA_FIRST.projects && !fromCache) {
@@ -94610,8 +94609,7 @@ export function useProjectsHydration({
         try {
           const localCount = await hydrateProjectsFromLocal(year);
           const markers = await getLoadedMarkers();
-          const hasVerifiedSecSig = hasFreshMarker(markers, 'projects_year', secKey);
-          if (localCount > 0 || hasVerifiedSecSig || hasFreshMarker(markers, 'projects_year', year)) {
+          if (localCount > 0 && hasFreshMarker(markers, 'projects_year', year)) {
             return;
           }
 
@@ -94640,7 +94638,6 @@ export function useProjectsHydration({
           if (fetchedFromServer) {
             serverVerifiedProjectYearsInSession.add(secKey);
             markLoaded('projects_year', year).catch(() => {});
-            markLoaded('projects_year', secKey).catch(() => {});
           }
 
           if (snapshot && !snapshot.empty) {
@@ -94683,6 +94680,7 @@ export function useProjectsHydration({
 }
 
 
+================================================================================
 FILE: src/hooks/useFirebaseDataParts/useStaticAndAuthHydration.ts
 ================================================================================
 import { useEffect, useRef } from "react";
@@ -95102,6 +95100,7 @@ export function useStaticAndAuthHydration() {
 
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useTasksHydration.ts
+================================================================================
 import { useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { usePerformanceStore } from '../../store/usePerformanceStore';
@@ -95429,10 +95428,10 @@ export function useTasksHydration({
             hasFreshMarker(markers, 'tasks_proj', p.code) ||
             isYearFresh;
 
-          // Trust local Dexie tasks only when local task count covers expectedSummaryCount (so newly added remote tasks are never missed)
+          // When a fresh marker exists in Dexie, trust localProjTasks.length > 0 even if deduplication merged a duplicate task
           const hasLocalProjTasks =
             knownHydratedProjectCodes.current.has(String(p.id)) ||
-            (isProjMarkerFresh && localProjTasks.length >= expectedSummaryCount) ||
+            (isProjMarkerFresh && (localProjTasks.length > 0 || expectedSummaryCount === 0)) ||
             (localProjTasks.length > 0 && localProjTasks.length >= expectedSummaryCount);
 
           const isZeroTaskProject =
@@ -95443,8 +95442,8 @@ export function useTasksHydration({
 
           const deltaManaged =
             isZeroTaskProject ||
-            hasLocalProjTasks ||
-            (DELTA_FIRST.tasks && isProjMarkerFresh);
+            (hasLocalProjTasks && isArchivedPastYear) ||
+            (DELTA_FIRST.tasks && hasLocalProjTasks && isProjMarkerFresh);
 
           if (deltaManaged) {
             knownHydratedProjectCodes.current.add(String(p.id));
@@ -95582,7 +95581,7 @@ export function useTasksHydration({
   ]);
 }
 
-
+================================================================================
 FILE: src/hooks/useGanttDragDrop.ts
 ================================================================================
 import React, { useCallback, useRef, useState } from 'react';
@@ -113129,6 +113128,7 @@ export const deleteStorageFiles = async (urls: string[]) => {
 
 ================================================================================
 FILE: src/lib/summaryAuditService.ts
+================================================================================
 /**
  * summaryAuditService.ts
  *
@@ -113140,7 +113140,7 @@ FILE: src/lib/summaryAuditService.ts
  * Quy trình: đọc toàn bộ dự án và task từ SERVER một lần (tốn đúng bằng số tài liệu), rồi so sánh.
  * Chỉ dùng thủ công (admin). Đọc: số dự án + số task. Không ghi gì cho đến khi bấm sửa.
  */
-import { collection, getDocsFromServer, getDocsFromCache } from 'firebase/firestore';
+import { collection, getDocsFromServer } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { Project, Task } from '../types';
@@ -113150,7 +113150,7 @@ import {
   matchProjectCode,
 } from './projectDatesService';
 import { normalizeStoreCode, normalizeYearString } from './taskDeduplicationService';
-import { bulkPersistTasks, bulkPersistProjects, deleteLocalRecord, getLocalProjects, getLocalTasks } from './localDb';
+import { bulkPersistTasks, bulkPersistProjects, deleteLocalRecord } from './localDb';
 
 const RECENT_EDIT_GUARD_MS = 10 * 60 * 1000; // task sửa trong 10 phút gần đây: không coi là "thừa" trên thiết bị
 
@@ -113241,53 +113241,23 @@ const isRecent = (t: Task): boolean => {
 };
 
 export async function runSummaryAudit(onProgress?: (msg: string) => void): Promise<AuditReport> {
-  let projects: Project[] = [];
-  try {
-    const localProjects = await getLocalProjects();
-    if (localProjects && localProjects.length > 0) {
-      projects = localProjects;
-    }
-  } catch {}
+  onProgress?.('Đang đọc dự án từ Firestore (server)...');
+  const projSnap = await getDocsFromServer(
+    collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects')
+  );
+  const projects = projSnap.docs
+    .map((d) => ({ ...(d.data() as any), id: d.id } as Project))
+    .filter((p) => !p.isDeleted);
 
-  if (projects.length === 0) {
-    onProgress?.('Đang đọc dự án từ Firestore...');
-    const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects');
-    let projSnap;
-    try {
-      projSnap = await getDocsFromCache(colRef);
-      if (projSnap.empty) projSnap = await getDocsFromServer(colRef);
-    } catch {
-      projSnap = await getDocsFromServer(colRef);
-    }
-    projects = projSnap.docs
-      .map((d) => ({ ...(d.data() as any), id: d.id } as Project))
-      .filter((p) => !p.isDeleted);
-  }
+  onProgress?.(`Đã đọc ${projects.length} dự án. Đang đọc task từ Firestore (server)...`);
+  const taskSnap = await getDocsFromServer(
+    collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks')
+  );
+  const serverTasks = taskSnap.docs
+    .map((d) => ({ ...(d.data() as any), id: d.id } as Task))
+    .filter((t) => !t.isDeleted);
 
-  let serverTasks: Task[] = [];
-  try {
-    const localTasks = await getLocalTasks();
-    if (localTasks && localTasks.length > 0) {
-      serverTasks = localTasks;
-    }
-  } catch {}
-
-  if (serverTasks.length === 0) {
-    onProgress?.(`Đã đọc ${projects.length} dự án. Đang đọc task từ Firestore...`);
-    const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks');
-    let taskSnap;
-    try {
-      taskSnap = await getDocsFromCache(colRef);
-      if (taskSnap.empty) taskSnap = await getDocsFromServer(colRef);
-    } catch {
-      taskSnap = await getDocsFromServer(colRef);
-    }
-    serverTasks = taskSnap.docs
-      .map((d) => ({ ...(d.data() as any), id: d.id } as Task))
-      .filter((t) => !t.isDeleted);
-  }
-
-  onProgress?.(`Đã có ${projects.length} dự án, ${serverTasks.length} task. Đang đối chiếu...`);
+  onProgress?.(`Đã đọc ${serverTasks.length} task. Đang đối chiếu...`);
 
   const resolve = buildOwnerResolver(projects);
   const projectsById = new Map<string, Project>();
@@ -113505,6 +113475,7 @@ export async function repairLocalDevice(
 }
 
 
+================================================================================
 FILE: src/lib/summaryGhostFilter.ts
 ================================================================================
 import type { Project, Task } from '../types';
