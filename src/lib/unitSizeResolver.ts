@@ -1,6 +1,7 @@
 import { useDataStore } from '../components/PictureMapping/DataContext';
 import { MapVersion, UnitShape } from '../components/PictureMapping/components/DataMapping/types';
 import { extractAllProjectCodes, projectMatchesUnitCode } from './utilsParts/projectCodeAndScopeUtils';
+import { useAppStore } from '../store/useAppStore';
 import { doc, getDoc } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 
@@ -95,12 +96,13 @@ export function normalizeFloorCode(rawLoc?: string | null): string {
 
 /**
  * Resolves the effective Size (m²) of a single unit shape, respecting version-specific unitSizes first,
- * then unit.sizeM2 / unit.size, then fallback master Excel size.
+ * then unit.sizeM2 / unit.size, then fallback master Excel size, and finally any matched Project's sizeM2.
  */
 export function getUnitEffectiveSizeM2(
   unit?: Partial<UnitShape> | null,
   version?: Partial<MapVersion> | null,
-  fallbackSize?: number | string | null
+  fallbackSize?: number | string | null,
+  skipProjectFallback = false
 ): number {
   if (!unit) {
     const fb = Number(String(fallbackSize ?? '').replace(/,/g, ''));
@@ -129,7 +131,41 @@ export function getUnitEffectiveSizeM2(
   }
 
   const fb = Number(String(fallbackSize ?? '').replace(/,/g, ''));
-  return !isNaN(fb) && fb > 0 ? fb : 0;
+  if (!isNaN(fb) && fb > 0) {
+    return fb;
+  }
+
+  if (!skipProjectFallback) {
+    const uName = String(unit.name || unit.id || '').trim();
+    if (uName) {
+      const uNameLower = uName.toLowerCase();
+      const targetStore = String(unit.store || version?.store || useDataStore.getState().store || 'HCM').toUpperCase().trim();
+      const targetLoc = normalizeFloorCode(unit.location || version?.location || useDataStore.getState().location);
+      const targetYear = String(version?.year || '').trim();
+
+      const projects = useAppStore.getState().projects || [];
+      for (let i = 0; i < projects.length; i++) {
+        const p = projects[i];
+        if (!p || p.isDeleted || !p.sizeM2 || p.sizeM2 <= 0) continue;
+        const pStore = String(p.store || 'HCM').toUpperCase().trim();
+        if (pStore !== targetStore) continue;
+        if (targetYear && targetYear !== 'all' && p.year && String(p.year).trim() !== targetYear) continue;
+        const pLoc = normalizeFloorCode(p.location);
+        const isStorewide = !pLoc || pLoc === 'ALL' || pLoc === 'STORE' || pLoc === 'STOREWIDE' || pLoc === 'WHOLE STORE' || pLoc === 'ALL FLOORS';
+        if (!isStorewide && targetLoc && pLoc !== targetLoc) continue;
+
+        const pCodes = extractAllProjectCodes(p);
+        if (pCodes.length === 0) continue;
+        const isExact = pCodes.some((c) => c.toLowerCase() === uNameLower);
+        if (isExact || projectMatchesUnitCode(pCodes, uName)) {
+          const shareCount = Math.max(1, pCodes.length);
+          return Math.round((p.sizeM2 / shareCount) * 100) / 100;
+        }
+      }
+    }
+  }
+
+  return 0;
 }
 
 export interface MatchedUnitSizeResult {
@@ -285,7 +321,7 @@ export function resolveMatchedUnitSizeM2(projectOrInput: {
 
       if (isCodeMatch) {
         const fallbackMasterSize = masterSizeByUnit.get(uNameLower);
-        const effSize = getUnitEffectiveSizeM2(u, matchedVersion, fallbackMasterSize);
+        const effSize = getUnitEffectiveSizeM2(u, matchedVersion, fallbackMasterSize, true);
         if (effSize > 0) {
           const dedupKey = uNameLower || uIdLower;
           matchedSizeByUnitKey.set(dedupKey, {
@@ -334,3 +370,6 @@ export function resolveMatchedUnitSizeM2(projectOrInput: {
     versionYear: firstVerYear,
   };
 }
+
+export { syncProjectSizeToUnits, syncUnitSizeToMatchedProjects } from './unitProjectSizeSyncService';
+export type { ProjectSizeSyncInput, UnitSizeSyncInput } from './unitProjectSizeSyncService';

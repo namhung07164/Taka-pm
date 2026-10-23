@@ -14,7 +14,7 @@ import { useAppStore } from '../../../../store/useAppStore';
 import { useDynamicUnitSummary } from '../../lib/dynamicSummaryEngine';
 import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
 import { DebouncedSearchInput } from '../../../DebouncedSearchInput';
-import { getUnitEffectiveSizeM2 } from '../../../../lib/unitSizeResolver';
+import { getUnitEffectiveSizeM2, syncUnitSizeToMatchedProjects } from '../../../../lib/unitSizeResolver';
 
 import { extractR2Key, resolveR2UrlToHttp } from '../../lib/r2Upload';
 import { deleteR2StorageFiles } from '../../../../lib/r2StorageUtils';
@@ -1856,19 +1856,33 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                         <SearchableSelect 
                             value={selectedUnit?.name || ''}
                             onChange={(val) => {
-                                const defaultExcelSize = Number(String(summaryMap.get(val)?.size ?? '').replace(/,/g, ''));
-                                const hasDefaultSize = !isNaN(defaultExcelSize) && defaultExcelSize > 0;
-                                handleSetUnitsWithHistory(units.map(u => {
+                                const defaultExcelSize = summaryMap.get(val)?.size;
+                                const updatedUnits = units.map(u => {
                                     if (u.id !== selectedId) return u;
+                                    const inheritedSize = getUnitEffectiveSizeM2(
+                                        { ...u, name: val },
+                                        activeVersion,
+                                        defaultExcelSize
+                                    );
                                     const nextSize = (u.sizeM2 !== undefined && u.sizeM2 > 0)
                                         ? u.sizeM2
-                                        : (hasDefaultSize ? defaultExcelSize : u.sizeM2);
+                                        : (inheritedSize > 0 ? inheritedSize : u.sizeM2);
                                     return {
                                         ...u,
                                         name: val,
                                         ...(nextSize !== undefined ? { sizeM2: nextSize, size: nextSize } : {}),
                                     };
-                                }));
+                                });
+                                handleSetUnitsWithHistory(updatedUnits);
+                                syncUnitSizeToMatchedProjects({
+                                    unitId: selectedId,
+                                    unitName: val,
+                                    store: activeVersion?.store,
+                                    location: activeVersion?.location,
+                                    year: activeVersion?.year || effectiveYear,
+                                    updatedUnits,
+                                    activeVersionId,
+                                });
                             }}
                             options={masterUnits.map(u => ({ value: u.unit, label: `${u.unit} (F${u.floor})` }))}
                         />
@@ -1898,7 +1912,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                 handleSetUnitsWithHistory(updatedUnits);
                                 if (activeVersionId && selectedUnit) {
                                     const uNameKey = String(selectedUnit.name || '').trim().toUpperCase();
-                                    setVersions(versions.map(v => {
+                                    const updatedVersions = versions.map(v => {
                                         if (v.id !== activeVersionId) return v;
                                         const nextUnitSizes = { ...(v.unitSizes || {}) };
                                         if (numVal !== undefined && numVal > 0) {
@@ -1921,7 +1935,28 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                                 }
                                                 : {}),
                                         };
-                                    }));
+                                    });
+                                    setVersions(updatedVersions);
+                                    syncUnitSizeToMatchedProjects({
+                                        unitId: selectedUnit.id,
+                                        unitName: selectedUnit.name,
+                                        store: activeVersion?.store,
+                                        location: activeVersion?.location,
+                                        year: activeVersion?.year || effectiveYear,
+                                        updatedUnits,
+                                        updatedVersions,
+                                        activeVersionId,
+                                    });
+                                } else if (selectedUnit) {
+                                    syncUnitSizeToMatchedProjects({
+                                        unitId: selectedUnit.id,
+                                        unitName: selectedUnit.name,
+                                        store: activeVersion?.store,
+                                        location: activeVersion?.location,
+                                        year: activeVersion?.year || effectiveYear,
+                                        updatedUnits,
+                                        activeVersionId,
+                                    });
                                 }
                             }}
                             className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-white font-mono outline-none focus:border-brand-500 transition-colors"

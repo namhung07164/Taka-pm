@@ -12,6 +12,7 @@ import { deleteStorageFiles, extractStorageUrls } from '../../lib/storageUtils';
 import { recordDelta } from '../../lib/deltaSyncService';
 import { LinkCodesValidationError } from './projectModalTypes';
 import { handleProjectIdentityChange } from './projectModalIdentityService';
+import { syncProjectSizeToUnits } from '../../lib/unitSizeResolver';
 
 interface UseProjectModalMutationsParams {
   project: Project | null;
@@ -130,6 +131,15 @@ export function useProjectModalMutations({
           if ((payload as any)[key] === undefined) delete (payload as any)[key];
         });
         addPendingUpdate({ collectionPath: `artifacts/${APP_ID}/public/data/taka_projects`, action: 'set', docId, data: payload } as any);
+        syncProjectSizeToUnits({
+          id: docId,
+          code: dataToSave.code,
+          linkCodes: dataToSave.linkCodes,
+          store: dataToSave.store,
+          location: dataToSave.location,
+          year: yearNum,
+          sizeM2: dataToSave.sizeM2,
+        });
         setToast({ title: 'Draft Saved', message: 'Project saved offline. Will sync when connection returns.' });
         onClose();
         setIsSubmitting(false);
@@ -262,6 +272,16 @@ export function useProjectModalMutations({
           }
         });
       }
+      syncProjectSizeToUnits({
+        id: docId,
+        code: dataToSave.code,
+        linkCodes: dataToSave.linkCodes,
+        store: dataToSave.store,
+        location: dataToSave.location,
+        year: yearNum,
+        sizeM2: dataToSave.sizeM2,
+      });
+
       onClose();
     } catch (e: any) {
       console.error("Save project error:", e);
