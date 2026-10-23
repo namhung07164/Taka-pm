@@ -143,6 +143,7 @@ export function useExecutiveDashboardData({
         code: p.code,
         name: p.name || p.code,
         store: p.store || 'Unknown',
+        sizeM2: p.sizeM2 || 0,
         bac,
         ac,
         ev,

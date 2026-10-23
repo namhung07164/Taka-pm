@@ -19,6 +19,7 @@ export interface DynamicUnitSummaryItem {
   appProjectParty: string;
   appProjectBudget: number;
   appProjectActual: number;
+  appProjectSizeM2?: number;
   planProgress: number;
   actProgress: number;
   matchedTasksCount: number;
@@ -26,6 +27,7 @@ export interface DynamicUnitSummaryItem {
   activeTasks?: string[];
   // Excel / Master Business Data
   size: number;
+  sizeM2?: number;
   sales: number;
   salesByCp: number;
   profit: number;
@@ -94,6 +96,10 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
       val = data.hasAppProject ? (data.actProgress ?? 0) : 0;
     } else if (f === 'planprogress' || f === 'plan progress') {
       val = data.hasAppProject ? (data.planProgress ?? 0) : 0;
+    } else if (f === 'appprojectsizem2' || f === 'appsizem2' || f === 'app: size (m²)' || f === 'app: size m2' || f === 'app: sizem2') {
+      val = data.hasAppProject ? (data.appProjectSizeM2 ?? data.sizeM2 ?? 0) : 0;
+    } else if (f === 'sizem2' || f === 'size m2' || f === 'size' || f === 'area' || f === 'area (m2)' || f === 'm2') {
+      val = data.sizeM2 ?? data.appProjectSizeM2 ?? data.size ?? 0;
     }
   }
 

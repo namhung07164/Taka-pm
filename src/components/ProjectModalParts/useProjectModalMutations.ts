@@ -108,6 +108,9 @@ export function useProjectModalMutations({
         year: yearNum,
         code: String(formData.code).trim(),
         linkCodes: formData.linkCodes ? String(formData.linkCodes).trim() : String(formData.code).trim(),
+        sizeM2: (formData.sizeM2 !== undefined && formData.sizeM2 !== null && (formData.sizeM2 as any) !== '' && !isNaN(Number(formData.sizeM2)))
+          ? Number(formData.sizeM2)
+          : undefined,
         isDeleted: false,
         taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : (project?.taskCount || 0),
         taskSummaries: (computedDates.taskSummaries && computedDates.taskSummaries.length >= (project?.taskSummaries?.length || 0))

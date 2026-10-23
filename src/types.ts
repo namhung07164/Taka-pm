@@ -49,6 +49,7 @@ export interface Project {
   openingMode?: 'auto' | 'manual';
   budget?: number;
   actual?: number;
+  sizeM2?: number;
   location?: string;
   type?: string;
   note?: string;

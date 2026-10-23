@@ -321,6 +321,11 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
               • {p.location}
             </span>
           )}
+          {Boolean(p.sizeM2 && p.sizeM2 > 0) && (
+            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+              {p.sizeM2} m²
+            </span>
+          )}
         </div>
 
         <div className="shrink-0">

@@ -23,9 +23,14 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
   } | null>(null);
 
   const handleExportProjects = () => {
-    const headers = ['store', 'location', 'year', 'code', 'name'];
+    const headers = ['store', 'location', 'year', 'code', 'name', 'sizeM2'];
     const data = filteredProjects.map(p => [
-      p.store || '', p.location || '', p.year || '', p.code || '', p.name || ''
+      p.store || '',
+      p.location || '',
+      p.year || '',
+      p.code || '',
+      p.name || '',
+      p.sizeM2 !== undefined && p.sizeM2 !== null ? p.sizeM2 : ''
     ]);
     const csv = generateCSV(headers, data);
     downloadCSV(csv, 'taka_projects_filtered.csv');
@@ -95,7 +100,16 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
               'code': 'code',
               'projectcode': 'code',
               'name': 'name',
-              'task name': 'name'
+              'projectname': 'name',
+              'project name': 'name',
+              'task name': 'name',
+              'sizem2': 'sizeM2',
+              'size m2': 'sizeM2',
+              'size': 'sizeM2',
+              'size (m2)': 'sizeM2',
+              'area': 'sizeM2',
+              'area (m2)': 'sizeM2',
+              'm2': 'sizeM2'
             };
             
             const targetField = fieldMap[h];
@@ -103,6 +117,10 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
               let val: any = row[i];
               if (targetField === 'year') {
                 val = !isNaN(Number(val)) ? Number(val) : String(val).trim();
+              } else if (targetField === 'sizeM2') {
+                const clean = String(val ?? '').replace(/,/g, '').trim();
+                const num = Number(clean);
+                val = (!isNaN(num) && clean !== '') ? num : undefined;
               }
               p[targetField] = val;
             }

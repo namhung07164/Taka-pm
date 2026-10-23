@@ -36,6 +36,8 @@ export function SummaryTab({}: SummaryTabProps) {
     totalActual,
     periodBudget,
     periodActual,
+    totalSizeM2,
+    periodSizeM2,
   } = useSummaryData();
 
   return (
@@ -100,6 +102,8 @@ export function SummaryTab({}: SummaryTabProps) {
             periodActual={periodActual}
             totalBudget={totalBudget}
             totalActual={totalActual}
+            totalSizeM2={totalSizeM2}
+            periodSizeM2={periodSizeM2}
           />
         </>
       )}

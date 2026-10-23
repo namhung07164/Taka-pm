@@ -288,6 +288,11 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
               onSave={(val) => onUpdateProject(p, 'name', val)}
               canWrite={canWrite}
             />
+            {Boolean(p.sizeM2 && p.sizeM2 > 0) && (
+              <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 shrink-0 select-none">
+                {p.sizeM2} m²
+              </span>
+            )}
           </div>
         </td>
       )}

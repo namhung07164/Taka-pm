@@ -218,20 +218,41 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
           </div>
         </div>
 
-        {/* Project Name */}
-        <div className="mb-5">
-          <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
-            Project Name *
-          </label>
-          <FastInput
-            type="text"
-            inputMode="text"
-            value={formData.name || ''}
-            onChange={(val) => setFormData({ ...formData, name: val })}
-            required
-            readOnly={!canWrite}
-            className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-          />
+        {/* Row 3: Project Name & Size (m²) */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mb-5">
+          <div className="sm:col-span-8 md:col-span-9">
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              Project Name *
+            </label>
+            <FastInput
+              type="text"
+              inputMode="text"
+              value={formData.name || ''}
+              onChange={(val) => setFormData({ ...formData, name: val })}
+              required
+              readOnly={!canWrite}
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+            />
+          </div>
+
+          <div className="sm:col-span-4 md:col-span-3">
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              Size (m²)
+            </label>
+            <FastInput
+              type="number"
+              inputMode="decimal"
+              value={formData.sizeM2 !== undefined && formData.sizeM2 !== null ? String(formData.sizeM2) : ''}
+              onChange={(val) => {
+                const trimmed = val.trim();
+                const num = trimmed === '' ? undefined : parseFloat(trimmed);
+                setFormData({ ...formData, sizeM2: isNaN(num as number) ? undefined : num });
+              }}
+              readOnly={!canWrite}
+              placeholder="e.g. 150"
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+            />
+          </div>
         </div>
 
         {/* Baseline Start & Finish */}

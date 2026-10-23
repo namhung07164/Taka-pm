@@ -19290,11 +19290,11 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
                     const p: any = {};
                     let rowNo: any = null;
                     headers.forEach((h, i) => {
-                      const fieldMap: any = { 'store': 'store', 'location': 'location', 'year': 'year', 'code': 'code', 'name': 'name', 'no': 'no' };
+                      const fieldMap: any = { 'store': 'store', 'location': 'location', 'year': 'year', 'code': 'code', 'name': 'name', 'no': 'no', 'sizem2': 'sizeM2', 'size': 'sizeM2', 'area': 'sizeM2' };
                       const target = fieldMap[h];
                       if (target) {
                         let val: any = row[i];
-                        if (target === 'year' || target === 'no') val = isNaN(Number(val)) ? val : Number(val);
+                        if (target === 'year' || target === 'no' || target === 'sizeM2') val = isNaN(Number(val)) ? val : Number(val);
                         p[target] = val;
                         if (target === 'no') rowNo = val;
                       }
@@ -19391,8 +19391,6 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
     </>
   );
 });
-
-
 ================================================================================
 FILE: src/components/DetailTabParts/DetailFloatingActionBar.tsx
 ================================================================================
@@ -19873,6 +19871,11 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
               • {p.location}
             </span>
           )}
+          {Boolean(p.sizeM2 && p.sizeM2 > 0) && (
+            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+              {p.sizeM2} m²
+            </span>
+          )}
         </div>
 
         <div className="shrink-0">
@@ -20041,7 +20044,6 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
     </div>
   );
 });
-
 ================================================================================
 FILE: src/components/DetailTabParts/DetailMobileTaskItem.tsx
 ================================================================================
@@ -20698,6 +20700,11 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
               onSave={(val) => onUpdateProject(p, 'name', val)}
               canWrite={canWrite}
             />
+            {Boolean(p.sizeM2 && p.sizeM2 > 0) && (
+              <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 shrink-0 select-none">
+                {p.sizeM2} m²
+              </span>
+            )}
           </div>
         </td>
       )}
@@ -20825,7 +20832,6 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
     </tr>
   );
 });
-
 ================================================================================
 FILE: src/components/DetailTabParts/DetailTableHeader.tsx
 ================================================================================
@@ -25752,9 +25758,14 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
   } | null>(null);
 
   const handleExportProjects = () => {
-    const headers = ['store', 'location', 'year', 'code', 'name'];
+    const headers = ['store', 'location', 'year', 'code', 'name', 'sizeM2'];
     const data = filteredProjects.map(p => [
-      p.store || '', p.location || '', p.year || '', p.code || '', p.name || ''
+      p.store || '',
+      p.location || '',
+      p.year || '',
+      p.code || '',
+      p.name || '',
+      p.sizeM2 !== undefined && p.sizeM2 !== null ? p.sizeM2 : ''
     ]);
     const csv = generateCSV(headers, data);
     downloadCSV(csv, 'taka_projects_filtered.csv');
@@ -25824,7 +25835,16 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
               'code': 'code',
               'projectcode': 'code',
               'name': 'name',
-              'task name': 'name'
+              'projectname': 'name',
+              'project name': 'name',
+              'task name': 'name',
+              'sizem2': 'sizeM2',
+              'size m2': 'sizeM2',
+              'size': 'sizeM2',
+              'size (m2)': 'sizeM2',
+              'area': 'sizeM2',
+              'area (m2)': 'sizeM2',
+              'm2': 'sizeM2'
             };
             
             const targetField = fieldMap[h];
@@ -25832,6 +25852,10 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
               let val: any = row[i];
               if (targetField === 'year') {
                 val = !isNaN(Number(val)) ? Number(val) : String(val).trim();
+              } else if (targetField === 'sizeM2') {
+                const clean = String(val ?? '').replace(/,/g, '').trim();
+                const num = Number(clean);
+                val = (!isNaN(num) && clean !== '') ? num : undefined;
               }
               p[targetField] = val;
             }
@@ -25943,8 +25967,6 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
     projectImportErrorModal
   };
 }
-
-
 ================================================================================
 FILE: src/components/DetailTabParts/useDetailProjectInfo.ts
 ================================================================================
@@ -27900,8 +27922,15 @@ export const ExecutiveDashboardProjectsTable: React.FC<ExecutiveDashboardProject
                   <td className="py-3 px-3 font-mono font-bold text-blue-600 dark:text-blue-400">
                     {item.code}
                   </td>
-                  <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-200 max-w-[220px] truncate" title={item.name}>
-                    {item.name}
+                  <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-200 max-w-[220px]" title={item.name}>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="truncate">{item.name}</span>
+                      {Boolean(item.sizeM2 && item.sizeM2 > 0) && (
+                        <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1 py-0.2 rounded border border-indigo-200 dark:border-indigo-800 shrink-0">
+                          {item.sizeM2} m²
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="py-3 px-2">
                     <span className={cn('px-2 py-0.5 rounded text-[10px] font-bold', item.store === 'HCM' ? 'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300' : 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300')}>
@@ -27972,8 +28001,6 @@ export const ExecutiveDashboardProjectsTable: React.FC<ExecutiveDashboardProject
   );
 });
 ExecutiveDashboardProjectsTable.displayName = 'ExecutiveDashboardProjectsTable';
-
-
 ================================================================================
 FILE: src/components/ExecutiveDashboardParts/executiveDashboardTypes.ts
 ================================================================================
@@ -27989,6 +28016,7 @@ export interface EVMProjectItem {
   code: string;
   name: string;
   store: string;
+  sizeM2?: number;
   bac: number;
   ac: number;
   ev: number;
@@ -28043,8 +28071,6 @@ export interface CashflowData {
   totalYearActual: number;
   totalYearForecast: number;
 }
-
-
 ================================================================================
 FILE: src/components/ExecutiveDashboardParts/useExecutiveDashboardData.ts
 ================================================================================
@@ -28193,6 +28219,7 @@ export function useExecutiveDashboardData({
         code: p.code,
         name: p.name || p.code,
         store: p.store || 'Unknown',
+        sizeM2: p.sizeM2 || 0,
         bac,
         ac,
         ev,
@@ -28339,8 +28366,6 @@ export function useExecutiveDashboardData({
     cashflowData,
   };
 }
-
-
 ================================================================================
 FILE: src/components/FastInput.tsx
 ================================================================================
@@ -59970,6 +59995,7 @@ const normalizeRuleField = (f: string) => {
   if (f === "appParty" || f === "app: party") return "appProjectParty";
   if (f === "appBudget" || f === "app: budget") return "appProjectBudget";
   if (f === "appActual" || f === "app: actual") return "appProjectActual";
+  if (f === "appSizeM2" || f === "app: size (m²)" || f === "app: size m2" || f === "app: sizem2" || f === "appsizem2") return "appProjectSizeM2";
   return f;
 };
 
@@ -61025,7 +61051,7 @@ function DynamicHierarchyTab({
                                 <optgroup label="Attributes">
                                   <option value="unit">Unit</option>
                                   <option value="year">Year</option>
-                                  <option value="size">Size</option>
+                                  <option value="size">Size (m²)</option>
                                   <option value="floor">Floor</option>
                                   <option value="classCode">Class Code</option>
                                   <option value="vendorCode">Vendor Code</option>
@@ -61050,6 +61076,7 @@ function DynamicHierarchyTab({
                                   <option value="appProjectParty">App: Party</option>
                                   <option value="appProjectBudget">App: Budget</option>
                                   <option value="appProjectActual">App: Actual</option>
+                                  <option value="appProjectSizeM2">App: Size (m²)</option>
                                   <option value="appProjectCode">App: Project Code</option>
                                   <option value="appProjectYear">App: Year</option>
                                 </optgroup>
@@ -61175,8 +61202,6 @@ function DynamicHierarchyTab({
 }
 
 export default React.memo(DynamicHierarchyTab);
-
-
 ================================================================================
 FILE: src/components/PictureMapping/components/DataMapping/DynamicUnitSummaryTable.tsx
 ================================================================================
@@ -68865,6 +68890,7 @@ export function useDynamicUnitSummary({
         task: '',
         activeTasks: [],
         size: typeof excelItem?.size === 'number' ? excelItem.size : (Number(excelItem?.size) || 0),
+        sizeM2: typeof excelItem?.size === 'number' ? excelItem.size : (Number(excelItem?.size) || 0),
         sales: excelItem?.salesAmount || 0,
         salesByCp: excelItem?.salesByCp || 0,
         profit: excelItem?.profitAmount || 0,
@@ -69004,6 +69030,11 @@ export function useDynamicUnitSummary({
           item.appProjectParty = p.party || (p as any).contractor || '';
           item.appProjectBudget = p.budget || 0;
           item.appProjectActual = p.actual || 0;
+          item.appProjectSizeM2 = p.sizeM2 || 0;
+          if (p.sizeM2) {
+            item.sizeM2 = p.sizeM2;
+            if (!item.size) item.size = p.sizeM2;
+          }
           item.planProgress = p.computedPlanProgress ?? 0;
           item.actProgress = p.computedActProgress ?? 0;
           item.matchedTasksCount = matchedTaskSet.size;
@@ -69064,7 +69095,6 @@ export function useDynamicUnitSummary({
     effectiveYear,
   };
 }
-
 ================================================================================
 FILE: src/components/PictureMapping/lib/r2Upload.ts
 import type { S3Client as S3ClientType } from '@aws-sdk/client-s3';
@@ -74026,20 +74056,41 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
           </div>
         </div>
 
-        {/* Project Name */}
-        <div className="mb-5">
-          <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
-            Project Name *
-          </label>
-          <FastInput
-            type="text"
-            inputMode="text"
-            value={formData.name || ''}
-            onChange={(val) => setFormData({ ...formData, name: val })}
-            required
-            readOnly={!canWrite}
-            className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-          />
+        {/* Row 3: Project Name & Size (m²) */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mb-5">
+          <div className="sm:col-span-8 md:col-span-9">
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              Project Name *
+            </label>
+            <FastInput
+              type="text"
+              inputMode="text"
+              value={formData.name || ''}
+              onChange={(val) => setFormData({ ...formData, name: val })}
+              required
+              readOnly={!canWrite}
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+            />
+          </div>
+
+          <div className="sm:col-span-4 md:col-span-3">
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              Size (m²)
+            </label>
+            <FastInput
+              type="number"
+              inputMode="decimal"
+              value={formData.sizeM2 !== undefined && formData.sizeM2 !== null ? String(formData.sizeM2) : ''}
+              onChange={(val) => {
+                const trimmed = val.trim();
+                const num = trimmed === '' ? undefined : parseFloat(trimmed);
+                setFormData({ ...formData, sizeM2: isNaN(num as number) ? undefined : num });
+              }}
+              readOnly={!canWrite}
+              placeholder="e.g. 150"
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+            />
+          </div>
         </div>
 
         {/* Baseline Start & Finish */}
@@ -74219,8 +74270,6 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
     </form>
   );
 });
-
-
 ================================================================================
 FILE: src/components/ProjectModalParts/ProjectModalHeader.tsx
 ================================================================================
@@ -75000,6 +75049,9 @@ export function useProjectModalMutations({
         year: yearNum,
         code: String(formData.code).trim(),
         linkCodes: formData.linkCodes ? String(formData.linkCodes).trim() : String(formData.code).trim(),
+        sizeM2: (formData.sizeM2 !== undefined && formData.sizeM2 !== null && (formData.sizeM2 as any) !== '' && !isNaN(Number(formData.sizeM2)))
+          ? Number(formData.sizeM2)
+          : undefined,
         isDeleted: false,
         taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : (project?.taskCount || 0),
         taskSummaries: (computedDates.taskSummaries && computedDates.taskSummaries.length >= (project?.taskSummaries?.length || 0))
@@ -75194,8 +75246,6 @@ export function useProjectModalMutations({
     handleDelete
   };
 }
-
-
 ================================================================================
 FILE: src/components/ProjectQuickNavModal.tsx
 ================================================================================
@@ -76455,6 +76505,8 @@ export function SettingTab({ rules }: SettingTabProps) {
 
   const canWrite = currentUser.role === 'admin' || currentUser.canWrite;
   const isAdmin = currentUser.role === 'admin';
+  const roleLower = String(currentUser.role || '').toLowerCase();
+  const canViewPerformance = isAdmin || roleLower === 'manager' || roleLower === 'cp';
 
   const jpyRate = useAppStore(state => state.jpyRate);
   const usdRate = useAppStore(state => state.usdRate);
@@ -76532,11 +76584,38 @@ export function SettingTab({ rules }: SettingTabProps) {
         {currentUser.role !== 'guest' && (
           <>
             <button 
-              title="Refresh"
+              title="Update to latest Cloudflare build without clearing local database cache (0 Firestore Reads/Writes)"
               onClick={() => {
-                if (window.confirm("Do you want to refresh the app to update to the latest version?")) {
-                  window.location.reload();
-                }
+                triggerConfirmAction(
+                  "Force Update App (Zero-Read Smart Update)",
+                  "This will fetch the latest application build from Cloudflare and refresh static assets while preserving your local database (IndexedDB/Dexie) and Delta Sync state (0 extra Firestore Reads/Writes). Proceed?",
+                  async () => {
+                    try {
+                      if ('serviceWorker' in navigator) {
+                        const registrations = await navigator.serviceWorker.getRegistrations();
+                        await Promise.all(
+                          registrations.map(async (reg) => {
+                            try {
+                              await reg.update();
+                              if (reg.waiting) {
+                                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                              }
+                            } catch {}
+                          })
+                        );
+                      }
+                      if ('caches' in window) {
+                        const cacheNames = await window.caches.keys();
+                        await Promise.all(cacheNames.map((name) => window.caches.delete(name)));
+                      }
+                    } catch (e) {
+                      console.warn('[ForceUpdate] Asset cache refresh warning:', e);
+                    }
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('v', String(Date.now()));
+                    window.location.replace(url.toString());
+                  }
+                );
               }}
               className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm"
             >
@@ -76573,46 +76652,46 @@ export function SettingTab({ rules }: SettingTabProps) {
               Test Local Notification
             </button>
 
-            {isAdmin && (
-              <>
-                <button 
-                  onClick={() => setShowPerformanceDashboard(prev => !prev)}
-                  title="Toggle Firestore Performance & Read Monitor"
-                  className={cn(
-                    "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
-                    showPerformanceDashboard 
-                      ? "bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300"
-                      : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
-                  )}
-                >
-                  <Activity className="w-5 h-5 text-blue-500" />
-                  Performance Monitor
-                  {showPerformanceDashboard ? (
-                    <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-blue-500" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
-                  )}
-                </button>
+            {canViewPerformance && (
+              <button 
+                onClick={() => setShowPerformanceDashboard(prev => !prev)}
+                title="Toggle Firestore Performance & Read Monitor"
+                className={cn(
+                  "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
+                  showPerformanceDashboard 
+                    ? "bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300"
+                    : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
+                )}
+              >
+                <Activity className="w-5 h-5 text-blue-500" />
+                Performance Monitor
+                {showPerformanceDashboard ? (
+                  <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-blue-500" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
+                )}
+              </button>
+            )}
 
-                <button 
-                  onClick={() => setShowDataMaintenance(prev => !prev)}
-                  title="Bảo trì Dữ liệu & Bộ nhớ đệm (Database Maintenance)"
-                  className={cn(
-                    "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
-                    showDataMaintenance 
-                      ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300"
-                      : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
-                  )}
-                >
-                  <Database className="w-5 h-5 text-amber-500" />
-                  Database Maintenance
-                  {showDataMaintenance ? (
-                    <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-amber-500" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
-                  )}
-                </button>
-              </>
+            {isAdmin && (
+              <button 
+                onClick={() => setShowDataMaintenance(prev => !prev)}
+                title="Bảo trì Dữ liệu & Bộ nhớ đệm (Database Maintenance)"
+                className={cn(
+                  "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
+                  showDataMaintenance 
+                    ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300"
+                    : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
+                )}
+              >
+                <Database className="w-5 h-5 text-amber-500" />
+                Database Maintenance
+                {showDataMaintenance ? (
+                  <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-amber-500" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
+                )}
+              </button>
             )}
           </>
         )}
@@ -76625,7 +76704,7 @@ export function SettingTab({ rules }: SettingTabProps) {
         />
       )}
 
-      {isAdmin && showPerformanceDashboard && (
+      {canViewPerformance && showPerformanceDashboard && (
         <FirestorePerformanceDashboard onClose={() => setShowPerformanceDashboard(false)} />
       )}
 
@@ -76685,8 +76764,6 @@ export function SettingTab({ rules }: SettingTabProps) {
 }
 
 export default SettingTab;
-
-
 ================================================================================
 FILE: src/components/SettingTabParts/SettingDataMaintenance.tsx
 ================================================================================
@@ -78134,7 +78211,7 @@ SummaryFilterToolbar.displayName = 'SummaryFilterToolbar';
 FILE: src/components/SummaryParts/SummaryMetricsCards.tsx
 ================================================================================
 import React, { FC, memo } from 'react';
-import { TrendingUp, Wallet } from 'lucide-react';
+import { TrendingUp, Wallet, Ruler } from 'lucide-react';
 import { useLanguage } from '../../lib/LanguageContext';
 
 interface SummaryMetricsCardsProps {
@@ -78144,6 +78221,8 @@ interface SummaryMetricsCardsProps {
   periodActual: number;
   totalBudget: number;
   totalActual: number;
+  totalSizeM2?: number;
+  periodSizeM2?: number;
 }
 
 export const SummaryMetricsCards: React.FC<SummaryMetricsCardsProps> = React.memo(({
@@ -78153,55 +78232,70 @@ export const SummaryMetricsCards: React.FC<SummaryMetricsCardsProps> = React.mem
   periodActual,
   totalBudget,
   totalActual,
+  totalSizeM2 = 0,
+  periodSizeM2 = 0,
 }) => {
   const { t } = useLanguage();
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-      <div className="bg-white dark:bg-[#1e1e20] p-4 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-blue-200">
+    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className="bg-white dark:bg-[#1e1e20] p-3.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-blue-200">
         <p className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-tight">{t('Total Projects')}</p>
         <div className="flex items-center gap-2">
-          <p className="text-xl font-black text-slate-700 dark:text-[#c3c3c3]">{totalProjectsCount}</p>
+          <p className="text-lg font-black text-slate-700 dark:text-[#c3c3c3]">{totalProjectsCount}</p>
           <TrendingUp className="w-3.5 h-3.5 text-slate-400 dark:text-[#838383]" />
         </div>
       </div>
-      <div className="bg-white dark:bg-[#1e1e20] p-4 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-orange-200">
+      <div className="bg-white dark:bg-[#1e1e20] p-3.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-orange-200">
         <p className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-tight">{t('Projects in Period')}</p>
-        <p className="text-xl font-black text-orange-600">{periodProjectsCount}</p>
+        <p className="text-lg font-black text-orange-600">{periodProjectsCount}</p>
       </div>
-      <div className="bg-white dark:bg-[#1e1e20] p-4 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-blue-300">
+      <div className="bg-white dark:bg-[#1e1e20] p-3.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-blue-300">
         <p className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-tight">{t('Period Summary')} - {t('Budget')}</p>
         <div className="flex items-center gap-2">
-          <p className="text-xl font-black text-blue-600 dark:text-[#8ab4f8]">
+          <p className="text-lg font-black text-blue-600 dark:text-[#8ab4f8]">
             {(periodBudget / 1000000).toFixed(1)}M
           </p>
           <Wallet className="w-3.5 h-3.5 text-blue-400" />
         </div>
       </div>
-      <div className="bg-white dark:bg-[#1e1e20] p-4 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-emerald-300">
+      <div className="bg-white dark:bg-[#1e1e20] p-3.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-emerald-300">
         <p className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-tight">{t('Period Summary')} - {t('Cost')}</p>
-        <p className="text-xl font-black text-emerald-600 dark:text-emerald-400">
+        <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">
           {(periodActual / 1000000).toFixed(1)}M
         </p>
       </div>
-      <div className="bg-white dark:bg-[#1e1e20] p-4 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-slate-300">
+      <div className="bg-white dark:bg-[#1e1e20] p-3.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-slate-300">
         <p className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-tight">{t('Total Budget')}</p>
-        <p className="text-xl font-black text-slate-600 dark:text-[#a3a3a3]">
+        <p className="text-lg font-black text-slate-600 dark:text-[#a3a3a3]">
           {(totalBudget / 1000000).toFixed(1)}M
         </p>
       </div>
-      <div className="bg-white dark:bg-[#1e1e20] p-4 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-slate-300">
+      <div className="bg-white dark:bg-[#1e1e20] p-3.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-slate-300">
         <p className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-tight">{t('Total Actual')}</p>
-        <p className="text-xl font-black text-slate-600 dark:text-[#a3a3a3]">
+        <p className="text-lg font-black text-slate-600 dark:text-[#a3a3a3]">
           {(totalActual / 1000000).toFixed(1)}M
+        </p>
+      </div>
+      <div className="bg-white dark:bg-[#1e1e20] p-3.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-indigo-300">
+        <p className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-tight">{t('Total Size (m²)')}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-lg font-black text-indigo-600 dark:text-indigo-400">
+            {totalSizeM2 > 0 ? `${totalSizeM2.toLocaleString('en-US', { maximumFractionDigits: 1 })} m²` : '0 m²'}
+          </p>
+          <Ruler className="w-3.5 h-3.5 text-indigo-400" />
+        </div>
+      </div>
+      <div className="bg-white dark:bg-[#1e1e20] p-3.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-sm flex flex-col gap-1 transition-all hover:border-violet-300">
+        <p className="text-[10px] font-bold text-slate-400 dark:text-[#838383] uppercase tracking-tight">{t('Period Size (m²)')}</p>
+        <p className="text-lg font-black text-violet-600 dark:text-violet-400">
+          {periodSizeM2 > 0 ? `${periodSizeM2.toLocaleString('en-US', { maximumFractionDigits: 1 })} m²` : '0 m²'}
         </p>
       </div>
     </div>
   );
 });
 SummaryMetricsCards.displayName = 'SummaryMetricsCards';
-
-
 ================================================================================
 FILE: src/components/SummaryParts/summaryTypes.ts
 ================================================================================
@@ -78325,6 +78419,8 @@ export function useSummaryData() {
   const totalActual = useMemo(() => filteredProjects.reduce((acc, curr) => acc + (curr.actual || 0), 0), [filteredProjects]);
   const periodBudget = useMemo(() => projectsInPeriod.reduce((acc, curr) => acc + (curr.budget || 0), 0), [projectsInPeriod]);
   const periodActual = useMemo(() => projectsInPeriod.reduce((acc, curr) => acc + (curr.actual || 0), 0), [projectsInPeriod]);
+  const totalSizeM2 = useMemo(() => filteredProjects.reduce((acc, curr) => acc + (Number(curr.sizeM2) || 0), 0), [filteredProjects]);
+  const periodSizeM2 = useMemo(() => projectsInPeriod.reduce((acc, curr) => acc + (Number(curr.sizeM2) || 0), 0), [projectsInPeriod]);
 
   return {
     activeSubTab,
@@ -78350,10 +78446,10 @@ export function useSummaryData() {
     totalActual,
     periodBudget,
     periodActual,
+    totalSizeM2,
+    periodSizeM2,
   };
 }
-
-
 ================================================================================
 FILE: src/components/SummaryTab.tsx
 ================================================================================
@@ -78395,6 +78491,8 @@ export function SummaryTab({}: SummaryTabProps) {
     totalActual,
     periodBudget,
     periodActual,
+    totalSizeM2,
+    periodSizeM2,
   } = useSummaryData();
 
   return (
@@ -78459,6 +78557,8 @@ export function SummaryTab({}: SummaryTabProps) {
             periodActual={periodActual}
             totalBudget={totalBudget}
             totalActual={totalActual}
+            totalSizeM2={totalSizeM2}
+            periodSizeM2={periodSizeM2}
           />
         </>
       )}
@@ -78467,8 +78567,6 @@ export function SummaryTab({}: SummaryTabProps) {
 }
 
 export default SummaryTab;
-
-
 ================================================================================
 FILE: src/components/SyncMonitor.tsx
 ================================================================================
@@ -102998,7 +103096,7 @@ export async function exportToExcel({ activeTab, sortedProjects }: ExportToExcel
 
   if (activeTab === 'general') {
     const wsData: (string | number)[][] = [];
-    wsData.push(["Year", "Store", "Location", "Code", "Project", "Status", "Pj Start", "Pj Compl", "Opening"]);
+    wsData.push(["Year", "Store", "Location", "Code", "Project", "Size (m²)", "Status", "Pj Start", "Pj Compl", "Opening"]);
     sortedProjects.forEach((p) => {
       wsData.push([
         p.year || "",
@@ -103006,6 +103104,7 @@ export async function exportToExcel({ activeTab, sortedProjects }: ExportToExcel
         p.location || "",
         p.code,
         p.name,
+        p.sizeM2 !== undefined && p.sizeM2 !== null ? p.sizeM2 : "",
         getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code),
         p.computedTakStart ? String(p.computedTakStart).substring(0, 10) : "",
         p.computedTakCompl ? String(p.computedTakCompl).substring(0, 10) : "",
@@ -103330,7 +103429,6 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
 
   pdf.save(`export_${activeTab}_${Date.now()}.pdf`);
 }
-
 ================================================================================
 FILE: src/lib/financialAtomicService.ts
 ================================================================================
@@ -120660,6 +120758,7 @@ export interface Project {
   openingMode?: 'auto' | 'manual';
   budget?: number;
   actual?: number;
+  sizeM2?: number;
   location?: string;
   type?: string;
   note?: string;
@@ -120859,6 +120958,8 @@ export interface NotificationRule {
 
 export type NotificationPriority = 'critical' | 'urgent' | 'action_required' | 'info';
 
+export type NotificationCategory = 'overdue' | 'due_soon' | 'mention' | 'delegation' | 'rollover' | 'milestone';
+
 export interface ActiveNotification {
   id: string;
   title: string;
@@ -120870,14 +120971,22 @@ export interface ActiveNotification {
   targetType: 'project' | 'task' | 'task_delegation';
   targetId: string | number;
   count?: number;
+  projectId?: string;
   projectCode?: string;
+  projectName?: string;
+  taskName?: string;
   projectStore?: string;
   projectYear?: string | number;
+  location?: string;
+  category?: NotificationCategory;
+  ruleId?: string;
+  ruleField?: string;
   action?: 'cross_year_rollover' | 'complete_task' | 'approve_delegation';
   actionData?: any;
   priority?: NotificationPriority;
   isAssignedToMe?: boolean;
   party?: string;
+  subItems?: ActiveNotification[];
 }
 
 export interface DelegationSubTask {
@@ -120973,9 +121082,6 @@ export interface TakaDelta {
   /** Firestore TTL policy timestamp: documents expire automatically without client-side reads */
   expireAt?: any;
 }
-
-
-
 ================================================================================
 FILE: src/lib/pdfBinaryCache.ts
 /**
@@ -133483,6 +133589,7 @@ export interface DynamicUnitSummaryItem {
   appProjectParty: string;
   appProjectBudget: number;
   appProjectActual: number;
+  appProjectSizeM2?: number;
   planProgress: number;
   actProgress: number;
   matchedTasksCount: number;
@@ -133490,6 +133597,7 @@ export interface DynamicUnitSummaryItem {
   activeTasks?: string[];
   // Excel / Master Business Data
   size: number;
+  sizeM2?: number;
   sales: number;
   salesByCp: number;
   profit: number;
@@ -133558,6 +133666,10 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
       val = data.hasAppProject ? (data.actProgress ?? 0) : 0;
     } else if (f === 'planprogress' || f === 'plan progress') {
       val = data.hasAppProject ? (data.planProgress ?? 0) : 0;
+    } else if (f === 'appprojectsizem2' || f === 'appsizem2' || f === 'app: size (m²)' || f === 'app: size m2' || f === 'app: sizem2') {
+      val = data.hasAppProject ? (data.appProjectSizeM2 ?? data.sizeM2 ?? 0) : 0;
+    } else if (f === 'sizem2' || f === 'size m2' || f === 'size' || f === 'area' || f === 'area (m2)' || f === 'm2') {
+      val = data.sizeM2 ?? data.appProjectSizeM2 ?? data.size ?? 0;
     }
   }
 
@@ -133619,7 +133731,6 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
       return false;
   }
 }
-
 ================================================================================
 FILE: src/lib/exportPdfParts/pdfTableSlicer.ts
 ================================================================================

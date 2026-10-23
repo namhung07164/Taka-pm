@@ -18,7 +18,7 @@ export async function exportToExcel({ activeTab, sortedProjects }: ExportToExcel
 
   if (activeTab === 'general') {
     const wsData: (string | number)[][] = [];
-    wsData.push(["Year", "Store", "Location", "Code", "Project", "Status", "Pj Start", "Pj Compl", "Opening"]);
+    wsData.push(["Year", "Store", "Location", "Code", "Project", "Size (m²)", "Status", "Pj Start", "Pj Compl", "Opening"]);
     sortedProjects.forEach((p) => {
       wsData.push([
         p.year || "",
@@ -26,6 +26,7 @@ export async function exportToExcel({ activeTab, sortedProjects }: ExportToExcel
         p.location || "",
         p.code,
         p.name,
+        p.sizeM2 !== undefined && p.sizeM2 !== null ? p.sizeM2 : "",
         getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code),
         p.computedTakStart ? String(p.computedTakStart).substring(0, 10) : "",
         p.computedTakCompl ? String(p.computedTakCompl).substring(0, 10) : "",

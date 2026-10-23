@@ -225,6 +225,7 @@ export function useDynamicUnitSummary({
         task: '',
         activeTasks: [],
         size: typeof excelItem?.size === 'number' ? excelItem.size : (Number(excelItem?.size) || 0),
+        sizeM2: typeof excelItem?.size === 'number' ? excelItem.size : (Number(excelItem?.size) || 0),
         sales: excelItem?.salesAmount || 0,
         salesByCp: excelItem?.salesByCp || 0,
         profit: excelItem?.profitAmount || 0,
@@ -364,6 +365,11 @@ export function useDynamicUnitSummary({
           item.appProjectParty = p.party || (p as any).contractor || '';
           item.appProjectBudget = p.budget || 0;
           item.appProjectActual = p.actual || 0;
+          item.appProjectSizeM2 = p.sizeM2 || 0;
+          if (p.sizeM2) {
+            item.sizeM2 = p.sizeM2;
+            if (!item.size) item.size = p.sizeM2;
+          }
           item.planProgress = p.computedPlanProgress ?? 0;
           item.actProgress = p.computedActProgress ?? 0;
           item.matchedTasksCount = matchedTaskSet.size;

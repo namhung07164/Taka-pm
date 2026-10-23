@@ -34,6 +34,8 @@ export function SettingTab({ rules }: SettingTabProps) {
 
   const canWrite = currentUser.role === 'admin' || currentUser.canWrite;
   const isAdmin = currentUser.role === 'admin';
+  const roleLower = String(currentUser.role || '').toLowerCase();
+  const canViewPerformance = isAdmin || roleLower === 'manager' || roleLower === 'cp';
 
   const jpyRate = useAppStore(state => state.jpyRate);
   const usdRate = useAppStore(state => state.usdRate);
@@ -179,46 +181,46 @@ export function SettingTab({ rules }: SettingTabProps) {
               Test Local Notification
             </button>
 
-            {isAdmin && (
-              <>
-                <button 
-                  onClick={() => setShowPerformanceDashboard(prev => !prev)}
-                  title="Toggle Firestore Performance & Read Monitor"
-                  className={cn(
-                    "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
-                    showPerformanceDashboard 
-                      ? "bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300"
-                      : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
-                  )}
-                >
-                  <Activity className="w-5 h-5 text-blue-500" />
-                  Performance Monitor
-                  {showPerformanceDashboard ? (
-                    <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-blue-500" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
-                  )}
-                </button>
+            {canViewPerformance && (
+              <button 
+                onClick={() => setShowPerformanceDashboard(prev => !prev)}
+                title="Toggle Firestore Performance & Read Monitor"
+                className={cn(
+                  "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
+                  showPerformanceDashboard 
+                    ? "bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300"
+                    : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
+                )}
+              >
+                <Activity className="w-5 h-5 text-blue-500" />
+                Performance Monitor
+                {showPerformanceDashboard ? (
+                  <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-blue-500" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
+                )}
+              </button>
+            )}
 
-                <button 
-                  onClick={() => setShowDataMaintenance(prev => !prev)}
-                  title="Bảo trì Dữ liệu & Bộ nhớ đệm (Database Maintenance)"
-                  className={cn(
-                    "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
-                    showDataMaintenance 
-                      ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300"
-                      : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
-                  )}
-                >
-                  <Database className="w-5 h-5 text-amber-500" />
-                  Database Maintenance
-                  {showDataMaintenance ? (
-                    <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-amber-500" />
-                  ) : (
-                    <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
-                  )}
-                </button>
-              </>
+            {isAdmin && (
+              <button 
+                onClick={() => setShowDataMaintenance(prev => !prev)}
+                title="Bảo trì Dữ liệu & Bộ nhớ đệm (Database Maintenance)"
+                className={cn(
+                  "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
+                  showDataMaintenance 
+                    ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300"
+                    : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
+                )}
+              >
+                <Database className="w-5 h-5 text-amber-500" />
+                Database Maintenance
+                {showDataMaintenance ? (
+                  <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-amber-500" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
+                )}
+              </button>
             )}
           </>
         )}
@@ -231,7 +233,7 @@ export function SettingTab({ rules }: SettingTabProps) {
         />
       )}
 
-      {isAdmin && showPerformanceDashboard && (
+      {canViewPerformance && showPerformanceDashboard && (
         <FirestorePerformanceDashboard onClose={() => setShowPerformanceDashboard(false)} />
       )}
 
