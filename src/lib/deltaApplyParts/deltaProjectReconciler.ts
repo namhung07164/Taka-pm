@@ -74,9 +74,11 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
     return { nextTasks: updatedTasks, tasksChanged: false };
   }
 
-  const validIdsLower = new Set(
-    rawTaskSummaries.map((s: any) => String(s.id).trim().toLowerCase())
-  );
+  const summaryByIdLower = new Map<string, any>();
+  rawTaskSummaries.forEach((s: any) => {
+    if (s?.id) summaryByIdLower.set(String(s.id).trim().toLowerCase(), s);
+  });
+  const validIdsLower = new Set(summaryByIdLower.keys());
   const nowMs = Date.now();
   const pIdStr = String(nextProj.id);
   const pCodeLower = String(nextProj.code || '').trim().toLowerCase();
@@ -93,8 +95,16 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
     .filter(Boolean);
 
   const zombieIds: string[] = [];
-  const nextTasks = updatedTasks.filter((t) => {
-    if (!t || !t.id || t.id.startsWith('ts_')) return true;
+  const patchedTasksForDexie: Task[] = [];
+  let anyTaskPatched = false;
+
+  const nextTasks: Task[] = [];
+  for (let i = 0; i < updatedTasks.length; i++) {
+    const t = updatedTasks[i];
+    if (!t || !t.id || t.id.startsWith('ts_')) {
+      nextTasks.push(t);
+      continue;
+    }
     const matchesProj =
       (t.projectId && String(t.projectId) === pIdStr) ||
       (!t.projectId &&
@@ -105,13 +115,57 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
           !t.projectStore ||
           String(t.projectStore).trim().toLowerCase() === pStoreLower) &&
         (!pYearStr || !t.projectYear || String(t.projectYear).trim() === pYearStr));
-    if (!matchesProj) return true;
-    if (validIdsLower.has(String(t.id).trim().toLowerCase())) return true;
+    if (!matchesProj) {
+      nextTasks.push(t);
+      continue;
+    }
+    const tIdLower = String(t.id).trim().toLowerCase();
     const updatedMs = tsOf(t.updatedAt);
-    if (updatedMs && nowMs - updatedMs <= 30000) return true;
+    const isRecentLocal = Boolean(updatedMs && nowMs - updatedMs <= 15000);
+
+    if (validIdsLower.has(tIdLower)) {
+      const s = summaryByIdLower.get(tIdLower);
+      if (s && !isRecentLocal) {
+        const summaryDiffers =
+          (s.name !== undefined && s.name !== t.name) ||
+          (s.start !== undefined && s.start !== t.start) ||
+          (s.finish !== undefined && s.finish !== t.finish) ||
+          (s.runningStatus !== undefined && s.runningStatus !== t.runningStatus) ||
+          (s.approval !== undefined && s.approval !== t.approval) ||
+          (s.party !== undefined && s.party !== t.party) ||
+          (s.duration !== undefined && s.duration !== t.duration);
+        if (summaryDiffers) {
+          const patched: Task = {
+            ...t,
+            ...(s.name !== undefined ? { name: s.name } : {}),
+            ...(s.start !== undefined ? { start: s.start } : {}),
+            ...(s.finish !== undefined ? { finish: s.finish } : {}),
+            ...(s.runningStatus !== undefined ? { runningStatus: s.runningStatus } : {}),
+            ...(s.approval !== undefined ? { approval: s.approval } : {}),
+            ...(s.party !== undefined ? { party: s.party } : {}),
+            ...(s.duration !== undefined ? { duration: s.duration } : {}),
+            ...(s.orderIndex !== undefined ? { orderIndex: s.orderIndex } : {}),
+          };
+          anyTaskPatched = true;
+          patchedTasksForDexie.push(patched);
+          nextTasks.push(patched);
+          continue;
+        }
+      }
+      nextTasks.push(t);
+      continue;
+    }
+
+    if (isRecentLocal) {
+      nextTasks.push(t);
+      continue;
+    }
     zombieIds.push(t.id);
-    return false;
-  });
+  }
+
+  if (patchedTasksForDexie.length > 0) {
+    localDb.tasks.bulkPut(patchedTasksForDexie).catch(() => {});
+  }
 
   if (zombieIds.length > 0) {
     markTasksDeleted(zombieIds, pIdStr);
@@ -121,11 +175,12 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
     return { nextTasks, tasksChanged: true };
   }
 
-  return { nextTasks: updatedTasks, tasksChanged: false };
+  return { nextTasks: anyTaskPatched ? nextTasks : updatedTasks, tasksChanged: anyTaskPatched };
 }
 
 /**
- * Upserts a task summary into matching projects using O(1) pre-built DeltaProjectsIndex.
+ * Upserts a task summary into matching projects using O(1) pre-built DeltaProjectsIndex,
+ * with fallback scan by summary ID when a partial task patch lacks projectId/projectCode.
  */
 export function upsertTaskSummaryIntoMatchingProjects(params: {
   docId: string;
@@ -133,11 +188,12 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
   mergedTask: Task;
   updatedProjects: Project[];
   projectsIndex: DeltaProjectsIndex;
+  touchedProjectIds?: Set<string>;
 }): boolean {
-  const { docId, action, mergedTask, updatedProjects, projectsIndex } = params;
-  if (!mergedTask.start || !mergedTask.finish || !mergedTask.name) return false;
-
+  const { docId, action, mergedTask, updatedProjects, projectsIndex, touchedProjectIds } = params;
   const docIdLower = String(docId).trim().toLowerCase();
+  if (!docIdLower) return false;
+
   const tProjId = mergedTask.projectId ? String(mergedTask.projectId) : '';
   const tCodeLower = mergedTask.projectCode ? String(mergedTask.projectCode).trim().toLowerCase() : '';
   const tStoreLower = mergedTask.projectStore
@@ -161,6 +217,17 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
     }
   }
 
+  // Fallback for partial task patches when store.tasks was empty on General tab: find project whose taskSummaries contains docId
+  if (candidateIndices.size === 0) {
+    for (let i = 0; i < updatedProjects.length; i++) {
+      const p = updatedProjects[i];
+      if (!p || !Array.isArray(p.taskSummaries)) continue;
+      if (p.taskSummaries.some((s: any) => String(s?.id || '').trim().toLowerCase() === docIdLower)) {
+        candidateIndices.add(i);
+      }
+    }
+  }
+
   if (candidateIndices.size === 0) return false;
 
   let anyProjectChanged = false;
@@ -172,11 +239,11 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
     const p = updatedProjects[pIdx];
     if (!p) return;
 
-    if (!tProjId) {
+    if (tProjId) {
+      if (String(p.id) !== tProjId) return;
+    } else if (tCodeLower) {
       if (tStoreLower && p.store && String(p.store).trim().toLowerCase() !== tStoreLower) return;
       if (tYearStr && p.year && String(p.year).trim() !== tYearStr) return;
-    } else if (String(p.id) !== tProjId) {
-      return;
     }
 
     const currentSummaries = Array.isArray(p.taskSummaries) ? [...p.taskSummaries] : [];
@@ -192,29 +259,37 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
       );
     });
 
+    const existingSummary = sIdx !== -1 ? currentSummaries[sIdx] : null;
+    const effName = mergedTask.name ?? existingSummary?.name;
+    const effStart = mergedTask.start ?? existingSummary?.start;
+    const effFinish = mergedTask.finish ?? existingSummary?.finish;
+
+    if (!effName || !effStart || !effFinish) return;
+
     const summaryItem = {
-      ...(sIdx !== -1 ? currentSummaries[sIdx] : {}),
+      ...(existingSummary || {}),
       id: docId,
-      name: mergedTask.name,
-      start: mergedTask.start,
-      finish: mergedTask.finish,
+      name: effName,
+      start: effStart,
+      finish: effFinish,
       orderIndex:
         mergedTask.orderIndex ??
-        (sIdx !== -1 ? currentSummaries[sIdx].orderIndex : currentSummaries.length),
+        (existingSummary ? existingSummary.orderIndex : currentSummaries.length),
       ...(mergedTask.baselineStart ? { baselineStart: mergedTask.baselineStart } : {}),
       ...(mergedTask.baselineFinish ? { baselineFinish: mergedTask.baselineFinish } : {}),
-      ...(mergedTask.approval ? { approval: mergedTask.approval } : {}),
-      ...(mergedTask.party ? { party: mergedTask.party } : {}),
+      ...(mergedTask.approval !== undefined ? { approval: mergedTask.approval } : {}),
+      ...(mergedTask.party !== undefined ? { party: mergedTask.party } : {}),
       ...(mergedTask.taskCodePhu ? { taskCodePhu: mergedTask.taskCodePhu } : {}),
-      ...(mergedTask.parentTaskId ? { parentTaskId: mergedTask.parentTaskId } : {}),
+      ...(mergedTask.parentTaskId !== undefined ? { parentTaskId: mergedTask.parentTaskId } : {}),
       ...(mergedTask.duration !== undefined ? { duration: mergedTask.duration } : {}),
-      ...(mergedTask.runningStatus ? { runningStatus: mergedTask.runningStatus } : {}),
+      ...(mergedTask.runningStatus !== undefined ? { runningStatus: mergedTask.runningStatus } : {}),
       ...(mergedTask.delegation !== undefined ? { delegation: mergedTask.delegation } : {}),
     };
 
     if (sIdx !== -1) {
       currentSummaries[sIdx] = summaryItem;
       anyProjectChanged = true;
+      if (p.id && touchedProjectIds) touchedProjectIds.add(String(p.id));
       updatedProjects[pIdx] = {
         ...p,
         taskSummaries: currentSummaries,
@@ -223,6 +298,7 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
     } else if (action === 'create' || action === 'update') {
       currentSummaries.push(summaryItem);
       anyProjectChanged = true;
+      if (p.id && touchedProjectIds) touchedProjectIds.add(String(p.id));
       updatedProjects[pIdx] = {
         ...p,
         taskSummaries: currentSummaries,

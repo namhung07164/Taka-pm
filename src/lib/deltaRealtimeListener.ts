@@ -6,11 +6,14 @@ import {
   filterUnappliedDeltas,
   getLastDeltaSyncTime,
   deltaTime,
+  serverDeltaTime,
   LAST_SYNC_KEY,
 } from './deltaSyncService';
 import { waitForInFlightDeltaPull } from './deltaPullService';
 import { waitForNetworkRecovery } from './syncResilience';
+import { bootstrapLocalStore } from './backgroundSyncWorker';
 import { safeSetItemLocal } from './storage';
+import { CLIENT_SESSION_ID } from './deltaConstants';
 import type { TakaDelta } from '../types';
 
 /**
@@ -23,7 +26,7 @@ import type { TakaDelta } from '../types';
  * The listener is detached when the tab has been hidden > 15 min and re-attached (since = lastSyncTime) on return.
  */
 
-const OVERLAP_MS = 3 * 1000; // 3s serverTime jitter buffer (duplicates filtered by delta id)
+const OVERLAP_MS = 90 * 1000; // 90s clock-skew & boot buffer (duplicates filtered in O(1) by delta id)
 const DETACH_AFTER_HIDDEN_MS = 15 * 60 * 1000; // Keep listener alive for up to 15 min when tab hidden (matches pool TTL)
 const RETRY_MS = 30 * 1000;
 const RECONNECT_COOLDOWN_MS = 2000;
@@ -47,10 +50,16 @@ export function startDeltaRealtimeListener(): () => void {
   let signedIn = !!auth.currentUser;
   let stopped = false;
 
-  const flush = () => {
+  const flush = async () => {
     flushTimer = null;
-    const batch = filterUnappliedDeltas(buffer);
+    if (buffer.length === 0) return;
+    const rawBatch = buffer;
     buffer = [];
+    try {
+      // Ensure Dexie Local-First store hydration has completed on boot before applying incoming deltas
+      await bootstrapLocalStore();
+    } catch {}
+    const batch = filterUnappliedDeltas(rawBatch);
     if (batch.length === 0) return;
     batch.sort((a, b) => deltaTime(a) - deltaTime(b));
     try {
@@ -71,7 +80,7 @@ export function startDeltaRealtimeListener(): () => void {
   const attach = () => {
     if (stopped || unsub || !signedIn) return;
     lastReconnectAt = Date.now();
-    const since = getLastDeltaSyncTime() - OVERLAP_MS;
+    const since = Math.max(0, getLastDeltaSyncTime() - OVERLAP_MS);
     const q = query(
       collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_deltas'),
       where('serverTime', '>', Timestamp.fromMillis(since)),
@@ -80,20 +89,22 @@ export function startDeltaRealtimeListener(): () => void {
     unsub = onSnapshot(
       q,
       (snap) => {
-        if (snap.metadata.hasPendingWrites) return;
-        let maxSeenMs = 0;
+        let maxSeenServerMs = 0;
         snap.docChanges().forEach((c) => {
           if (c.type === 'added' || c.type === 'modified') {
-            const raw = c.doc.data({ serverTimestamps: 'estimate' }) as TakaDelta;
-            const dMs = deltaTime(raw);
-            if (dMs > maxSeenMs) maxSeenMs = dMs;
+            const raw = c.doc.data() as TakaDelta;
+            if (c.doc.metadata.hasPendingWrites && raw?.sessionId === CLIENT_SESSION_ID) {
+              return;
+            }
+            const srvMs = !c.doc.metadata.hasPendingWrites ? serverDeltaTime(raw) : 0;
+            if (srvMs > maxSeenServerMs) maxSeenServerMs = srvMs;
             buffer.push({ ...raw, id: raw.id || c.doc.id });
           }
         });
-        if (!snap.metadata.fromCache) {
-          // Advance sync cursor even when 0 deltas occurred during 30m-1h idle window so next reconnect doesn't re-query old window
-          const safeNow = Math.max(getLastDeltaSyncTime(), maxSeenMs, Date.now() - 5000);
-          safeSetItemLocal(LAST_SYNC_KEY, String(safeNow));
+        if (!snap.metadata.fromCache && maxSeenServerMs > 0) {
+          // Rule 16.5: Advance sync cursor strictly using Firestore serverTime (never client Date.now())
+          const nextCursor = Math.max(getLastDeltaSyncTime(), maxSeenServerMs);
+          safeSetItemLocal(LAST_SYNC_KEY, String(nextCursor));
         }
         if (buffer.length > 0 && !flushTimer) flushTimer = setTimeout(flush, 20);
       },

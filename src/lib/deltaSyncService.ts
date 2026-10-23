@@ -55,25 +55,41 @@ export function markRestoreVersionCompleted(cutoffMs?: number, isRemoteSignal?: 
 
 export const appliedDeltaIds = new Set<string>();
 
-/** Sync cursor time of a delta in ms: server arrival time when known, else the client time. */
-export function deltaTime(d: TakaDelta): number {
+/** Extracts true Firestore server timestamp (ms) when present; returns 0 for local-only payloads so client clocks never poison LAST_SYNC_KEY. */
+export function serverDeltaTime(d: TakaDelta): number {
   const ms = (d as any)?.serverTime?.toMillis?.();
-  return typeof ms === 'number' ? ms : d.numericTime || 0;
+  if (typeof ms === 'number' && ms > 0) return ms;
+  const sec = (d as any)?.serverTime?.seconds;
+  if (typeof sec === 'number' && sec > 0) {
+    return sec * 1000 + Math.floor(((d as any)?.serverTime?.nanoseconds || 0) / 1e6);
+  }
+  return 0;
+}
+
+/** Sync cursor time of a delta in ms: server arrival time when known, else the client time (for sorting). */
+export function deltaTime(d: TakaDelta): number {
+  const srv = serverDeltaTime(d);
+  return srv > 0 ? srv : d.numericTime || 0;
 }
 
 /**
- * Đọc mốc thời gian đã đồng bộ delta lần cuối từ LocalStorage
+ * Đọc mốc thời gian đã đồng bộ delta lần cuối từ LocalStorage.
+ * Tự động kẹp trần (clamp) nếu đồng hồ cục bộ của thiết bị từng chạy nhanh hơn giờ server Firestore.
  */
 export function getLastDeltaSyncTime(): number {
   const restoreCutoff = getRestoreCutoffTimestamp();
   const raw = safeGetItemLocal(LAST_SYNC_KEY);
   let lastSync = 0;
+  const now = Date.now();
   if (raw) {
     const num = Number(raw);
-    if (!isNaN(num) && num > 0) lastSync = num;
+    if (!isNaN(num) && num > 0) {
+      // Guard against client clock drift that previously wrote a future timestamp into LAST_SYNC_KEY
+      lastSync = Math.min(num, now);
+    }
   }
   if (lastSync === 0) {
-    lastSync = Date.now() - 5 * 60 * 1000;
+    lastSync = now - 5 * 60 * 1000;
   }
   return Math.max(lastSync, restoreCutoff);
 }

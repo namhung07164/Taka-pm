@@ -9,6 +9,7 @@ import { applyFieldPatch } from './deltaPatchService';
 import { resolveInvalidations } from './deltaInvalidateService';
 import {
   deltaTime,
+  serverDeltaTime,
   getLastDeltaSyncTime,
   getRestoreCutoffTimestamp,
   markRestoreVersionCompleted,
@@ -79,7 +80,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     collectionNameRaw: string,
     action: 'create' | 'update' | 'delete',
     data: any,
-    _year?: string
+    meta?: { year?: string; projectId?: string; projectCode?: string; projectStore?: string; isPatch?: boolean }
   ) => {
     if (docId) directlyAppliedDocIds.add(docId);
     const collectionName =
@@ -116,10 +117,21 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             nextProj.taskCount = data.taskSummaries.length;
           }
           updatedProjects[idx] = nextProj;
-        } else if (action === 'create') {
+        } else if (action === 'create' || (action === 'update' && data?.code && data?.name)) {
           nextProj = { id: docId, ...data } as Project;
           updatedProjects.push(nextProj);
           projectsIndex = buildDeltaProjectsIndex(updatedProjects);
+        } else if (action === 'update') {
+          directlyAppliedDocIds.delete(docId);
+          invalidations.push({
+            docId,
+            collectionName: 'taka_projects',
+            action: 'update',
+            data: {},
+            isPatch: true,
+            invalidate: true,
+            year: meta?.year,
+          });
         }
 
         if (nextProj && Array.isArray(data?.taskSummaries)) {
@@ -139,17 +151,24 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       case 'taka_tasks': {
         const idx = updatedTasks.findIndex((t) => t.id === docId);
         const existingTask = idx !== -1 ? updatedTasks[idx] : null;
+        const enrichedData = {
+          ...(meta?.projectId ? { projectId: meta.projectId } : {}),
+          ...(meta?.projectCode ? { projectCode: meta.projectCode } : {}),
+          ...(meta?.projectStore ? { projectStore: meta.projectStore } : {}),
+          ...(meta?.year ? { projectYear: meta.year } : {}),
+          ...(data || {}),
+        };
         noteTouchedProject(existingTask);
-        noteTouchedProject(data);
+        noteTouchedProject(enrichedData);
         if (isDelete || data?.isDeleted) {
-          const pIdHint = data?.projectId || existingTask?.projectId;
-          const delProjCodeLower = String(data?.projectCode || existingTask?.projectCode || '')
+          const pIdHint = enrichedData?.projectId || existingTask?.projectId;
+          const delProjCodeLower = String(enrichedData?.projectCode || existingTask?.projectCode || '')
             .trim()
             .toLowerCase();
-          const delProjStoreLower = String(data?.projectStore || existingTask?.projectStore || '')
+          const delProjStoreLower = String(enrichedData?.projectStore || existingTask?.projectStore || '')
             .trim()
             .toLowerCase();
-          const delProjYearStr = String(data?.projectYear ?? existingTask?.projectYear ?? '').trim();
+          const delProjYearStr = String(enrichedData?.projectYear ?? existingTask?.projectYear ?? '').trim();
 
           markTasksDeleted([docId], pIdHint ? String(pIdHint) : undefined);
           localDb.tasks.delete(docId).catch(() => {});
@@ -210,7 +229,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         if (idx !== -1 && isStaleVsLocal(updatedTasks[idx])) return;
 
         const mergedTask = (
-          idx !== -1 ? applyFieldPatch(updatedTasks[idx], data) : { id: docId, ...data }
+          idx !== -1 ? applyFieldPatch(updatedTasks[idx], enrichedData) : { id: docId, ...enrichedData }
         ) as Task;
 
         // O(1) upsert into matching project's taskSummaries via pre-built projectsIndex
@@ -221,6 +240,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             mergedTask,
             updatedProjects,
             projectsIndex,
+            touchedProjectIds,
           })
         ) {
           projectsChanged = true;
@@ -231,7 +251,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           updatedTasks[idx] = mergedTask;
         } else if (
           action === 'create' ||
-          (action === 'update' && Boolean(data?.name && (data?.projectCode || data?.projectId)))
+          (action === 'update' && Boolean(enrichedData?.name && (enrichedData?.projectCode || enrichedData?.projectId)))
         ) {
           if (store.isTasksRequested || updatedTasks.length > 0) {
             const expandedSet = new Set(
@@ -357,8 +377,9 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   };
 
   deltas.forEach((delta) => {
-    if (deltaTime(delta) > maxTime) {
-      maxTime = deltaTime(delta);
+    const srvMs = serverDeltaTime(delta);
+    if (srvMs > maxTime) {
+      maxTime = srvMs;
     }
 
     if (delta.docId === 'sys_restore_signal' || delta.data?.type === 'VERSION_RESTORE') {
@@ -384,14 +405,26 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           return;
         }
         try {
-          applyItem(item.docId, item.collectionName, item.action, item.data, item.year);
+          applyItem(item.docId, item.collectionName, item.action, item.data, {
+            year: item.year || delta.year,
+            projectId: (item as any).projectId || delta.projectId,
+            projectCode: (item as any).projectCode || delta.projectCode,
+            projectStore: (item as any).projectStore || delta.projectStore,
+            isPatch: item.isPatch,
+          });
         } catch (err) {
           console.warn('[deltaSync] applyItem failed (batch item skipped):', item.docId, err);
         }
       });
     } else if (delta.docId && delta.collectionName) {
       try {
-        applyItem(delta.docId, delta.collectionName, delta.action as any, delta.data, delta.year);
+        applyItem(delta.docId, delta.collectionName, delta.action as any, delta.data, {
+          year: delta.year,
+          projectId: delta.projectId,
+          projectCode: delta.projectCode,
+          projectStore: delta.projectStore,
+          isPatch: delta.isPatch,
+        });
       } catch (err) {
         console.warn('[deltaSync] applyItem failed (delta skipped):', delta.docId, err);
       }
@@ -429,28 +462,20 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     if (d.action === 'batch_update' && Array.isArray(d.batchItems)) {
       d.batchItems.forEach((item) => {
         if (item.action === 'create' || item.action === 'update') {
-          flashEntries.push({
-            docId: item.docId,
-            collectionName: item.collectionName,
-            updatedBy: d.updatedBy,
-          });
+          flashEntries.push({ docId: item.docId, collectionName: item.collectionName, updatedBy: d.updatedBy });
         }
       });
     } else if ((d.action === 'create' || d.action === 'update') && d.docId && d.collectionName) {
-      flashEntries.push({
-        docId: d.docId,
-        collectionName: d.collectionName,
-        updatedBy: d.updatedBy,
-      });
+      flashEntries.push({ docId: d.docId, collectionName: d.collectionName, updatedBy: d.updatedBy });
     }
   });
-  if (flashEntries.length > 0) {
-    triggerBatchChangeFlash(flashEntries);
-  }
+  if (flashEntries.length > 0) triggerBatchChangeFlash(flashEntries);
 
   applyDeltasToLocalDatabase(deltas).catch(() => {});
   broadcastAppliedDeltas(deltas);
-  safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
+  if (maxTime > lastSyncTime) {
+    safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
+  }
 
   const pendingInvalidations = invalidations.filter(
     (item) => !directlyAppliedDocIds.has(item.docId)

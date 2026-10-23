@@ -325,10 +325,10 @@ export function useTasksHydration({
             hasFreshMarker(markers, 'tasks_proj', p.code) ||
             isYearFresh;
 
-          // When a fresh marker exists in Dexie, trust localProjTasks.length > 0 even if deduplication merged a duplicate task
+          // Trust local Dexie tasks only when local task count covers expectedSummaryCount (so newly added remote tasks are never missed)
           const hasLocalProjTasks =
             knownHydratedProjectCodes.current.has(String(p.id)) ||
-            (isProjMarkerFresh && (localProjTasks.length > 0 || expectedSummaryCount === 0)) ||
+            (isProjMarkerFresh && localProjTasks.length >= expectedSummaryCount) ||
             (localProjTasks.length > 0 && localProjTasks.length >= expectedSummaryCount);
 
           const isZeroTaskProject =

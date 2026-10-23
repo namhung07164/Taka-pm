@@ -12,6 +12,7 @@ import { TakaDelta } from '../types';
 import { resyncIfStale, waitForNetworkRecovery } from './syncResilience';
 import { 
   deltaTime, 
+  serverDeltaTime,
   getLastDeltaSyncTime, 
   getRestoreCutoffTimestamp, 
   appliedDeltaIds,
@@ -104,8 +105,9 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
         snapshot.forEach((d: any) => {
           const item = d.data() as TakaDelta;
           const itemId = item.id || d.id;
-          const itemMs = deltaTime(item);
-          if (itemMs > latestSeenServerMs) latestSeenServerMs = itemMs;
+          const srvMs = serverDeltaTime(item);
+          const itemMs = srvMs > 0 ? srvMs : deltaTime(item);
+          if (srvMs > latestSeenServerMs) latestSeenServerMs = srvMs;
           if (appliedDeltaIds.has(itemId)) {
             if (itemMs > pageMaxTime) pageMaxTime = itemMs;
             return;
@@ -130,15 +132,17 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
       pullSucceeded = true;
 
       if (deltas.length === 0) {
-        // Server confirmed 0 new unapplied deltas: advance sync cursor so already-applied deltas are not re-read on next pull
-        const safeRecentTime = Math.max(lastSyncTime, latestSeenServerMs, Date.now() - 5000);
-        safeSetItemLocal(LAST_SYNC_KEY, String(safeRecentTime));
+        if (latestSeenServerMs > lastSyncTime) {
+          safeSetItemLocal(LAST_SYNC_KEY, String(latestSeenServerMs));
+        }
         return 0;
       }
 
       const appliedCount = applyIncomingDeltas(deltas);
-      const advancedCursor = Math.max(getLastDeltaSyncTime(), latestSeenServerMs, Date.now() - 5000);
-      safeSetItemLocal(LAST_SYNC_KEY, String(advancedCursor));
+      if (latestSeenServerMs > 0) {
+        const advancedCursor = Math.max(getLastDeltaSyncTime(), latestSeenServerMs);
+        safeSetItemLocal(LAST_SYNC_KEY, String(advancedCursor));
+      }
       return appliedCount;
     } catch (err) {
       console.warn('[deltaSync] Error pulling deltas:', err);
