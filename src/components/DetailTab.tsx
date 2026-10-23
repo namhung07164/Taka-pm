@@ -359,7 +359,7 @@ export function DetailTab({
         onBulkAction={handleBulkAction}
       />
 
-      {isDesktop && (
+      {(isDesktop || useAppStore.getState().isPrintPreview || useAppStore.getState().isExportingPDF) && (
         <DetailTableView
         tableContainerRef={tableContainerRef}
         handleTableScroll={handleTableScroll}

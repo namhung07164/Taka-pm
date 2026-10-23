@@ -38,7 +38,7 @@ export const AuditLogFilterToolbar: React.FC<AuditLogFilterToolbarProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto print:hidden hide-on-actual-print">
           <select
             value={entityFilter}
             onChange={(e) => setEntityFilter(e.target.value)}
@@ -83,7 +83,7 @@ export const AuditLogFilterToolbar: React.FC<AuditLogFilterToolbarProps> = ({
       </div>
 
       {indexWarningUrl && (
-        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200">
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200 print:hidden hide-on-actual-print">
           <div className="flex items-center gap-2">
             <span className="font-bold">⚡ In-Memory Filtering Active:</span>
             <span>Firestore composite index is being synced. Logs are automatically filtered in memory without interruption.</span>

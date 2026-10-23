@@ -6,6 +6,7 @@ import { useAppStore } from "../store/useAppStore";
 import { useEnrichedData } from "../hooks/useEnrichedData";
 import { TabId, Project, Task, AppUser, ActiveNotification, NotificationRule } from "../types";
 import { routeNotificationItemClick } from "./appTabNotificationRouter";
+import { PrintPreviewOverlay } from "./PrintPreviewOverlay";
 
 // Code Splitting - JIT Dynamic Imports for all application tabs (Rule 12)
 const GeneralTab = lazyWithRetry(() => import("./GeneralTab"), "GeneralTab");
@@ -138,6 +139,11 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
   const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups } = useEnrichedData();
   const appUsers = useAppStore(state => state.appUsers);
   const setActiveTab = useAppStore(state => state.setActiveTab);
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const printOrientation = useAppStore(state => state.printOrientation);
+  const printPaperSize = useAppStore(state => state.printPaperSize);
+  const printScaleMode = useAppStore(state => state.printScaleMode);
+  const printScaleCustom = useAppStore(state => state.printScaleCustom);
 
   // Idle-time prefetching for primary tabs so switching tabs has 0ms network delay
   React.useEffect(() => {
@@ -441,6 +447,14 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
 
               {activeTab === "picture_mapping" && (currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.pictureMapping || !!permissionMatrix[userRole]?.Write?.pictureMapping) && (
                 <PictureMappingTab />
+              )}
+              {isPrintPreview && activeTab !== "layout" && activeTab !== "gantt" && (
+                <PrintPreviewOverlay
+                  printOrientation={printOrientation}
+                  printPaperSize={printPaperSize}
+                  printScaleMode={printScaleMode}
+                  printScale={printScaleCustom}
+                />
               )}
             </motion.div>
         </Suspense>

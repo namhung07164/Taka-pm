@@ -50,7 +50,7 @@ export const DelegationCalendarFilterToolbar: React.FC<DelegationCalendarFilterT
       </div>
 
       {/* Bottom Row: Controls */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 print:hidden hide-on-actual-print">
         <div className="relative flex-grow sm:flex-grow-0 min-w-[140px]">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-4 w-4 text-slate-400 pointer-events-none" />

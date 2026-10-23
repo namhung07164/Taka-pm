@@ -45,7 +45,7 @@ export const SummaryFilterToolbar: React.FC<SummaryFilterToolbarProps> = React.m
   return (
     <>
       {/* Sub-tab Navigation: Project Summary vs Executive Financial Dashboard */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2 border-b border-slate-200 dark:border-[#333336]">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2 border-b border-slate-200 dark:border-[#333336] print:hidden hide-on-actual-print">
         <div className="flex items-center gap-2 bg-slate-200/70 dark:bg-[#28282a] p-1.5 rounded-2xl">
           <button
             type="button"
@@ -83,7 +83,7 @@ export const SummaryFilterToolbar: React.FC<SummaryFilterToolbarProps> = React.m
       </div>
 
       {activeSubTab === 'project_summary' && (
-        <div className="bg-white dark:bg-[#1e1e20] rounded-xl shadow-lg border border-slate-200 dark:border-[#444446] overflow-hidden transform transition-all hover:shadow-xl">
+        <div className="bg-white dark:bg-[#1e1e20] rounded-xl shadow-lg border border-slate-200 dark:border-[#444446] overflow-hidden transform transition-all hover:shadow-xl print:hidden hide-on-actual-print">
           <div className="bg-slate-900 p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Filter className="w-5 h-5 text-blue-400" />

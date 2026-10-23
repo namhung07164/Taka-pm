@@ -331,7 +331,7 @@ export const TaskDelegationTableView = React.memo(function TaskDelegationTableVi
       </table>
 
       {visibleCount < visibleGroups.length && (
-        <div className="flex justify-center p-6 border-t border-slate-200 dark:border-[#444446]">
+        <div className="flex justify-center p-6 border-t border-slate-200 dark:border-[#444446] print:hidden hide-on-actual-print">
           <button
             onClick={() => setVisibleCount((prev) => prev + 20)}
             className="px-6 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-sm transition-colors text-sm cursor-pointer"

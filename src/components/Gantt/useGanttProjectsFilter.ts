@@ -313,9 +313,13 @@ export function useGanttProjectsFilter({
     });
   }, [filteredProjects]);
 
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
+
   const paginatedProjects = useMemo(() => {
+    if (isPrintPreview || isExportingPDF) return sortedProjects;
     return sortedProjects.slice(0, visibleCount);
-  }, [sortedProjects, visibleCount]);
+  }, [sortedProjects, visibleCount, isPrintPreview, isExportingPDF]);
 
   const handleLoadMore = useCallback(() => {
     setVisibleCount(prev => Math.min(prev + 20, sortedProjects.length));

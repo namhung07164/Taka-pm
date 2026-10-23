@@ -75,7 +75,7 @@ export const AuditLogTableView: React.FC<AuditLogTableViewProps> = ({
         </table>
       </div>
 
-      <div className="border-t border-slate-200 dark:border-[#333336] p-4 flex items-center justify-between bg-slate-50 dark:bg-[#1e1e20]">
+      <div className="border-t border-slate-200 dark:border-[#333336] p-4 flex items-center justify-between bg-slate-50 dark:bg-[#1e1e20] print:hidden hide-on-actual-print">
         <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
           Page {currentPage}
         </span>

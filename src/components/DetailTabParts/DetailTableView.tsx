@@ -243,7 +243,7 @@ export const DetailTableView = memo(function DetailTableView({
               </tr>
             )}
             {visibleCount < filteredProjects.length && (
-              <tr>
+              <tr className="print:hidden hide-on-actual-print">
                 <td colSpan={effectiveVisibleColumns.length} className="py-4 text-center bg-white/90 dark:bg-[#1e1e20]/90 backdrop-blur-sm border-t border-slate-200 dark:border-[#444446]">
                   <button
                     onClick={() => setVisibleCount(prev => Math.min(prev + 30, filteredProjects.length))}

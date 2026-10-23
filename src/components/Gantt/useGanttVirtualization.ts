@@ -3,6 +3,7 @@ import { Project, Task } from '../../types';
 import { GanttTableRow } from './ganttTypes';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
+import { useAppStore } from '../../store/useAppStore';
 
 interface UseGanttVirtualizationParams {
   paginatedProjects: Project[];
@@ -23,6 +24,8 @@ export function useGanttVirtualization({
   tableContainerRef,
   handleMainScroll
 }: UseGanttVirtualizationParams) {
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(800);
   const scrollRafRef = useRef<number | null>(null);
@@ -243,6 +246,9 @@ export function useGanttVirtualization({
     if (flatGanttRows.length === 0) {
       return { startIndex: 0, endIndex: 0, paddingTop: 0, paddingBottom: 0 };
     }
+    if (isPrintPreview || isExportingPDF) {
+      return { startIndex: 0, endIndex: flatGanttRows.length, paddingTop: 0, paddingBottom: 0 };
+    }
 
     const bufferPx = 300;
     const startY = Math.max(0, scrollTop - bufferPx);
@@ -286,7 +292,7 @@ export function useGanttVirtualization({
       paddingTop: topPad,
       paddingBottom: bottomPad
     };
-  }, [flatGanttRows.length, rowOffsets, scrollTop, viewportHeight, totalHeight]);
+  }, [flatGanttRows.length, rowOffsets, scrollTop, viewportHeight, totalHeight, isPrintPreview, isExportingPDF]);
 
   const visibleGanttRows = useMemo(() => {
     return flatGanttRows.slice(startIndex, endIndex);

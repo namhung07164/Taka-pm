@@ -57,6 +57,22 @@ export function useAppPrintController({
     }
   }, [isPrintPreview, printOrientation]);
 
+  useEffect(() => {
+    if (!isPrintPreview) return;
+    const fitColsTabs = new Set([
+      "general",
+      "detail",
+      "budget",
+      "cost",
+      "taskDelegation",
+      "accControl",
+      "audit",
+      "notification",
+    ]);
+    const targetMode = fitColsTabs.has(activeTab) ? "fit-cols" : "fit-page";
+    useAppStore.getState().setPrintScaleMode(targetMode);
+  }, [isPrintPreview, activeTab]);
+
   const paperDimensions = useMemo(() => {
     if (printPaperSize === "A2") return { w: 420, h: 594 };
     if (printPaperSize === "A3") return { w: 297, h: 420 };
@@ -297,6 +313,7 @@ export function useAppPrintController({
 
   useEffect(() => {
     if (!isPrintPreview) return;
+    let t: any;
     const updateSize = () => {
       const wrapper = document.querySelector(".print-content-wrapper") as HTMLElement;
       if (wrapper) {
@@ -307,16 +324,28 @@ export function useAppPrintController({
         );
       }
     };
-    const t = setTimeout(updateSize, 80);
-    return () => clearTimeout(t);
+    const wrapper = document.querySelector(".print-content-wrapper") as HTMLElement;
+    let ro: ResizeObserver | null = null;
+    if (wrapper && typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => {
+        clearTimeout(t);
+        t = setTimeout(updateSize, 60);
+      });
+      ro.observe(wrapper);
+    }
+    t = setTimeout(updateSize, 80);
+    return () => {
+      clearTimeout(t);
+      if (ro) ro.disconnect();
+    };
   }, [isPrintPreview, activeTab, printOrientation, printPaperSize, ganttViewMode]);
 
   const printScale = useMemo(() => {
     if (printScaleMode === "default") return 100;
     if (printScaleMode === "custom") return printScaleCustom;
 
-    const targetWidthPx = (printWidth - 20) * 3.779527559;
-    const targetHeightPx = (printHeight - 20) * 3.779527559;
+    const targetWidthPx = (printWidth - 16) * 3.779527559;
+    const targetHeightPx = (printHeight - (printFilterHeader ? 19.5 : 17)) * 3.779527559;
 
     let contentW = measuredContentSize.width;
     let contentH = measuredContentSize.height;
@@ -340,18 +369,18 @@ export function useAppPrintController({
     }
 
     if (printScaleMode === "fit-cols") {
-      const scale = Math.floor((targetWidthPx / contentW) * 100);
+      const scale = Math.round((targetWidthPx / contentW) * 100);
       return Math.max(10, Math.min(scale, 100));
     }
 
     if (printScaleMode === "fit-rows") {
-      const scale = Math.floor((targetHeightPx / contentH) * 100);
+      const scale = Math.round((targetHeightPx / contentH) * 100);
       return Math.max(10, Math.min(scale, 100));
     }
 
-    if (printScaleMode === "fit-page") {
-      const scaleCols = Math.floor((targetWidthPx / contentW) * 100);
-      const scaleRows = Math.floor((targetHeightPx / contentH) * 100);
+    if (printScaleMode === "fit-page" || printScaleMode === "fill-page") {
+      const scaleCols = Math.round((targetWidthPx / contentW) * 100);
+      const scaleRows = Math.round((targetHeightPx / contentH) * 100);
       return Math.max(10, Math.min(scaleCols, scaleRows, 100));
     }
 
@@ -361,6 +390,7 @@ export function useAppPrintController({
     printScaleCustom,
     printWidth,
     printHeight,
+    printFilterHeader,
     measuredContentSize,
     activeTab,
     printFilteredData,
@@ -369,8 +399,18 @@ export function useAppPrintController({
 
   const ganttPrintPages = useMemo(() => {
     if (!isPrintPreview || activeTab !== "gantt") return null;
+    if (printRangeType === "custom" && (printStartDate || printEndDate)) {
+      return [
+        {
+          dateRange: {
+            start: printDates.minDate.toISOString().slice(0, 10),
+            end: printDates.maxDate.toISOString().slice(0, 10),
+          },
+        },
+      ];
+    }
     return [{ dateRange: undefined as any }];
-  }, [isPrintPreview, activeTab]);
+  }, [isPrintPreview, activeTab, printRangeType, printStartDate, printEndDate, printDates]);
 
   const handleExportToExcel = async () => {
     if (isExportingPDF || activeTab === "gantt") return;

@@ -37,7 +37,8 @@ export function drawGeneralCanvas({
   const scale = logicalWidth / totalBase;
   const colWidths = baseWidths.map(w => w * scale);
   const totalWidth = colWidths.reduce((a, b) => a + b, 0);
-  const totalHeight = Math.max(headerHeight + paginatedProjects.length * rowHeight + 30, wrapper.clientHeight);
+  const isPrint = useAppStore.getState().isPrintPreview || useAppStore.getState().isExportingPDF;
+  const totalHeight = isPrint ? (headerHeight + paginatedProjects.length * rowHeight + 2) : Math.max(headerHeight + paginatedProjects.length * rowHeight + 30, wrapper.clientHeight);
 
   canvas.width = totalWidth * dpr;
   canvas.height = totalHeight * dpr;

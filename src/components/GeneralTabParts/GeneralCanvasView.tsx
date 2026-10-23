@@ -3,6 +3,7 @@ import { Project } from '../../types';
 import { DragOverTarget, SortConfig } from './generalTypes';
 import { drawGeneralCanvas, resolveCanvasClick } from './generalCanvasUtils';
 import { useLanguage } from '../../lib/LanguageContext';
+import { useAppStore } from '../../store/useAppStore';
 import { Pin, ChevronUp, ChevronDown, CheckCircle2, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface GeneralCanvasViewProps {
@@ -57,6 +58,8 @@ export function GeneralCanvasView({
   handleCanvasDrop
 }: GeneralCanvasViewProps) {
   const { t } = useLanguage();
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -84,6 +87,8 @@ export function GeneralCanvasView({
     flashToggle, 
     sortConfig, 
     theme,
+    isPrintPreview,
+    isExportingPDF,
     t,
     canvasRef,
     wrapperRef
@@ -110,6 +115,8 @@ export function GeneralCanvasView({
     <div ref={wrapperRef} className="hidden xl:block flex-grow overflow-auto border-t border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] relative">
       <canvas 
         ref={canvasRef} 
+        data-print-header-height="60"
+        data-print-row-height="70"
         onClick={onCanvasClick}
         onDragOver={handleCanvasDragOver}
         onDrop={handleCanvasDrop}
@@ -200,7 +207,7 @@ export function GeneralCanvasView({
         return (
           <div 
             key={`row-ctrl-${p.id}`}
-            className="absolute left-0 flex items-center gap-1 z-10 pl-2 pointer-events-auto"
+            className="absolute left-0 flex items-center gap-1 z-10 pl-2 pointer-events-auto print:hidden hide-on-actual-print"
             style={{ 
               top: 60 + idx * 70, 
               width: isPinned ? 58 : 36,

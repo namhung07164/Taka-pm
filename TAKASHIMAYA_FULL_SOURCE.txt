@@ -1529,7 +1529,7 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
 
       <div className="px-5 py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex justify-between items-center shrink-0">
         <h2 className="text-lg font-bold text-slate-800 dark:text-[#e3e3e3]">{isAdmin ? 'User Account Control' : 'My Account'}</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 print:hidden hide-on-actual-print">
           <div className="relative">
             <DebouncedSearchInput
               placeholder="Search users..."
@@ -1579,7 +1579,6 @@ export function AccControlTab({ users, locationVisibility = {}, onEditUser, onAd
 }
 
 export default AccControlTab;
-
 
 ================================================================================
 FILE: src/components/AccControlTabParts/AccControlRbacMatrix.tsx
@@ -2596,9 +2595,10 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
     printWidth,
     printHeight,
   }) => {
+    const isLayout = activeTab === "layout";
     return (
       <style>{`
-        /* Global print overrides for better visibility */
+        /* Global print overrides for crisp enterprise contrast & unclipped tables */
         @media print, screen {
           html:not(.dark) .print-preview-content-active {
              --tw-text-opacity: 1;
@@ -2627,17 +2627,44 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
           html:not(.dark) .print-preview-content-active td {
              border-color: #334155 !important;
           }
+          ${!isLayout ? `
+          /* Ensure desktop table/canvas views are always used for print/PDF even on tablet/mobile viewports */
+          .print-preview-content-active .hidden.xl\\:block,
+          .print-preview-content-active .hidden.lg\\:block {
+             display: block !important;
+          }
+          .print-preview-content-active .xl\\:hidden,
+          .print-preview-content-active .lg\\:hidden {
+             display: none !important;
+          }
+          /* Unclip scrollable table & dashboard containers so 100% of rows/columns render */
+          .print-preview-content-active .overflow-auto,
+          .print-preview-content-active .overflow-y-auto,
+          .print-preview-content-active .overflow-x-auto,
+          .print-preview-content-active .overflow-hidden {
+             overflow: visible !important;
+             max-height: none !important;
+             height: auto !important;
+          }
+          .print-preview-content-active thead,
+          .print-preview-content-active tr.sticky,
+          .print-preview-content-active th.sticky,
+          .print-preview-content-active td.sticky {
+             position: static !important;
+          }
+          ` : ""}
         }
         @media print {
           @page {
             size: ${printPaperSize} ${printOrientation};
-            margin: ${activeTab === 'layout' ? '5mm !important' : '10mm !important'};
+            margin: ${isLayout ? '5mm !important' : '8mm !important'};
           }
           .print-content-wrapper {
-            transform: ${activeTab === 'layout' ? 'none' : `scale(${printScale / 100})`};
+            transform: ${isLayout ? 'none' : `scale(${printScale / 100})`};
             transform-origin: top left;
-            width: ${activeTab === 'layout' ? '100% !important' : `${100 / (printScale / 100)}% !important`};
-            height: ${activeTab === 'layout' ? '100% !important' : `${100 / (printScale / 100)}% !important`};
+            width: ${isLayout ? '100% !important' : `${100 / (printScale / 100)}% !important`};
+            height: ${isLayout ? '100% !important' : 'auto !important'};
+            overflow: visible !important;
           }
           #live-layout-canvas-container {
             width: 100% !important;
@@ -2661,30 +2688,30 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
               background-color: #94a3b8 !important;
             }
             .print-preview-container {
-              padding-top: ${activeTab === 'layout' ? '50px !important' : '100px !important'};
-              padding-bottom: ${activeTab === 'layout' ? '20px !important' : '60px !important'};
+              padding-top: ${isLayout ? '50px !important' : '100px !important'};
+              padding-bottom: ${isLayout ? '20px !important' : '60px !important'};
               background-color: transparent !important;
               overflow: auto !important;
             }
             .print-paper {
-              width: ${activeTab === 'layout' ? '100% !important' : 'max-content !important'};
-              height: ${activeTab === 'layout' ? '100% !important' : 'max-content !important'};
-              min-width: ${activeTab === 'layout' ? '100%' : `${printWidth}mm`};
-              min-height: ${activeTab === 'layout' ? '85vh' : `${printHeight}mm`};
+              width: ${isLayout ? '100% !important' : 'max-content !important'};
+              height: ${isLayout ? '100% !important' : 'max-content !important'};
+              min-width: ${isLayout ? '100%' : `${printWidth}mm`};
+              min-height: ${isLayout ? '85vh' : `${printHeight}mm`};
               background-color: white !important;
               margin: 0 auto;
               box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
-              padding: ${activeTab === 'layout' ? '0 !important' : '10mm !important'};
+              padding: ${isLayout ? '0 !important' : '8mm !important'};
               position: relative;
               overflow: hidden;
               display: flex;
               flex-direction: column;
             }
             .print-preview-content-active {
-              transform: ${activeTab === 'layout' ? 'none' : `scale(${printScale / 100})`};
+              transform: ${isLayout ? 'none' : `scale(${printScale / 100})`};
               transform-origin: top left;
-              width: ${activeTab === 'layout' ? '100% !important' : 'max-content !important'};
-              height: ${activeTab === 'layout' ? '100% !important' : 'max-content !important'};
+              width: ${isLayout ? '100% !important' : 'max-content !important'};
+              height: ${isLayout ? '100% !important' : 'max-content !important'};
               background-color: transparent !important;
               border: none !important;
               box-shadow: none !important;
@@ -2699,7 +2726,6 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
   }
 );
 
-
 ================================================================================
 FILE: src/components/AppTabRouter.tsx
 ================================================================================
@@ -2711,6 +2737,7 @@ import { useAppStore } from "../store/useAppStore";
 import { useEnrichedData } from "../hooks/useEnrichedData";
 import { TabId, Project, Task, AppUser, ActiveNotification, NotificationRule } from "../types";
 import { routeNotificationItemClick } from "./appTabNotificationRouter";
+import { PrintPreviewOverlay } from "./PrintPreviewOverlay";
 
 // Code Splitting - JIT Dynamic Imports for all application tabs (Rule 12)
 const GeneralTab = lazyWithRetry(() => import("./GeneralTab"), "GeneralTab");
@@ -2843,6 +2870,11 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
   const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups } = useEnrichedData();
   const appUsers = useAppStore(state => state.appUsers);
   const setActiveTab = useAppStore(state => state.setActiveTab);
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const printOrientation = useAppStore(state => state.printOrientation);
+  const printPaperSize = useAppStore(state => state.printPaperSize);
+  const printScaleMode = useAppStore(state => state.printScaleMode);
+  const printScaleCustom = useAppStore(state => state.printScaleCustom);
 
   // Idle-time prefetching for primary tabs so switching tabs has 0ms network delay
   React.useEffect(() => {
@@ -3146,6 +3178,14 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
 
               {activeTab === "picture_mapping" && (currentUser.role === "admin" || !!permissionMatrix[userRole]?.See?.pictureMapping || !!permissionMatrix[userRole]?.Write?.pictureMapping) && (
                 <PictureMappingTab />
+              )}
+              {isPrintPreview && activeTab !== "layout" && activeTab !== "gantt" && (
+                <PrintPreviewOverlay
+                  printOrientation={printOrientation}
+                  printPaperSize={printPaperSize}
+                  printScaleMode={printScaleMode}
+                  printScale={printScaleCustom}
+                />
               )}
             </motion.div>
         </Suspense>
@@ -3721,7 +3761,7 @@ export const AuditLogFilterToolbar: React.FC<AuditLogFilterToolbarProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto print:hidden hide-on-actual-print">
           <select
             value={entityFilter}
             onChange={(e) => setEntityFilter(e.target.value)}
@@ -3766,7 +3806,7 @@ export const AuditLogFilterToolbar: React.FC<AuditLogFilterToolbarProps> = ({
       </div>
 
       {indexWarningUrl && (
-        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200">
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200 print:hidden hide-on-actual-print">
           <div className="flex items-center gap-2">
             <span className="font-bold">⚡ In-Memory Filtering Active:</span>
             <span>Firestore composite index is being synced. Logs are automatically filtered in memory without interruption.</span>
@@ -3784,7 +3824,6 @@ export const AuditLogFilterToolbar: React.FC<AuditLogFilterToolbarProps> = ({
     </div>
   );
 };
-
 
 ================================================================================
 FILE: src/components/AuditLogParts/AuditLogRowItem.tsx
@@ -3947,7 +3986,7 @@ export const AuditLogTableView: React.FC<AuditLogTableViewProps> = ({
         </table>
       </div>
 
-      <div className="border-t border-slate-200 dark:border-[#333336] p-4 flex items-center justify-between bg-slate-50 dark:bg-[#1e1e20]">
+      <div className="border-t border-slate-200 dark:border-[#333336] p-4 flex items-center justify-between bg-slate-50 dark:bg-[#1e1e20] print:hidden hide-on-actual-print">
         <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
           Page {currentPage}
         </span>
@@ -3971,7 +4010,6 @@ export const AuditLogTableView: React.FC<AuditLogTableViewProps> = ({
     </div>
   );
 };
-
 
 ================================================================================
 FILE: src/components/AuditLogParts/auditLogTypes.ts
@@ -5976,6 +6014,7 @@ import { BudgetTreeNode, BudgetSortConfig } from './budgetTypes';
 import { BudgetTableRow } from './BudgetTableRow';
 import { ResizableHeader } from '../ResizableHeader';
 import { useLanguage } from '../../lib/LanguageContext';
+import { useAppStore } from '../../store/useAppStore';
 import { cn } from '../../lib/utils';
 
 interface BudgetTableViewProps {
@@ -6038,6 +6077,8 @@ export function BudgetTableView({
   formatCurrency
 }: BudgetTableViewProps) {
   const { t } = useLanguage();
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
 
   const renderRows = (nodes: BudgetTreeNode[], depth = 0): React.ReactNode[] => {
     let rows: React.ReactNode[] = [];
@@ -6076,7 +6117,9 @@ export function BudgetTableView({
     return rows;
   };
 
-  const paginatedRoots = filteredRoots.slice(0, visibleCount);
+  const paginatedRoots = (isPrintPreview || isExportingPDF)
+    ? filteredRoots
+    : filteredRoots.slice(0, visibleCount);
 
   return (
     <div 
@@ -6180,7 +6223,6 @@ export function BudgetTableView({
     </div>
   );
 }
-
 
 ================================================================================
 FILE: src/components/BudgetParts/budgetTreeScope.test.ts
@@ -8612,7 +8654,7 @@ export const CalendarFilterToolbar: React.FC<CalendarFilterToolbarProps> = ({
       </div>
 
       {/* Bottom Row: Controls */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 print:hidden hide-on-actual-print">
         <div className="relative flex-grow sm:flex-grow-0 min-w-[140px]">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-4 w-4 text-slate-400 pointer-events-none" />
@@ -8695,7 +8737,6 @@ export const CalendarFilterToolbar: React.FC<CalendarFilterToolbarProps> = ({
     </div>
   );
 };
-
 
 ================================================================================
 FILE: src/components/CalendarTabParts/CalendarMonthDayList.tsx
@@ -12787,6 +12828,7 @@ import { CostColWidths, PaidDateMatches } from './costTypes';
 import { CostTableRow } from './CostTableRow';
 import { CostTableHeader } from './CostTableHeader';
 import { CostTableTotalRow } from './CostTableTotalRow';
+import { useAppStore } from '../../store/useAppStore';
 
 interface CostTableViewProps {
   filteredProjectsForDisplay: Project[];
@@ -12866,6 +12908,12 @@ export const CostTableView = React.memo(function CostTableView({
   getGroupCostsForProject,
   getCostPaidMatches,
 }: CostTableViewProps) {
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
+  const displayedProjects = (isPrintPreview || isExportingPDF)
+    ? filteredProjectsForDisplay
+    : filteredProjectsForDisplay.slice(0, visibleCount);
+
   const tableWidth = visibleColumns.reduce(
     (acc, col) => acc + (colWidths[col as keyof CostColWidths] || 100),
     0
@@ -12904,7 +12952,7 @@ export const CostTableView = React.memo(function CostTableView({
           />
 
           {/* Progressive Rendered Project Groups & Detail Rows */}
-          {filteredProjectsForDisplay.slice(0, visibleCount).map((p, pIdx) => {
+          {displayedProjects.map((p, pIdx) => {
             const pDerivedYear = p.year
               ? p.year
               : p.start
@@ -12953,8 +13001,8 @@ export const CostTableView = React.memo(function CostTableView({
             );
           })}
 
-          {visibleCount < filteredProjectsForDisplay.length && (
-            <tr>
+          {visibleCount < filteredProjectsForDisplay.length && !isPrintPreview && !isExportingPDF && (
+            <tr className="print:hidden hide-on-actual-print">
               <td colSpan={visibleColumns.length} className="py-4 text-center">
                 <button
                   onClick={() => setVisibleCount((prev) => prev + 30)}
@@ -12971,7 +13019,6 @@ export const CostTableView = React.memo(function CostTableView({
     </div>
   );
 });
-
 
 ================================================================================
 FILE: src/components/CostParts/costTypes.ts
@@ -16910,7 +16957,7 @@ export const DelegationCalendarFilterToolbar: React.FC<DelegationCalendarFilterT
       </div>
 
       {/* Bottom Row: Controls */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 print:hidden hide-on-actual-print">
         <div className="relative flex-grow sm:flex-grow-0 min-w-[140px]">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-4 w-4 text-slate-400 pointer-events-none" />
@@ -16972,7 +17019,6 @@ export const DelegationCalendarFilterToolbar: React.FC<DelegationCalendarFilterT
     </div>
   );
 };
-
 
 ================================================================================
 FILE: src/components/DelegationCalendarParts/DelegationCalendarMonthList.tsx
@@ -18626,6 +18672,13 @@ export function DetailTab({
     taskCodeMap,
     taskActualStatusMap,
     childTasksCountMap,
+    expandedModularTasks,
+    handleToggleModularParent,
+    handleToggleProjectModularTasks,
+    isAllModularExpanded,
+    handleToggleExpandAllModular,
+    totalChildTasksCount,
+    modularParentsCount,
     flatTableRows,
     handleSelectAllTasksInProject,
     handleToggleSelectTask,
@@ -18656,33 +18709,19 @@ export function DetailTab({
   });
 
   // Virtual Windowing Table
-  const {
-    tableContainerRef,
-    handleTableScroll,
-    startIndex,
-    endIndex,
-    paddingTop,
-    paddingBottom,
-  } = useDetailVirtualization({
-    flatTableRows,
-    initialFocusTaskId,
-    initialFilterCode,
-    visibleCount,
-    setVisibleCount,
-    filteredProjectsLength: filteredProjects.length,
-  });
+  const { tableContainerRef, handleTableScroll, startIndex, endIndex, paddingTop, paddingBottom } =
+    useDetailVirtualization({
+      flatTableRows,
+      initialFocusTaskId,
+      initialFilterCode,
+      visibleCount,
+      setVisibleCount,
+      filteredProjectsLength: filteredProjects.length,
+    });
 
   // Reordering & Predecessor Synchronization
-  const {
-    isSyncingPredecessors,
-    handleSyncAllPredecessors,
-    isConvertingToHash,
-    handleConvertAllSubtasksToHash,
-  } = useDetailPredecessorSync({
-    tasks,
-    projects,
-    hasWritePermission,
-  });
+  const { isSyncingPredecessors, handleSyncAllPredecessors, isConvertingToHash, handleConvertAllSubtasksToHash } =
+    useDetailPredecessorSync({ tasks, projects, hasWritePermission });
 
   const {
     draggingTaskIds,
@@ -18696,12 +18735,7 @@ export function DetailTab({
     handleDetailTaskDragLeave,
     handleDetailTaskDragEnd,
     handleDetailTaskDrop,
-  } = useDetailTaskReorder({
-    tasks,
-    projects,
-    selectedTaskIds,
-    setSelectedTaskIds,
-  });
+  } = useDetailTaskReorder({ tasks, projects, selectedTaskIds, setSelectedTaskIds });
 
   const { isSortingSubTasks, handleSortActiveOrAll } = useDetailSubTaskSort({
     tasks,
@@ -18711,10 +18745,7 @@ export function DetailTab({
   });
 
   // Project & Task Mutations
-  const {
-    handleDeleteProject,
-    handleUpdateProject,
-  } = useDetailProjectMutations({
+  const { handleDeleteProject, handleUpdateProject } = useDetailProjectMutations({
     projects,
     tasks,
     delegationGroups,
@@ -18722,11 +18753,7 @@ export function DetailTab({
     setConfirmModal,
   });
 
-  const {
-    handleDeleteTask,
-    handleUpdateTask,
-    handleSaveNotes,
-  } = useDetailTaskMutations({
+  const { handleDeleteTask, handleUpdateTask, handleSaveNotes } = useDetailTaskMutations({
     tasks,
     projects,
     delegationGroups,
@@ -18734,14 +18761,12 @@ export function DetailTab({
     setConfirmModal,
   });
 
-  const { handleExportProjects, handleImportProjects, projectImportErrorModal } = useDetailProjectCsv({ filteredProjects, projects });
+  const { handleExportProjects, handleImportProjects, projectImportErrorModal } = useDetailProjectCsv({
+    filteredProjects,
+    projects,
+  });
 
-  const {
-    handleExportTasks,
-    handleImportTasks,
-    parseCSVDate,
-    importErrorModal,
-  } = useDetailTaskCsv({
+  const { handleExportTasks, handleImportTasks, parseCSVDate, importErrorModal } = useDetailTaskCsv({
     filteredProjects,
     projects,
     tasks,
@@ -18750,9 +18775,7 @@ export function DetailTab({
   });
 
   // Bulk Actions
-  const {
-    handleBulkAction,
-  } = useDetailBulkActions({
+  const { handleBulkAction } = useDetailBulkActions({
     selectedTaskIds,
     setSelectedTaskIds,
     lastCheckedTaskIdRef,
@@ -18855,7 +18878,7 @@ export function DetailTab({
         onBulkAction={handleBulkAction}
       />
 
-      {isDesktop && (
+      {(isDesktop || useAppStore.getState().isPrintPreview || useAppStore.getState().isExportingPDF) && (
         <DetailTableView
         tableContainerRef={tableContainerRef}
         handleTableScroll={handleTableScroll}
@@ -18891,6 +18914,12 @@ export function DetailTab({
         taskActualStatusMap={taskActualStatusMap}
         taskCodeMap={taskCodeMap}
         childTasksCountMap={childTasksCountMap}
+        expandedModularTasks={expandedModularTasks}
+        onToggleModularParent={handleToggleModularParent}
+        onToggleProjectModularTasks={handleToggleProjectModularTasks}
+        isAllModularExpanded={isAllModularExpanded}
+        onToggleExpandAllModular={handleToggleExpandAllModular}
+        totalChildTasksCount={modularParentsCount > 0 ? modularParentsCount : totalChildTasksCount}
         draggingTaskIds={draggingTaskIds}
         dragOverTaskId={dragOverTaskId}
         dropPosition={dropPosition}
@@ -18940,6 +18969,12 @@ export function DetailTab({
         taskCodeMap={taskCodeMap}
         taskActualStatusMap={taskActualStatusMap}
         onSortSubTasks={handleSortSubTasks}
+        childTasksCountMap={childTasksCountMap}
+        expandedModularTasks={expandedModularTasks}
+        onToggleModularParent={handleToggleModularParent}
+        isAllModularExpanded={isAllModularExpanded}
+        onToggleExpandAllModular={handleToggleExpandAllModular}
+        totalChildTasksCount={modularParentsCount > 0 ? modularParentsCount : totalChildTasksCount}
       />
 
       <DetailFocusControls 
@@ -18964,7 +18999,6 @@ export function DetailTab({
 
 export type { DetailTableRow } from './DetailTabParts/detailTypes';
 export default DetailTab;
-
 
 ================================================================================
 FILE: src/components/DetailTabParts/DetailFilterToolbar.tsx
@@ -21363,7 +21397,7 @@ export const DetailTableView = memo(function DetailTableView({
               </tr>
             )}
             {visibleCount < filteredProjects.length && (
-              <tr>
+              <tr className="print:hidden hide-on-actual-print">
                 <td colSpan={effectiveVisibleColumns.length} className="py-4 text-center bg-white/90 dark:bg-[#1e1e20]/90 backdrop-blur-sm border-t border-slate-200 dark:border-[#444446]">
                   <button
                     onClick={() => setVisibleCount(prev => Math.min(prev + 30, filteredProjects.length))}
@@ -25009,9 +25043,13 @@ export function useDetailFlatRows({
   taskCodeMap,
 }: UseDetailFlatRowsParams) {
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
   const flatTableRows = useMemo<DetailTableRow[]>(() => {
     const rows: DetailTableRow[] = [];
-    const visibleProjects = filteredProjects.slice(0, visibleCount);
+    const visibleProjects = (isPrintPreview || isExportingPDF)
+      ? filteredProjects
+      : filteredProjects.slice(0, visibleCount);
 
     visibleProjects.forEach((p, pIdx) => {
       const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
@@ -25215,7 +25253,7 @@ export function useDetailFlatRows({
     });
 
     return rows;
-  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo, sortConfig, expandedCodes, expandedModularTasks, delegationGroups, lowerSearchTerm, taskCodeMap, globalYearFilter]);
+  }, [filteredProjects, visibleCount, isPrintPreview, isExportingPDF, projectInfoMap, getProjectInfo, sortConfig, expandedCodes, expandedModularTasks, delegationGroups, lowerSearchTerm, taskCodeMap, globalYearFilter]);
 
   return flatTableRows;
 }
@@ -27225,10 +27263,16 @@ export function useDetailVirtualization({
     return { totalHeight: sum, rowOffsets: offsets };
   }, [flatTableRows]);
 
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
+
   const { startIndex, endIndex, paddingTop, paddingBottom } = useMemo(() => {
     const totalRows = flatTableRows.length;
     if (totalRows === 0) {
       return { startIndex: 0, endIndex: 0, paddingTop: 0, paddingBottom: 0 };
+    }
+    if (isPrintPreview || isExportingPDF) {
+      return { startIndex: 0, endIndex: totalRows, paddingTop: 0, paddingBottom: 0 };
     }
     let low = 0;
     let high = totalRows - 1;
@@ -27269,7 +27313,7 @@ export function useDetailVirtualization({
       paddingTop: topPad,
       paddingBottom: bottomPad,
     };
-  }, [rowOffsets, totalHeight, scrollTop, containerHeight, flatTableRows.length]);
+  }, [rowOffsets, totalHeight, scrollTop, containerHeight, flatTableRows.length, isPrintPreview, isExportingPDF]);
 
   const handleTableScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
@@ -27379,7 +27423,6 @@ export function useDetailVirtualization({
     totalHeight,
   };
 }
-
 
 ================================================================================
 FILE: src/components/ErrorBoundary.tsx
@@ -31169,6 +31212,7 @@ export function GanttTableView({
       {/* Top Synchronized Timeline Header */}
       <div
         ref={topScrollRef}
+        data-print-header="true"
         onScroll={handleTopScroll}
         className="overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#18181a] flex shrink-0"
       >
@@ -31208,7 +31252,7 @@ export function GanttTableView({
         {/* Left Side Resizable Divider Bar */}
         <div
           onMouseDown={startResizingSide}
-          className="absolute top-0 bottom-0 z-40 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors"
+          className="absolute top-0 bottom-0 z-40 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors print:hidden hide-on-actual-print"
           style={{ left: `${sideWidth - 1}px` }}
         />
 
@@ -31360,7 +31404,6 @@ export function GanttTableView({
     </div>
   );
 }
-
 
 ================================================================================
 FILE: src/components/Gantt/GanttTaskLeftColumns.tsx
@@ -35035,50 +35078,7 @@ export function useGanttExport({ tableRef }: UseGanttExportParams) {
   const [isPrinting, setIsPrinting] = useState(false);
 
   const handleExportToPDF = async () => {
-    const el = tableRef.current;
-    if (!el) return;
-
-    setIsExporting(true);
-    useAppStore.getState().setToast({
-      title: "Exporting PDF",
-      message: "Rendering high-resolution vector layout..."
-    });
-
-    try {
-      const html2canvas = (await import('html2canvas')).default;
-      const { jsPDF } = await import('jspdf');
-
-      const canvas = await html2canvas(el as HTMLElement, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({
-        orientation: 'landscape',
-        unit: 'px',
-        format: [canvas.width / 2, canvas.height / 2]
-      });
-
-      pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 2, canvas.height / 2);
-      pdf.save(`taka_gantt_${new Date().toISOString().slice(0, 10)}.pdf`);
-
-      useAppStore.getState().setToast({
-        title: "Success",
-        message: "Gantt chart exported to PDF."
-      });
-    } catch (err) {
-      console.error("PDF export error:", err);
-      useAppStore.getState().setToast({
-        title: "Export Error",
-        message: "Failed to export PDF.",
-        type: "error"
-      });
-    } finally {
-      setIsExporting(false);
-    }
+    useAppStore.getState().setIsPrintPreview(true);
   };
 
   const handleExportToPNG = useCallback(async () => {
@@ -35119,7 +35119,6 @@ export function useGanttExport({ tableRef }: UseGanttExportParams) {
     handleExportToPNG
   };
 }
-
 
 ================================================================================
 FILE: src/components/Gantt/useGanttFocus.ts
@@ -35726,9 +35725,13 @@ export function useGanttProjectsFilter({
     });
   }, [filteredProjects]);
 
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
+
   const paginatedProjects = useMemo(() => {
+    if (isPrintPreview || isExportingPDF) return sortedProjects;
     return sortedProjects.slice(0, visibleCount);
-  }, [sortedProjects, visibleCount]);
+  }, [sortedProjects, visibleCount, isPrintPreview, isExportingPDF]);
 
   const handleLoadMore = useCallback(() => {
     setVisibleCount(prev => Math.min(prev + 20, sortedProjects.length));
@@ -35771,7 +35774,6 @@ export function useGanttProjectsFilter({
     handleLoadMore
   };
 }
-
 
 ================================================================================
 FILE: src/components/Gantt/useGanttTimeline.ts
@@ -36038,6 +36040,7 @@ import { Project, Task } from '../../types';
 import { GanttTableRow } from './ganttTypes';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
+import { useAppStore } from '../../store/useAppStore';
 
 interface UseGanttVirtualizationParams {
   paginatedProjects: Project[];
@@ -36058,6 +36061,8 @@ export function useGanttVirtualization({
   tableContainerRef,
   handleMainScroll
 }: UseGanttVirtualizationParams) {
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(800);
   const scrollRafRef = useRef<number | null>(null);
@@ -36278,6 +36283,9 @@ export function useGanttVirtualization({
     if (flatGanttRows.length === 0) {
       return { startIndex: 0, endIndex: 0, paddingTop: 0, paddingBottom: 0 };
     }
+    if (isPrintPreview || isExportingPDF) {
+      return { startIndex: 0, endIndex: flatGanttRows.length, paddingTop: 0, paddingBottom: 0 };
+    }
 
     const bufferPx = 300;
     const startY = Math.max(0, scrollTop - bufferPx);
@@ -36321,7 +36329,7 @@ export function useGanttVirtualization({
       paddingTop: topPad,
       paddingBottom: bottomPad
     };
-  }, [flatGanttRows.length, rowOffsets, scrollTop, viewportHeight, totalHeight]);
+  }, [flatGanttRows.length, rowOffsets, scrollTop, viewportHeight, totalHeight, isPrintPreview, isExportingPDF]);
 
   const visibleGanttRows = useMemo(() => {
     return flatGanttRows.slice(startIndex, endIndex);
@@ -36340,7 +36348,6 @@ export function useGanttVirtualization({
     handleCombinedMainScroll
   };
 }
-
 
 ================================================================================
 FILE: src/components/Gantt/useGanttZoomAndPan.ts
@@ -37196,7 +37203,7 @@ export function GeneralTab({ onProjectClick }: GeneralTabProps) {
       )}
 
       {/* Footer Info */}
-      <div className="mt-4 text-xs text-slate-500 dark:text-[#a3a3a3] text-right flex justify-between items-center px-1 shrink-0">
+      <div className="mt-4 text-xs text-slate-500 dark:text-[#a3a3a3] text-right flex justify-between items-center px-1 shrink-0 print:hidden hide-on-actual-print">
         <span>* Data is synced to Cloud. Header is sticky.</span>
         <span>{t('Total')}: <span className="font-bold text-slate-700 dark:text-[#c3c3c3]">{filteredProjects.length}</span> {t('')}</span>
       </div>
@@ -37206,7 +37213,6 @@ export function GeneralTab({ onProjectClick }: GeneralTabProps) {
 
 export default GeneralTab;
 
-
 ================================================================================
 FILE: src/components/GeneralTabParts/GeneralCanvasView.tsx
 ================================================================================
@@ -37215,6 +37221,7 @@ import { Project } from '../../types';
 import { DragOverTarget, SortConfig } from './generalTypes';
 import { drawGeneralCanvas, resolveCanvasClick } from './generalCanvasUtils';
 import { useLanguage } from '../../lib/LanguageContext';
+import { useAppStore } from '../../store/useAppStore';
 import { Pin, ChevronUp, ChevronDown, CheckCircle2, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface GeneralCanvasViewProps {
@@ -37269,6 +37276,8 @@ export function GeneralCanvasView({
   handleCanvasDrop
 }: GeneralCanvasViewProps) {
   const { t } = useLanguage();
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -37296,6 +37305,8 @@ export function GeneralCanvasView({
     flashToggle, 
     sortConfig, 
     theme,
+    isPrintPreview,
+    isExportingPDF,
     t,
     canvasRef,
     wrapperRef
@@ -37322,6 +37333,8 @@ export function GeneralCanvasView({
     <div ref={wrapperRef} className="hidden xl:block flex-grow overflow-auto border-t border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] relative">
       <canvas 
         ref={canvasRef} 
+        data-print-header-height="60"
+        data-print-row-height="70"
         onClick={onCanvasClick}
         onDragOver={handleCanvasDragOver}
         onDrop={handleCanvasDrop}
@@ -37412,7 +37425,7 @@ export function GeneralCanvasView({
         return (
           <div 
             key={`row-ctrl-${p.id}`}
-            className="absolute left-0 flex items-center gap-1 z-10 pl-2 pointer-events-auto"
+            className="absolute left-0 flex items-center gap-1 z-10 pl-2 pointer-events-auto print:hidden hide-on-actual-print"
             style={{ 
               top: 60 + idx * 70, 
               width: isPinned ? 58 : 36,
@@ -37473,7 +37486,6 @@ export function GeneralCanvasView({
     </div>
   );
 }
-
 
 ================================================================================
 FILE: src/components/GeneralTabParts/GeneralFilterToolbar.tsx
@@ -38108,7 +38120,8 @@ export function drawGeneralCanvas({
   const scale = logicalWidth / totalBase;
   const colWidths = baseWidths.map(w => w * scale);
   const totalWidth = colWidths.reduce((a, b) => a + b, 0);
-  const totalHeight = Math.max(headerHeight + paginatedProjects.length * rowHeight + 30, wrapper.clientHeight);
+  const isPrint = useAppStore.getState().isPrintPreview || useAppStore.getState().isExportingPDF;
+  const totalHeight = isPrint ? (headerHeight + paginatedProjects.length * rowHeight + 2) : Math.max(headerHeight + paginatedProjects.length * rowHeight + 30, wrapper.clientHeight);
 
   canvas.width = totalWidth * dpr;
   canvas.height = totalHeight * dpr;
@@ -38642,6 +38655,8 @@ export function useGeneralData({
   const pinnedProjects = useAppStore(state => state.pinnedProjects);
   const setPinnedProjects = useAppStore(state => state.setPinnedProjects);
   const theme = useAppStore(state => state.theme);
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
 
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
@@ -38873,8 +38888,9 @@ export function useGeneralData({
   }, [projects, deferredSearchTerm, globalYearFilter, effectiveStore, globalLocationFilter, statusFilter, pinnedProjects, sortConfig]);
 
   const paginatedProjects = useMemo(() => {
+    if (isPrintPreview || isExportingPDF) return filteredProjects;
     return filteredProjects.slice(0, visibleCount);
-  }, [filteredProjects, visibleCount]);
+  }, [filteredProjects, visibleCount, isPrintPreview, isExportingPDF]);
 
   return {
     globalYearFilter,
@@ -38905,7 +38921,6 @@ export function useGeneralData({
     paginatedProjects
   };
 }
-
 
 ================================================================================
 FILE: src/components/GeneralTabParts/useGeneralDragDrop.ts
@@ -56268,14 +56283,26 @@ export const Navigation = React.memo(function Navigation({
 ================================================================================
 FILE: src/components/NotificationParts/NotificationFilterToolbar.tsx
 ================================================================================
-import React, { Dispatch, FC, SetStateAction } from 'react';
-import { RotateCcw, Archive, AlertCircle, Clock, Zap, UserCheck } from 'lucide-react';
+import React from 'react';
+import {
+  RotateCcw,
+  Archive,
+  AlertCircle,
+  Clock,
+  Zap,
+  UserCheck,
+  Search,
+  X,
+  MessageSquare,
+  CalendarClock,
+} from 'lucide-react';
 import {
   NotificationStatusFilter,
   NotificationTypeFilter,
   NotificationStoreFilter,
   NotificationPriorityFilter,
   NotificationAssigneeFilter,
+  NotificationCategoryFilter,
 } from './notificationTypes';
 
 interface NotificationFilterToolbarProps {
@@ -56289,6 +56316,10 @@ interface NotificationFilterToolbarProps {
   setPriorityFilter: React.Dispatch<React.SetStateAction<NotificationPriorityFilter>>;
   assigneeFilter: NotificationAssigneeFilter;
   setAssigneeFilter: React.Dispatch<React.SetStateAction<NotificationAssigneeFilter>>;
+  categoryFilter: NotificationCategoryFilter;
+  setCategoryFilter: React.Dispatch<React.SetStateAction<NotificationCategoryFilter>>;
+  searchQuery: string;
+  setSearchQuery: React.Dispatch<React.SetStateAction<string>>;
   storeFilter: NotificationStoreFilter;
   setStoreFilter: React.Dispatch<React.SetStateAction<NotificationStoreFilter>>;
   allowedStores: string[];
@@ -56301,6 +56332,15 @@ interface NotificationFilterToolbarProps {
   unreadUrgentCount: number;
   unreadActionCount: number;
   unreadAssignedToMeCount: number;
+  categoryCounts: {
+    all: number;
+    overdue: number;
+    due_soon: number;
+    mention: number;
+    delegation: number;
+    rollover: number;
+    milestone: number;
+  };
   snoozedCount?: number;
   onMarkAllRead?: () => void;
   onClearStaleNotifs?: () => void;
@@ -56317,6 +56357,10 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
   setPriorityFilter,
   assigneeFilter,
   setAssigneeFilter,
+  categoryFilter,
+  setCategoryFilter,
+  searchQuery,
+  setSearchQuery,
   storeFilter,
   setStoreFilter,
   allowedStores,
@@ -56329,17 +56373,18 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
   unreadUrgentCount,
   unreadActionCount,
   unreadAssignedToMeCount,
+  categoryCounts,
   snoozedCount,
   onMarkAllRead,
   onClearStaleNotifs,
 }) => {
   return (
     <div className="px-5 py-3.5 border-b border-slate-100 dark:border-[#444446] bg-slate-50 dark:bg-[#28282a] flex flex-col gap-3 shrink-0">
-      {/* Top Row: Title, Clear Filter, Assignee Switch, Status & Archive */}
+      {/* Top Row: Title, Search Input, Assignee Switch, Status & Archive */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 w-full">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 flex-wrap w-full md:w-auto">
           <h2 className="text-base font-bold text-slate-800 dark:text-[#e3e3e3]">
-            Active Notifications
+            Project Notification Center
           </h2>
           {snoozedCount !== undefined && snoozedCount > 0 && (
             <span className="text-[11px] bg-slate-200 dark:bg-[#333336] text-slate-600 dark:text-[#a3a3a3] font-semibold px-2 py-0.5 rounded-full">
@@ -56355,9 +56400,28 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
               Clear Filter <RotateCcw className="w-3 h-3" />
             </button>
           )}
+          <div className="relative flex-grow sm:flex-grow-0 sm:w-64 print:hidden hide-on-actual-print">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search code, project, task, PIC..."
+              className="w-full pl-8 pr-7 py-1 text-xs rounded-lg border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] text-slate-700 dark:text-[#e3e3e3] placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 print:hidden hide-on-actual-print">
           {/* Proposal 2: Assignee Role Relevance (Assigned to Me vs All) */}
           <div className="flex bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#444446] p-1 shadow-sm">
             <button
@@ -56447,68 +56511,84 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
         </div>
       </div>
 
-      {/* Secondary Row: Priority Chips + Target Types + Stores */}
-      <div className="flex flex-wrap items-center gap-2 w-full pt-1 border-t border-slate-200/60 dark:border-[#333336]">
-        {/* Proposal 1: Priority Tier Chips */}
-        <div className="flex bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#444446] p-1 shadow-sm items-center">
+      {/* Secondary Row: PM Category Pills + Priority Chips + Target Types + Stores */}
+      <div className="flex flex-wrap items-center gap-2 w-full pt-1 border-t border-slate-200/60 dark:border-[#333336] print:hidden hide-on-actual-print">
+        {/* Project Management Category Quick Filters */}
+        <div className="flex bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#444446] p-1 shadow-sm items-center flex-wrap gap-0.5">
           <button
-            onClick={() => setPriorityFilter('all')}
+            onClick={() => setCategoryFilter('all')}
             className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors active:scale-95 touch-manipulation ${
-              priorityFilter === 'all'
+              categoryFilter === 'all'
                 ? 'bg-slate-200 dark:bg-[#333336] text-slate-800 dark:text-[#e3e3e3]'
                 : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
             }`}
           >
-            All Priorities
+            All Categories
           </button>
           <button
-            onClick={() => setPriorityFilter((prev) => (prev === 'critical' ? 'all' : 'critical'))}
+            onClick={() => setCategoryFilter((prev) => (prev === 'overdue' ? 'all' : 'overdue'))}
             className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors flex items-center gap-1 active:scale-95 touch-manipulation ${
-              priorityFilter === 'critical'
+              categoryFilter === 'overdue'
                 ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
                 : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
             }`}
           >
             <AlertCircle className="w-3 h-3 text-rose-600 dark:text-rose-400" />
-            <span>Critical</span>
-            {unreadCriticalCount > 0 && (
+            <span>Overdue</span>
+            {categoryCounts.overdue > 0 && (
               <span className="bg-rose-600 text-white text-[9px] font-extrabold px-1 py-0.2 rounded-full min-w-[14px] text-center">
-                {unreadCriticalCount}
+                {categoryCounts.overdue}
               </span>
             )}
           </button>
           <button
-            onClick={() => setPriorityFilter((prev) => (prev === 'urgent' ? 'all' : 'urgent'))}
+            onClick={() => setCategoryFilter((prev) => (prev === 'due_soon' ? 'all' : 'due_soon'))}
             className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors flex items-center gap-1 active:scale-95 touch-manipulation ${
-              priorityFilter === 'urgent'
+              categoryFilter === 'due_soon'
                 ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
                 : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
             }`}
           >
             <Clock className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-            <span>Due Soon</span>
-            {unreadUrgentCount > 0 && (
+            <span>Upcoming / Due</span>
+            {categoryCounts.due_soon > 0 && (
               <span className="bg-amber-600 text-white text-[9px] font-extrabold px-1 py-0.2 rounded-full min-w-[14px] text-center">
-                {unreadUrgentCount}
+                {categoryCounts.due_soon}
               </span>
             )}
           </button>
           <button
-            onClick={() => setPriorityFilter((prev) => (prev === 'action_required' ? 'all' : 'action_required'))}
+            onClick={() => setCategoryFilter((prev) => (prev === 'mention' ? 'all' : 'mention'))}
             className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors flex items-center gap-1 active:scale-95 touch-manipulation ${
-              priorityFilter === 'action_required'
+              categoryFilter === 'mention'
                 ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300'
                 : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
             }`}
           >
-            <Zap className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-            <span>Action Req</span>
-            {unreadActionCount > 0 && (
+            <MessageSquare className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+            <span>@Mentions</span>
+            {categoryCounts.mention > 0 && (
               <span className="bg-indigo-600 text-white text-[9px] font-extrabold px-1 py-0.2 rounded-full min-w-[14px] text-center">
-                {unreadActionCount}
+                {categoryCounts.mention}
               </span>
             )}
           </button>
+          {categoryCounts.rollover > 0 && (
+            <button
+              onClick={() => setCategoryFilter((prev) => (prev === 'rollover' ? 'all' : 'rollover'))}
+              className={`px-2 py-1 text-[11px] font-bold rounded-md transition-colors flex items-center gap-1 active:scale-95 touch-manipulation ${
+                categoryFilter === 'rollover'
+                  ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300'
+                  : 'text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-50 dark:hover:bg-[#333336]'
+              }`}
+            >
+              <CalendarClock className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+              <span>Rollover</span>
+              <span className="bg-purple-600 text-white text-[9px] font-extrabold px-1 py-0.2 rounded-full min-w-[14px] text-center">
+                {categoryCounts.rollover}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Target type filters */}
@@ -56651,7 +56731,6 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
     </div>
   );
 };
-
 
 ================================================================================
 FILE: src/components/NotificationParts/NotificationItemCard.tsx
@@ -71750,6 +71829,8 @@ export const PRESETS_STORAGE_KEY = "taka_print_presets_v1";
 FILE: src/components/PrintPreviewOverlay.tsx
 ================================================================================
 import React, { useState, useEffect } from "react";
+import { computePrintGridMetrics } from "../lib/exportPdfParts/pdfTableSlicer";
+import { useAppStore } from "../store/useAppStore";
 
 interface PrintPreviewOverlayProps {
   printScale: number;
@@ -71758,13 +71839,13 @@ interface PrintPreviewOverlayProps {
   printScaleMode: string;
 }
 
-const PX_PER_MM = 3.779527559;
-
 export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
   printScale,
   printPaperSize,
   printOrientation,
+  printScaleMode,
 }) => {
+  const printFilterHeader = useAppStore((state) => state.printFilterHeader);
   const [pageBreaks, setPageBreaks] = useState<{ domStartY: number; domEndY: number }[]>([]);
   const [cols, setCols] = useState(1);
   const [usableWidthPx, setUsableWidthPx] = useState(0);
@@ -71784,77 +71865,42 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
   useEffect(() => {
     let timeoutId: any;
     const calculatePreviewGrid = () => {
-      const wrapper = document.querySelector('.print-content-wrapper') as HTMLElement;
+      const wrapper = document.querySelector(".print-content-wrapper") as HTMLElement;
       if (!wrapper) return;
-      
+
       const naturalWidth = Math.max(100, wrapper.scrollWidth);
       const naturalHeight = Math.max(100, wrapper.scrollHeight);
-      
-      const { w: paperW, h: paperH } = getPaperDimensions();
-      const printWidth = printOrientation === 'landscape' ? paperH : paperW;
-      const printHeight = printOrientation === 'landscape' ? paperW : paperH;
-      
-      const currentScale = Math.max(0.1, (printScale || 100) / 100);
-      const targetUsableWidthPx = ((printWidth - 20) * PX_PER_MM) / currentScale;
-      const targetUsableHeightPx = ((printHeight - 20) * PX_PER_MM) / currentScale;
-      
-      const calculatedCols = Math.max(1, Math.ceil((naturalWidth - 2) / targetUsableWidthPx));
-      
-      let headerHeight = 0;
-      const thead = wrapper.querySelector('thead');
-      const wrapperRect = wrapper.getBoundingClientRect();
 
-      if (thead) {
-         const theadRect = thead.getBoundingClientRect();
-         headerHeight = Math.max(0, (theadRect.bottom - wrapperRect.top) / currentScale);
-      }
-      
-      const validBoundaries = [0];
-      const trElements = Array.from(wrapper.querySelectorAll('tbody tr'));
-      trElements.forEach(tr => {
-          validBoundaries.push(Math.max(0, (tr.getBoundingClientRect().bottom - wrapperRect.top) / currentScale));
+      const { w: paperW, h: paperH } = getPaperDimensions();
+      const printWidth = printOrientation === "landscape" ? paperH : paperW;
+      const printHeight = printOrientation === "landscape" ? paperW : paperH;
+
+      const sideMargin = 8;
+      const topMargin = printFilterHeader ? 10.5 : 8;
+      const bottomMargin = 9;
+      const targetWidthMm = printWidth - sideMargin * 2;
+      const targetHeightMm = printHeight - topMargin - bottomMargin;
+
+      const domScaleFactor = Math.max(0.1, (printScale || 100) / 100);
+
+      const metrics = computePrintGridMetrics({
+        wrapper,
+        naturalWidth,
+        naturalHeight,
+        targetWidthMm,
+        targetHeightMm,
+        topMarginMm: topMargin,
+        printScaleMode,
+        printScale,
+        domScaleFactor,
       });
-      validBoundaries.push(naturalHeight);
-      validBoundaries.sort((a, b) => a - b);
-      
-      const newPageBreaks: { domStartY: number; domEndY: number }[] = [];
-      let domStartY = 0;
-      
-      while (domStartY < naturalHeight - 0.5) {
-          let domEndY_theoretical: number;
-          
-          if (newPageBreaks.length === 0) {
-              domEndY_theoretical = domStartY + targetUsableHeightPx;
-          } else {
-              domEndY_theoretical = domStartY + targetUsableHeightPx - headerHeight;
-          }
-          
-          if (domEndY_theoretical >= naturalHeight) {
-              newPageBreaks.push({ domStartY, domEndY: naturalHeight });
-              break;
-          }
-          
-          let breakY = domStartY;
-          for (let i = 0; i < validBoundaries.length; i++) {
-              if (validBoundaries[i] > domStartY && validBoundaries[i] <= domEndY_theoretical + 1) {
-                  breakY = validBoundaries[i];
-              }
-          }
-          
-          if (breakY === domStartY) {
-              breakY = domEndY_theoretical;
-          }
-          
-          newPageBreaks.push({ domStartY, domEndY: breakY });
-          domStartY = breakY;
-      }
-      
-      setCols(calculatedCols);
-      setUsableWidthPx(targetUsableWidthPx);
-      setPageBreaks(newPageBreaks);
+
+      setCols(metrics.cols);
+      setUsableWidthPx(metrics.usableWidthPx);
+      setPageBreaks(metrics.pageBreaks);
     };
 
-    const wrapper = document.querySelector('.print-content-wrapper') as HTMLElement;
+    const wrapper = document.querySelector(".print-content-wrapper") as HTMLElement;
     let observer: ResizeObserver | null = null;
     if (wrapper) {
       observer = new ResizeObserver(() => {
@@ -71863,30 +71909,33 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
       });
       observer.observe(wrapper);
     }
-    
+
     timeoutId = setTimeout(calculatePreviewGrid, 120);
-    
+
     return () => {
       clearTimeout(timeoutId);
       if (observer) observer.disconnect();
     };
-  }, [printScale, printPaperSize, printOrientation]);
+  }, [printScale, printPaperSize, printOrientation, printScaleMode, printFilterHeader]);
 
   return (
     <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-[100] hide-on-actual-print">
       {/* Horizontal lines */}
       {pageBreaks.map((pb, index) => {
-        if (index === pageBreaks.length - 1 && pb.domEndY >= (document.querySelector('.print-content-wrapper')?.scrollHeight || 0)) {
+        if (
+          index === pageBreaks.length - 1 &&
+          pb.domEndY >= (document.querySelector(".print-content-wrapper")?.scrollHeight || 0) - 2
+        ) {
           return null;
         }
         return (
-          <div 
-            key={`h-${index}`} 
+          <div
+            key={`h-${index}`}
             className="absolute left-0 w-full border-b-2 border-red-500 border-dashed opacity-70"
             style={{ top: `${pb.domEndY}px` }}
           >
             <span className="absolute left-1 -top-5 text-red-600 dark:text-red-400 font-bold text-xs bg-white/90 dark:bg-[#1e1e20]/90 px-1 rounded shadow-sm">
-              Page Break
+              Page Break (Page {index + 1} → {index + 2})
             </span>
           </div>
         );
@@ -71894,8 +71943,8 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
 
       {/* Vertical lines */}
       {Array.from({ length: cols - 1 }).map((_, index) => (
-        <div 
-          key={`v-${index}`} 
+        <div
+          key={`v-${index}`}
           className="absolute top-0 h-full border-r-2 border-red-500 border-dashed opacity-70"
           style={{ left: `${(index + 1) * usableWidthPx}px` }}
         />
@@ -71903,7 +71952,6 @@ export const PrintPreviewOverlay: React.FC<PrintPreviewOverlayProps> = ({
     </div>
   );
 };
-
 
 ================================================================================
 FILE: src/components/ProjectDelegationTab.tsx
@@ -77961,7 +78009,7 @@ export const SummaryFilterToolbar: React.FC<SummaryFilterToolbarProps> = React.m
   return (
     <>
       {/* Sub-tab Navigation: Project Summary vs Executive Financial Dashboard */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2 border-b border-slate-200 dark:border-[#333336]">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2 border-b border-slate-200 dark:border-[#333336] print:hidden hide-on-actual-print">
         <div className="flex items-center gap-2 bg-slate-200/70 dark:bg-[#28282a] p-1.5 rounded-2xl">
           <button
             type="button"
@@ -77999,7 +78047,7 @@ export const SummaryFilterToolbar: React.FC<SummaryFilterToolbarProps> = React.m
       </div>
 
       {activeSubTab === 'project_summary' && (
-        <div className="bg-white dark:bg-[#1e1e20] rounded-xl shadow-lg border border-slate-200 dark:border-[#444446] overflow-hidden transform transition-all hover:shadow-xl">
+        <div className="bg-white dark:bg-[#1e1e20] rounded-xl shadow-lg border border-slate-200 dark:border-[#444446] overflow-hidden transform transition-all hover:shadow-xl print:hidden hide-on-actual-print">
           <div className="bg-slate-900 p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Filter className="w-5 h-5 text-blue-400" />
@@ -78081,7 +78129,6 @@ export const SummaryFilterToolbar: React.FC<SummaryFilterToolbarProps> = React.m
   );
 });
 SummaryFilterToolbar.displayName = 'SummaryFilterToolbar';
-
 
 ================================================================================
 FILE: src/components/SummaryParts/SummaryMetricsCards.tsx
@@ -79579,7 +79626,7 @@ export const TaskDelegationFilterToolbar = React.memo(function TaskDelegationFil
           ))}
       </datalist>
 
-      <div className="flex flex-col md:flex-row flex-wrap gap-3 p-4 border-b border-slate-200 dark:border-[#444446] items-start md:items-center justify-between shrink-0 bg-slate-50 dark:bg-[#1e1e20]/50 rounded-t-xl">
+      <div className="flex flex-col md:flex-row flex-wrap gap-3 p-4 border-b border-slate-200 dark:border-[#444446] items-start md:items-center justify-between shrink-0 bg-slate-50 dark:bg-[#1e1e20]/50 rounded-t-xl print:hidden hide-on-actual-print">
         <div className="flex items-center gap-3 w-full md:w-auto">
           {canWrite && (
             <button
@@ -79710,7 +79757,6 @@ export const TaskDelegationFilterToolbar = React.memo(function TaskDelegationFil
     </>
   );
 });
-
 
 ================================================================================
 FILE: src/components/TaskDelegationParts/TaskDelegationMobileCard.tsx
@@ -80841,7 +80887,7 @@ export const TaskDelegationTableView = React.memo(function TaskDelegationTableVi
       </table>
 
       {visibleCount < visibleGroups.length && (
-        <div className="flex justify-center p-6 border-t border-slate-200 dark:border-[#444446]">
+        <div className="flex justify-center p-6 border-t border-slate-200 dark:border-[#444446] print:hidden hide-on-actual-print">
           <button
             onClick={() => setVisibleCount((prev) => prev + 20)}
             className="px-6 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-sm transition-colors text-sm cursor-pointer"
@@ -80853,7 +80899,6 @@ export const TaskDelegationTableView = React.memo(function TaskDelegationTableVi
     </div>
   );
 });
-
 
 ================================================================================
 FILE: src/components/TaskDelegationParts/delegationAutoSync.ts
@@ -81312,6 +81357,8 @@ export function useTaskDelegationData({
   const appUsers = useAppStore((state) => state.appUsers);
   const subAppUsers = useAppStore((state) => state.subAppUsers);
   const rawDelegationGroups = useAppStore((state) => state.delegationGroups);
+  const isPrintPreview = useAppStore((state) => state.isPrintPreview);
+  const isExportingPDF = useAppStore((state) => state.isExportingPDF);
 
   const groups = useMemo(() => {
     return [...rawDelegationGroups].sort(
@@ -81614,7 +81661,9 @@ export function useTaskDelegationData({
     const byProject = new Map<string, typeof visibleGroups>();
     const orphans: typeof visibleGroups = [];
 
-    const paginatedGroups = visibleGroups.slice(0, visibleCount);
+    const paginatedGroups = (isPrintPreview || isExportingPDF)
+      ? visibleGroups
+      : visibleGroups.slice(0, visibleCount);
 
     paginatedGroups.forEach((group) => {
       const p = resolveGroupParentProject(group, projects, tasks);
@@ -81643,7 +81692,7 @@ export function useTaskDelegationData({
       });
 
     return { orderedProjects, orphans };
-  }, [visibleGroups, visibleCount, projects, tasks]);
+  }, [visibleGroups, visibleCount, projects, tasks, isPrintPreview, isExportingPDF]);
 
   const isAllExpanded =
     expandedGroups.length >= visibleGroups.length &&
@@ -81725,7 +81774,6 @@ export function useTaskDelegationData({
     globalStoreFilter,
   };
 }
-
 
 ================================================================================
 FILE: src/components/TaskDelegationParts/useTaskDelegationMutations.ts
@@ -89057,6 +89105,22 @@ export function useAppPrintController({
     }
   }, [isPrintPreview, printOrientation]);
 
+  useEffect(() => {
+    if (!isPrintPreview) return;
+    const fitColsTabs = new Set([
+      "general",
+      "detail",
+      "budget",
+      "cost",
+      "taskDelegation",
+      "accControl",
+      "audit",
+      "notification",
+    ]);
+    const targetMode = fitColsTabs.has(activeTab) ? "fit-cols" : "fit-page";
+    useAppStore.getState().setPrintScaleMode(targetMode);
+  }, [isPrintPreview, activeTab]);
+
   const paperDimensions = useMemo(() => {
     if (printPaperSize === "A2") return { w: 420, h: 594 };
     if (printPaperSize === "A3") return { w: 297, h: 420 };
@@ -89297,6 +89361,7 @@ export function useAppPrintController({
 
   useEffect(() => {
     if (!isPrintPreview) return;
+    let t: any;
     const updateSize = () => {
       const wrapper = document.querySelector(".print-content-wrapper") as HTMLElement;
       if (wrapper) {
@@ -89307,16 +89372,28 @@ export function useAppPrintController({
         );
       }
     };
-    const t = setTimeout(updateSize, 80);
-    return () => clearTimeout(t);
+    const wrapper = document.querySelector(".print-content-wrapper") as HTMLElement;
+    let ro: ResizeObserver | null = null;
+    if (wrapper && typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => {
+        clearTimeout(t);
+        t = setTimeout(updateSize, 60);
+      });
+      ro.observe(wrapper);
+    }
+    t = setTimeout(updateSize, 80);
+    return () => {
+      clearTimeout(t);
+      if (ro) ro.disconnect();
+    };
   }, [isPrintPreview, activeTab, printOrientation, printPaperSize, ganttViewMode]);
 
   const printScale = useMemo(() => {
     if (printScaleMode === "default") return 100;
     if (printScaleMode === "custom") return printScaleCustom;
 
-    const targetWidthPx = (printWidth - 20) * 3.779527559;
-    const targetHeightPx = (printHeight - 20) * 3.779527559;
+    const targetWidthPx = (printWidth - 16) * 3.779527559;
+    const targetHeightPx = (printHeight - (printFilterHeader ? 19.5 : 17)) * 3.779527559;
 
     let contentW = measuredContentSize.width;
     let contentH = measuredContentSize.height;
@@ -89340,18 +89417,18 @@ export function useAppPrintController({
     }
 
     if (printScaleMode === "fit-cols") {
-      const scale = Math.floor((targetWidthPx / contentW) * 100);
+      const scale = Math.round((targetWidthPx / contentW) * 100);
       return Math.max(10, Math.min(scale, 100));
     }
 
     if (printScaleMode === "fit-rows") {
-      const scale = Math.floor((targetHeightPx / contentH) * 100);
+      const scale = Math.round((targetHeightPx / contentH) * 100);
       return Math.max(10, Math.min(scale, 100));
     }
 
-    if (printScaleMode === "fit-page") {
-      const scaleCols = Math.floor((targetWidthPx / contentW) * 100);
-      const scaleRows = Math.floor((targetHeightPx / contentH) * 100);
+    if (printScaleMode === "fit-page" || printScaleMode === "fill-page") {
+      const scaleCols = Math.round((targetWidthPx / contentW) * 100);
+      const scaleRows = Math.round((targetHeightPx / contentH) * 100);
       return Math.max(10, Math.min(scaleCols, scaleRows, 100));
     }
 
@@ -89361,6 +89438,7 @@ export function useAppPrintController({
     printScaleCustom,
     printWidth,
     printHeight,
+    printFilterHeader,
     measuredContentSize,
     activeTab,
     printFilteredData,
@@ -89369,8 +89447,18 @@ export function useAppPrintController({
 
   const ganttPrintPages = useMemo(() => {
     if (!isPrintPreview || activeTab !== "gantt") return null;
+    if (printRangeType === "custom" && (printStartDate || printEndDate)) {
+      return [
+        {
+          dateRange: {
+            start: printDates.minDate.toISOString().slice(0, 10),
+            end: printDates.maxDate.toISOString().slice(0, 10),
+          },
+        },
+      ];
+    }
     return [{ dateRange: undefined as any }];
-  }, [isPrintPreview, activeTab]);
+  }, [isPrintPreview, activeTab, printRangeType, printStartDate, printEndDate, printDates]);
 
   const handleExportToExcel = async () => {
     if (isExportingPDF || activeTab === "gantt") return;
@@ -89441,7 +89529,6 @@ export function useAppPrintController({
     handlePrintToPDF,
   };
 }
-
 
 ================================================================================
 FILE: src/hooks/deepLinkStoreResolver.test.ts
@@ -102894,6 +102981,11 @@ FILE: src/lib/exportPdfEngine.ts
 import { Project } from '../types';
 import { getStatus } from './utils';
 import { drawPdfFilterHeader } from './printFilterHelper';
+import {
+  PX_PER_MM,
+  computePrintGridMetrics,
+  exportLayoutPlanToPdf,
+} from './exportPdfParts/pdfTableSlicer';
 
 export interface ExportToExcelOptions {
   activeTab: string;
@@ -102951,8 +103043,6 @@ export interface ExportToPdfOptions {
   printWatermark: string;
 }
 
-const PX_PER_MM = 3.779527559; // Standard 96 DPI CSS pixel-to-millimeter factor
-
 export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
   const {
     activeTab,
@@ -102973,125 +103063,21 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
 
   // Fast path for Layout Plan Canvas (Fit to full page)
   if (activeTab === 'layout') {
-    let dataUrl: string | null = null;
-    let imgW = 1200;
-    let imgH = 800;
-
-    const exportFn = (window as any).__taka_layout_export;
-    if (typeof exportFn === 'function') {
-      const res = exportFn(printDpi || 200);
-      if (res && res.dataUrl) {
-        dataUrl = res.dataUrl;
-        imgW = res.width;
-        imgH = res.height;
-      }
+    const exported = await exportLayoutPlanToPdf({
+      orientation,
+      format,
+      printOrientation,
+      printDpi,
+      printScaleMode,
+      printFilterHeader,
+      printFilterContext,
+      printDate,
+      printWatermark,
+      isDark,
+    });
+    if (!exported) {
+      window.print();
     }
-
-    if (!dataUrl) {
-      const stage = (window as any).__taka_layout_stage;
-      const stageCanvas = document.querySelector('#live-layout-canvas-container canvas') as HTMLCanvasElement;
-      if (stage && typeof stage.toDataURL === 'function') {
-        const exportRatio = Math.min(2.0, Math.max(1.0, printDpi / 96));
-        dataUrl = stage.toDataURL({ pixelRatio: exportRatio, mimeType: 'image/jpeg', quality: 0.90 });
-        imgW = (stage.width ? stage.width() : 1200) * exportRatio;
-        imgH = (stage.height ? stage.height() : 800) * exportRatio;
-      } else if (stageCanvas) {
-        dataUrl = stageCanvas.toDataURL('image/jpeg', 0.90);
-        imgW = stageCanvas.width;
-        imgH = stageCanvas.height;
-      }
-    }
-
-    if (dataUrl) {
-      const { jsPDF } = await import('jspdf');
-      const pdf = new jsPDF({ orientation, unit: 'mm', format });
-
-      const pdfPageWidth = pdf.internal.pageSize.getWidth();
-      const pdfPageHeight = pdf.internal.pageSize.getHeight();
-      
-      // Tight outer margin (2mm) for near 100% full paper coverage
-      const margin = 2;
-      let usableWidth = pdfPageWidth - margin * 2;
-      let usableHeight = pdfPageHeight - margin * 2;
-      let topOffset = margin;
-
-      if (printFilterHeader) {
-        drawPdfFilterHeader(pdf, printFilterContext, pdfPageWidth, margin, isDark);
-        topOffset += 8;
-        usableHeight -= 8;
-      }
-
-      if (printDate) {
-        usableHeight -= 3.5;
-      }
-
-      const isFillPage = printScaleMode === 'fill-page';
-
-      let targetW = usableWidth;
-      let targetH = usableHeight;
-      let xPos = margin;
-      let yPos = topOffset;
-
-      if (isFillPage) {
-        targetW = usableWidth;
-        targetH = usableHeight;
-        xPos = margin;
-        yPos = topOffset;
-      } else {
-        const imgAspect = imgW / imgH;
-        const pageAspect = usableWidth / usableHeight;
-
-        if (imgAspect > pageAspect) {
-          // Fits width exactly
-          targetW = usableWidth;
-          targetH = usableWidth / imgAspect;
-        } else {
-          // Fits height exactly
-          targetH = usableHeight;
-          targetW = usableHeight * imgAspect;
-        }
-
-        xPos = margin + (usableWidth - targetW) / 2;
-        yPos = topOffset + (usableHeight - targetH) / 2;
-      }
-
-      pdf.addImage(dataUrl, 'JPEG', xPos, yPos, targetW, targetH, undefined, 'FAST');
-
-      // Watermark
-      if (printWatermark && printWatermark !== 'none') {
-        try {
-          pdf.saveGraphicsState();
-          pdf.setGState(new (pdf as any).GState({ opacity: 0.12 }));
-          pdf.setFontSize(printOrientation === 'landscape' ? 52 : 38);
-          pdf.setFont('helvetica', 'bold');
-          pdf.setTextColor(150, 150, 150);
-          pdf.text(
-            printWatermark.toUpperCase(),
-            pdfPageWidth / 2,
-            pdfPageHeight / 2,
-            { align: 'center', angle: 45 }
-          );
-          pdf.restoreGraphicsState();
-        } catch {
-          // Fallback
-        }
-      }
-
-      // Footer
-      const footerY = pdfPageHeight - 3;
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(130, 130, 130);
-      let footerText = `Takashimaya PM • Layout Plan (${printFilterContext?.storeDisplay || 'HCM'} - ${printFilterContext?.yearDisplay || 'All'})`;
-      if (printDate) {
-        footerText += ` • Printed: ${new Date().toLocaleString()}`;
-      }
-      pdf.text(footerText, margin, footerY);
-
-      pdf.save(`layout_plan_${new Date().toISOString().slice(0, 10)}_${Date.now()}.pdf`);
-      return;
-    }
-
-    window.print();
     return;
   }
 
@@ -103103,14 +103089,14 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
 
   const pdfPageWidth = pdf.internal.pageSize.getWidth();
   const pdfPageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 10;
-  const targetWidthMm = pdfPageWidth - margin * 2;
-  const targetHeightMm = pdfPageHeight - margin * 2;
-
-  const currentScale = Math.max(0.1, Math.min(2.0, (printScale || 100) / 100));
+  const sideMargin = 8;
+  const topMargin = printFilterHeader ? 10.5 : 8;
+  const bottomMargin = 9;
+  const targetWidthMm = pdfPageWidth - sideMargin * 2;
+  const targetHeightMm = pdfPageHeight - topMargin - bottomMargin;
 
   // Yield to avoid main thread freeze
-  await new Promise(resolve => setTimeout(resolve, 30));
+  await new Promise(resolve => setTimeout(resolve, 40));
 
   for (let i = 0; i < pages.length; i++) {
     const page = pages[i] as HTMLElement;
@@ -103147,44 +103133,39 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
     wrapper.style.width = `${naturalWidth}px`;
     wrapper.style.height = `${naturalHeight}px`;
 
-    // Calculate row boundaries for table row-split safety
-    const validBoundaries = [0];
-    const wrapperRect = wrapper.getBoundingClientRect();
-    const thead = wrapper.querySelector('thead');
-    let headerHeight = 0;
-    if (thead) {
-      const theadRect = thead.getBoundingClientRect();
-      headerHeight = Math.max(0, theadRect.bottom - wrapperRect.top);
-    }
-
-    const trElements = Array.from(wrapper.querySelectorAll('tbody tr'));
-    trElements.forEach(tr => {
-      validBoundaries.push(tr.getBoundingClientRect().bottom - wrapperRect.top);
+    const gridMetrics = computePrintGridMetrics({
+      wrapper,
+      naturalWidth,
+      naturalHeight,
+      targetWidthMm,
+      targetHeightMm,
+      topMarginMm: topMargin,
+      printScaleMode,
+      printScale,
+      domScaleFactor: 1,
     });
-    validBoundaries.push(naturalHeight);
-    validBoundaries.sort((a, b) => a - b);
 
-    // Compute exact DPI and memory-safe pixel ratio
-    // Target physical dimension per page: targetWidthMm
-    // Desired output width for table across pages:
-    const usableWidthPx = (targetWidthMm * PX_PER_MM) / currentScale;
-    const usableHeightPx = (targetHeightMm * PX_PER_MM) / currentScale;
-    const cols = Math.max(1, Math.ceil((naturalWidth - 2) / usableWidthPx));
+    const {
+      currentScale,
+      usableWidthPx,
+      cols,
+      headerTopPx,
+      headerHeight,
+      pageBreaks,
+    } = gridMetrics;
 
     // Calculate optimal pixelRatio for requested DPI without memory bloat
     const desiredDpi = Math.max(96, Math.min(300, printDpi || 150));
-    // Physical print resolution ratio relative to 96 DPI
     let effectivePixelRatio = desiredDpi / 96;
 
-    // Safety cap: max 6,000,000 pixels on master canvas to guarantee instant rendering & 0 lag
-    const MAX_CANVAS_PIXELS = 6_000_000;
+    // Safety cap: max 6,500,000 pixels on master canvas to guarantee instant rendering & 0 lag
+    const MAX_CANVAS_PIXELS = 6_500_000;
     const requestedPixels = naturalWidth * effectivePixelRatio * naturalHeight * effectivePixelRatio;
     if (requestedPixels > MAX_CANVAS_PIXELS) {
       effectivePixelRatio = Math.sqrt(MAX_CANVAS_PIXELS / (naturalWidth * naturalHeight));
     }
     effectivePixelRatio = Math.max(0.65, Math.min(2.0, effectivePixelRatio));
 
-    // High-speed lightweight DOM capture (skipFonts = true eliminates heavy font blocking)
     const htmlToImage = await import('html-to-image');
     const canvas = await htmlToImage.toCanvas(wrapper, {
       width: naturalWidth,
@@ -103192,43 +103173,19 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       style: {
         transform: 'none',
         width: `${naturalWidth}px`,
-        height: `${naturalHeight}px`
+        height: `${naturalHeight}px`,
       },
       pixelRatio: effectivePixelRatio,
       backgroundColor: isDark ? '#1e1e20' : '#ffffff',
-      skipFonts: true, // Crucial for instant rendering & avoiding lag
+      skipFonts: true,
       cacheBust: false,
       filter: (node) => {
         if (node.classList && (node.classList.contains('hide-on-actual-print') || node.classList.contains('print:hidden'))) {
           return false;
         }
         return true;
-      }
+      },
     });
-
-    // Extract table header slice for multi-row repeating headers
-    let headerDataUrl: string | null = null;
-    const headerScaledHeight = Math.round(headerHeight * effectivePixelRatio);
-    if (headerHeight > 0 && headerScaledHeight > 0 && headerHeight < naturalHeight) {
-      try {
-        const headerCanvas = document.createElement('canvas');
-        headerCanvas.width = canvas.width;
-        headerCanvas.height = headerScaledHeight;
-        const hCtx = headerCanvas.getContext('2d', { alpha: false });
-        if (hCtx) {
-          hCtx.fillStyle = isDark ? '#1e1e20' : '#ffffff';
-          hCtx.fillRect(0, 0, headerCanvas.width, headerCanvas.height);
-          hCtx.drawImage(
-            canvas,
-            0, 0, canvas.width, headerScaledHeight,
-            0, 0, headerCanvas.width, headerCanvas.height
-          );
-          headerDataUrl = headerCanvas.toDataURL('image/jpeg', 0.85);
-        }
-      } catch (err) {
-        console.warn('Header slice failed:', err);
-      }
-    }
 
     // Restore wrapper DOM style immediately
     wrapper.style.transform = originalTransform;
@@ -103242,55 +103199,16 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       el.style.display = display;
     });
 
-    // Calculate vertical page breaks based on row boundaries
     const headerPdfHeight = (headerHeight * currentScale) / PX_PER_MM;
-    const pageBreaks: { domStartY: number; domEndY: number; actualPdfStartY: number }[] = [];
-    let domStartY = 0;
+    const headerSrcY = Math.max(0, Math.floor(headerTopPx * effectivePixelRatio));
+    const headerSrcH = Math.min(canvas.height - headerSrcY, Math.ceil(headerHeight * effectivePixelRatio));
 
-    while (domStartY < naturalHeight - 0.5) {
-      let domEndY_theoretical: number;
-      let actualPdfStartY: number;
-
-      if (pageBreaks.length === 0) {
-        domEndY_theoretical = domStartY + usableHeightPx;
-        actualPdfStartY = margin;
-      } else {
-        domEndY_theoretical = domStartY + usableHeightPx - headerHeight;
-        actualPdfStartY = margin + headerPdfHeight;
-      }
-
-      if (domEndY_theoretical >= naturalHeight) {
-        pageBreaks.push({
-          domStartY,
-          domEndY: naturalHeight,
-          actualPdfStartY
-        });
-        break;
-      }
-
-      let breakY = domStartY;
-      for (let j = 0; j < validBoundaries.length; j++) {
-        if (validBoundaries[j] > domStartY && validBoundaries[j] <= domEndY_theoretical + 1) {
-          breakY = validBoundaries[j];
-        }
-      }
-
-      if (breakY === domStartY) {
-        breakY = domEndY_theoretical;
-      }
-
-      pageBreaks.push({
-        domStartY,
-        domEndY: breakY,
-        actualPdfStartY
-      });
-
-      domStartY = breakY;
-    }
-
-    // Per-page canvas tile slicing (Ultra-lightweight memory, instant PDF build)
+    // Per-page canvas tile slicing
     const tileCanvas = document.createElement('canvas');
     const tileCtx = tileCanvas.getContext('2d', { alpha: false });
+    const headerTileCanvas = document.createElement('canvas');
+    const headerTileCtx = headerTileCanvas.getContext('2d', { alpha: false });
+
     const totalPages = pageBreaks.length * cols;
     let pageCount = 0;
 
@@ -103299,7 +103217,7 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       const domSliceH = pb.domEndY - pb.domStartY;
 
       for (let c = 0; c < cols; c++) {
-        if (pageCount > 0) {
+        if (pageCount > 0 || i > 0) {
           pdf.addPage(format, orientation);
         }
 
@@ -103312,32 +103230,54 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
         const srcW = Math.min(canvas.width - srcX, Math.ceil(domSliceW * effectivePixelRatio));
         const srcH = Math.min(canvas.height - srcY, Math.ceil(domSliceH * effectivePixelRatio));
 
-        const slicePdfW = (domSliceW * currentScale) / PX_PER_MM;
-        const slicePdfH = (domSliceH * currentScale) / PX_PER_MM;
+        const slicePdfW =
+          printScaleMode === 'fill-page'
+            ? targetWidthMm
+            : (domSliceW * currentScale) / PX_PER_MM;
+        const slicePdfH =
+          printScaleMode === 'fill-page'
+            ? targetHeightMm
+            : (domSliceH * currentScale) / PX_PER_MM;
 
         if (srcW > 0 && srcH > 0 && tileCtx) {
           tileCanvas.width = srcW;
           tileCanvas.height = srcH;
           tileCtx.fillStyle = isDark ? '#1e1e20' : '#ffffff';
           tileCtx.fillRect(0, 0, srcW, srcH);
-          tileCtx.drawImage(
-            canvas,
-            srcX, srcY, srcW, srcH,
-            0, 0, srcW, srcH
-          );
+          tileCtx.drawImage(canvas, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
 
-          const tileDataUrl = tileCanvas.toDataURL('image/jpeg', 0.86);
-          pdf.addImage(tileDataUrl, 'JPEG', margin, pb.actualPdfStartY, slicePdfW, slicePdfH, undefined, 'FAST');
+          const tileDataUrl = tileCanvas.toDataURL('image/jpeg', 0.88);
+          pdf.addImage(tileDataUrl, 'JPEG', sideMargin, pb.actualPdfStartY, slicePdfW, slicePdfH, undefined, 'FAST');
         }
 
-        // Add repeated header on subsequent rows (r > 0)
-        if (r > 0 && headerDataUrl) {
-          pdf.addImage(headerDataUrl, 'JPEG', margin, margin, slicePdfW, headerPdfHeight, undefined, 'FAST');
+        // Add repeated header on subsequent vertical pages (r > 0), horizontally sliced to match column c
+        if (r > 0 && headerHeight > 0 && headerSrcH > 0 && srcW > 0 && headerTileCtx && pb.actualPdfStartY > topMargin) {
+          try {
+            headerTileCanvas.width = srcW;
+            headerTileCanvas.height = headerSrcH;
+            headerTileCtx.fillStyle = isDark ? '#1e1e20' : '#ffffff';
+            headerTileCtx.fillRect(0, 0, srcW, headerSrcH);
+            headerTileCtx.drawImage(
+              canvas,
+              srcX,
+              headerSrcY,
+              srcW,
+              headerSrcH,
+              0,
+              0,
+              srcW,
+              headerSrcH
+            );
+            const hDataUrl = headerTileCanvas.toDataURL('image/jpeg', 0.88);
+            pdf.addImage(hDataUrl, 'JPEG', sideMargin, topMargin, slicePdfW, headerPdfHeight, undefined, 'FAST');
+          } catch (err) {
+            console.warn('Header slice failed:', err);
+          }
         }
 
         // Draw Filter Header
         if (printFilterHeader) {
-          drawPdfFilterHeader(pdf, printFilterContext, pdfPageWidth, margin, isDark);
+          drawPdfFilterHeader(pdf, printFilterContext, pdfPageWidth, sideMargin, isDark);
         }
 
         // Draw Watermark
@@ -103361,13 +103301,13 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
         }
 
         // Footer & Status indicators
-        const footerY = pdfPageHeight - 4;
+        const footerY = pdfPageHeight - 3.5;
         pdf.setFontSize(7.5);
         pdf.setTextColor(130, 130, 130);
         const footerLeftText = printDate
           ? `Page ${pageCount + 1} of ${totalPages} • Printed: ${new Date().toLocaleString()}`
           : `Page ${pageCount + 1} of ${totalPages}`;
-        pdf.text(footerLeftText, margin, footerY);
+        pdf.text(footerLeftText, sideMargin, footerY);
 
         if (activeTab === 'gantt') {
           const legends: [string, number, [number, number, number]][] = [
@@ -103375,7 +103315,7 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
             ["In Process", 24, [59, 130, 246]],
             ["Upcoming", 22, [100, 116, 139]],
           ];
-          let currentLegendX = pdfPageWidth - margin;
+          let currentLegendX = pdfPageWidth - sideMargin;
           for (const [label, offset, [rCol, gCol, bCol]] of legends) {
             currentLegendX -= offset;
             pdf.text(label, currentLegendX, footerY);
@@ -132709,3 +132649,359 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
   }
 }
 
+================================================================================
+FILE: src/lib/exportPdfParts/pdfTableSlicer.ts
+================================================================================
+import { drawPdfFilterHeader } from '../printFilterHelper';
+
+export const PX_PER_MM = 3.779527559; // Standard 96 DPI CSS pixel-to-millimeter factor
+
+export interface PrintGridMetrics {
+  currentScale: number;
+  usableWidthPx: number;
+  usableHeightPx: number;
+  cols: number;
+  headerTopPx: number;
+  headerBottomPx: number;
+  headerHeight: number;
+  validBoundaries: number[];
+  pageBreaks: { domStartY: number; domEndY: number; actualPdfStartY: number }[];
+}
+
+export function extractWrapperPrintMetrics(
+  wrapper: HTMLElement,
+  naturalHeight: number,
+  domScaleFactor: number = 1
+): {
+  headerTopPx: number;
+  headerBottomPx: number;
+  headerHeight: number;
+  validBoundaries: number[];
+} {
+  const safeScale = Math.max(0.05, domScaleFactor);
+  const wrapperRect = wrapper.getBoundingClientRect();
+
+  let headerTopPx = 0;
+  let headerBottomPx = 0;
+  let headerHeight = 0;
+
+  const customHeader = wrapper.querySelector('[data-print-header="true"]') as HTMLElement | null;
+  const thead = wrapper.querySelector('thead') as HTMLElement | null;
+  const headerEl = customHeader || thead;
+  const canvasHeaderEl = wrapper.querySelector('canvas[data-print-header-height]') as HTMLCanvasElement | null;
+
+  if (headerEl) {
+    const hRect = headerEl.getBoundingClientRect();
+    if (hRect.height > 0) {
+      headerTopPx = Math.max(0, (hRect.top - wrapperRect.top) / safeScale);
+      headerBottomPx = Math.max(headerTopPx, (hRect.bottom - wrapperRect.top) / safeScale);
+      headerHeight = Math.max(0, headerBottomPx - headerTopPx);
+    }
+  } else if (canvasHeaderEl) {
+    const hAttr = Number(canvasHeaderEl.getAttribute('data-print-header-height')) || 0;
+    if (hAttr > 0) {
+      const cRect = canvasHeaderEl.getBoundingClientRect();
+      headerTopPx = Math.max(0, (cRect.top - wrapperRect.top) / safeScale);
+      headerHeight = hAttr;
+      headerBottomPx = headerTopPx + hAttr;
+    }
+  }
+
+  const rawBoundaries: number[] = [0];
+  const rowElements = wrapper.querySelectorAll('tbody tr, .project-row, .task-row, [data-print-row]');
+  rowElements.forEach((rowEl) => {
+    const rRect = rowEl.getBoundingClientRect();
+    if (rRect.height > 0) {
+      const bottomY = Math.max(0, (rRect.bottom - wrapperRect.top) / safeScale);
+      if (bottomY > 0 && bottomY <= naturalHeight + 2) {
+        rawBoundaries.push(bottomY);
+      }
+    }
+  });
+
+  if (canvasHeaderEl) {
+    const rowHAttr = Number(canvasHeaderEl.getAttribute('data-print-row-height')) || 0;
+    if (rowHAttr > 0) {
+      for (let y = headerBottomPx + rowHAttr; y < naturalHeight; y += rowHAttr) {
+        rawBoundaries.push(y);
+      }
+    }
+  }
+
+  rawBoundaries.push(naturalHeight);
+  rawBoundaries.sort((a, b) => a - b);
+
+  const validBoundaries: number[] = [];
+  for (let i = 0; i < rawBoundaries.length; i++) {
+    if (i === 0 || rawBoundaries[i] - validBoundaries[validBoundaries.length - 1] > 0.5) {
+      validBoundaries.push(rawBoundaries[i]);
+    }
+  }
+
+  return {
+    headerTopPx,
+    headerBottomPx,
+    headerHeight,
+    validBoundaries,
+  };
+}
+
+export function computePrintGridMetrics(params: {
+  wrapper: HTMLElement;
+  naturalWidth: number;
+  naturalHeight: number;
+  targetWidthMm: number;
+  targetHeightMm: number;
+  topMarginMm: number;
+  printScaleMode: string;
+  printScale: number;
+  domScaleFactor?: number;
+}): PrintGridMetrics {
+  const {
+    wrapper,
+    naturalWidth,
+    naturalHeight,
+    targetWidthMm,
+    targetHeightMm,
+    topMarginMm,
+    printScaleMode,
+    printScale,
+    domScaleFactor = 1,
+  } = params;
+
+  const { headerTopPx, headerBottomPx, headerHeight, validBoundaries } = extractWrapperPrintMetrics(
+    wrapper,
+    naturalHeight,
+    domScaleFactor
+  );
+
+  const targetWidthPxAt100 = targetWidthMm * PX_PER_MM;
+  const targetHeightPxAt100 = targetHeightMm * PX_PER_MM;
+
+  const fitColsScale = targetWidthPxAt100 / Math.max(1, naturalWidth);
+  const fitRowsScale = targetHeightPxAt100 / Math.max(1, naturalHeight);
+
+  let currentScale = Math.max(0.1, Math.min(2.0, (printScale || 100) / 100));
+  let cols = 1;
+
+  if (printScaleMode === 'fit-cols') {
+    currentScale = Math.max(0.1, Math.min(1.0, fitColsScale));
+    cols = 1;
+  } else if (printScaleMode === 'fit-rows') {
+    currentScale = Math.max(0.1, Math.min(1.0, fitRowsScale));
+    const uWidth = targetWidthPxAt100 / currentScale;
+    cols = Math.max(1, Math.ceil((naturalWidth - 2) / uWidth));
+  } else if (printScaleMode === 'fit-page') {
+    currentScale = Math.max(0.1, Math.min(1.0, fitColsScale, fitRowsScale));
+    cols = 1;
+  } else if (printScaleMode === 'fill-page') {
+    currentScale = Math.max(0.1, Math.min(2.0, Math.min(fitColsScale, fitRowsScale)));
+    cols = 1;
+  } else {
+    const uWidth = targetWidthPxAt100 / currentScale;
+    cols = Math.max(1, Math.ceil((naturalWidth - 2) / uWidth));
+  }
+
+  const usableWidthPx = cols === 1 ? Math.max(naturalWidth, targetWidthPxAt100 / currentScale) : targetWidthPxAt100 / currentScale;
+  const usableHeightPx =
+    printScaleMode === 'fit-page' || printScaleMode === 'fit-rows' || printScaleMode === 'fill-page'
+      ? Math.max(naturalHeight + 1, targetHeightPxAt100 / currentScale)
+      : targetHeightPxAt100 / currentScale;
+
+  const headerPdfHeight = (headerHeight * currentScale) / PX_PER_MM;
+  const pageBreaks: { domStartY: number; domEndY: number; actualPdfStartY: number }[] = [];
+
+  if (printScaleMode === 'fit-page' || printScaleMode === 'fit-rows' || printScaleMode === 'fill-page') {
+    pageBreaks.push({
+      domStartY: 0,
+      domEndY: naturalHeight,
+      actualPdfStartY: topMarginMm,
+    });
+  } else {
+    let domStartY = 0;
+    const effectiveRepeatHeaderPx = headerHeight > 0 && headerHeight < usableHeightPx * 0.45 ? headerHeight : 0;
+    const effectiveRepeatHeaderMm = effectiveRepeatHeaderPx > 0 ? headerPdfHeight : 0;
+
+    while (domStartY < naturalHeight - 1) {
+      let domEndYTheoretical: number;
+      let actualPdfStartY: number;
+
+      if (pageBreaks.length === 0) {
+        domEndYTheoretical = domStartY + usableHeightPx;
+        actualPdfStartY = topMarginMm;
+      } else {
+        domEndYTheoretical = domStartY + usableHeightPx - effectiveRepeatHeaderPx;
+        actualPdfStartY = topMarginMm + effectiveRepeatHeaderMm;
+      }
+
+      if (domEndYTheoretical >= naturalHeight - 1) {
+        pageBreaks.push({
+          domStartY,
+          domEndY: naturalHeight,
+          actualPdfStartY,
+        });
+        break;
+      }
+
+      let breakY = domStartY;
+      for (let j = 0; j < validBoundaries.length; j++) {
+        if (validBoundaries[j] > domStartY + 4 && validBoundaries[j] <= domEndYTheoretical + 1.5) {
+          breakY = validBoundaries[j];
+        }
+      }
+
+      if (breakY <= domStartY + 4) {
+        breakY = domEndYTheoretical;
+      }
+
+      pageBreaks.push({
+        domStartY,
+        domEndY: breakY,
+        actualPdfStartY,
+      });
+
+      domStartY = breakY;
+    }
+  }
+
+  return {
+    currentScale,
+    usableWidthPx,
+    usableHeightPx,
+    cols,
+    headerTopPx,
+    headerBottomPx,
+    headerHeight,
+    validBoundaries,
+    pageBreaks,
+  };
+}
+
+export async function exportLayoutPlanToPdf(params: {
+  orientation: 'p' | 'l';
+  format: string;
+  printOrientation: string;
+  printDpi: number;
+  printScaleMode: string;
+  printFilterHeader: boolean;
+  printFilterContext: any;
+  printDate: boolean;
+  printWatermark: string;
+  isDark: boolean;
+}): Promise<boolean> {
+  const {
+    orientation,
+    format,
+    printOrientation,
+    printDpi,
+    printScaleMode,
+    printFilterHeader,
+    printFilterContext,
+    printDate,
+    printWatermark,
+    isDark,
+  } = params;
+
+  let dataUrl: string | null = null;
+  let imgW = 1200;
+  let imgH = 800;
+
+  const exportFn = (window as any).__taka_layout_export;
+  if (typeof exportFn === 'function') {
+    const res = exportFn(printDpi || 200);
+    if (res && res.dataUrl) {
+      dataUrl = res.dataUrl;
+      imgW = res.width;
+      imgH = res.height;
+    }
+  }
+
+  if (!dataUrl) {
+    const stage = (window as any).__taka_layout_stage;
+    const stageCanvas = document.querySelector('#live-layout-canvas-container canvas') as HTMLCanvasElement;
+    if (stage && typeof stage.toDataURL === 'function') {
+      const exportRatio = Math.min(2.0, Math.max(1.0, printDpi / 96));
+      dataUrl = stage.toDataURL({ pixelRatio: exportRatio, mimeType: 'image/jpeg', quality: 0.92 });
+      imgW = (stage.width ? stage.width() : 1200) * exportRatio;
+      imgH = (stage.height ? stage.height() : 800) * exportRatio;
+    } else if (stageCanvas) {
+      dataUrl = stageCanvas.toDataURL('image/jpeg', 0.92);
+      imgW = stageCanvas.width;
+      imgH = stageCanvas.height;
+    }
+  }
+
+  if (!dataUrl) return false;
+
+  const { jsPDF } = await import('jspdf');
+  const pdf = new jsPDF({ orientation, unit: 'mm', format });
+
+  const pdfPageWidth = pdf.internal.pageSize.getWidth();
+  const pdfPageHeight = pdf.internal.pageSize.getHeight();
+
+  const margin = 2;
+  const usableWidth = pdfPageWidth - margin * 2;
+  let usableHeight = pdfPageHeight - margin * 2;
+  let topOffset = margin;
+
+  if (printFilterHeader) {
+    drawPdfFilterHeader(pdf, printFilterContext, pdfPageWidth, margin, isDark);
+    topOffset += 8;
+    usableHeight -= 8;
+  }
+
+  if (printDate) {
+    usableHeight -= 3.5;
+  }
+
+  const isFillPage = printScaleMode === 'fill-page';
+  let targetW = usableWidth;
+  let targetH = usableHeight;
+  let xPos = margin;
+  let yPos = topOffset;
+
+  if (!isFillPage) {
+    const imgAspect = imgW / imgH;
+    const pageAspect = usableWidth / usableHeight;
+    if (imgAspect > pageAspect) {
+      targetW = usableWidth;
+      targetH = usableWidth / imgAspect;
+    } else {
+      targetH = usableHeight;
+      targetW = usableHeight * imgAspect;
+    }
+    xPos = margin + (usableWidth - targetW) / 2;
+    yPos = topOffset + (usableHeight - targetH) / 2;
+  }
+
+  pdf.addImage(dataUrl, 'JPEG', xPos, yPos, targetW, targetH, undefined, 'FAST');
+
+  if (printWatermark && printWatermark !== 'none') {
+    try {
+      pdf.saveGraphicsState();
+      pdf.setGState(new (pdf as any).GState({ opacity: 0.12 }));
+      pdf.setFontSize(printOrientation === 'landscape' ? 52 : 38);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(150, 150, 150);
+      pdf.text(printWatermark.toUpperCase(), pdfPageWidth / 2, pdfPageHeight / 2, {
+        align: 'center',
+        angle: 45,
+      });
+      pdf.restoreGraphicsState();
+    } catch {
+      // Fallback
+    }
+  }
+
+  const footerY = pdfPageHeight - 3;
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(130, 130, 130);
+  let footerText = `Takashimaya PM • Layout Plan (${printFilterContext?.storeDisplay || 'HCM'} - ${printFilterContext?.yearDisplay || 'All'})`;
+  if (printDate) {
+    footerText += ` • Printed: ${new Date().toLocaleString()}`;
+  }
+  pdf.text(footerText, margin, footerY);
+
+  pdf.save(`layout_plan_${new Date().toISOString().slice(0, 10)}_${Date.now()}.pdf`);
+  return true;
+}

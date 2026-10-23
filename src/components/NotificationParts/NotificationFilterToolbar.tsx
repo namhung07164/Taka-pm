@@ -115,7 +115,7 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
               Clear Filter <RotateCcw className="w-3 h-3" />
             </button>
           )}
-          <div className="relative flex-grow sm:flex-grow-0 sm:w-64">
+          <div className="relative flex-grow sm:flex-grow-0 sm:w-64 print:hidden hide-on-actual-print">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
@@ -136,7 +136,7 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 print:hidden hide-on-actual-print">
           {/* Proposal 2: Assignee Role Relevance (Assigned to Me vs All) */}
           <div className="flex bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#444446] p-1 shadow-sm">
             <button
@@ -227,7 +227,7 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
       </div>
 
       {/* Secondary Row: PM Category Pills + Priority Chips + Target Types + Stores */}
-      <div className="flex flex-wrap items-center gap-2 w-full pt-1 border-t border-slate-200/60 dark:border-[#333336]">
+      <div className="flex flex-wrap items-center gap-2 w-full pt-1 border-t border-slate-200/60 dark:border-[#333336] print:hidden hide-on-actual-print">
         {/* Project Management Category Quick Filters */}
         <div className="flex bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#444446] p-1 shadow-sm items-center flex-wrap gap-0.5">
           <button

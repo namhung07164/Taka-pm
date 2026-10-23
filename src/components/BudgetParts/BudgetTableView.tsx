@@ -4,6 +4,7 @@ import { BudgetTreeNode, BudgetSortConfig } from './budgetTypes';
 import { BudgetTableRow } from './BudgetTableRow';
 import { ResizableHeader } from '../ResizableHeader';
 import { useLanguage } from '../../lib/LanguageContext';
+import { useAppStore } from '../../store/useAppStore';
 import { cn } from '../../lib/utils';
 
 interface BudgetTableViewProps {
@@ -66,6 +67,8 @@ export function BudgetTableView({
   formatCurrency
 }: BudgetTableViewProps) {
   const { t } = useLanguage();
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
 
   const renderRows = (nodes: BudgetTreeNode[], depth = 0): React.ReactNode[] => {
     let rows: React.ReactNode[] = [];
@@ -104,7 +107,9 @@ export function BudgetTableView({
     return rows;
   };
 
-  const paginatedRoots = filteredRoots.slice(0, visibleCount);
+  const paginatedRoots = (isPrintPreview || isExportingPDF)
+    ? filteredRoots
+    : filteredRoots.slice(0, visibleCount);
 
   return (
     <div 

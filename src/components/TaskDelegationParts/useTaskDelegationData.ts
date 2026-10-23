@@ -23,6 +23,8 @@ export function useTaskDelegationData({
   const appUsers = useAppStore((state) => state.appUsers);
   const subAppUsers = useAppStore((state) => state.subAppUsers);
   const rawDelegationGroups = useAppStore((state) => state.delegationGroups);
+  const isPrintPreview = useAppStore((state) => state.isPrintPreview);
+  const isExportingPDF = useAppStore((state) => state.isExportingPDF);
 
   const groups = useMemo(() => {
     return [...rawDelegationGroups].sort(
@@ -325,7 +327,9 @@ export function useTaskDelegationData({
     const byProject = new Map<string, typeof visibleGroups>();
     const orphans: typeof visibleGroups = [];
 
-    const paginatedGroups = visibleGroups.slice(0, visibleCount);
+    const paginatedGroups = (isPrintPreview || isExportingPDF)
+      ? visibleGroups
+      : visibleGroups.slice(0, visibleCount);
 
     paginatedGroups.forEach((group) => {
       const p = resolveGroupParentProject(group, projects, tasks);
@@ -354,7 +358,7 @@ export function useTaskDelegationData({
       });
 
     return { orderedProjects, orphans };
-  }, [visibleGroups, visibleCount, projects, tasks]);
+  }, [visibleGroups, visibleCount, projects, tasks, isPrintPreview, isExportingPDF]);
 
   const isAllExpanded =
     expandedGroups.length >= visibleGroups.length &&

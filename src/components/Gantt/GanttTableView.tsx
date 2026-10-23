@@ -295,6 +295,7 @@ export function GanttTableView({
       {/* Top Synchronized Timeline Header */}
       <div
         ref={topScrollRef}
+        data-print-header="true"
         onScroll={handleTopScroll}
         className="overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#18181a] flex shrink-0"
       >
@@ -334,7 +335,7 @@ export function GanttTableView({
         {/* Left Side Resizable Divider Bar */}
         <div
           onMouseDown={startResizingSide}
-          className="absolute top-0 bottom-0 z-40 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors"
+          className="absolute top-0 bottom-0 z-40 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors print:hidden hide-on-actual-print"
           style={{ left: `${sideWidth - 1}px` }}
         />
 

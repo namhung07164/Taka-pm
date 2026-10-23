@@ -43,10 +43,16 @@ export function useDetailVirtualization({
     return { totalHeight: sum, rowOffsets: offsets };
   }, [flatTableRows]);
 
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
+
   const { startIndex, endIndex, paddingTop, paddingBottom } = useMemo(() => {
     const totalRows = flatTableRows.length;
     if (totalRows === 0) {
       return { startIndex: 0, endIndex: 0, paddingTop: 0, paddingBottom: 0 };
+    }
+    if (isPrintPreview || isExportingPDF) {
+      return { startIndex: 0, endIndex: totalRows, paddingTop: 0, paddingBottom: 0 };
     }
     let low = 0;
     let high = totalRows - 1;
@@ -87,7 +93,7 @@ export function useDetailVirtualization({
       paddingTop: topPad,
       paddingBottom: bottomPad,
     };
-  }, [rowOffsets, totalHeight, scrollTop, containerHeight, flatTableRows.length]);
+  }, [rowOffsets, totalHeight, scrollTop, containerHeight, flatTableRows.length, isPrintPreview, isExportingPDF]);
 
   const handleTableScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;

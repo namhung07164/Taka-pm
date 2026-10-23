@@ -162,7 +162,7 @@ export function GeneralTab({ onProjectClick }: GeneralTabProps) {
       )}
 
       {/* Footer Info */}
-      <div className="mt-4 text-xs text-slate-500 dark:text-[#a3a3a3] text-right flex justify-between items-center px-1 shrink-0">
+      <div className="mt-4 text-xs text-slate-500 dark:text-[#a3a3a3] text-right flex justify-between items-center px-1 shrink-0 print:hidden hide-on-actual-print">
         <span>* Data is synced to Cloud. Header is sticky.</span>
         <span>{t('Total')}: <span className="font-bold text-slate-700 dark:text-[#c3c3c3]">{filteredProjects.length}</span> {t('')}</span>
       </div>

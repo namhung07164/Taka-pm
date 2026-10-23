@@ -127,7 +127,7 @@ export const TaskDelegationFilterToolbar = React.memo(function TaskDelegationFil
           ))}
       </datalist>
 
-      <div className="flex flex-col md:flex-row flex-wrap gap-3 p-4 border-b border-slate-200 dark:border-[#444446] items-start md:items-center justify-between shrink-0 bg-slate-50 dark:bg-[#1e1e20]/50 rounded-t-xl">
+      <div className="flex flex-col md:flex-row flex-wrap gap-3 p-4 border-b border-slate-200 dark:border-[#444446] items-start md:items-center justify-between shrink-0 bg-slate-50 dark:bg-[#1e1e20]/50 rounded-t-xl print:hidden hide-on-actual-print">
         <div className="flex items-center gap-3 w-full md:w-auto">
           {canWrite && (
             <button

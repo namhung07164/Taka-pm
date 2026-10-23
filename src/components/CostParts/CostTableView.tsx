@@ -4,6 +4,7 @@ import { CostColWidths, PaidDateMatches } from './costTypes';
 import { CostTableRow } from './CostTableRow';
 import { CostTableHeader } from './CostTableHeader';
 import { CostTableTotalRow } from './CostTableTotalRow';
+import { useAppStore } from '../../store/useAppStore';
 
 interface CostTableViewProps {
   filteredProjectsForDisplay: Project[];
@@ -83,6 +84,12 @@ export const CostTableView = React.memo(function CostTableView({
   getGroupCostsForProject,
   getCostPaidMatches,
 }: CostTableViewProps) {
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
+  const displayedProjects = (isPrintPreview || isExportingPDF)
+    ? filteredProjectsForDisplay
+    : filteredProjectsForDisplay.slice(0, visibleCount);
+
   const tableWidth = visibleColumns.reduce(
     (acc, col) => acc + (colWidths[col as keyof CostColWidths] || 100),
     0
@@ -121,7 +128,7 @@ export const CostTableView = React.memo(function CostTableView({
           />
 
           {/* Progressive Rendered Project Groups & Detail Rows */}
-          {filteredProjectsForDisplay.slice(0, visibleCount).map((p, pIdx) => {
+          {displayedProjects.map((p, pIdx) => {
             const pDerivedYear = p.year
               ? p.year
               : p.start
@@ -170,8 +177,8 @@ export const CostTableView = React.memo(function CostTableView({
             );
           })}
 
-          {visibleCount < filteredProjectsForDisplay.length && (
-            <tr>
+          {visibleCount < filteredProjectsForDisplay.length && !isPrintPreview && !isExportingPDF && (
+            <tr className="print:hidden hide-on-actual-print">
               <td colSpan={visibleColumns.length} className="py-4 text-center">
                 <button
                   onClick={() => setVisibleCount((prev) => prev + 30)}

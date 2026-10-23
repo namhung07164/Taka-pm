@@ -43,6 +43,8 @@ export function useGeneralData({
   const pinnedProjects = useAppStore(state => state.pinnedProjects);
   const setPinnedProjects = useAppStore(state => state.setPinnedProjects);
   const theme = useAppStore(state => state.theme);
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
 
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
@@ -274,8 +276,9 @@ export function useGeneralData({
   }, [projects, deferredSearchTerm, globalYearFilter, effectiveStore, globalLocationFilter, statusFilter, pinnedProjects, sortConfig]);
 
   const paginatedProjects = useMemo(() => {
+    if (isPrintPreview || isExportingPDF) return filteredProjects;
     return filteredProjects.slice(0, visibleCount);
-  }, [filteredProjects, visibleCount]);
+  }, [filteredProjects, visibleCount, isPrintPreview, isExportingPDF]);
 
   return {
     globalYearFilter,

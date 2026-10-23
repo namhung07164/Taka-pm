@@ -34,9 +34,13 @@ export function useDetailFlatRows({
   taskCodeMap,
 }: UseDetailFlatRowsParams) {
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
   const flatTableRows = useMemo<DetailTableRow[]>(() => {
     const rows: DetailTableRow[] = [];
-    const visibleProjects = filteredProjects.slice(0, visibleCount);
+    const visibleProjects = (isPrintPreview || isExportingPDF)
+      ? filteredProjects
+      : filteredProjects.slice(0, visibleCount);
 
     visibleProjects.forEach((p, pIdx) => {
       const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
@@ -240,7 +244,7 @@ export function useDetailFlatRows({
     });
 
     return rows;
-  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo, sortConfig, expandedCodes, expandedModularTasks, delegationGroups, lowerSearchTerm, taskCodeMap, globalYearFilter]);
+  }, [filteredProjects, visibleCount, isPrintPreview, isExportingPDF, projectInfoMap, getProjectInfo, sortConfig, expandedCodes, expandedModularTasks, delegationGroups, lowerSearchTerm, taskCodeMap, globalYearFilter]);
 
   return flatTableRows;
 }

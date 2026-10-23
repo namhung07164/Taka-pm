@@ -1,6 +1,11 @@
 import { Project } from '../types';
 import { getStatus } from './utils';
 import { drawPdfFilterHeader } from './printFilterHelper';
+import {
+  PX_PER_MM,
+  computePrintGridMetrics,
+  exportLayoutPlanToPdf,
+} from './exportPdfParts/pdfTableSlicer';
 
 export interface ExportToExcelOptions {
   activeTab: string;
@@ -58,8 +63,6 @@ export interface ExportToPdfOptions {
   printWatermark: string;
 }
 
-const PX_PER_MM = 3.779527559; // Standard 96 DPI CSS pixel-to-millimeter factor
-
 export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
   const {
     activeTab,
@@ -80,125 +83,21 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
 
   // Fast path for Layout Plan Canvas (Fit to full page)
   if (activeTab === 'layout') {
-    let dataUrl: string | null = null;
-    let imgW = 1200;
-    let imgH = 800;
-
-    const exportFn = (window as any).__taka_layout_export;
-    if (typeof exportFn === 'function') {
-      const res = exportFn(printDpi || 200);
-      if (res && res.dataUrl) {
-        dataUrl = res.dataUrl;
-        imgW = res.width;
-        imgH = res.height;
-      }
+    const exported = await exportLayoutPlanToPdf({
+      orientation,
+      format,
+      printOrientation,
+      printDpi,
+      printScaleMode,
+      printFilterHeader,
+      printFilterContext,
+      printDate,
+      printWatermark,
+      isDark,
+    });
+    if (!exported) {
+      window.print();
     }
-
-    if (!dataUrl) {
-      const stage = (window as any).__taka_layout_stage;
-      const stageCanvas = document.querySelector('#live-layout-canvas-container canvas') as HTMLCanvasElement;
-      if (stage && typeof stage.toDataURL === 'function') {
-        const exportRatio = Math.min(2.0, Math.max(1.0, printDpi / 96));
-        dataUrl = stage.toDataURL({ pixelRatio: exportRatio, mimeType: 'image/jpeg', quality: 0.90 });
-        imgW = (stage.width ? stage.width() : 1200) * exportRatio;
-        imgH = (stage.height ? stage.height() : 800) * exportRatio;
-      } else if (stageCanvas) {
-        dataUrl = stageCanvas.toDataURL('image/jpeg', 0.90);
-        imgW = stageCanvas.width;
-        imgH = stageCanvas.height;
-      }
-    }
-
-    if (dataUrl) {
-      const { jsPDF } = await import('jspdf');
-      const pdf = new jsPDF({ orientation, unit: 'mm', format });
-
-      const pdfPageWidth = pdf.internal.pageSize.getWidth();
-      const pdfPageHeight = pdf.internal.pageSize.getHeight();
-      
-      // Tight outer margin (2mm) for near 100% full paper coverage
-      const margin = 2;
-      let usableWidth = pdfPageWidth - margin * 2;
-      let usableHeight = pdfPageHeight - margin * 2;
-      let topOffset = margin;
-
-      if (printFilterHeader) {
-        drawPdfFilterHeader(pdf, printFilterContext, pdfPageWidth, margin, isDark);
-        topOffset += 8;
-        usableHeight -= 8;
-      }
-
-      if (printDate) {
-        usableHeight -= 3.5;
-      }
-
-      const isFillPage = printScaleMode === 'fill-page';
-
-      let targetW = usableWidth;
-      let targetH = usableHeight;
-      let xPos = margin;
-      let yPos = topOffset;
-
-      if (isFillPage) {
-        targetW = usableWidth;
-        targetH = usableHeight;
-        xPos = margin;
-        yPos = topOffset;
-      } else {
-        const imgAspect = imgW / imgH;
-        const pageAspect = usableWidth / usableHeight;
-
-        if (imgAspect > pageAspect) {
-          // Fits width exactly
-          targetW = usableWidth;
-          targetH = usableWidth / imgAspect;
-        } else {
-          // Fits height exactly
-          targetH = usableHeight;
-          targetW = usableHeight * imgAspect;
-        }
-
-        xPos = margin + (usableWidth - targetW) / 2;
-        yPos = topOffset + (usableHeight - targetH) / 2;
-      }
-
-      pdf.addImage(dataUrl, 'JPEG', xPos, yPos, targetW, targetH, undefined, 'FAST');
-
-      // Watermark
-      if (printWatermark && printWatermark !== 'none') {
-        try {
-          pdf.saveGraphicsState();
-          pdf.setGState(new (pdf as any).GState({ opacity: 0.12 }));
-          pdf.setFontSize(printOrientation === 'landscape' ? 52 : 38);
-          pdf.setFont('helvetica', 'bold');
-          pdf.setTextColor(150, 150, 150);
-          pdf.text(
-            printWatermark.toUpperCase(),
-            pdfPageWidth / 2,
-            pdfPageHeight / 2,
-            { align: 'center', angle: 45 }
-          );
-          pdf.restoreGraphicsState();
-        } catch {
-          // Fallback
-        }
-      }
-
-      // Footer
-      const footerY = pdfPageHeight - 3;
-      pdf.setFontSize(7.5);
-      pdf.setTextColor(130, 130, 130);
-      let footerText = `Takashimaya PM • Layout Plan (${printFilterContext?.storeDisplay || 'HCM'} - ${printFilterContext?.yearDisplay || 'All'})`;
-      if (printDate) {
-        footerText += ` • Printed: ${new Date().toLocaleString()}`;
-      }
-      pdf.text(footerText, margin, footerY);
-
-      pdf.save(`layout_plan_${new Date().toISOString().slice(0, 10)}_${Date.now()}.pdf`);
-      return;
-    }
-
-    window.print();
     return;
   }
 
@@ -210,14 +109,14 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
 
   const pdfPageWidth = pdf.internal.pageSize.getWidth();
   const pdfPageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 10;
-  const targetWidthMm = pdfPageWidth - margin * 2;
-  const targetHeightMm = pdfPageHeight - margin * 2;
-
-  const currentScale = Math.max(0.1, Math.min(2.0, (printScale || 100) / 100));
+  const sideMargin = 8;
+  const topMargin = printFilterHeader ? 10.5 : 8;
+  const bottomMargin = 9;
+  const targetWidthMm = pdfPageWidth - sideMargin * 2;
+  const targetHeightMm = pdfPageHeight - topMargin - bottomMargin;
 
   // Yield to avoid main thread freeze
-  await new Promise(resolve => setTimeout(resolve, 30));
+  await new Promise(resolve => setTimeout(resolve, 40));
 
   for (let i = 0; i < pages.length; i++) {
     const page = pages[i] as HTMLElement;
@@ -254,44 +153,39 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
     wrapper.style.width = `${naturalWidth}px`;
     wrapper.style.height = `${naturalHeight}px`;
 
-    // Calculate row boundaries for table row-split safety
-    const validBoundaries = [0];
-    const wrapperRect = wrapper.getBoundingClientRect();
-    const thead = wrapper.querySelector('thead');
-    let headerHeight = 0;
-    if (thead) {
-      const theadRect = thead.getBoundingClientRect();
-      headerHeight = Math.max(0, theadRect.bottom - wrapperRect.top);
-    }
-
-    const trElements = Array.from(wrapper.querySelectorAll('tbody tr'));
-    trElements.forEach(tr => {
-      validBoundaries.push(tr.getBoundingClientRect().bottom - wrapperRect.top);
+    const gridMetrics = computePrintGridMetrics({
+      wrapper,
+      naturalWidth,
+      naturalHeight,
+      targetWidthMm,
+      targetHeightMm,
+      topMarginMm: topMargin,
+      printScaleMode,
+      printScale,
+      domScaleFactor: 1,
     });
-    validBoundaries.push(naturalHeight);
-    validBoundaries.sort((a, b) => a - b);
 
-    // Compute exact DPI and memory-safe pixel ratio
-    // Target physical dimension per page: targetWidthMm
-    // Desired output width for table across pages:
-    const usableWidthPx = (targetWidthMm * PX_PER_MM) / currentScale;
-    const usableHeightPx = (targetHeightMm * PX_PER_MM) / currentScale;
-    const cols = Math.max(1, Math.ceil((naturalWidth - 2) / usableWidthPx));
+    const {
+      currentScale,
+      usableWidthPx,
+      cols,
+      headerTopPx,
+      headerHeight,
+      pageBreaks,
+    } = gridMetrics;
 
     // Calculate optimal pixelRatio for requested DPI without memory bloat
     const desiredDpi = Math.max(96, Math.min(300, printDpi || 150));
-    // Physical print resolution ratio relative to 96 DPI
     let effectivePixelRatio = desiredDpi / 96;
 
-    // Safety cap: max 6,000,000 pixels on master canvas to guarantee instant rendering & 0 lag
-    const MAX_CANVAS_PIXELS = 6_000_000;
+    // Safety cap: max 6,500,000 pixels on master canvas to guarantee instant rendering & 0 lag
+    const MAX_CANVAS_PIXELS = 6_500_000;
     const requestedPixels = naturalWidth * effectivePixelRatio * naturalHeight * effectivePixelRatio;
     if (requestedPixels > MAX_CANVAS_PIXELS) {
       effectivePixelRatio = Math.sqrt(MAX_CANVAS_PIXELS / (naturalWidth * naturalHeight));
     }
     effectivePixelRatio = Math.max(0.65, Math.min(2.0, effectivePixelRatio));
 
-    // High-speed lightweight DOM capture (skipFonts = true eliminates heavy font blocking)
     const htmlToImage = await import('html-to-image');
     const canvas = await htmlToImage.toCanvas(wrapper, {
       width: naturalWidth,
@@ -299,43 +193,19 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       style: {
         transform: 'none',
         width: `${naturalWidth}px`,
-        height: `${naturalHeight}px`
+        height: `${naturalHeight}px`,
       },
       pixelRatio: effectivePixelRatio,
       backgroundColor: isDark ? '#1e1e20' : '#ffffff',
-      skipFonts: true, // Crucial for instant rendering & avoiding lag
+      skipFonts: true,
       cacheBust: false,
       filter: (node) => {
         if (node.classList && (node.classList.contains('hide-on-actual-print') || node.classList.contains('print:hidden'))) {
           return false;
         }
         return true;
-      }
+      },
     });
-
-    // Extract table header slice for multi-row repeating headers
-    let headerDataUrl: string | null = null;
-    const headerScaledHeight = Math.round(headerHeight * effectivePixelRatio);
-    if (headerHeight > 0 && headerScaledHeight > 0 && headerHeight < naturalHeight) {
-      try {
-        const headerCanvas = document.createElement('canvas');
-        headerCanvas.width = canvas.width;
-        headerCanvas.height = headerScaledHeight;
-        const hCtx = headerCanvas.getContext('2d', { alpha: false });
-        if (hCtx) {
-          hCtx.fillStyle = isDark ? '#1e1e20' : '#ffffff';
-          hCtx.fillRect(0, 0, headerCanvas.width, headerCanvas.height);
-          hCtx.drawImage(
-            canvas,
-            0, 0, canvas.width, headerScaledHeight,
-            0, 0, headerCanvas.width, headerCanvas.height
-          );
-          headerDataUrl = headerCanvas.toDataURL('image/jpeg', 0.85);
-        }
-      } catch (err) {
-        console.warn('Header slice failed:', err);
-      }
-    }
 
     // Restore wrapper DOM style immediately
     wrapper.style.transform = originalTransform;
@@ -349,55 +219,16 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       el.style.display = display;
     });
 
-    // Calculate vertical page breaks based on row boundaries
     const headerPdfHeight = (headerHeight * currentScale) / PX_PER_MM;
-    const pageBreaks: { domStartY: number; domEndY: number; actualPdfStartY: number }[] = [];
-    let domStartY = 0;
+    const headerSrcY = Math.max(0, Math.floor(headerTopPx * effectivePixelRatio));
+    const headerSrcH = Math.min(canvas.height - headerSrcY, Math.ceil(headerHeight * effectivePixelRatio));
 
-    while (domStartY < naturalHeight - 0.5) {
-      let domEndY_theoretical: number;
-      let actualPdfStartY: number;
-
-      if (pageBreaks.length === 0) {
-        domEndY_theoretical = domStartY + usableHeightPx;
-        actualPdfStartY = margin;
-      } else {
-        domEndY_theoretical = domStartY + usableHeightPx - headerHeight;
-        actualPdfStartY = margin + headerPdfHeight;
-      }
-
-      if (domEndY_theoretical >= naturalHeight) {
-        pageBreaks.push({
-          domStartY,
-          domEndY: naturalHeight,
-          actualPdfStartY
-        });
-        break;
-      }
-
-      let breakY = domStartY;
-      for (let j = 0; j < validBoundaries.length; j++) {
-        if (validBoundaries[j] > domStartY && validBoundaries[j] <= domEndY_theoretical + 1) {
-          breakY = validBoundaries[j];
-        }
-      }
-
-      if (breakY === domStartY) {
-        breakY = domEndY_theoretical;
-      }
-
-      pageBreaks.push({
-        domStartY,
-        domEndY: breakY,
-        actualPdfStartY
-      });
-
-      domStartY = breakY;
-    }
-
-    // Per-page canvas tile slicing (Ultra-lightweight memory, instant PDF build)
+    // Per-page canvas tile slicing
     const tileCanvas = document.createElement('canvas');
     const tileCtx = tileCanvas.getContext('2d', { alpha: false });
+    const headerTileCanvas = document.createElement('canvas');
+    const headerTileCtx = headerTileCanvas.getContext('2d', { alpha: false });
+
     const totalPages = pageBreaks.length * cols;
     let pageCount = 0;
 
@@ -406,7 +237,7 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       const domSliceH = pb.domEndY - pb.domStartY;
 
       for (let c = 0; c < cols; c++) {
-        if (pageCount > 0) {
+        if (pageCount > 0 || i > 0) {
           pdf.addPage(format, orientation);
         }
 
@@ -419,32 +250,54 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
         const srcW = Math.min(canvas.width - srcX, Math.ceil(domSliceW * effectivePixelRatio));
         const srcH = Math.min(canvas.height - srcY, Math.ceil(domSliceH * effectivePixelRatio));
 
-        const slicePdfW = (domSliceW * currentScale) / PX_PER_MM;
-        const slicePdfH = (domSliceH * currentScale) / PX_PER_MM;
+        const slicePdfW =
+          printScaleMode === 'fill-page'
+            ? targetWidthMm
+            : (domSliceW * currentScale) / PX_PER_MM;
+        const slicePdfH =
+          printScaleMode === 'fill-page'
+            ? targetHeightMm
+            : (domSliceH * currentScale) / PX_PER_MM;
 
         if (srcW > 0 && srcH > 0 && tileCtx) {
           tileCanvas.width = srcW;
           tileCanvas.height = srcH;
           tileCtx.fillStyle = isDark ? '#1e1e20' : '#ffffff';
           tileCtx.fillRect(0, 0, srcW, srcH);
-          tileCtx.drawImage(
-            canvas,
-            srcX, srcY, srcW, srcH,
-            0, 0, srcW, srcH
-          );
+          tileCtx.drawImage(canvas, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
 
-          const tileDataUrl = tileCanvas.toDataURL('image/jpeg', 0.86);
-          pdf.addImage(tileDataUrl, 'JPEG', margin, pb.actualPdfStartY, slicePdfW, slicePdfH, undefined, 'FAST');
+          const tileDataUrl = tileCanvas.toDataURL('image/jpeg', 0.88);
+          pdf.addImage(tileDataUrl, 'JPEG', sideMargin, pb.actualPdfStartY, slicePdfW, slicePdfH, undefined, 'FAST');
         }
 
-        // Add repeated header on subsequent rows (r > 0)
-        if (r > 0 && headerDataUrl) {
-          pdf.addImage(headerDataUrl, 'JPEG', margin, margin, slicePdfW, headerPdfHeight, undefined, 'FAST');
+        // Add repeated header on subsequent vertical pages (r > 0), horizontally sliced to match column c
+        if (r > 0 && headerHeight > 0 && headerSrcH > 0 && srcW > 0 && headerTileCtx && pb.actualPdfStartY > topMargin) {
+          try {
+            headerTileCanvas.width = srcW;
+            headerTileCanvas.height = headerSrcH;
+            headerTileCtx.fillStyle = isDark ? '#1e1e20' : '#ffffff';
+            headerTileCtx.fillRect(0, 0, srcW, headerSrcH);
+            headerTileCtx.drawImage(
+              canvas,
+              srcX,
+              headerSrcY,
+              srcW,
+              headerSrcH,
+              0,
+              0,
+              srcW,
+              headerSrcH
+            );
+            const hDataUrl = headerTileCanvas.toDataURL('image/jpeg', 0.88);
+            pdf.addImage(hDataUrl, 'JPEG', sideMargin, topMargin, slicePdfW, headerPdfHeight, undefined, 'FAST');
+          } catch (err) {
+            console.warn('Header slice failed:', err);
+          }
         }
 
         // Draw Filter Header
         if (printFilterHeader) {
-          drawPdfFilterHeader(pdf, printFilterContext, pdfPageWidth, margin, isDark);
+          drawPdfFilterHeader(pdf, printFilterContext, pdfPageWidth, sideMargin, isDark);
         }
 
         // Draw Watermark
@@ -468,13 +321,13 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
         }
 
         // Footer & Status indicators
-        const footerY = pdfPageHeight - 4;
+        const footerY = pdfPageHeight - 3.5;
         pdf.setFontSize(7.5);
         pdf.setTextColor(130, 130, 130);
         const footerLeftText = printDate
           ? `Page ${pageCount + 1} of ${totalPages} • Printed: ${new Date().toLocaleString()}`
           : `Page ${pageCount + 1} of ${totalPages}`;
-        pdf.text(footerLeftText, margin, footerY);
+        pdf.text(footerLeftText, sideMargin, footerY);
 
         if (activeTab === 'gantt') {
           const legends: [string, number, [number, number, number]][] = [
@@ -482,7 +335,7 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
             ["In Process", 24, [59, 130, 246]],
             ["Upcoming", 22, [100, 116, 139]],
           ];
-          let currentLegendX = pdfPageWidth - margin;
+          let currentLegendX = pdfPageWidth - sideMargin;
           for (const [label, offset, [rCol, gCol, bCol]] of legends) {
             currentLegendX -= offset;
             pdf.text(label, currentLegendX, footerY);
@@ -497,3 +350,4 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
 
   pdf.save(`export_${activeTab}_${Date.now()}.pdf`);
 }
+
