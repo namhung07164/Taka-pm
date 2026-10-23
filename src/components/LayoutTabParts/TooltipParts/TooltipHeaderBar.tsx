@@ -2,7 +2,8 @@ import React from 'react';
 import { 
   X, 
   Crosshair, 
-  Image as ImageIcon 
+  Image as ImageIcon,
+  FolderKanban
 } from 'lucide-react';
 import { QuickNavButton } from '../../QuickNavButton';
 import { Project } from '../../../types';
@@ -19,6 +20,9 @@ interface TooltipHeaderBarProps {
   showImagePanel: boolean;
   setShowImagePanel: React.Dispatch<React.SetStateAction<boolean>>;
   targetProject: Project;
+  p?: Project;
+  canWrite?: boolean;
+  onEditProject?: (project: Project, isReadOnly?: boolean, tab?: 'details' | 'chat' | 'delegation') => void;
   unitCode: string;
   unitName: string;
   onFocusUnit?: (unitName: string) => void;
@@ -38,6 +42,9 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
   showImagePanel,
   setShowImagePanel,
   targetProject,
+  p,
+  canWrite = false,
+  onEditProject,
   unitCode,
   unitName,
   onFocusUnit,
@@ -78,7 +85,7 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
         )}
       </div>
 
-      {/* Right: Actions (Image Gallery Toggle, Quick Nav, Focus, Close) */}
+      {/* Right: Actions (Image Gallery Toggle, Project Details Modal, Quick Nav, Focus, Close) */}
       <div className="flex items-center gap-1 shrink-0 ml-auto">
         {/* Recognizable Image & Link Gallery Button */}
         <button
@@ -111,6 +118,26 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
           )}
         </button>
 
+        {/* Project Details Modal Button - Positioned right next to Image Gallery Button */}
+        {(p || targetProject) && onEditProject && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (p) {
+                onEditProject(p, !canWrite, 'details');
+              } else if (targetProject) {
+                onEditProject(targetProject, !canWrite, 'details');
+              }
+            }}
+            className="p-1 rounded-md bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-[#333336] dark:hover:text-[#8ab4f8] border border-slate-200 dark:border-[#444446] transition-all active:scale-95 touch-manipulation cursor-pointer flex items-center justify-center shrink-0"
+            title="Open Project Details Modal"
+            aria-label="Open Project Details Modal"
+          >
+            <FolderKanban className="w-3.5 h-3.5" />
+          </button>
+        )}
+
         <QuickNavButton 
           project={targetProject} 
           title={`Quick Navigator (${unitCode})`}
@@ -134,7 +161,7 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          className="p-1 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           title="Close tooltip"
         >
           <X className="w-4 h-4" />
