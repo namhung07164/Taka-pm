@@ -11,6 +11,8 @@ import { getLinkCodesValidationError } from './projectModalTypes';
 import { useProjectModalMutations } from './useProjectModalMutations';
 import { hydrateDelegationsForProjects, hydrateDelegationsFromLocal, hydrateTasksForProjects } from '../../lib/backgroundSyncWorker';
 import { ensureProjectTasksLoaded } from '../../lib/taskStateService';
+import { resolveMatchedUnitSizeM2 } from '../../lib/unitSizeResolver';
+import { useDataStore } from '../PictureMapping/DataContext';
 
 interface UseProjectModalDataParams {
   isOpen: boolean;
@@ -34,11 +36,15 @@ export function useProjectModalData({
   const appUsers = useAppStore(state => state.appUsers);
   const subAppUsers = useAppStore(state => state.subAppUsers);
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const mapUnits = useDataStore(state => state.mapUnits);
+  const mapVersions = useDataStore(state => state.mapVersions);
+  const storeLocationData = useDataStore(state => state.storeLocationData);
 
   const [activeTab, setActiveTab] = useState<'details' | 'chat' | 'delegation'>(initialTab);
   const [isAddingLocation, setIsAddingLocation] = useState(false);
   const [newLocation, setNewLocation] = useState("");
   const yearRef = useRef<HTMLInputElement>(null);
+  const lastAutoUnitSizeRef = useRef<number | undefined>(undefined);
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -100,6 +106,16 @@ export function useProjectModalData({
     return getLinkCodesValidationError(rawLink, String(formData.code || ''), project?.id, projects, formData.year, formData.store);
   }, [formData.linkCodes, formData.code, formData.year, formData.store, project?.id, projects]);
 
+  const matchedUnitSizeInfo = useMemo(() => {
+    return resolveMatchedUnitSizeM2({
+      code: formData.code,
+      linkCodes: formData.linkCodes,
+      store: formData.store,
+      location: formData.location,
+      year: formData.year,
+    });
+  }, [formData.code, formData.linkCodes, formData.store, formData.location, formData.year, mapUnits, mapVersions, storeLocationData]);
+
   const { isSubmitting, handleSubmit, handleDelete } = useProjectModalMutations({
     project,
     formData,
@@ -133,11 +149,25 @@ export function useProjectModalData({
 
   useEffect(() => {
     if (project) {
+      const autoMatched = resolveMatchedUnitSizeM2({
+        code: project.code,
+        linkCodes: project.linkCodes ?? project.code,
+        store: project.store,
+        location: project.location,
+        year: project.year,
+      });
+      const initialSize =
+        project.sizeM2 !== undefined && project.sizeM2 !== null && project.sizeM2 > 0
+          ? project.sizeM2
+          : autoMatched.sizeM2;
+      lastAutoUnitSizeRef.current = autoMatched.sizeM2;
       setFormData({
         ...project,
-        linkCodes: project.linkCodes ?? project.code ?? ''
+        linkCodes: project.linkCodes ?? project.code ?? '',
+        ...(initialSize !== undefined ? { sizeM2: initialSize } : {}),
       });
     } else {
+      lastAutoUnitSizeRef.current = undefined;
       let defaultStore = 'HCM';
       if (currentUser?.role !== 'admin') {
         const allowedStores: string[] = [];
@@ -184,6 +214,23 @@ export function useProjectModalData({
     }
   }, [project, isOpen, currentUser, locations]);
 
+  // Auto-sync Size (m²) from matched Picture Mapping unit(s) for the selected version/year
+  useEffect(() => {
+    if (!isOpen) return;
+    const nextAutoSize = matchedUnitSizeInfo.sizeM2;
+    if (nextAutoSize !== undefined && nextAutoSize > 0) {
+      setFormData(prev => {
+        const cur = prev.sizeM2;
+        if (cur === undefined || cur === null || cur === 0 || cur === lastAutoUnitSizeRef.current) {
+          lastAutoUnitSizeRef.current = nextAutoSize;
+          if (cur === nextAutoSize) return prev;
+          return { ...prev, sizeM2: nextAutoSize };
+        }
+        return prev;
+      });
+    }
+  }, [isOpen, matchedUnitSizeInfo.sizeM2]);
+
   const handleAddNewLocation = async () => {
     if (!newLocation.trim()) {
       setIsAddingLocation(false);
@@ -229,6 +276,7 @@ export function useProjectModalData({
     confirmModal,
     setConfirmModal,
     yearRef,
+    matchedUnitSizeInfo,
     handleAddNewLocation,
     handleSubmit,
     handleDelete

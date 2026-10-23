@@ -129,6 +129,7 @@ export function useLayoutAggregates({
     const projectLinkData = useDataStore.getState().projectLink || [];
     return buildAggregatedUnitData({
       units,
+      version,
       summaryData,
       enrichedProjects,
       tasks,
@@ -142,7 +143,7 @@ export function useLayoutAggregates({
       restrictedProjectCodes,
       hasStoredUnitImages,
     });
-  }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, targetLoc, effectiveLayoutYear, delegationGroups, layoutTooltipVisibility, restrictedProjectCodes, hasStoredUnitImages, unitImagesRev]);
+  }, [units, version, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, targetLoc, effectiveLayoutYear, delegationGroups, layoutTooltipVisibility, restrictedProjectCodes, hasStoredUnitImages, unitImagesRev]);
 
   const { summaryMap: dynamicSummaryMap } = useDynamicUnitSummary({
     units,

@@ -14,6 +14,7 @@ import { useAppStore } from '../../../../store/useAppStore';
 import { useDynamicUnitSummary } from '../../lib/dynamicSummaryEngine';
 import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
 import { DebouncedSearchInput } from '../../../DebouncedSearchInput';
+import { getUnitEffectiveSizeM2 } from '../../../../lib/unitSizeResolver';
 
 import { extractR2Key, resolveR2UrlToHttp } from '../../lib/r2Upload';
 import { deleteR2StorageFiles } from '../../../../lib/r2StorageUtils';
@@ -1849,15 +1850,83 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
         
         {selectedId ? (
             <div className="space-y-4">
-                <div className="space-y-1">
-                    <label className="text-[10px] uppercase text-slate-500 font-bold">Unit Name</label>
-                    <SearchableSelect 
-                        value={selectedUnit?.name || ''}
-                        onChange={(val) => {
-                            handleSetUnitsWithHistory(units.map(u => u.id === selectedId ? { ...u, name: val } : u));
-                        }}
-                        options={masterUnits.map(u => ({ value: u.unit, label: `${u.unit} (F${u.floor})` }))}
-                    />
+                <div className="grid grid-cols-12 gap-2 items-end">
+                    <div className="col-span-8 space-y-1">
+                        <label className="text-[10px] uppercase text-slate-500 font-bold block">Unit Name</label>
+                        <SearchableSelect 
+                            value={selectedUnit?.name || ''}
+                            onChange={(val) => {
+                                const defaultExcelSize = Number(String(summaryMap.get(val)?.size ?? '').replace(/,/g, ''));
+                                const hasDefaultSize = !isNaN(defaultExcelSize) && defaultExcelSize > 0;
+                                handleSetUnitsWithHistory(units.map(u => {
+                                    if (u.id !== selectedId) return u;
+                                    const nextSize = (u.sizeM2 !== undefined && u.sizeM2 > 0)
+                                        ? u.sizeM2
+                                        : (hasDefaultSize ? defaultExcelSize : u.sizeM2);
+                                    return {
+                                        ...u,
+                                        name: val,
+                                        ...(nextSize !== undefined ? { sizeM2: nextSize, size: nextSize } : {}),
+                                    };
+                                }));
+                            }}
+                            options={masterUnits.map(u => ({ value: u.unit, label: `${u.unit} (F${u.floor})` }))}
+                        />
+                    </div>
+                    <div className="col-span-4 space-y-1">
+                        <label className="text-[10px] uppercase text-slate-500 font-bold block">Size (m²)</label>
+                        <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            placeholder="m²"
+                            value={(() => {
+                                const eff = getUnitEffectiveSizeM2(
+                                    selectedUnit,
+                                    activeVersion,
+                                    selectedUnit?.name ? summaryMap.get(selectedUnit.name)?.size : undefined
+                                );
+                                return eff > 0 ? eff : '';
+                            })()}
+                            onChange={(e) => {
+                                const raw = e.target.value.trim();
+                                const parsed = raw === '' ? undefined : parseFloat(raw);
+                                const numVal = parsed !== undefined && !isNaN(parsed) && parsed >= 0 ? parsed : undefined;
+                                const updatedUnits = units.map(u =>
+                                    u.id === selectedId ? { ...u, sizeM2: numVal, size: numVal } : u
+                                );
+                                handleSetUnitsWithHistory(updatedUnits);
+                                if (activeVersionId && selectedUnit) {
+                                    const uNameKey = String(selectedUnit.name || '').trim().toUpperCase();
+                                    setVersions(versions.map(v => {
+                                        if (v.id !== activeVersionId) return v;
+                                        const nextUnitSizes = { ...(v.unitSizes || {}) };
+                                        if (numVal !== undefined && numVal > 0) {
+                                            nextUnitSizes[selectedUnit.id] = numVal;
+                                            if (uNameKey) nextUnitSizes[uNameKey] = numVal;
+                                        } else {
+                                            delete nextUnitSizes[selectedUnit.id];
+                                            if (uNameKey) delete nextUnitSizes[uNameKey];
+                                        }
+                                        return {
+                                            ...v,
+                                            unitSizes: nextUnitSizes,
+                                            ...(Array.isArray(v.mapUnits) && v.mapUnits.length > 0
+                                                ? {
+                                                    mapUnits: v.mapUnits.map(vu =>
+                                                        (vu.id === selectedUnit.id || (uNameKey && String(vu.name || '').trim().toUpperCase() === uNameKey))
+                                                            ? { ...vu, sizeM2: numVal, size: numVal }
+                                                            : vu
+                                                    )
+                                                }
+                                                : {}),
+                                        };
+                                    }));
+                                }
+                            }}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-white font-mono outline-none focus:border-brand-500 transition-colors"
+                        />
+                    </div>
                 </div>
 
                 <div className="flex items-center justify-between bg-slate-950 p-3 rounded-xl border border-slate-800">
@@ -1941,7 +2010,21 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                             }
                         }}
                     >
-                        <span className="truncate max-w-[120px]">{unit.name}</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="truncate max-w-[100px]">{unit.name}</span>
+                            {(() => {
+                                const uSize = getUnitEffectiveSizeM2(
+                                    unit,
+                                    activeVersion,
+                                    unit.name ? summaryMap.get(unit.name)?.size : undefined
+                                );
+                                return uSize > 0 ? (
+                                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold shrink-0">
+                                        {uSize}m²
+                                    </span>
+                                ) : null;
+                            })()}
+                        </div>
                         <div className="flex items-center gap-1">
                              <button 
                                 onClick={(e) => {

@@ -39,6 +39,7 @@ export function ProjectModal(props: ProjectModalProps) {
     confirmModal,
     setConfirmModal,
     yearRef,
+    matchedUnitSizeInfo,
     handleAddNewLocation,
     handleSubmit,
     handleDelete
@@ -98,6 +99,7 @@ export function ProjectModal(props: ProjectModalProps) {
                 handleDelete={handleDelete}
                 onClose={onClose}
                 yearRef={yearRef}
+                matchedUnitSizeInfo={matchedUnitSizeInfo}
               />
             )}
 

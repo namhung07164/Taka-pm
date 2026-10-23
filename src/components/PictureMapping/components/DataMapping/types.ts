@@ -22,6 +22,8 @@ export interface UnitShape {
   locked?: boolean;
   store?: string;
   location?: string;
+  size?: number;
+  sizeM2?: number;
 }
 
 export interface GroupRule {
@@ -54,4 +56,5 @@ export interface MapVersion {
   location?: string;
   year?: string;
   mapUnits?: UnitShape[];
+  unitSizes?: Record<string, number>; // unitId or normalized unitName -> sizeM2
 }

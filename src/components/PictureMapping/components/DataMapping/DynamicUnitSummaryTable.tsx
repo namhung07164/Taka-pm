@@ -58,6 +58,11 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
     });
   }, [summaryList, searchTerm, statusFilter, groupFilter]);
 
+  const totalSizeM2 = useMemo(() => {
+    const sum = filteredList.reduce((acc, item) => acc + (Number(item.sizeM2 ?? item.size ?? 0) || 0), 0);
+    return Math.round(sum * 100) / 100;
+  }, [filteredList]);
+
   const getStatusBadge = (item: DynamicUnitSummaryItem) => {
     if (!item.hasAppProject || !item.appProjectStatus) {
       return (
@@ -119,6 +124,11 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
           <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-brand-600/20 text-brand-300 border border-brand-500/30">
             {filteredList.length} / {summaryList.length} units
           </span>
+          {totalSizeM2 > 0 && (
+            <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              ∑ {totalSizeM2.toLocaleString()} m²
+            </span>
+          )}
         </div>
         <button className="text-slate-400 hover:text-white p-1">
           {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -175,6 +185,7 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
               <thead className="bg-slate-900/90 sticky top-0 z-10 border-b border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider select-none">
                 <tr>
                   <th className="px-3 py-2">Mã Unit</th>
+                  <th className="px-3 py-2">Size (m²)</th>
                   <th className="px-3 py-2">Dự Án (App)</th>
                   <th className="px-3 py-2">App Status</th>
                   <th className="px-3 py-2">Nhóm Màu (Rule)</th>
@@ -185,13 +196,14 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
               <tbody className="divide-y divide-slate-800/60 font-mono">
                 {filteredList.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500 italic text-xs">
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500 italic text-xs">
                       Không tìm thấy gian hàng nào khớp bộ lọc.
                     </td>
                   </tr>
                 ) : (
                   filteredList.map((item) => {
                     const isSelected = selectedUnitId === item.unitId;
+                    const unitArea = Number(item.sizeM2 ?? item.size ?? 0) || 0;
                     return (
                       <tr
                         key={item.unitId}
@@ -207,6 +219,15 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
                             style={{ backgroundColor: item.color }} 
                           />
                           <span className="font-mono">{item.unitName}</span>
+                        </td>
+                        <td className="px-3 py-2">
+                          {unitArea > 0 ? (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                              {unitArea.toLocaleString()} m²
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">-</span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-slate-300">
                           {item.hasAppProject ? (

@@ -6,11 +6,15 @@ import { deduplicateTasks } from '../lib/taskDeduplicationService';
 import { rollupParentTaskDatesAndStatus } from '../lib/taskRollupService';
 import { isTaskDeletedInTracker } from '../lib/taskDeletedTracker';
 import { buildTaskByIdMap, isForeignSummaryEntry } from '../lib/summaryGhostFilter';
+import { useDataStore } from '../components/PictureMapping/DataContext';
 
 let _lastProjectsRef: any = null;
 let _lastRawTasksRef: any = null;
 let _lastDelegationGroupsRef: any = null;
 let _lastCurrentUserRef: any = null;
+let _lastMapUnitsRef: any = null;
+let _lastMapVersionsRef: any = null;
+let _lastStoreLocationDataRef: any = null;
 let _lastEnrichedResult: {
   enrichedProjects: any[];
   filteredTasks: any[];
@@ -22,6 +26,9 @@ export function useEnrichedData() {
   const rawTasks = useAppStore(state => state.tasks);
   const delegationGroups = useAppStore(state => state.delegationGroups);
   const currentUser = useAppStore(state => state.currentUser)!;
+  const mapUnits = useDataStore(state => state.mapUnits);
+  const mapVersions = useDataStore(state => state.mapVersions);
+  const storeLocationData = useDataStore(state => state.storeLocationData);
 
   return useMemo(() => {
     if (
@@ -29,6 +36,9 @@ export function useEnrichedData() {
       _lastRawTasksRef === rawTasks &&
       _lastDelegationGroupsRef === delegationGroups &&
       _lastCurrentUserRef === currentUser &&
+      _lastMapUnitsRef === mapUnits &&
+      _lastMapVersionsRef === mapVersions &&
+      _lastStoreLocationDataRef === storeLocationData &&
       _lastEnrichedResult
     ) {
       return _lastEnrichedResult;
@@ -140,6 +150,9 @@ export function useEnrichedData() {
       _lastRawTasksRef = rawTasks;
       _lastDelegationGroupsRef = delegationGroups;
       _lastCurrentUserRef = currentUser;
+      _lastMapUnitsRef = mapUnits;
+      _lastMapVersionsRef = mapVersions;
+      _lastStoreLocationDataRef = storeLocationData;
       _lastEnrichedResult = res;
       return res;
     }
@@ -324,7 +337,10 @@ export function useEnrichedData() {
     _lastRawTasksRef = rawTasks;
     _lastDelegationGroupsRef = delegationGroups;
     _lastCurrentUserRef = currentUser;
+    _lastMapUnitsRef = mapUnits;
+    _lastMapVersionsRef = mapVersions;
+    _lastStoreLocationDataRef = storeLocationData;
     _lastEnrichedResult = res;
     return res;
-  }, [projects, rawTasks, delegationGroups, currentUser]);
+  }, [projects, rawTasks, delegationGroups, currentUser, mapUnits, mapVersions, storeLocationData]);
 }

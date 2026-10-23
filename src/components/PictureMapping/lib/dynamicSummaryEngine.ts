@@ -6,6 +6,7 @@ import { useDataStore } from '../DataContext';
 import { getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
 import { calculateSummaryData, SummaryDataItem } from './summaryData';
 import { DynamicUnitSummaryItem, matchSingleRule } from './dynamicRuleMatcher';
+import { getUnitEffectiveSizeM2 } from '../../../lib/unitSizeResolver';
 
 export type { DynamicUnitSummaryItem };
 export { matchSingleRule };
@@ -200,6 +201,7 @@ export function useDynamicUnitSummary({
 
       const excelItem = summaryLookup.get(uKey);
       const isRestricted = restrictedProjectCodes.has(uKey);
+      const effectiveUnitSize = getUnitEffectiveSizeM2(u, activeVersion, excelItem?.size);
 
       const item: DynamicUnitSummaryItem = {
         unitId: u.id,
@@ -224,8 +226,8 @@ export function useDynamicUnitSummary({
         matchedTasksCount: 0,
         task: '',
         activeTasks: [],
-        size: typeof excelItem?.size === 'number' ? excelItem.size : (Number(excelItem?.size) || 0),
-        sizeM2: typeof excelItem?.size === 'number' ? excelItem.size : (Number(excelItem?.size) || 0),
+        size: effectiveUnitSize,
+        sizeM2: effectiveUnitSize,
         sales: excelItem?.salesAmount || 0,
         salesByCp: excelItem?.salesByCp || 0,
         profit: excelItem?.profitAmount || 0,
@@ -365,8 +367,8 @@ export function useDynamicUnitSummary({
           item.appProjectParty = p.party || (p as any).contractor || '';
           item.appProjectBudget = p.budget || 0;
           item.appProjectActual = p.actual || 0;
-          item.appProjectSizeM2 = p.sizeM2 || 0;
-          if (p.sizeM2) {
+          item.appProjectSizeM2 = p.sizeM2 || item.sizeM2 || 0;
+          if (!item.sizeM2 && p.sizeM2) {
             item.sizeM2 = p.sizeM2;
             if (!item.size) item.size = p.sizeM2;
           }

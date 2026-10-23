@@ -11,9 +11,11 @@ import {
   computePlanProgressPercent,
   computeActProgressPercent
 } from '../../lib/utils';
+import { getUnitEffectiveSizeM2 } from '../../lib/unitSizeResolver';
 
 export interface BuildAggregatedUnitDataParams {
   units: any[];
+  version?: any;
   summaryData: any[];
   enrichedProjects: Project[];
   tasks: any[];
@@ -30,6 +32,7 @@ export interface BuildAggregatedUnitDataParams {
 
 export function buildAggregatedUnitData({
   units,
+  version,
   summaryData,
   enrichedProjects,
   tasks,
@@ -49,6 +52,7 @@ export function buildAggregatedUnitData({
     const uName = (u?.name || '').toLowerCase().trim();
     if (!uName) return;
     const isRestricted = restrictedProjectCodes.has(uName);
+    const initialUnitSize = getUnitEffectiveSizeM2(u, version);
     dataMap[uName] = {
       name: u.name || '',
       id: u.id,
@@ -56,7 +60,7 @@ export function buildAggregatedUnitData({
       isRestricted,
       hasImage: Boolean(u.imageUrl || u.thumbnail || u.image),
       year: effectiveLayoutYear,
-      size: 0, sales: 0, salesByCp: 0, salesByHcmcate: 0,
+      size: initialUnitSize, sizeM2: initialUnitSize, sales: 0, salesByCp: 0, salesByHcmcate: 0,
       profit: 0, profitByCp: 0, profitByHcmcate: 0,
       margin: 0, marginByCp: 0, hcmSalesEffi: 0, hcmMargin: 0,
       mdStatus: "", task: "", projectStatus: "", actStatus: "",
@@ -74,8 +78,10 @@ export function buildAggregatedUnitData({
         dataMap[key].isRestricted = true;
         return;
       }
+      const resolvedSize = dataMap[key].sizeM2 || dataMap[key].size || sumData.size || 0;
       Object.assign(dataMap[key], {
-          size: sumData.size || 0,
+          size: resolvedSize,
+          sizeM2: resolvedSize,
           sales: sumData.salesAmount || 0,
           profit: sumData.profitAmount || 0,
           margin: sumData.margin || 0,

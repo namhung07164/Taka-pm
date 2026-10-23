@@ -7,6 +7,7 @@ import { MultiSelect } from '../MultiSelect';
 import { getStatus, cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
 import { LinkCodesValidationError } from './projectModalTypes';
+import { MatchedUnitSizeResult } from '../../lib/unitSizeResolver';
 
 interface ProjectDetailsFormProps {
   formData: Partial<Project>;
@@ -27,6 +28,7 @@ interface ProjectDetailsFormProps {
   handleDelete: () => Promise<void>;
   onClose: () => void;
   yearRef: React.RefObject<HTMLInputElement | null>;
+  matchedUnitSizeInfo?: MatchedUnitSizeResult;
 }
 
 export const ProjectDetailsForm = memo(function ProjectDetailsForm({
@@ -47,7 +49,8 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
   handleSubmit,
   handleDelete,
   onClose,
-  yearRef
+  yearRef,
+  matchedUnitSizeInfo
 }: ProjectDetailsFormProps) {
   const { t } = useLanguage();
 
@@ -236,8 +239,19 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
           </div>
 
           <div className="sm:col-span-4 md:col-span-3">
-            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
-              Size (m²)
+            <label className="flex items-center justify-between text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1 gap-1">
+              <span>Size (m²)</span>
+              {matchedUnitSizeInfo?.sizeM2 !== undefined && matchedUnitSizeInfo.sizeM2 > 0 && (
+                <button
+                  type="button"
+                  disabled={!canWrite}
+                  onClick={() => setFormData(prev => ({ ...prev, sizeM2: matchedUnitSizeInfo.sizeM2 }))}
+                  className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer truncate max-w-[110px]"
+                  title={`Auto-matched from Picture Mapping unit (${matchedUnitSizeInfo.matchedUnitNames.join(', ')})${matchedUnitSizeInfo.versionName ? ` • ${matchedUnitSizeInfo.versionName}` : ''}. Click to sync.`}
+                >
+                  Unit: {matchedUnitSizeInfo.sizeM2}m²
+                </button>
+              )}
             </label>
             <FastInput
               type="number"
@@ -249,7 +263,7 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
                 setFormData({ ...formData, sizeM2: isNaN(num as number) ? undefined : num });
               }}
               readOnly={!canWrite}
-              placeholder="e.g. 150"
+              placeholder={matchedUnitSizeInfo?.sizeM2 ? `${matchedUnitSizeInfo.sizeM2} (Unit)` : "e.g. 150"}
               className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
             />
           </div>

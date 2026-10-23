@@ -10,12 +10,17 @@ import {
   computeActProgressFromSummaries,
   computeProjectActStatus,
 } from "./progressAndStatusUtils";
+import { resolveMatchedUnitSizeM2 } from "../unitSizeResolver";
+import { useDataStore } from "../../components/PictureMapping/DataContext";
 
 // Module-level cache for zero-cost multi-component calls to enrichProjects
 const EMPTY_DELEGATION_GROUPS: DelegationGroup[] = [];
 let _lastProjectsRef: Project[] | null = null;
 let _lastTasksRef: Task[] | null = null;
 let _lastDelegationRef: DelegationGroup[] | null = null;
+let _lastMapUnitsRef: any = null;
+let _lastMapVersionsRef: any = null;
+let _lastStoreLocationDataRef: any = null;
 let _lastEnrichedResult: Project[] | null = null;
 
 export function enrichProjects(
@@ -25,11 +30,15 @@ export function enrichProjects(
 ): Project[] {
   const normDelegations =
     delegationGroups && delegationGroups.length > 0 ? delegationGroups : EMPTY_DELEGATION_GROUPS;
+  const dataState = useDataStore.getState();
 
   if (
     _lastProjectsRef === projects &&
     _lastTasksRef === tasks &&
     _lastDelegationRef === normDelegations &&
+    _lastMapUnitsRef === dataState.mapUnits &&
+    _lastMapVersionsRef === dataState.mapVersions &&
+    _lastStoreLocationDataRef === dataState.storeLocationData &&
     _lastEnrichedResult
   ) {
     return _lastEnrichedResult;
@@ -323,8 +332,14 @@ export function enrichProjects(
       projectTasks
     );
 
+    const resolvedSizeM2 =
+      p.sizeM2 !== undefined && p.sizeM2 !== null && p.sizeM2 > 0
+        ? p.sizeM2
+        : resolveMatchedUnitSizeM2(p).sizeM2;
+
     return {
       ...p,
+      ...(resolvedSizeM2 !== undefined ? { sizeM2: resolvedSizeM2 } : {}),
       computedTakStart,
       computedTakCompl,
       computedOpening,
@@ -392,6 +407,9 @@ export function enrichProjects(
   _lastProjectsRef = projects;
   _lastTasksRef = tasks;
   _lastDelegationRef = normDelegations;
+  _lastMapUnitsRef = dataState.mapUnits;
+  _lastMapVersionsRef = dataState.mapVersions;
+  _lastStoreLocationDataRef = dataState.storeLocationData;
   _lastEnrichedResult = enrichedProjects;
 
   return enrichedProjects;

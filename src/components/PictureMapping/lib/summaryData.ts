@@ -167,7 +167,7 @@ export function calculateSummaryData({
 
   const unitsMap = new Map();
   (unitsData || []).forEach(u => {
-    const unit = normalize(u.unit);
+    const unit = normalize(u.unit || u.name);
     if (unit) unitsMap.set(unit, u);
   });
 
@@ -313,11 +313,11 @@ export function calculateSummaryData({
     
     let hcmMargin = Math.max(explicitMargin, finalSalesEffi > 0 ? finalProfitEffi / finalSalesEffi : 0);
     
-    let unitSize = Number(String(unit.size).replace(/,/g, '')) || 0;
+    let unitSize = Number(String(unit.sizeM2 ?? unit.size ?? '').replace(/,/g, '')) || 0;
     if (unitSize === 0) {
       const matchedUnit = unitsMap.get(normalize(unit.unit));
       if (matchedUnit) {
-        unitSize = Number(String(matchedUnit.size).replace(/,/g, '')) || 0;
+        unitSize = Number(String(matchedUnit.sizeM2 ?? matchedUnit.size ?? '').replace(/,/g, '')) || 0;
       }
     }
 
@@ -455,8 +455,9 @@ export const formatPercent = (val: any) => val ? (Number(val) * 100).toLocaleStr
 
 export const generateSizeLabelLines = (unit: Record<string, any>, uInfo: any, selectedLabels: string[]) => {
     const lines: { key: string, text: string }[] = [];
+    const effectiveSize = unit.sizeM2 ?? unit.size ?? uInfo?.size;
     if (selectedLabels.includes('Unit ID')) lines.push({ key: 'Unit ID', text: unit.name });
-    if (selectedLabels.includes('Size SQM') && uInfo?.size) lines.push({ key: 'Size SQM', text: `${uInfo.size} SQM` });
+    if (selectedLabels.includes('Size SQM') && effectiveSize) lines.push({ key: 'Size SQM', text: `${effectiveSize} SQM` });
     if (selectedLabels.includes('Floor') && uInfo?.floor) lines.push({ key: 'Floor', text: `Floor: ${uInfo.floor}` });
     if (selectedLabels.includes('Brand Code') && uInfo?.brandCode) lines.push({ key: 'Brand Code', text: `Brand Code: ${uInfo.brandCode}` });
     if (selectedLabels.includes('Brand Name') && uInfo?.brandName) lines.push({ key: 'Brand Name', text: uInfo.brandName });

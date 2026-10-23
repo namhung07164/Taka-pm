@@ -510,6 +510,8 @@ export default function CloudSyncManager({
                 locked: !!u.locked,
                 store: u.store || null,
                 location: u.location || null,
+                size: u.size ?? u.sizeM2 ?? null,
+                sizeM2: u.sizeM2 ?? u.size ?? null,
                 groupId: (u as any).groupId || null,
                 groupName: (u as any).groupName || null,
               })),
@@ -527,6 +529,7 @@ export default function CloudSyncManager({
                   backgroundUrl: safeBg,
                   groups: v.groups || [],
                   groupMappings: v.groupMappings || {},
+                  unitSizes: v.unitSizes || {},
                   isDynamicActive: v.isDynamicActive !== false,
                   // Do not duplicate mapUnits inside every version to keep Firestore doc well under 1MB
                 };
@@ -791,6 +794,7 @@ export default function CloudSyncManager({
                 ...cv,
                 groups: localV?.groups || cv.groups || [],
                 groupMappings: localV?.groupMappings || cv.groupMappings || {},
+                unitSizes: { ...(localV?.unitSizes || {}), ...(cv.unitSizes || {}) },
               };
             });
 
