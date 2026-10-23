@@ -4,8 +4,8 @@ import {
   getAppBootAgeMs,
   BOOT_SYNC_GUARD_MS,
   calculateProjectComputedDates,
-  syncProjectDatesToFirestore,
 } from '../../lib/projectDatesService';
+import { bulkPersistProjects } from '../../lib/localDb';
 
 export { matchProjectCode };
 
@@ -480,18 +480,14 @@ export function healProjectsAfterTasksBatch(params: {
     if (!hasDiscrepancy) return workingProj;
 
     projectsNeedUpdate = true;
-
-    // RULE: Only sync project dates back to Firestore when there are ACTUAL task mutations,
-    // NEVER from passive viewing, daily progress ticks, or Tri-Gate delegation mismatches!
-    const hasActualMutations = !fromCache && (changedTasks.size > 0 || removedTasks.size > 0);
-    if (hasActualMutations && hasStructuralChange) {
-      syncProjectDatesToFirestore(workingProj.id, computed).catch(() => {});
-    }
-
-    return {
+    const healedProj = {
       ...workingProj,
       ...computed,
     };
+    if (!fromCache && hasStructuralChange) {
+      bulkPersistProjects([healedProj]).catch(() => {});
+    }
+    return healedProj;
   });
 
   return projectsNeedUpdate ? healedProjects : null;

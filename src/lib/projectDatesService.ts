@@ -293,16 +293,23 @@ export async function syncProjectDatesToFirestore(
     const safeTaskCount = dates.taskCount !== undefined ? dates.taskCount : existingCount;
 
     // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task, taskSummaries) thực sự thay đổi.
-    // Nếu chỉ sửa comment, ghi chú hay đổi tên đơn thuần không làm đổi mốc thời gian/tiến độ -> bỏ qua Write to Firestore (0 write).
+    // Sử dụng canonical signature không phụ thuộc thứ tự key của object từ Firestore/IndexedDB để tránh ghi thừa.
+    const toSummariesSig = (list: any[]) =>
+      (list || [])
+        .map(
+          (s: any) =>
+            `${s?.id || ""}:${s?.name || ""}:${s?.start || ""}:${s?.finish || ""}:${s?.duration ?? ""}:${s?.parentTaskId || ""}:${s?.taskCodePhu || ""}:${s?.runningStatus || ""}:${s?.approval || ""}:${s?.party || ""}:${s?.delegation ?? ""}:${s?.orderIndex ?? ""}`
+        )
+        .join("|");
+
     const hasChanged =
       !existingProject ||
       (existingProject.computedTakStart || "") !== (dates.computedTakStart || "") ||
       (existingProject.computedTakCompl || "") !== (dates.computedTakCompl || "") ||
       (existingProject.computedOpening || "") !== (dates.computedOpening || "") ||
-      Number(existingProject.computedPlanProgress ?? 0) !== Number(dates.computedPlanProgress ?? 0) ||
       Number(existingProject.computedActProgress ?? 0) !== Number(dates.computedActProgress ?? 0) ||
       Number(existingProject.taskCount ?? 0) !== Number(safeTaskCount ?? dates.taskCount ?? 0) ||
-      JSON.stringify(existingProject.taskSummaries || []) !== JSON.stringify(safeTaskSummaries || dates.taskSummaries || []);
+      toSummariesSig(existingProject.taskSummaries || []) !== toSummariesSig(safeTaskSummaries || dates.taskSummaries || []);
 
     // Cập nhật Optimistic in-memory Store tức thời (0ms) để UI đồng bộ mượt mà
     let updatedProjectObj: Project | null = null;

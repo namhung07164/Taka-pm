@@ -299,15 +299,16 @@ export function useProjectsHydration({
 
       const markers = await getLoadedMarkers();
       const hasFreshYearMarker = hasFreshMarker(markers, 'projects_year', year);
+      const hasVerifiedSigMarker = hasFreshMarker(markers, 'projects_year', sessionYearKey);
       const isVerifiedInThisSession = serverVerifiedProjectYearsInSession.has(sessionYearKey);
 
-      // Only skip Firestore when we ACTUALLY have local projects for the selected year + store,
-      // OR when this exact (querySignature, year) was already verified against Firestore server in this session.
+      // Skip Firestore when we have local projects for the year, or when this exact (querySignature, year)
+      // was already verified against Firestore server (within 24h TTL or current session) and is kept in sync via taka_deltas.
       const deltaManaged =
-        (hasLocalDataForActiveStore && isClosedOrPastYear) ||
+        ((hasLocalDataForActiveStore || hasVerifiedSigMarker) && isClosedOrPastYear) ||
         (DELTA_FIRST.projects &&
           hasFreshYearMarker &&
-          (hasLocalDataForActiveStore || isVerifiedInThisSession));
+          (hasLocalDataForActiveStore || hasLocalDataForYear || hasVerifiedSigMarker || isVerifiedInThisSession));
 
       if (deltaManaged) {
         setCloudStatus('online');
@@ -363,6 +364,7 @@ export function useProjectsHydration({
           if (!fromCache) {
             serverVerifiedProjectYearsInSession.add(sessionYearKey);
             markLoaded('projects_year', year).catch(() => {});
+            markLoaded('projects_year', sessionYearKey).catch(() => {});
           }
 
           if (DELTA_FIRST.projects && !fromCache) {
@@ -393,7 +395,8 @@ export function useProjectsHydration({
         try {
           const localCount = await hydrateProjectsFromLocal(year);
           const markers = await getLoadedMarkers();
-          if (localCount > 0 && hasFreshMarker(markers, 'projects_year', year)) {
+          const hasVerifiedSecSig = hasFreshMarker(markers, 'projects_year', secKey);
+          if ((localCount > 0 || hasVerifiedSecSig) && hasFreshMarker(markers, 'projects_year', year)) {
             return;
           }
 
@@ -422,6 +425,7 @@ export function useProjectsHydration({
           if (fetchedFromServer) {
             serverVerifiedProjectYearsInSession.add(secKey);
             markLoaded('projects_year', year).catch(() => {});
+            markLoaded('projects_year', secKey).catch(() => {});
           }
 
           if (snapshot && !snapshot.empty) {

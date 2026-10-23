@@ -111,11 +111,38 @@ export function SettingTab({ rules }: SettingTabProps) {
         {currentUser.role !== 'guest' && (
           <>
             <button 
-              title="Refresh"
+              title="Update to latest Cloudflare build without clearing local database cache (0 Firestore Reads/Writes)"
               onClick={() => {
-                if (window.confirm("Do you want to refresh the app to update to the latest version?")) {
-                  window.location.reload();
-                }
+                triggerConfirmAction(
+                  "Force Update App (Zero-Read Smart Update)",
+                  "This will fetch the latest application build from Cloudflare and refresh static assets while preserving your local database (IndexedDB/Dexie) and Delta Sync state (0 extra Firestore Reads/Writes). Proceed?",
+                  async () => {
+                    try {
+                      if ('serviceWorker' in navigator) {
+                        const registrations = await navigator.serviceWorker.getRegistrations();
+                        await Promise.all(
+                          registrations.map(async (reg) => {
+                            try {
+                              await reg.update();
+                              if (reg.waiting) {
+                                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                              }
+                            } catch {}
+                          })
+                        );
+                      }
+                      if ('caches' in window) {
+                        const cacheNames = await window.caches.keys();
+                        await Promise.all(cacheNames.map((name) => window.caches.delete(name)));
+                      }
+                    } catch (e) {
+                      console.warn('[ForceUpdate] Asset cache refresh warning:', e);
+                    }
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('v', String(Date.now()));
+                    window.location.replace(url.toString());
+                  }
+                );
               }}
               className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm"
             >

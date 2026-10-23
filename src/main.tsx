@@ -7,6 +7,13 @@ import { checkAndCleanStorageQuota, cleanupBloatedStorage } from './lib/storage'
 import { bootstrapLocalStore } from './lib/backgroundSyncWorker';
 
 // Proactively verify & clean localStorage quota and kick off Local-First IndexedDB hydration before React mounts
+try {
+  if (typeof window !== 'undefined' && window.location.search.includes('v=')) {
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete('v');
+    window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+  }
+} catch {}
 checkAndCleanStorageQuota();
 bootstrapLocalStore().catch(() => {});
 
