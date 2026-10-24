@@ -96236,8 +96236,18 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
 
           // Step D: Decode via Blob ObjectURL
           createdBlobUrl = URL.createObjectURL(blob);
+          const blobUrlToRevoke = createdBlobUrl;
           const img = new Image();
-          img.src = createdBlobUrl;
+          img.src = blobUrlToRevoke;
+
+          const revokeBlobUrlSafely = () => {
+            if (createdBlobUrl === blobUrlToRevoke) {
+              createdBlobUrl = null;
+            }
+            try {
+              URL.revokeObjectURL(blobUrlToRevoke);
+            } catch (_) {}
+          };
 
           const onBlobImgDone = () => {
             if (isMounted) {
@@ -96245,6 +96255,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
               setImage(img);
               setStatus('loaded');
             }
+            setTimeout(revokeBlobUrlSafely, 100);
           };
 
           if (typeof img.decode === 'function') {
@@ -96252,6 +96263,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           } else {
             img.onload = onBlobImgDone;
             img.onerror = () => {
+              revokeBlobUrlSafely();
               if (isMounted) setStatus('failed');
             };
           }
@@ -96317,12 +96329,17 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
 
     return () => {
       isMounted = false;
+      if (createdBlobUrl) {
+        try {
+          URL.revokeObjectURL(createdBlobUrl);
+        } catch (_) {}
+        createdBlobUrl = null;
+      }
     };
   }, [url, crossOrigin]);
 
   return [image, status] as const;
 }
-
 
 ================================================================================
 FILE: src/hooks/usePaginatedTasks.ts
@@ -104990,16 +105007,23 @@ export function writeBatch(dbInstance: any): WriteBatch {
 ================================================================================
 FILE: src/lib/firestoreSanitizer.ts
 ================================================================================
+const TRANSIENT_FIRESTORE_KEYS = new Set([
+  '_isVirtualSummary',
+  'realtimeUpdate',
+  'importComment',
+  'parentTaskCode',
+  'parentTaskName',
+]);
+
 /**
- * Deeply strips `undefined` properties from objects/arrays so Firestore operations
- * (setDoc, updateDoc, writeBatch.set, writeBatch.update) never fail with:
- * "FirebaseError: Function WriteBatch.set() called with invalid data. Unsupported field value: undefined"
+ * Deeply strips `undefined` properties and transient runtime-only flags from objects/arrays
+ * so Firestore operations never fail on `undefined` or store temporary UI/import garbage.
  *
  * Preserves custom objects/classes such as FieldValue (deleteField, serverTimestamp, increment)
  * and Date, RegExp, etc.
  */
-export function removeUndefinedDeep<T = any>(val: T): T {
-  if (val === undefined) {
+export function removeUndefinedDeep<T = any>(val: T, seen?: WeakSet<object>): T {
+  if (val === undefined || typeof val === 'function') {
     return undefined as unknown as T;
   }
   if (val === null || typeof val !== 'object') {
@@ -105011,11 +105035,18 @@ export function removeUndefinedDeep<T = any>(val: T): T {
     return val;
   }
 
+  // Guard against circular references
+  const visited = seen || new WeakSet<object>();
+  if (visited.has(val as object)) {
+    return undefined as unknown as T;
+  }
+
   // Handle Arrays
   if (Array.isArray(val)) {
+    visited.add(val);
     return val
-      .filter((item) => item !== undefined)
-      .map((item) => removeUndefinedDeep(item)) as unknown as T;
+      .filter((item) => item !== undefined && typeof item !== 'function')
+      .map((item) => removeUndefinedDeep(item, visited)) as unknown as T;
   }
 
   // If object is not a plain object (e.g., Firestore FieldValue like deleteField() or serverTimestamp())
@@ -105024,16 +105055,20 @@ export function removeUndefinedDeep<T = any>(val: T): T {
     return val;
   }
 
-  // Plain object: remove keys where value is undefined, recurse on nested values
+  visited.add(val as object);
+
+  // Plain object: remove keys where value is undefined, function, or transient runtime-only key
   const result: Record<string, any> = {};
   for (const [key, v] of Object.entries(val as Record<string, any>)) {
-    if (v !== undefined) {
-      result[key] = removeUndefinedDeep(v);
+    if (v !== undefined && typeof v !== 'function' && !TRANSIENT_FIRESTORE_KEYS.has(key)) {
+      const cleaned = removeUndefinedDeep(v, visited);
+      if (cleaned !== undefined) {
+        result[key] = cleaned;
+      }
     }
   }
   return result as T;
 }
-
 
 ================================================================================
 FILE: src/lib/firestoreWrites.ts
@@ -107775,7 +107810,12 @@ import { extractR2Key, resolveR2UrlToHttp } from '../components/PictureMapping/l
 const DB_NAME = 'taka_cad_images_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'cad_blobs';
-const MAX_MEMORY_CACHE = 20; // Safe in-memory cache limit for active floorplan images
+const IS_CONSTRAINED_DEVICE =
+  typeof window !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+    (typeof navigator !== 'undefined' && typeof (navigator as any).deviceMemory === 'number' && (navigator as any).deviceMemory <= 4));
+const MAX_MEMORY_CACHE = IS_CONSTRAINED_DEVICE ? 8 : 20; // Safe in-memory cache limit for active floorplan images
 
 // In-Memory LRU Cache for decoded ImageBitmap / HTMLImageElement
 const memoryCache = new Map<string, ImageBitmap | HTMLImageElement>();
@@ -107824,12 +107864,20 @@ export function normalizeImageCacheKey(url: string | undefined | null): string {
 function updateMemoryCache(cacheKey: string, img: ImageBitmap | HTMLImageElement) {
   if (!cacheKey) return;
   if (memoryCache.has(cacheKey)) {
+    const prev = memoryCache.get(cacheKey);
     memoryCache.delete(cacheKey);
+    if (prev && prev !== img && 'close' in prev && typeof (prev as ImageBitmap).close === 'function') {
+      try { (prev as ImageBitmap).close(); } catch (_) {}
+    }
   } else if (memoryCache.size >= MAX_MEMORY_CACHE) {
-    // Evict oldest item
+    // Evict oldest item and free its GPU texture memory if ImageBitmap
     const firstKey = memoryCache.keys().next().value;
     if (firstKey) {
+      const evicted = memoryCache.get(firstKey);
       memoryCache.delete(firstKey);
+      if (evicted && evicted !== img && 'close' in evicted && typeof (evicted as ImageBitmap).close === 'function') {
+        try { (evicted as ImageBitmap).close(); } catch (_) {}
+      }
     }
   }
   memoryCache.set(cacheKey, img);
@@ -108677,154 +108725,130 @@ const tsOf = (v: any): number => {
 
 export const localDb = new TakaLocalDB();
 
-/**
- * Lưu hàng loạt Dự án vào Local Database (Dexie)
- */
+function cleanItemForLocalDb<T extends Record<string, any>>(item: T): T {
+  if (!item || typeof item !== 'object') return item;
+  if (
+    '_isVirtualSummary' in item ||
+    'realtimeUpdate' in item ||
+    'importComment' in item ||
+    'parentTaskCode' in item ||
+    'parentTaskName' in item
+  ) {
+    const { _isVirtualSummary, realtimeUpdate, importComment, parentTaskCode, parentTaskName, ...rest } = item as any;
+    return rest as T;
+  }
+  return item;
+}
+
+async function bulkPersistTable<T extends { id?: string; isDeleted?: boolean; _isVirtualSummary?: boolean }>(
+  table: Table<T, string>,
+  items: T[],
+  label: string
+): Promise<void> {
+  if (!items || items.length === 0) return;
+  try {
+    const toPut: T[] = [];
+    const toDelete: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (!it || !it.id) continue;
+      const idStr = String(it.id);
+      if (it._isVirtualSummary || idStr.startsWith('ts_')) continue;
+      if (it.isDeleted) {
+        toDelete.push(idStr);
+      } else {
+        toPut.push(cleanItemForLocalDb(it));
+      }
+    }
+    if (toPut.length > 0) await table.bulkPut(toPut);
+    if (toDelete.length > 0) await table.bulkDelete(toDelete);
+  } catch (err) {
+    console.warn(`[localDb] ${label} error:`, err);
+  }
+}
+
 export async function bulkPersistProjects(projects: Project[]): Promise<void> {
-  if (!projects || projects.length === 0) return;
-  try {
-    await localDb.projects.bulkPut(projects);
-  } catch (err) {
-    console.warn('[localDb] bulkPersistProjects error:', err);
-  }
+  return bulkPersistTable(localDb.projects, projects, 'bulkPersistProjects');
 }
 
-/**
- * Lưu hàng loạt Tasks vào Local Database (Dexie)
- */
 export async function bulkPersistTasks(tasks: Task[]): Promise<void> {
-  if (!tasks || tasks.length === 0) return;
-  try {
-    await localDb.tasks.bulkPut(tasks);
-  } catch (err) {
-    console.warn('[localDb] bulkPersistTasks error:', err);
-  }
+  return bulkPersistTable(localDb.tasks, tasks, 'bulkPersistTasks');
 }
 
-/**
- * Lưu hàng loạt Costs vào Local Database (Dexie)
- */
 export async function bulkPersistCosts(costs: Cost[]): Promise<void> {
-  if (!costs || costs.length === 0) return;
-  try {
-    await localDb.costs.bulkPut(costs);
-  } catch (err) {
-    console.warn('[localDb] bulkPersistCosts error:', err);
-  }
+  return bulkPersistTable(localDb.costs, costs, 'bulkPersistCosts');
 }
 
-/**
- * Lưu hàng loạt Delegation Groups vào Local Database (Dexie)
- */
 export async function bulkPersistDelegations(groups: DelegationGroup[]): Promise<void> {
-  if (!groups || groups.length === 0) return;
-  try {
-    await localDb.delegations.bulkPut(groups);
-  } catch (err) {
-    console.warn('[localDb] bulkPersistDelegations error:', err);
+  return bulkPersistTable(localDb.delegations, groups, 'bulkPersistDelegations');
+}
+
+function getTableByCollection(
+  collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations'
+): Table<any, string> {
+  switch (collectionName) {
+    case 'taka_projects': return localDb.projects;
+    case 'taka_tasks': return localDb.tasks;
+    case 'taka_costs': return localDb.costs;
+    case 'taka_delegations': return localDb.delegations;
   }
 }
 
-/**
- * Cập nhật hoặc thêm mới 1 bản ghi vào bảng tương ứng trong Local Database
- */
 export async function upsertLocalRecord(
   collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
   item: any
 ): Promise<void> {
-  if (!item?.id) return;
+  if (!item?.id || item._isVirtualSummary || String(item.id).startsWith('ts_')) return;
   try {
-    const table = (() => {
-      switch (collectionName) {
-        case 'taka_projects': return localDb.projects;
-        case 'taka_tasks': return localDb.tasks;
-        case 'taka_costs': return localDb.costs;
-        case 'taka_delegations': return localDb.delegations;
-      }
-    })();
-    
-    // [Safety Guard] If item is marked as deleted, remove it from local cache
-    if (item?.isDeleted) {
+    const table = getTableByCollection(collectionName);
+    if (item.isDeleted) {
       await table.delete(item.id);
       return;
     }
-
-    // [Safety Guard] Only upsert if the incoming doc is newer than what we have
     const existing = await table.get(item.id);
     const existingTs = tsOf(existing?.updatedAt);
     const incomingTs = tsOf(item.updatedAt);
     if (existing && existingTs > 0 && incomingTs > 0 && existingTs > incomingTs) return;
 
-    await table.put(item);
+    await table.put(cleanItemForLocalDb(item));
   } catch (err) {
     console.warn(`[localDb] upsertLocalRecord error on ${collectionName}:`, err);
   }
 }
 
-/**
- * Áp dụng field-level patch vào Local Database (Dexie)
- * Nếu bản ghi đã tồn tại: chỉ cập nhật các trường thay đổi (giữ nguyên các trường còn lại)
- * Nếu chưa tồn tại: thêm mới bản ghi
- */
 export async function patchLocalRecord(
   collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
   id: string,
   patch: Record<string, any>
 ): Promise<void> {
-  if (!id || !patch) return;
+  if (!id || !patch || String(id).startsWith('ts_')) return;
   try {
-    const table = (() => {
-      switch (collectionName) {
-        case 'taka_projects': return localDb.projects;
-        case 'taka_tasks': return localDb.tasks;
-        case 'taka_costs': return localDb.costs;
-        case 'taka_delegations': return localDb.delegations;
-      }
-    })();
-    
-    // Patch only existing rows. Creating a row from a partial patch produces ghost/incomplete records
+    const table = getTableByCollection(collectionName);
     const existing = await table.get(id);
     if (!existing) return;
 
-    // If patch marks doc as deleted, delete it from local Dexie immediately
-    if (patch?.isDeleted) {
+    if (patch.isDeleted) {
       await table.delete(id);
       return;
     }
 
-    // Only skip if incoming patch is explicitly older than existing (both timestamps valid)
     const existingTs = tsOf(existing.updatedAt);
     const incomingTs = tsOf(patch.updatedAt);
     if (existingTs > 0 && incomingTs > 0 && existingTs > incomingTs) return;
 
-    await (table as any).update(id, patch);
+    await table.update(id, cleanItemForLocalDb(patch));
   } catch (err) {
     console.warn(`[localDb] patchLocalRecord error on ${collectionName}:`, err);
   }
 }
 
-/**
- * Xóa 1 bản ghi khỏi Local Database
- */
 export async function deleteLocalRecord(
   collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
   id: string
 ): Promise<void> {
+  if (!id) return;
   try {
-    switch (collectionName) {
-      case 'taka_projects':
-        await localDb.projects.delete(id);
-        break;
-      case 'taka_tasks':
-        await localDb.tasks.delete(id);
-        break;
-      case 'taka_costs':
-        await localDb.costs.delete(id);
-        break;
-      case 'taka_delegations':
-        await localDb.delegations.delete(id);
-        break;
-    }
+    await getTableByCollection(collectionName).delete(id);
   } catch (err) {
     console.warn(`[localDb] deleteLocalRecord error on ${collectionName}:`, err);
   }
@@ -113086,6 +113110,12 @@ const IS_IOS = typeof window !== 'undefined' && (
   (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 );
 
+const IS_LOW_RAM_DEVICE =
+  IS_IOS ||
+  (typeof navigator !== 'undefined' &&
+    typeof (navigator as any).deviceMemory === 'number' &&
+    (navigator as any).deviceMemory <= 4);
+
 // Ngưỡng an toàn tối đa cho iOS (35MB để không chạm trần 40MB của WebKit)
 const IOS_SAFE_QUOTA_BYTES = 35 * 1024 * 1024;
 
@@ -113099,7 +113129,8 @@ export interface StorageBudgetReport {
 }
 
 /**
- * Kiểm tra và dọn dẹp các bản ghi năm cũ (LRU eviction) nếu chạm ngưỡng bộ nhớ Safari
+ * Kiểm tra và dọn dẹp rác (soft-deleted, virtual summary) trên mọi thiết bị
+ * đồng thời áp dụng LRU eviction cho các bản ghi năm cũ nếu chạm ngưỡng bộ nhớ Safari / máy đời cũ
  */
 export async function enforceStorageBudget(): Promise<StorageBudgetReport> {
   const result: StorageBudgetReport = {
@@ -113112,39 +113143,61 @@ export async function enforceStorageBudget(): Promise<StorageBudgetReport> {
   };
 
   try {
+    // 1. Universal Hygiene: Purge any soft-deleted or virtual summary ghost rows from local IndexedDB
+    const [delProjects, delTasks, delCosts, delDelegations] = await Promise.all([
+      localDb.projects.filter((p: any) => Boolean(p?.isDeleted)).primaryKeys().catch(() => [] as string[]),
+      localDb.tasks
+        .filter((t: any) => Boolean(t?.isDeleted || t?._isVirtualSummary || String(t?.id || '').startsWith('ts_')))
+        .primaryKeys()
+        .catch(() => [] as string[]),
+      localDb.costs.filter((c: any) => Boolean(c?.isDeleted)).primaryKeys().catch(() => [] as string[]),
+      localDb.delegations.filter((d: any) => Boolean(d?.isDeleted)).primaryKeys().catch(() => [] as string[]),
+    ]);
+
+    if (delProjects.length > 0) await localDb.projects.bulkDelete(delProjects);
+    if (delTasks.length > 0) await localDb.tasks.bulkDelete(delTasks);
+    if (delCosts.length > 0) await localDb.costs.bulkDelete(delCosts);
+    if (delDelegations.length > 0) await localDb.delegations.bulkDelete(delDelegations);
+
+    const deadCount = delProjects.length + delTasks.length + delCosts.length + delDelegations.length;
+    if (deadCount > 0) {
+      result.evictedCount += deadCount;
+    }
+
+    // 2. Check Browser Storage Quota
     if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
       const estimate = await navigator.storage.estimate();
       result.usageBytes = estimate.usage || 0;
       if (estimate.quota) {
-        result.quotaBytes = IS_IOS ? Math.min(estimate.quota, IOS_SAFE_QUOTA_BYTES) : estimate.quota;
+        result.quotaBytes = IS_LOW_RAM_DEVICE ? Math.min(estimate.quota, IOS_SAFE_QUOTA_BYTES) : estimate.quota;
       }
       if (result.quotaBytes > 0) {
         result.percentageUsed = Math.round((result.usageBytes / result.quotaBytes) * 100);
       }
     }
 
-    // Nếu là môi trường iOS và dung lượng vượt 80% ngưỡng an toàn
-    const needsPruning = IS_IOS && (result.percentageUsed > 80 || result.usageBytes > IOS_SAFE_QUOTA_BYTES * 0.85);
+    // Nếu là môi trường iOS / máy RAM thấp và dung lượng vượt 80% ngưỡng an toàn
+    const needsPruning =
+      IS_LOW_RAM_DEVICE && (result.percentageUsed > 80 || result.usageBytes > IOS_SAFE_QUOTA_BYTES * 0.85);
 
     if (needsPruning) {
       const currentYear = new Date().getFullYear();
-      const cutoffYear = String(currentYear - 2); // Giữ các năm hiện hành (2025, 2026); dọn <= 2024
+      const cutoffYear = String(currentYear - 2); // Giữ các năm hiện hành; dọn <= cutoffYear
 
       // Chỉ dọn dẹp các task đã hoàn thành thuộc các năm lưu trữ cũ khỏi Dexie nội bộ (không chạm vào Firestore)
-      const oldTasks = await localDb.tasks
+      const oldTaskKeys = await localDb.tasks
         .filter((t: any) => {
           const taskYear = String(t.projectYear || t.year || '');
           const status = String(t.runningStatus || t.status || '').toLowerCase();
           return Boolean(taskYear && taskYear <= cutoffYear && status === 'completed');
         })
-        .toArray();
+        .primaryKeys();
 
-      if (oldTasks.length > 0) {
-        const oldIds = oldTasks.map((t) => t.id);
-        await localDb.tasks.bulkDelete(oldIds);
-        result.evictedCount += oldIds.length;
+      if (oldTaskKeys.length > 0) {
+        await localDb.tasks.bulkDelete(oldTaskKeys);
+        result.evictedCount += oldTaskKeys.length;
         result.status = 'pruned';
-        console.info(`[storageBudgetService] Evicted ${oldIds.length} completed tasks of <= ${cutoffYear} to preserve iOS 40MB limit.`);
+        console.info(`[storageBudgetService] Evicted ${oldTaskKeys.length} archived completed tasks (<= ${cutoffYear}) to preserve 40MB budget.`);
       }
     }
   } catch (err) {
@@ -113153,7 +113206,6 @@ export async function enforceStorageBudget(): Promise<StorageBudgetReport> {
 
   return result;
 }
-
 
 ================================================================================
 FILE: src/lib/storageUtils.ts
@@ -113599,8 +113651,18 @@ const MAX_PENDING_AGE_MS = 24 * 60 * 60 * 1000;
 
 const toMs = (v: any): number => {
   if (!v) return 0;
-  const n =
-    typeof v === 'string' ? Date.parse(v) : typeof v?.toMillis === 'function' ? v.toMillis() : Number(v);
+  if (typeof v === 'string') {
+    const n = Date.parse(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.toMillis === 'function') {
+    const n = v.toMillis();
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.seconds === 'number') {
+    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  }
+  const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
@@ -113653,19 +113715,60 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 export async function addPendingUpdate(update: Omit<PendingUpdate, 'id' | 'timestamp'>) {
+  if (!update.docId || String(update.docId).startsWith('ts_')) return;
   try {
     const db = await openDB();
-    const newUpdate: PendingUpdate = {
-      ...update,
-      id: Math.random().toString(36).substring(2, 9),
-      timestamp: Date.now(),
-    };
+    const deterministicId = `${update.collectionPath}__${update.docId}`;
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      const request = store.add(newUpdate);
-      request.onsuccess = () => resolve(newUpdate);
-      request.onerror = () => reject(request.error);
+      const getReq = store.get(deterministicId);
+      getReq.onsuccess = () => {
+        const existing = getReq.result as PendingUpdate | undefined;
+        let mergedAction = update.action;
+        let mergedData = update.data;
+
+        if (existing) {
+          if (update.action === 'delete') {
+            mergedAction = 'delete';
+            mergedData = null;
+          } else if (existing.action === 'set' && update.action === 'update') {
+            mergedAction = 'set';
+            mergedData =
+              existing.data && typeof existing.data === 'object' && update.data && typeof update.data === 'object'
+                ? { ...existing.data, ...update.data }
+                : update.data;
+          } else if (existing.action === 'update' && update.action === 'update') {
+            mergedAction = 'update';
+            mergedData =
+              existing.data && typeof existing.data === 'object' && update.data && typeof update.data === 'object'
+                ? { ...existing.data, ...update.data }
+                : update.data;
+          }
+        }
+
+        const coalescedUpdate: PendingUpdate = {
+          ...update,
+          id: deterministicId,
+          action: mergedAction,
+          data: mergedData,
+          timestamp: Date.now(),
+        };
+
+        const putReq = store.put(coalescedUpdate);
+        putReq.onsuccess = () => resolve(coalescedUpdate);
+        putReq.onerror = () => reject(putReq.error);
+      };
+      getReq.onerror = () => {
+        const fallbackUpdate: PendingUpdate = {
+          ...update,
+          id: deterministicId,
+          timestamp: Date.now(),
+        };
+        const putReq = store.put(fallbackUpdate);
+        putReq.onsuccess = () => resolve(fallbackUpdate);
+        putReq.onerror = () => reject(putReq.error);
+      };
     });
   } catch (e) {
     console.error('Failed to add pending update to IDB', e);
@@ -113881,7 +113984,6 @@ if (typeof window !== 'undefined') {
     processPendingSync().catch(() => {});
   });
 }
-
 
 ================================================================================
 FILE: src/lib/syncResilience.ts
@@ -116293,6 +116395,13 @@ let listeners: Listener[] = [];
 let currentBatch: UndoAction[] | null = null;
 let currentBatchDescription = "";
 
+const IS_LOW_MEM =
+  typeof window !== "undefined" &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ||
+    (typeof navigator !== "undefined" && typeof (navigator as any).deviceMemory === "number" && (navigator as any).deviceMemory <= 4));
+const MAX_UNDO_STACK = IS_LOW_MEM ? 20 : 50;
+
 export const logUserAction = async (description: string) => {
   try {
     const authData = safeGetItemLocal("taka_auth_v1");
@@ -116365,7 +116474,7 @@ export const undoManager = {
       action.timestamp = Date.now();
     }
     stack.push(action);
-    if (stack.length > 50) stack.shift(); // Keep last 50 actions in multi-level stack
+    if (stack.length > MAX_UNDO_STACK) stack.shift();
     
     // Clear redo stack on any new user action (standard undo/redo command pattern)
     redoStack = [];
@@ -116383,7 +116492,7 @@ export const undoManager = {
       try {
         await action.revert();
         redoStack.push(action);
-        if (redoStack.length > 50) redoStack.shift();
+        if (redoStack.length > MAX_UNDO_STACK) redoStack.shift();
         notify();
         logUserAction(`Undo: ${action.description}`);
       } catch (e) {
@@ -116401,7 +116510,7 @@ export const undoManager = {
           await action.redo();
         }
         stack.push(action);
-        if (stack.length > 50) stack.shift();
+        if (stack.length > MAX_UNDO_STACK) stack.shift();
         notify();
         logUserAction(`Redo: ${action.description}`);
       } catch (e) {
@@ -116437,7 +116546,6 @@ function notify() {
   const currentRedoStack = [...redoStack];
   listeners.forEach((l) => l(currentStack, currentRedoStack));
 }
-
 
 ================================================================================
 FILE: src/lib/utils.ts
@@ -116556,10 +116664,69 @@ export function getSuggestedCompletionTime(baseDate?: string | Date): string {
   return formatToDatetimeLocal(d);
 }
 
+const MAX_DATE_PARSE_CACHE = 4000;
+const _dateTimeMsCache = new Map<string, number>();
+const _dateMidnightMsCache = new Map<string, number>();
+
+let _cachedTodayMidnightMs = 0;
+let _cachedTodayCheckTs = 0;
+
+export function getTodayMidnightMs(): number {
+  const now = Date.now();
+  if (now - _cachedTodayCheckTs < 30000 && _cachedTodayMidnightMs > 0) {
+    return _cachedTodayMidnightMs;
+  }
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  _cachedTodayMidnightMs = d.getTime();
+  _cachedTodayCheckTs = now;
+  return _cachedTodayMidnightMs;
+}
+
+export function parseDateTimeMs(dateStr: string | undefined): number | null {
+  if (!dateStr) return null;
+  const cached = _dateTimeMsCache.get(dateStr);
+  if (cached !== undefined) {
+    return isNaN(cached) ? null : cached;
+  }
+  const d = dateStr.length === 10 ? new Date(dateStr + "T09:00") : new Date(dateStr);
+  const ms = d.getTime();
+  if (_dateTimeMsCache.size >= MAX_DATE_PARSE_CACHE) {
+    _dateTimeMsCache.clear();
+  }
+  _dateTimeMsCache.set(dateStr, ms);
+  return isNaN(ms) ? null : ms;
+}
+
+export function parseDateMidnightMs(dateStr: string | undefined): number | null {
+  if (!dateStr) return null;
+  const cached = _dateMidnightMsCache.get(dateStr);
+  if (cached !== undefined) {
+    return isNaN(cached) ? null : cached;
+  }
+  const ms = parseDateTimeMs(dateStr);
+  if (ms === null) {
+    if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
+      _dateMidnightMsCache.clear();
+    }
+    _dateMidnightMsCache.set(dateStr, NaN);
+    return null;
+  }
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  const midMs = d.getTime();
+  if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
+    _dateMidnightMsCache.clear();
+  }
+  _dateMidnightMsCache.set(dateStr, midMs);
+  return midMs;
+}
+
 export function parseDateTime(dateStr: string | undefined): Date | null {
   if (!dateStr) return null;
-  if (dateStr.length === 10) return new Date(dateStr + "T09:00");
-  return new Date(dateStr);
+  const ms = parseDateTimeMs(dateStr);
+  if (ms === null) return new Date(NaN);
+  return new Date(ms);
 }
 
 export function calculateDays(
@@ -116567,10 +116734,10 @@ export function calculateDays(
   finish: string | undefined,
 ): string {
   if (!start || !finish) return "";
-  const s = parseDateTime(start);
-  const f = parseDateTime(finish);
-  if (!s || !f) return "";
-  const diffTime = f.getTime() - s.getTime();
+  const sMs = parseDateTimeMs(start);
+  const fMs = parseDateTimeMs(finish);
+  if (sMs === null || fMs === null) return "";
+  const diffTime = fMs - sMs;
   const diffDays = diffTime / (1000 * 60 * 60 * 24);
   return (diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0) + " days";
 }
@@ -117461,7 +117628,7 @@ export function evaluateProjectOrTaskNotificationRule(
 FILE: src/lib/utilsParts/progressAndStatusUtils.ts
 ================================================================================
 import { Task, DelegationGroup } from "../../types";
-import { parseDateTime } from "./commonAndDateUtils";
+import { parseDateTimeMs, parseDateMidnightMs, getTodayMidnightMs } from "./commonAndDateUtils";
 import { getTaskStatus } from "./statusResolutionUtils";
 
 export * from "./statusResolutionUtils";
@@ -117470,9 +117637,7 @@ export function computePlanProgressFromSummaries(
   summaries: Array<{ start?: string; finish?: string; [key: string]: any }>
 ): number {
   if (!summaries || summaries.length === 0) return 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayTime = today.getTime();
+  const todayTime = getTodayMidnightMs();
 
   let totalScore = 0;
   let validCount = 0;
@@ -117481,17 +117646,15 @@ export function computePlanProgressFromSummaries(
     if (!s.start && !s.finish) continue;
     validCount++;
 
-    const start = parseDateTime(s.start);
-    if (start) start.setHours(0, 0, 0, 0);
-    const finish = parseDateTime(s.finish);
-    if (finish) finish.setHours(0, 0, 0, 0);
+    const startMs = parseDateMidnightMs(s.start);
+    const finishMs = parseDateMidnightMs(s.finish);
 
-    if (finish && todayTime > finish.getTime()) {
+    if (finishMs !== null && todayTime > finishMs) {
       totalScore += 1;
-    } else if (start && finish && todayTime >= start.getTime() && todayTime <= finish.getTime()) {
-      const totalDuration = finish.getTime() - start.getTime();
+    } else if (startMs !== null && finishMs !== null && todayTime >= startMs && todayTime <= finishMs) {
+      const totalDuration = finishMs - startMs;
       if (totalDuration > 0) {
-        const passed = todayTime - start.getTime();
+        const passed = todayTime - startMs;
         totalScore += passed / totalDuration;
       } else {
         totalScore += 1;
@@ -117507,9 +117670,7 @@ export function computeActProgressFromSummaries(
   summaries: Array<{ start?: string; finish?: string; runningStatus?: string; approval?: string; [key: string]: any }>
 ): number {
   if (!summaries || summaries.length === 0) return 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayTime = today.getTime();
+  const todayTime = getTodayMidnightMs();
 
   const validScores: number[] = [];
 
@@ -117536,17 +117697,15 @@ export function computeActProgressFromSummaries(
       continue;
     }
 
-    const start = parseDateTime(s.start);
-    if (start) start.setHours(0, 0, 0, 0);
-    const finish = parseDateTime(s.finish);
-    if (finish) finish.setHours(0, 0, 0, 0);
+    const startMs = parseDateMidnightMs(s.start);
+    const finishMs = parseDateMidnightMs(s.finish);
 
-    if (finish && todayTime > finish.getTime()) {
+    if (finishMs !== null && todayTime > finishMs) {
       validScores.push(1.0);
-    } else if (start && finish && todayTime >= start.getTime() && todayTime <= finish.getTime()) {
-      const totalDuration = finish.getTime() - start.getTime();
+    } else if (startMs !== null && finishMs !== null && todayTime >= startMs && todayTime <= finishMs) {
+      const totalDuration = finishMs - startMs;
       if (totalDuration > 0) {
-        const passed = todayTime - start.getTime();
+        const passed = todayTime - startMs;
         validScores.push(Math.max(0.3, Math.min(0.9, passed / totalDuration)));
       } else {
         validScores.push(1.0);
@@ -117580,33 +117739,28 @@ export function computeActProgressFromSummaries(
 export function computePlanProgressPercent(groupTasks: Task[]): number {
   if (groupTasks.length === 0) return 0;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayTime = today.getTime();
-
+  const todayTime = getTodayMidnightMs();
   let totalScore = 0;
 
   for (const t of groupTasks) {
     if (!t.start && !t.finish) continue;
-    
-    const start = parseDateTime(t.start);
-    if (start) start.setHours(0, 0, 0, 0);
-    const finish = parseDateTime(t.finish);
-    if (finish) finish.setHours(0, 0, 0, 0);
 
-    if (finish && todayTime > finish.getTime()) {
+    const startMs = parseDateMidnightMs(t.start);
+    const finishMs = parseDateMidnightMs(t.finish);
+
+    if (finishMs !== null && todayTime > finishMs) {
       totalScore += 1;
-    } else if (start && finish && todayTime >= start.getTime() && todayTime <= finish.getTime()) {
-      const totalDuration = finish.getTime() - start.getTime();
+    } else if (startMs !== null && finishMs !== null && todayTime >= startMs && todayTime <= finishMs) {
+      const totalDuration = finishMs - startMs;
       if (totalDuration > 0) {
-        const passed = todayTime - start.getTime();
+        const passed = todayTime - startMs;
         totalScore += passed / totalDuration;
       } else {
         totalScore += 1;
       }
     }
   }
-  
+
   return Math.round((totalScore / groupTasks.length) * 100);
 }
 
@@ -117737,9 +117891,7 @@ export function computeActProgressPercent(
     return delegationGroups.find((g) => g.parentTaskId === tid);
   };
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayTime = today.getTime();
+  const todayTime = getTodayMidnightMs();
 
   const completedTaskStartTimestamps: number[] = [];
 
@@ -117762,7 +117914,7 @@ export function computeActProgressPercent(
     }
 
     if (isCompleted) {
-      const startTs = parseDateTime(t.start)?.getTime() || 0;
+      const startTs = parseDateTimeMs(t.start) || 0;
       if (startTs > 0) completedTaskStartTimestamps.push(startTs);
     }
   }
@@ -117792,7 +117944,7 @@ export function computeActProgressPercent(
       continue;
     }
 
-    const tFinishTs = parseDateTime(t.finish)?.getTime() || 0;
+    const tFinishTs = parseDateTimeMs(t.finish) || 0;
     if (
       tFinishTs > 0 &&
       maxCompletedStartTs > 0 &&
@@ -117803,16 +117955,16 @@ export function computeActProgressPercent(
     }
 
     if (running.includes("process") || running.includes("progress")) {
-      const start = parseDateTime(t.start);
-      const finish = parseDateTime(t.finish);
+      const startMs = parseDateTimeMs(t.start);
+      const finishMs = parseDateTimeMs(t.finish);
       if (
-        start &&
-        finish &&
-        todayTime >= start.getTime() &&
-        todayTime <= finish.getTime()
+        startMs !== null &&
+        finishMs !== null &&
+        todayTime >= startMs &&
+        todayTime <= finishMs
       ) {
-        const duration = finish.getTime() - start.getTime();
-        const passed = todayTime - start.getTime();
+        const duration = finishMs - startMs;
+        const passed = todayTime - startMs;
         rawScores.push(
           duration > 0 ? Math.max(0.3, Math.min(0.9, passed / duration)) : 0.5
         );
@@ -117836,16 +117988,16 @@ export function computeActProgressPercent(
     if (plStatus === "Completed") {
       rawScores.push(1.0);
     } else if (plStatus === "On process") {
-      const start = parseDateTime(t.start);
-      const finish = parseDateTime(t.finish);
+      const startMs = parseDateTimeMs(t.start);
+      const finishMs = parseDateTimeMs(t.finish);
       if (
-        start &&
-        finish &&
-        todayTime >= start.getTime() &&
-        todayTime <= finish.getTime()
+        startMs !== null &&
+        finishMs !== null &&
+        todayTime >= startMs &&
+        todayTime <= finishMs
       ) {
-        const duration = finish.getTime() - start.getTime();
-        const passed = todayTime - start.getTime();
+        const duration = finishMs - startMs;
+        const passed = todayTime - startMs;
         rawScores.push(
           duration > 0 ? Math.max(0.3, Math.min(0.9, passed / duration)) : 0.5
         );
@@ -117876,14 +118028,13 @@ export function computeActProgressPercent(
   return Math.round((totalScore / groupTasks.length) * 100);
 }
 
-
 ================================================================================
 FILE: src/lib/utilsParts/projectCodeAndScopeUtils.ts
 ================================================================================
 import { useAppStore } from "../../store/useAppStore";
 import { Project, Task, DelegationGroup, AppUser } from "../../types";
 import { isTaskDeletedInTracker } from "../taskDeletedTracker";
-import { parseDateTime } from "./commonAndDateUtils";
+import { parseDateMidnightMs, getTodayMidnightMs } from "./commonAndDateUtils";
 
 export function matchProjectStatusFilter(
   status: string | undefined,
@@ -117904,12 +118055,10 @@ export function matchProjectStatusFilter(
     }
     if (currentStatus === 'Upcoming') {
       if (!startStr) return false;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const dStart = parseDateTime(startStr);
-      if (!dStart) return false;
-      dStart.setHours(0, 0, 0, 0);
-      const diffDays = Math.ceil((dStart.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      const todayMs = getTodayMidnightMs();
+      const dStartMs = parseDateMidnightMs(startStr);
+      if (dStartMs === null) return false;
+      const diffDays = Math.ceil((dStartMs - todayMs) / (1000 * 60 * 60 * 24));
       return diffDays <= 3 && diffDays >= 0;
     }
     return false;
@@ -117926,23 +118075,41 @@ const INVALID_UNIT_TOKENS = new Set([
   'reserve', 'event', 'common', 'area', 'mall', 'store', 'floor', 'all', 'na', 'null', 'undefined'
 ]);
 
+const _normUnitCodeCache = new Map<string, string>();
+const _extractCodesCache = new Map<string, string[]>();
+
 /**
  * Strips common floor/zone/PM prefixes like 'PM-L1-HCM-2026-', 'L1-', 'F1-', '1F-', 'B1-', 'GF-', 'UG-', 'Unit '
  */
 function normalizeUnitCodeBase(code: string): string {
   if (!code) return '';
+  const cached = _normUnitCodeCache.get(code);
+  if (cached !== undefined) return cached;
+
   let str = code.toLowerCase().trim();
   str = str.replace(/^(unit|shop|lot|booth|kiosk|store)\s*[-_:]?\s*/i, '');
   str = str.replace(/^pm-(?:(?:b\d|l\d|\d+f|gf|ug|hcm|hn|20\d\d|y\d\d)[-_:]\s*)+/i, '');
   str = str.replace(/^(?:hcm|hn)[-_:]\s*/i, '');
   str = str.replace(/^(?:[blf]\d{1,2}|\d{1,2}f|gf|ug|mz|basement|ground)\s*[-_:]\s*/i, '');
-  return str.trim();
+  const res = str.trim();
+
+  if (_normUnitCodeCache.size >= 4000) {
+    _normUnitCodeCache.clear();
+  }
+  _normUnitCodeCache.set(code, res);
+  return res;
 }
 
 /**
  * Extracts all project codes from both project.code and project.linkCodes
  */
 export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: string | null }): string[] {
+  if (!p) return [];
+  const rawCodeKey = `${p.code || ''}|${p.linkCodes || ''}`;
+  if (rawCodeKey === '|') return [];
+  const cached = _extractCodesCache.get(rawCodeKey);
+  if (cached !== undefined) return cached;
+
   const codeSet = new Set<string>();
 
   const addIfValid = (rawCode: string) => {
@@ -117984,7 +118151,12 @@ export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: st
     addIfValid(String(p.code));
   }
 
-  return Array.from(codeSet);
+  const result = Array.from(codeSet);
+  if (_extractCodesCache.size >= 4000) {
+    _extractCodesCache.clear();
+  }
+  _extractCodesCache.set(rawCodeKey, result);
+  return result;
 }
 
 /**
@@ -118721,7 +118893,7 @@ export function enrichProjects(
 FILE: src/lib/utilsParts/statusResolutionUtils.ts
 ================================================================================
 import { Project, Task, DelegationGroup } from "../../types";
-import { parseDateTime } from "./commonAndDateUtils";
+import { parseDateMidnightMs, getTodayMidnightMs } from "./commonAndDateUtils";
 import { isTaskBelongsToProject, isDelegationGroupBelongsToProject } from "./projectCodeAndScopeUtils";
 import {
   computePlanProgressPercent,
@@ -118907,30 +119079,27 @@ export function getStatus(
 ) {
   if (code && String(code).toLowerCase().includes("cancel")) return "Canceled";
   if (!start) return "Upcoming";
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const todayMs = getTodayMidnightMs();
 
-  const dStart = parseDateTime(start);
-  if (!dStart) return "Upcoming";
-  dStart.setHours(0, 0, 0, 0);
+  const dStartMs = parseDateMidnightMs(start);
+  if (dStartMs === null) return "Upcoming";
 
-  const dHandover = handover ? parseDateTime(handover) : null;
-  if (dHandover) dHandover.setHours(0, 0, 0, 0);
+  const dHandoverMs = handover ? parseDateMidnightMs(handover) : null;
+  const dOpeningMs = opening ? parseDateMidnightMs(opening) : null;
 
-  const dOpening = opening ? parseDateTime(opening) : null;
-  if (dOpening) dOpening.setHours(0, 0, 0, 0);
+  const dEndMs =
+    dOpeningMs !== null && dHandoverMs !== null
+      ? dOpeningMs > dHandoverMs
+        ? dOpeningMs
+        : dHandoverMs
+      : dOpeningMs !== null
+        ? dOpeningMs
+        : dHandoverMs;
 
-  const dEnd =
-    dOpening && dHandover
-      ? dOpening > dHandover
-        ? dOpening
-        : dHandover
-      : dOpening || dHandover;
+  if (todayMs < dStartMs) return "Upcoming";
+  if (dEndMs !== null && todayMs > dEndMs) return "Completed";
 
-  if (today < dStart) return "Upcoming";
-  if (dEnd && today > dEnd) return "Completed";
-
-  if (dHandover && dOpening && today >= dHandover && today <= dOpening)
+  if (dHandoverMs !== null && dOpeningMs !== null && todayMs >= dHandoverMs && todayMs <= dOpeningMs)
     return "Handover";
 
   return "On process";
@@ -118941,17 +119110,13 @@ export function getTaskStatus(
   finish: string | undefined,
 ): string {
   if (!start && !finish) return "Upcoming";
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const todayMs = getTodayMidnightMs();
 
-  const dStart = parseDateTime(start);
-  if (dStart) dStart.setHours(0, 0, 0, 0);
+  const dStartMs = parseDateMidnightMs(start);
+  const dFinishMs = parseDateMidnightMs(finish);
 
-  const dFinish = parseDateTime(finish);
-  if (dFinish) dFinish.setHours(0, 0, 0, 0);
-
-  if (dStart && today < dStart) return "Upcoming";
-  if (dFinish && today > dFinish) return "Completed";
+  if (dStartMs !== null && todayMs < dStartMs) return "Upcoming";
+  if (dFinishMs !== null && todayMs > dFinishMs) return "Completed";
 
   return "On process";
 }
@@ -119081,7 +119246,6 @@ export function getProjectDatesAndStatus(p: Project, tasks?: Task[]) {
     actProgressPercent: actProgressPercent ?? 0
   };
 }
-
 
 ================================================================================
 FILE: src/lib/validation.ts
@@ -155047,3 +155211,985 @@ export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSli
   })),
 });
 
+
+================================================================================
+FILE: src/lib/unitSizeResolver.ts
+================================================================================
+import { useDataStore } from '../components/PictureMapping/DataContext';
+import { MapVersion, UnitShape } from '../components/PictureMapping/components/DataMapping/types';
+import { extractAllProjectCodes, projectMatchesUnitCode } from './utilsParts/projectCodeAndScopeUtils';
+import { useAppStore } from '../store/useAppStore';
+import { doc, getDoc } from 'firebase/firestore';
+import { db, APP_ID } from './firebase';
+
+let _hasAttemptedLocalRestore = false;
+let _hasAttemptedFirestoreRestore = false;
+let _cachedLocalBackup: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId: string | null }> | null = null;
+
+/**
+ * Ensures Picture Mapping storeLocationData is hydrated in memory without mutating Zustand during React render.
+ */
+export function ensureMappingConfigHydrated(): void {
+  if (typeof window === 'undefined') return;
+  const state = useDataStore.getState();
+  const hasPartitions =
+    state.storeLocationData && Object.keys(state.storeLocationData).length > 0;
+  if (hasPartitions) return;
+
+  if (!_hasAttemptedLocalRestore) {
+    _hasAttemptedLocalRestore = true;
+    try {
+      const cached = localStorage.getItem('taka_mapping_config_backup');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.storeLocationData && Object.keys(parsed.storeLocationData).length > 0) {
+          _cachedLocalBackup = parsed.storeLocationData;
+          // Defer Zustand setState to macrotask to avoid updating store during component render
+          setTimeout(() => {
+            const cur = useDataStore.getState();
+            if (!cur.storeLocationData || Object.keys(cur.storeLocationData).length === 0) {
+              cur.loadFullCloudData({
+                storeLocationData: parsed.storeLocationData,
+                store: parsed.store || cur.store,
+                location: parsed.location || cur.location,
+                activeMapVersionId: parsed.activeMapVersionId || cur.activeMapVersionId,
+                reviewSelectedLabels: parsed.reviewSelectedLabels || cur.reviewSelectedLabels,
+                reviewLabelColors: parsed.reviewLabelColors || cur.reviewLabelColors,
+              });
+            }
+          }, 0);
+          return;
+        }
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  if (!_hasAttemptedFirestoreRestore) {
+    _hasAttemptedFirestoreRestore = true;
+    setTimeout(async () => {
+      try {
+        const current = useDataStore.getState();
+        if (current.storeLocationData && Object.keys(current.storeLocationData).length > 0) {
+          return;
+        }
+        const snap = await getDoc(
+          doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'picture_mapping_config')
+        );
+        if (snap.exists()) {
+          const fsData = snap.data() as any;
+          if (fsData?.storeLocationData && Object.keys(fsData.storeLocationData).length > 0) {
+            _cachedLocalBackup = fsData.storeLocationData;
+            useDataStore.getState().loadFullCloudData({
+              storeLocationData: fsData.storeLocationData,
+              store: fsData.store || current.store,
+              location: fsData.location || current.location,
+              activeMapVersionId: fsData.activeMapVersionId || current.activeMapVersionId,
+              reviewSelectedLabels: fsData.reviewSelectedLabels || current.reviewSelectedLabels,
+              reviewLabelColors: fsData.reviewLabelColors || current.reviewLabelColors,
+            });
+          }
+        }
+      } catch {
+        // Ignore background fallback error
+      }
+    }, 0);
+  }
+}
+
+export function normalizeFloorCode(rawLoc?: string | null): string {
+  if (!rawLoc) return '';
+  let loc = String(rawLoc).toUpperCase().trim();
+  if (loc.startsWith('MD-')) loc = loc.slice(3);
+  if (loc.endsWith('F') && loc.length === 2 && /^\dF$/.test(loc)) {
+    loc = `L${loc[0]}`;
+  }
+  if (/^L\d+[A-Z]$/i.test(loc)) {
+    loc = loc.slice(0, -1);
+  }
+  return loc;
+}
+
+/**
+ * Resolves the effective Size (m²) of a single unit shape, respecting version-specific unitSizes first,
+ * then unit.sizeM2 / unit.size, then fallback master Excel size, and finally any matched Project's sizeM2.
+ */
+export function getUnitEffectiveSizeM2(
+  unit?: Partial<UnitShape> | null,
+  version?: Partial<MapVersion> | null,
+  fallbackSize?: number | string | null,
+  skipProjectFallback = false
+): number {
+  if (!unit) {
+    const fb = Number(String(fallbackSize ?? '').replace(/,/g, ''));
+    return !isNaN(fb) && fb > 0 ? fb : 0;
+  }
+
+  if (version?.unitSizes) {
+    if (unit.id && typeof version.unitSizes[unit.id] === 'number' && version.unitSizes[unit.id] > 0) {
+      return version.unitSizes[unit.id];
+    }
+    const uNameKey = String(unit.name || '').trim().toUpperCase();
+    if (uNameKey && typeof version.unitSizes[uNameKey] === 'number' && version.unitSizes[uNameKey] > 0) {
+      return version.unitSizes[uNameKey];
+    }
+  }
+
+  if (typeof unit.sizeM2 === 'number' && !isNaN(unit.sizeM2) && unit.sizeM2 > 0) {
+    return unit.sizeM2;
+  }
+  if (typeof unit.size === 'number' && !isNaN(unit.size) && unit.size > 0) {
+    return unit.size;
+  }
+  const parsedUnitSize = Number(String((unit as any).sizeM2 ?? (unit as any).size ?? '').replace(/,/g, ''));
+  if (!isNaN(parsedUnitSize) && parsedUnitSize > 0) {
+    return parsedUnitSize;
+  }
+
+  const fb = Number(String(fallbackSize ?? '').replace(/,/g, ''));
+  if (!isNaN(fb) && fb > 0) {
+    return fb;
+  }
+
+  if (!skipProjectFallback) {
+    const uName = String(unit.name || unit.id || '').trim();
+    if (uName) {
+      const uNameLower = uName.toLowerCase();
+      const targetStore = String(unit.store || version?.store || useDataStore.getState().store || 'HCM').toUpperCase().trim();
+      const targetLoc = normalizeFloorCode(unit.location || version?.location || useDataStore.getState().location);
+      const targetYear = String(version?.year || '').trim();
+
+      const projects = useAppStore.getState().projects || [];
+      for (let i = 0; i < projects.length; i++) {
+        const p = projects[i];
+        if (!p || p.isDeleted || !p.sizeM2 || p.sizeM2 <= 0) continue;
+        const pStore = String(p.store || 'HCM').toUpperCase().trim();
+        if (pStore !== targetStore) continue;
+        if (targetYear && targetYear !== 'all' && p.year && String(p.year).trim() !== targetYear) continue;
+        const pLoc = normalizeFloorCode(p.location);
+        const isStorewide = !pLoc || pLoc === 'ALL' || pLoc === 'STORE' || pLoc === 'STOREWIDE' || pLoc === 'WHOLE STORE' || pLoc === 'ALL FLOORS';
+        if (!isStorewide && targetLoc && pLoc !== targetLoc) continue;
+
+        const pCodes = extractAllProjectCodes(p);
+        if (pCodes.length === 0) continue;
+        const isExact = pCodes.some((c) => c.toLowerCase() === uNameLower);
+        if (isExact || projectMatchesUnitCode(pCodes, uName)) {
+          const shareCount = Math.max(1, pCodes.length);
+          return Math.round((p.sizeM2 / shareCount) * 100) / 100;
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
+export interface MatchedUnitSizeResult {
+  sizeM2: number | undefined;
+  matchedUnitNames: string[];
+  versionName?: string;
+  versionYear?: string;
+}
+
+interface ResolverCachedIndex {
+  storeLocationDataRef: any;
+  mapUnitsRef: any;
+  mapVersionsRef: any;
+  activeMapVersionIdRef: any;
+  unitInfoRef: any;
+  projectLinkRef: any;
+  storeRef: any;
+  locationRef: any;
+  localBackupRef: any;
+  allPartitions: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId: string | null }>;
+  partitionKeysByStore: { HCM: Array<{ key: string; loc: string }>; HN: Array<{ key: string; loc: string }> };
+  masterSizeByUnit: Map<string, number>;
+  projectLinkEntries: Array<{ unitLower: string; plCode: string }>;
+  combinedUnitsCache: Map<string, Map<string, UnitShape>>;
+  resultCache: Map<string, MatchedUnitSizeResult>;
+}
+
+let _resolverIndex: ResolverCachedIndex | null = null;
+
+function getOrBuildResolverIndex(state: ReturnType<typeof useDataStore.getState>): ResolverCachedIndex {
+  if (
+    _resolverIndex &&
+    _resolverIndex.storeLocationDataRef === state.storeLocationData &&
+    _resolverIndex.mapUnitsRef === state.mapUnits &&
+    _resolverIndex.mapVersionsRef === state.mapVersions &&
+    _resolverIndex.activeMapVersionIdRef === state.activeMapVersionId &&
+    _resolverIndex.unitInfoRef === state.unitInfo &&
+    _resolverIndex.projectLinkRef === state.projectLink &&
+    _resolverIndex.storeRef === state.store &&
+    _resolverIndex.locationRef === state.location &&
+    _resolverIndex.localBackupRef === _cachedLocalBackup
+  ) {
+    return _resolverIndex;
+  }
+
+  const activeKey = `${state.store}_${normalizeFloorCode(state.location)}`;
+  const basePartitions =
+    state.storeLocationData && Object.keys(state.storeLocationData).length > 0
+      ? state.storeLocationData
+      : (_cachedLocalBackup || {});
+  const allPartitions: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId: string | null }> = {
+    ...basePartitions,
+  };
+  if ((state.mapUnits && state.mapUnits.length > 0) || (state.mapVersions && state.mapVersions.length > 0)) {
+    const existing = allPartitions[activeKey];
+    allPartitions[activeKey] = {
+      mapUnits: state.mapUnits.length > 0 ? state.mapUnits : (existing?.mapUnits || []),
+      mapVersions: state.mapVersions.length > 0 ? state.mapVersions : (existing?.mapVersions || []),
+      activeMapVersionId: state.activeMapVersionId || existing?.activeMapVersionId || null,
+    };
+  }
+
+  const partitionKeysByStore: { HCM: Array<{ key: string; loc: string }>; HN: Array<{ key: string; loc: string }> } = {
+    HCM: [],
+    HN: [],
+  };
+  for (const k of Object.keys(allPartitions)) {
+    const loc = normalizeFloorCode(k.split('_')[1]);
+    if (k.startsWith('HCM_')) {
+      partitionKeysByStore.HCM.push({ key: k, loc });
+    } else if (k.startsWith('HN_')) {
+      partitionKeysByStore.HN.push({ key: k, loc });
+    }
+  }
+
+  const masterSizeByUnit = new Map<string, number>();
+  (state.unitInfo || []).forEach((ui: any) => {
+    const uKey = String(ui?.unit || '').trim().toLowerCase();
+    const sz = Number(String(ui?.size ?? '').replace(/,/g, ''));
+    if (uKey && !isNaN(sz) && sz > 0) {
+      masterSizeByUnit.set(uKey, sz);
+    }
+  });
+
+  const projectLinkEntries: Array<{ unitLower: string; plCode: string }> = [];
+  (state.projectLink || []).forEach((pl: any) => {
+    const u = String(pl?.unit || '').trim().toLowerCase();
+    const plCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
+    if (u && plCode) {
+      projectLinkEntries.push({ unitLower: u, plCode });
+    }
+  });
+
+  _resolverIndex = {
+    storeLocationDataRef: state.storeLocationData,
+    mapUnitsRef: state.mapUnits,
+    mapVersionsRef: state.mapVersions,
+    activeMapVersionIdRef: state.activeMapVersionId,
+    unitInfoRef: state.unitInfo,
+    projectLinkRef: state.projectLink,
+    storeRef: state.store,
+    locationRef: state.location,
+    localBackupRef: _cachedLocalBackup,
+    allPartitions,
+    partitionKeysByStore,
+    masterSizeByUnit,
+    projectLinkEntries,
+    combinedUnitsCache: new Map(),
+    resultCache: new Map(),
+  };
+
+  return _resolverIndex;
+}
+
+const EMPTY_MATCH_RESULT: MatchedUnitSizeResult = { sizeM2: undefined, matchedUnitNames: [] };
+
+/**
+ * Finds the matching version for a Project's (store, location, year) and calculates
+ * the total Size (m²) from the unit(s) mapped/matched to the project in that version.
+ */
+export function resolveMatchedUnitSizeM2(projectOrInput: {
+  code?: string;
+  linkCodes?: string;
+  store?: string;
+  location?: string;
+  year?: string | number;
+}): MatchedUnitSizeResult {
+  ensureMappingConfigHydrated();
+
+  const pCodes = extractAllProjectCodes(projectOrInput);
+  if (pCodes.length === 0) {
+    return EMPTY_MATCH_RESULT;
+  }
+
+  const state = useDataStore.getState();
+  const idx = getOrBuildResolverIndex(state);
+
+  const targetStore = (String(projectOrInput.store || state.store || 'HCM').toUpperCase().trim() === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+  const targetLoc = normalizeFloorCode(projectOrInput.location);
+  const targetYear = String(projectOrInput.year || '').trim();
+
+  const cacheKey = `${targetStore}|${targetLoc}|${targetYear}|${pCodes.join(',')}`;
+  const cachedResult = idx.resultCache.get(cacheKey);
+  if (cachedResult !== undefined) {
+    return cachedResult;
+  }
+
+  const linkedUnitNames = new Set<string>();
+  if (idx.projectLinkEntries.length > 0) {
+    for (let i = 0; i < idx.projectLinkEntries.length; i++) {
+      const { unitLower, plCode } = idx.projectLinkEntries[i];
+      if (pCodes.some(pc => pc === plCode || projectMatchesUnitCode([pc], plCode))) {
+        linkedUnitNames.add(unitLower);
+      }
+    }
+  }
+
+  const isStorewideLoc =
+    !targetLoc ||
+    targetLoc === 'ALL' ||
+    targetLoc === 'STORE' ||
+    targetLoc === 'STOREWIDE' ||
+    targetLoc === 'WHOLE STORE' ||
+    targetLoc === 'ALL FLOORS';
+
+  const storePartitions = idx.partitionKeysByStore[targetStore];
+  const candidatePartitionKeys: string[] = [];
+  for (let i = 0; i < storePartitions.length; i++) {
+    const entry = storePartitions[i];
+    if (isStorewideLoc || entry.loc === targetLoc) {
+      candidatePartitionKeys.push(entry.key);
+    }
+  }
+
+  const { allPartitions, masterSizeByUnit, combinedUnitsCache } = idx;
+  const matchedSizeByUnitKey = new Map<string, { name: string; sizeM2: number; versionName?: string; versionYear?: string }>();
+
+  for (const pKey of candidatePartitionKeys) {
+    const part = allPartitions[pKey];
+    if (!part) continue;
+
+    const versions = Array.isArray(part.mapVersions) ? part.mapVersions : [];
+    let matchedVersion: MapVersion | undefined;
+
+    if (versions.length > 0) {
+      const yearMatched = targetYear
+        ? versions.filter((v) => String(v.year || '').trim() === targetYear)
+        : versions;
+
+      const pool = yearMatched.length > 0 ? yearMatched : versions;
+
+      if (state.activeMapVersionId && pool.some((v) => v.id === state.activeMapVersionId)) {
+        matchedVersion = pool.find((v) => v.id === state.activeMapVersionId);
+      } else if (part.activeMapVersionId && pool.some((v) => v.id === part.activeMapVersionId)) {
+        matchedVersion = pool.find((v) => v.id === part.activeMapVersionId);
+      } else {
+        matchedVersion =
+          pool.find((v) => v.isDynamicActive !== false && Array.isArray(v.groups) && v.groups.length > 0) ||
+          pool[0];
+      }
+    }
+
+    const combinedCacheKey = `${pKey}__${matchedVersion?.id || 'base'}`;
+    let combinedUnitsMap = combinedUnitsCache.get(combinedCacheKey);
+    if (!combinedUnitsMap) {
+      combinedUnitsMap = new Map<string, UnitShape>();
+      const partitionUnits = Array.isArray(part.mapUnits) ? part.mapUnits : [];
+      const versionUnits = Array.isArray(matchedVersion?.mapUnits) ? matchedVersion!.mapUnits! : [];
+
+      for (let i = 0; i < partitionUnits.length; i++) {
+        const u = partitionUnits[i];
+        if (u && (u.name || u.id)) {
+          combinedUnitsMap.set(String(u.name || u.id).trim().toLowerCase(), u);
+        }
+      }
+      for (let i = 0; i < versionUnits.length; i++) {
+        const u = versionUnits[i];
+        if (u && (u.name || u.id)) {
+          const key = String(u.name || u.id).trim().toLowerCase();
+          const prev = combinedUnitsMap.get(key);
+          combinedUnitsMap.set(
+            key,
+            prev
+              ? {
+                  ...prev,
+                  ...u,
+                  sizeM2: u.sizeM2 ?? prev.sizeM2,
+                  size: u.size ?? prev.size,
+                }
+              : u
+          );
+        }
+      }
+      combinedUnitsCache.set(combinedCacheKey, combinedUnitsMap);
+    }
+
+    combinedUnitsMap.forEach((u) => {
+      const uName = String(u.name || '').trim();
+      const uId = String(u.id || '').trim();
+      const uNameLower = uName.toLowerCase();
+      const uIdLower = uId.toLowerCase();
+      if (!uNameLower && !uIdLower) return;
+
+      const isExact = pCodes.some((c) => c === uNameLower || (uIdLower && c === uIdLower));
+      const isLinked = linkedUnitNames.has(uNameLower) || (uIdLower ? linkedUnitNames.has(uIdLower) : false);
+      const isCodeMatch = isExact || isLinked || projectMatchesUnitCode(pCodes, uName || uId);
+
+      if (isCodeMatch) {
+        const fallbackMasterSize = masterSizeByUnit.get(uNameLower);
+        const effSize = getUnitEffectiveSizeM2(u, matchedVersion, fallbackMasterSize, true);
+        if (effSize > 0) {
+          const dedupKey = uNameLower || uIdLower;
+          matchedSizeByUnitKey.set(dedupKey, {
+            name: uName || uId,
+            sizeM2: effSize,
+            versionName: matchedVersion?.name,
+            versionYear: matchedVersion?.year,
+          });
+        }
+      }
+    });
+  }
+
+  // Fallback: if no partition canvas unit had a match, check masterSizeByUnit for exact code matches
+  if (matchedSizeByUnitKey.size === 0 && masterSizeByUnit.size > 0) {
+    for (let i = 0; i < pCodes.length; i++) {
+      const cl = pCodes[i].toLowerCase().trim();
+      const sz = masterSizeByUnit.get(cl);
+      if (sz && sz > 0) {
+        matchedSizeByUnitKey.set(cl, { name: pCodes[i], sizeM2: sz });
+      }
+    }
+  }
+
+  if (matchedSizeByUnitKey.size === 0) {
+    if (idx.resultCache.size < 4000) {
+      idx.resultCache.set(cacheKey, EMPTY_MATCH_RESULT);
+    }
+    return EMPTY_MATCH_RESULT;
+  }
+
+  let totalSize = 0;
+  const matchedUnitNames: string[] = [];
+  let firstVerName: string | undefined;
+  let firstVerYear: string | undefined;
+
+  matchedSizeByUnitKey.forEach((val) => {
+    totalSize += val.sizeM2;
+    matchedUnitNames.push(val.name);
+    if (!firstVerName && val.versionName) firstVerName = val.versionName;
+    if (!firstVerYear && val.versionYear) firstVerYear = val.versionYear;
+  });
+
+  const roundedTotal = Math.round(totalSize * 100) / 100;
+  const finalResult: MatchedUnitSizeResult = {
+    sizeM2: roundedTotal > 0 ? roundedTotal : undefined,
+    matchedUnitNames,
+    versionName: firstVerName,
+    versionYear: firstVerYear,
+  };
+
+  if (idx.resultCache.size >= 4000) {
+    idx.resultCache.clear();
+  }
+  idx.resultCache.set(cacheKey, finalResult);
+  return finalResult;
+}
+
+export { syncProjectSizeToUnits, syncUnitSizeToMatchedProjects } from './unitProjectSizeSyncService';
+export type { ProjectSizeSyncInput, UnitSizeSyncInput } from './unitProjectSizeSyncService';
+
+================================================================================
+FILE: src/lib/pdfBinaryCache.ts
+================================================================================
+/**
+ * Unified PDF Binary & Persistent Thumbnail Cache Engine
+ * Shares downloaded PDF binaries between Tooltip Thumbnails and Full PDF Viewer (0ms open),
+ * persists thumbnails + recent binaries in IndexedDB (respecting iOS 40MB cap), and clones before Worker transfer.
+ */
+
+const memoryBinaryCache = new Map<string, Uint8Array>();
+const inFlightBinaryMap = new Map<string, Promise<Uint8Array | null>>();
+const memoryThumbCache = new Map<string, string>();
+
+const IS_CONSTRAINED_MEM =
+  typeof window !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+    (typeof navigator !== 'undefined' && typeof (navigator as any).deviceMemory === 'number' && (navigator as any).deviceMemory <= 4));
+
+const MAX_BINARY_CACHE_ENTRIES = IS_CONSTRAINED_MEM ? 5 : 15;
+const MAX_IDB_BINARY_BYTES = 12 * 1024 * 1024;
+const MAX_THUMB_MEMORY_ENTRIES = IS_CONSTRAINED_MEM ? 120 : 300;
+const IDB_NAME = 'TakaPdfThumbCacheDB';
+const IDB_VERSION = 2;
+const IDB_STORE = 'pageThumbs';
+const IDB_BINARY_STORE = 'pdfBinaries';
+
+export function normalizePdfSourceUrl(rawUrl: string): string {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('r2://')) return `https://hcm.taka-pm.org/${trimmed.replace('r2://', '')}`;
+  if (trimmed.includes('dropbox.com') && !trimmed.includes('raw=1')) {
+    return trimmed.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '');
+  }
+  return trimmed;
+}
+
+export function extractDriveIdFromUrl(rawUrl: string): string | null {
+  if (!rawUrl) return null;
+  const trimmed = rawUrl.trim();
+  const driveMatch =
+    trimmed.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?id=|thumbnail\?id=)([a-zA-Z0-9_-]+)/i) ||
+    trimmed.match(/googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/i) ||
+    trimmed.match(/\/api\/drive-(?:pdf|thumb)\?id=([a-zA-Z0-9_-]+)/i) ||
+    (trimmed.includes('drive.google.com') && trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/i));
+  return driveMatch?.[1] || null;
+}
+
+export function canonicalizePdfKey(rawUrl: string): string {
+  if (!rawUrl) return '';
+  const driveId = extractDriveIdFromUrl(rawUrl);
+  if (driveId) {
+    return `gdrive:${driveId}`;
+  }
+  const normalized = normalizePdfSourceUrl(rawUrl);
+  try {
+    const u = new URL(normalized, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    if (
+      u.searchParams.has('X-Amz-Signature') ||
+      u.searchParams.has('x-amz-signature') ||
+      u.searchParams.has('token')
+    ) {
+      return `${u.origin}${u.pathname}`;
+    }
+  } catch {}
+  return normalized.split('#')[0];
+}
+
+let idbPromise: Promise<IDBDatabase | null> | null = null;
+
+function openThumbIdb(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  if (idbPromise) return idbPromise;
+
+  idbPromise = new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) {
+          db.createObjectStore(IDB_STORE);
+        }
+        if (!db.objectStoreNames.contains(IDB_BINARY_STORE)) {
+          db.createObjectStore(IDB_BINARY_STORE);
+        }
+      };
+      req.onblocked = () => {
+        idbPromise = null;
+        resolve(null);
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        db.onclose = () => { idbPromise = null; };
+        db.onversionchange = () => {
+          try { db.close(); } catch {}
+          idbPromise = null;
+        };
+        resolve(db);
+      };
+      req.onerror = () => {
+        idbPromise = null;
+        resolve(null);
+      };
+      // Timeout guard: never hang indefinitely if IDB open is blocked or slow
+      setTimeout(() => {
+        if (idbPromise) {
+          resolve(null);
+        }
+      }, 500);
+    } catch {
+      idbPromise = null;
+      resolve(null);
+    }
+  });
+
+  return idbPromise;
+}
+
+export function getCachedPageThumbSync(rawUrl: string | undefined | null, pageNum = 1): string | null {
+  if (!rawUrl) return null;
+  const key = `${canonicalizePdfKey(rawUrl)}#p${pageNum}`;
+  return memoryThumbCache.get(key) || null;
+}
+
+export async function getCachedPageThumbAsync(rawUrl: string | undefined | null, pageNum = 1): Promise<string | null> {
+  if (!rawUrl) return null;
+  const syncHit = getCachedPageThumbSync(rawUrl, pageNum);
+  if (syncHit) return syncHit;
+
+  const key = `${canonicalizePdfKey(rawUrl)}#p${pageNum}`;
+  const db = await openThumbIdb();
+  if (!db) return null;
+
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => {
+        const val = typeof req.result === 'string' ? req.result : null;
+        if (val) {
+          memoryThumbCache.set(key, val);
+        }
+        resolve(val);
+      };
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+export function setCachedPageThumb(rawUrl: string, pageNum: number, dataUrl: string): void {
+  if (!rawUrl || !dataUrl) return;
+  const key = `${canonicalizePdfKey(rawUrl)}#p${pageNum}`;
+  if (memoryThumbCache.size >= MAX_THUMB_MEMORY_ENTRIES) {
+    const oldest = memoryThumbCache.keys().next().value;
+    if (oldest) memoryThumbCache.delete(oldest);
+  }
+  memoryThumbCache.set(key, dataUrl);
+
+  setTimeout(async () => {
+    const db = await openThumbIdb();
+    if (!db) return;
+    try {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(dataUrl, key);
+    } catch {}
+  }, 0);
+}
+
+async function getIdbPdfBinary(key: string): Promise<Uint8Array | null> {
+  const db = await openThumbIdb();
+  if (!db || !db.objectStoreNames.contains(IDB_BINARY_STORE)) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(IDB_BINARY_STORE, 'readonly');
+      const req = tx.objectStore(IDB_BINARY_STORE).get(key);
+      req.onsuccess = () => {
+        const res = req.result;
+        if (res instanceof Uint8Array && res.byteLength > 64) {
+          resolve(res);
+        } else if (res instanceof ArrayBuffer && res.byteLength > 64) {
+          resolve(new Uint8Array(res));
+        } else {
+          resolve(null);
+        }
+      };
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function storePdfBinary(key: string, data: Uint8Array): void {
+  if (data.byteLength > 30 * 1024 * 1024) return;
+  if (memoryBinaryCache.size >= MAX_BINARY_CACHE_ENTRIES) {
+    const oldest = memoryBinaryCache.keys().next().value;
+    if (oldest) memoryBinaryCache.delete(oldest);
+  }
+  const copy = data.slice(0);
+  memoryBinaryCache.set(key, copy);
+
+  if (copy.byteLength <= MAX_IDB_BINARY_BYTES) {
+    setTimeout(async () => {
+      const db = await openThumbIdb();
+      if (!db || !db.objectStoreNames.contains(IDB_BINARY_STORE)) return;
+      try {
+        const tx = db.transaction(IDB_BINARY_STORE, 'readwrite');
+        tx.objectStore(IDB_BINARY_STORE).put(copy, key);
+      } catch {}
+    }, 0);
+  }
+}
+
+export function hasCachedPdfBinary(rawUrl: string): boolean {
+  const key = canonicalizePdfKey(rawUrl);
+  const hit = memoryBinaryCache.get(key);
+  return Boolean(hit && hit.byteLength > 0);
+}
+
+function isValidPdfBytes(bytes: Uint8Array): boolean {
+  if (!bytes || bytes.byteLength < 64) return false;
+  const scanLimit = Math.min(bytes.byteLength - 4, 1024);
+  for (let i = 0; i <= scanLimit; i++) {
+    if (bytes[i] === 0x25 && bytes[i + 1] === 0x50 && bytes[i + 2] === 0x44 && bytes[i + 3] === 0x46) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function fetchPdfBinaryUnified(
+  rawUrl: string,
+  onProgress?: (pct: number) => void
+): Promise<Uint8Array | null> {
+  if (!rawUrl) return null;
+  const key = canonicalizePdfKey(rawUrl);
+
+  const cached = memoryBinaryCache.get(key);
+  if (cached && cached.byteLength > 0) {
+    onProgress?.(100);
+    return cached.slice(0);
+  }
+
+  const existingPromise = inFlightBinaryMap.get(key);
+  if (existingPromise) {
+    const res = await existingPromise;
+    if (res && res.byteLength > 0) {
+      onProgress?.(100);
+      return res.slice(0);
+    }
+    return null;
+  }
+
+  const downloadPromise = (async (): Promise<Uint8Array | null> => {
+    try {
+      // 3. Check Persistent IndexedDB Binary Cache (~5ms, zero network traffic)
+      const idbHit = await getIdbPdfBinary(key);
+      if (idbHit && isValidPdfBytes(idbHit)) {
+        memoryBinaryCache.set(key, idbHit.slice(0));
+        onProgress?.(100);
+        return idbHit;
+      }
+
+      const normalizedUrl = normalizePdfSourceUrl(rawUrl);
+      const driveId = extractDriveIdFromUrl(rawUrl);
+
+      const candidateUrls: string[] = [];
+      if (driveId) {
+        candidateUrls.push(`/api/drive-pdf?id=${driveId}`);
+      } else if (/^https?:\/\//i.test(normalizedUrl)) {
+        const isCrossOriginR2OrExternal =
+          typeof window !== 'undefined' && !normalizedUrl.startsWith(window.location.origin);
+        if (isCrossOriginR2OrExternal) {
+          // Prioritize server-side proxy for R2/external URLs to completely avoid CORS blocks on iOS & Desktop
+          candidateUrls.push(`/api/pdf-proxy?url=${encodeURIComponent(normalizedUrl)}`);
+          candidateUrls.push(normalizedUrl);
+        } else {
+          candidateUrls.push(normalizedUrl);
+        }
+      } else {
+        candidateUrls.push(normalizedUrl);
+      }
+
+      // 4. Try candidate URLs in priority order
+      for (const candidate of candidateUrls) {
+        try {
+          onProgress?.(30);
+          const res = await fetch(candidate);
+          if (res.ok) {
+            const ct = (res.headers.get('content-type') || '').toLowerCase();
+            if (!ct.includes('text/html')) {
+              const buf = await res.arrayBuffer();
+              const bytes = new Uint8Array(buf);
+              if (isValidPdfBytes(bytes)) {
+                storePdfBinary(key, bytes);
+                onProgress?.(90);
+                return bytes;
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // 5. Fallback for R2 private/signed links or custom domains: direct S3 SDK or fresh presigned URL
+      if (!driveId) {
+        try {
+          onProgress?.(55);
+          const { resolveR2UrlToHttp, extractR2Key, getStoredR2CredentialsAsync, getS3Sdk } =
+            await import('../components/PictureMapping/lib/r2Upload');
+          const r2Key = extractR2Key(rawUrl.trim());
+          if (r2Key) {
+            const creds = await getStoredR2CredentialsAsync();
+            if (creds) {
+              try {
+                const { S3Client, GetObjectCommand } = await getS3Sdk();
+                const s3 = new S3Client({
+                  region: 'auto',
+                  endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
+                  credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
+                });
+                const s3Res = await s3.send(new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key }));
+                if (s3Res.Body) {
+                  const bytes = await s3Res.Body.transformToByteArray();
+                  if (isValidPdfBytes(bytes)) {
+                    storePdfBinary(key, bytes);
+                    onProgress?.(90);
+                    return bytes;
+                  }
+                }
+              } catch (s3Err) {
+                console.warn('[PDF Binary Cache] Direct S3 SDK fetch failed, falling back to presigned URL:', s3Err);
+              }
+            }
+          }
+
+          const presigned = await resolveR2UrlToHttp(rawUrl.trim());
+          if (presigned) {
+            const tryUrls = [
+              `/api/pdf-proxy?url=${encodeURIComponent(presigned)}`,
+              presigned,
+            ];
+            for (const u of tryUrls) {
+              try {
+                const res = await fetch(u);
+                if (res.ok) {
+                  const ct = (res.headers.get('content-type') || '').toLowerCase();
+                  if (!ct.includes('text/html')) {
+                    const bytes = new Uint8Array(await res.arrayBuffer());
+                    if (isValidPdfBytes(bytes)) {
+                      storePdfBinary(key, bytes);
+                      onProgress?.(90);
+                      return bytes;
+                    }
+                  }
+                }
+              } catch {}
+            }
+          }
+        } catch {}
+      }
+
+      return null;
+    } finally {
+      inFlightBinaryMap.delete(key);
+    }
+  })();
+
+  inFlightBinaryMap.set(key, downloadPromise);
+  const result = await downloadPromise;
+  return result && result.byteLength > 0 ? result.slice(0) : null;
+}
+
+export async function renderPdfPageToThumbDataUrl(
+  pdfDoc: any,
+  pageNum: number,
+  maxDimension = 280
+): Promise<string | null> {
+  if (!pdfDoc) return null;
+  let page: any = null;
+  let canvas: HTMLCanvasElement | null = null;
+  try {
+    page = await pdfDoc.getPage(pageNum);
+    const unscaled = page.getViewport({ scale: 1 });
+    const maxSide = Math.max(unscaled.width, unscaled.height, 1);
+    const scale = Math.min(1.5, Math.max(0.2, maxDimension / maxSide));
+    const viewport = page.getViewport({ scale });
+
+    canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.floor(viewport.width));
+    canvas.height = Math.max(1, Math.floor(viewport.height));
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'medium';
+
+    await page.render({ canvasContext: ctx, viewport }).promise;
+
+    let dataUrl = '';
+    try {
+      dataUrl = canvas.toDataURL('image/webp', 0.76);
+      if (!dataUrl.startsWith('data:image/webp')) {
+        dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+      }
+    } catch {
+      dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+    }
+    return dataUrl && dataUrl.length > 64 ? dataUrl : null;
+  } catch {
+    return null;
+  } finally {
+    try {
+      page?.cleanup?.();
+    } catch {}
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+  }
+}
+
+export interface PdfCanvasCacheEntry {
+  canvas: HTMLCanvasElement;
+  width: number;
+  height: number;
+  cssWidth: number;
+  cssHeight: number;
+}
+
+export async function renderPdfPageToCanvasEntry(params: {
+  pdfDoc: any;
+  pageNum: number;
+  availWidth: number;
+  availHeight: number;
+  maxDimension: number;
+  url: string;
+  onRenderTask?: (task: any) => void;
+}): Promise<PdfCanvasCacheEntry | null> {
+  const { pdfDoc, pageNum, availWidth, availHeight, maxDimension, url, onRenderTask } = params;
+  if (!pdfDoc) return null;
+  const page = await pdfDoc.getPage(pageNum);
+  const unscaled = page.getViewport({ scale: 1 });
+  const fitScale = Math.min(availWidth / Math.max(1, unscaled.width), availHeight / Math.max(1, unscaled.height), 2.5);
+  const rawDpr = Math.min(window.devicePixelRatio || 1, 2);
+  const maxDpr = maxDimension / Math.max(unscaled.width * fitScale, unscaled.height * fitScale, 1);
+  const dpr = Math.max(1, Math.min(rawDpr, maxDpr));
+
+  const viewport = page.getViewport({ scale: fitScale * dpr });
+  const pixelWidth = Math.max(1, Math.floor(viewport.width));
+  const pixelHeight = Math.max(1, Math.floor(viewport.height));
+  const cssWidth = Math.max(1, Math.floor(viewport.width / dpr));
+  const cssHeight = Math.max(1, Math.floor(viewport.height / dpr));
+
+  const offscreen = document.createElement('canvas');
+  offscreen.width = pixelWidth;
+  offscreen.height = pixelHeight;
+  const offCtx = offscreen.getContext('2d', { alpha: false });
+  if (!offCtx) {
+    page.cleanup?.();
+    return null;
+  }
+
+  offCtx.fillStyle = '#ffffff';
+  offCtx.fillRect(0, 0, pixelWidth, pixelHeight);
+  offCtx.imageSmoothingEnabled = true;
+  offCtx.imageSmoothingQuality = 'high';
+
+  const task = page.render({ canvasContext: offCtx, viewport });
+  onRenderTask?.(task);
+  await task.promise;
+  page.cleanup?.();
+
+  if (!getCachedPageThumbSync(url, pageNum)) {
+    setTimeout(() => {
+      try {
+        const thumbCanvas = document.createElement('canvas');
+        const ratio = Math.min(1, 260 / Math.max(pixelWidth, pixelHeight, 1));
+        thumbCanvas.width = Math.max(1, Math.round(pixelWidth * ratio));
+        thumbCanvas.height = Math.max(1, Math.round(pixelHeight * ratio));
+        const tCtx = thumbCanvas.getContext('2d', { alpha: false });
+        if (tCtx) {
+          tCtx.fillStyle = '#ffffff';
+          tCtx.fillRect(0, 0, thumbCanvas.width, thumbCanvas.height);
+          tCtx.drawImage(offscreen, 0, 0, thumbCanvas.width, thumbCanvas.height);
+          const dataUrl = thumbCanvas.toDataURL('image/webp', 0.75);
+          if (dataUrl && dataUrl.length > 64) setCachedPageThumb(url, pageNum, dataUrl);
+        }
+      } catch {}
+    }, 20);
+  }
+
+  return { canvas: offscreen, width: pixelWidth, height: pixelHeight, cssWidth, cssHeight };
+}

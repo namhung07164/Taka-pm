@@ -11,6 +11,12 @@ const IS_IOS = typeof window !== 'undefined' && (
   (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 );
 
+const IS_LOW_RAM_DEVICE =
+  IS_IOS ||
+  (typeof navigator !== 'undefined' &&
+    typeof (navigator as any).deviceMemory === 'number' &&
+    (navigator as any).deviceMemory <= 4);
+
 // Ngưỡng an toàn tối đa cho iOS (35MB để không chạm trần 40MB của WebKit)
 const IOS_SAFE_QUOTA_BYTES = 35 * 1024 * 1024;
 
@@ -24,7 +30,8 @@ export interface StorageBudgetReport {
 }
 
 /**
- * Kiểm tra và dọn dẹp các bản ghi năm cũ (LRU eviction) nếu chạm ngưỡng bộ nhớ Safari
+ * Kiểm tra và dọn dẹp rác (soft-deleted, virtual summary) trên mọi thiết bị
+ * đồng thời áp dụng LRU eviction cho các bản ghi năm cũ nếu chạm ngưỡng bộ nhớ Safari / máy đời cũ
  */
 export async function enforceStorageBudget(): Promise<StorageBudgetReport> {
   const result: StorageBudgetReport = {
@@ -37,39 +44,61 @@ export async function enforceStorageBudget(): Promise<StorageBudgetReport> {
   };
 
   try {
+    // 1. Universal Hygiene: Purge any soft-deleted or virtual summary ghost rows from local IndexedDB
+    const [delProjects, delTasks, delCosts, delDelegations] = await Promise.all([
+      localDb.projects.filter((p: any) => Boolean(p?.isDeleted)).primaryKeys().catch(() => [] as string[]),
+      localDb.tasks
+        .filter((t: any) => Boolean(t?.isDeleted || t?._isVirtualSummary || String(t?.id || '').startsWith('ts_')))
+        .primaryKeys()
+        .catch(() => [] as string[]),
+      localDb.costs.filter((c: any) => Boolean(c?.isDeleted)).primaryKeys().catch(() => [] as string[]),
+      localDb.delegations.filter((d: any) => Boolean(d?.isDeleted)).primaryKeys().catch(() => [] as string[]),
+    ]);
+
+    if (delProjects.length > 0) await localDb.projects.bulkDelete(delProjects);
+    if (delTasks.length > 0) await localDb.tasks.bulkDelete(delTasks);
+    if (delCosts.length > 0) await localDb.costs.bulkDelete(delCosts);
+    if (delDelegations.length > 0) await localDb.delegations.bulkDelete(delDelegations);
+
+    const deadCount = delProjects.length + delTasks.length + delCosts.length + delDelegations.length;
+    if (deadCount > 0) {
+      result.evictedCount += deadCount;
+    }
+
+    // 2. Check Browser Storage Quota
     if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
       const estimate = await navigator.storage.estimate();
       result.usageBytes = estimate.usage || 0;
       if (estimate.quota) {
-        result.quotaBytes = IS_IOS ? Math.min(estimate.quota, IOS_SAFE_QUOTA_BYTES) : estimate.quota;
+        result.quotaBytes = IS_LOW_RAM_DEVICE ? Math.min(estimate.quota, IOS_SAFE_QUOTA_BYTES) : estimate.quota;
       }
       if (result.quotaBytes > 0) {
         result.percentageUsed = Math.round((result.usageBytes / result.quotaBytes) * 100);
       }
     }
 
-    // Nếu là môi trường iOS và dung lượng vượt 80% ngưỡng an toàn
-    const needsPruning = IS_IOS && (result.percentageUsed > 80 || result.usageBytes > IOS_SAFE_QUOTA_BYTES * 0.85);
+    // Nếu là môi trường iOS / máy RAM thấp và dung lượng vượt 80% ngưỡng an toàn
+    const needsPruning =
+      IS_LOW_RAM_DEVICE && (result.percentageUsed > 80 || result.usageBytes > IOS_SAFE_QUOTA_BYTES * 0.85);
 
     if (needsPruning) {
       const currentYear = new Date().getFullYear();
-      const cutoffYear = String(currentYear - 2); // Giữ các năm hiện hành (2025, 2026); dọn <= 2024
+      const cutoffYear = String(currentYear - 2); // Giữ các năm hiện hành; dọn <= cutoffYear
 
       // Chỉ dọn dẹp các task đã hoàn thành thuộc các năm lưu trữ cũ khỏi Dexie nội bộ (không chạm vào Firestore)
-      const oldTasks = await localDb.tasks
+      const oldTaskKeys = await localDb.tasks
         .filter((t: any) => {
           const taskYear = String(t.projectYear || t.year || '');
           const status = String(t.runningStatus || t.status || '').toLowerCase();
           return Boolean(taskYear && taskYear <= cutoffYear && status === 'completed');
         })
-        .toArray();
+        .primaryKeys();
 
-      if (oldTasks.length > 0) {
-        const oldIds = oldTasks.map((t) => t.id);
-        await localDb.tasks.bulkDelete(oldIds);
-        result.evictedCount += oldIds.length;
+      if (oldTaskKeys.length > 0) {
+        await localDb.tasks.bulkDelete(oldTaskKeys);
+        result.evictedCount += oldTaskKeys.length;
         result.status = 'pruned';
-        console.info(`[storageBudgetService] Evicted ${oldIds.length} completed tasks of <= ${cutoffYear} to preserve iOS 40MB limit.`);
+        console.info(`[storageBudgetService] Evicted ${oldTaskKeys.length} archived completed tasks (<= ${cutoffYear}) to preserve 40MB budget.`);
       }
     }
   } catch (err) {

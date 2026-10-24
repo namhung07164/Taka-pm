@@ -14,7 +14,12 @@ import { extractR2Key, resolveR2UrlToHttp } from '../components/PictureMapping/l
 const DB_NAME = 'taka_cad_images_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'cad_blobs';
-const MAX_MEMORY_CACHE = 20; // Safe in-memory cache limit for active floorplan images
+const IS_CONSTRAINED_DEVICE =
+  typeof window !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+    (typeof navigator !== 'undefined' && typeof (navigator as any).deviceMemory === 'number' && (navigator as any).deviceMemory <= 4));
+const MAX_MEMORY_CACHE = IS_CONSTRAINED_DEVICE ? 8 : 20; // Safe in-memory cache limit for active floorplan images
 
 // In-Memory LRU Cache for decoded ImageBitmap / HTMLImageElement
 const memoryCache = new Map<string, ImageBitmap | HTMLImageElement>();
@@ -63,12 +68,20 @@ export function normalizeImageCacheKey(url: string | undefined | null): string {
 function updateMemoryCache(cacheKey: string, img: ImageBitmap | HTMLImageElement) {
   if (!cacheKey) return;
   if (memoryCache.has(cacheKey)) {
+    const prev = memoryCache.get(cacheKey);
     memoryCache.delete(cacheKey);
+    if (prev && prev !== img && 'close' in prev && typeof (prev as ImageBitmap).close === 'function') {
+      try { (prev as ImageBitmap).close(); } catch (_) {}
+    }
   } else if (memoryCache.size >= MAX_MEMORY_CACHE) {
-    // Evict oldest item
+    // Evict oldest item and free its GPU texture memory if ImageBitmap
     const firstKey = memoryCache.keys().next().value;
     if (firstKey) {
+      const evicted = memoryCache.get(firstKey);
       memoryCache.delete(firstKey);
+      if (evicted && evicted !== img && 'close' in evicted && typeof (evicted as ImageBitmap).close === 'function') {
+        try { (evicted as ImageBitmap).close(); } catch (_) {}
+      }
     }
   }
   memoryCache.set(cacheKey, img);

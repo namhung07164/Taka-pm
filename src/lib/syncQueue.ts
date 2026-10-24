@@ -72,19 +72,60 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 export async function addPendingUpdate(update: Omit<PendingUpdate, 'id' | 'timestamp'>) {
+  if (!update.docId || String(update.docId).startsWith('ts_')) return;
   try {
     const db = await openDB();
-    const newUpdate: PendingUpdate = {
-      ...update,
-      id: Math.random().toString(36).substring(2, 9),
-      timestamp: Date.now(),
-    };
+    const deterministicId = `${update.collectionPath}__${update.docId}`;
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
-      const request = store.add(newUpdate);
-      request.onsuccess = () => resolve(newUpdate);
-      request.onerror = () => reject(request.error);
+      const getReq = store.get(deterministicId);
+      getReq.onsuccess = () => {
+        const existing = getReq.result as PendingUpdate | undefined;
+        let mergedAction = update.action;
+        let mergedData = update.data;
+
+        if (existing) {
+          if (update.action === 'delete') {
+            mergedAction = 'delete';
+            mergedData = null;
+          } else if (existing.action === 'set' && update.action === 'update') {
+            mergedAction = 'set';
+            mergedData =
+              existing.data && typeof existing.data === 'object' && update.data && typeof update.data === 'object'
+                ? { ...existing.data, ...update.data }
+                : update.data;
+          } else if (existing.action === 'update' && update.action === 'update') {
+            mergedAction = 'update';
+            mergedData =
+              existing.data && typeof existing.data === 'object' && update.data && typeof update.data === 'object'
+                ? { ...existing.data, ...update.data }
+                : update.data;
+          }
+        }
+
+        const coalescedUpdate: PendingUpdate = {
+          ...update,
+          id: deterministicId,
+          action: mergedAction,
+          data: mergedData,
+          timestamp: Date.now(),
+        };
+
+        const putReq = store.put(coalescedUpdate);
+        putReq.onsuccess = () => resolve(coalescedUpdate);
+        putReq.onerror = () => reject(putReq.error);
+      };
+      getReq.onerror = () => {
+        const fallbackUpdate: PendingUpdate = {
+          ...update,
+          id: deterministicId,
+          timestamp: Date.now(),
+        };
+        const putReq = store.put(fallbackUpdate);
+        putReq.onsuccess = () => resolve(fallbackUpdate);
+        putReq.onerror = () => reject(putReq.error);
+      };
     });
   } catch (e) {
     console.error('Failed to add pending update to IDB', e);

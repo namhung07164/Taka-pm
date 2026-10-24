@@ -1,7 +1,7 @@
 import { useAppStore } from "../../store/useAppStore";
 import { Project, Task, DelegationGroup, AppUser } from "../../types";
 import { isTaskDeletedInTracker } from "../taskDeletedTracker";
-import { parseDateTime } from "./commonAndDateUtils";
+import { parseDateMidnightMs, getTodayMidnightMs } from "./commonAndDateUtils";
 
 export function matchProjectStatusFilter(
   status: string | undefined,
@@ -22,12 +22,10 @@ export function matchProjectStatusFilter(
     }
     if (currentStatus === 'Upcoming') {
       if (!startStr) return false;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const dStart = parseDateTime(startStr);
-      if (!dStart) return false;
-      dStart.setHours(0, 0, 0, 0);
-      const diffDays = Math.ceil((dStart.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      const todayMs = getTodayMidnightMs();
+      const dStartMs = parseDateMidnightMs(startStr);
+      if (dStartMs === null) return false;
+      const diffDays = Math.ceil((dStartMs - todayMs) / (1000 * 60 * 60 * 24));
       return diffDays <= 3 && diffDays >= 0;
     }
     return false;
@@ -44,23 +42,41 @@ const INVALID_UNIT_TOKENS = new Set([
   'reserve', 'event', 'common', 'area', 'mall', 'store', 'floor', 'all', 'na', 'null', 'undefined'
 ]);
 
+const _normUnitCodeCache = new Map<string, string>();
+const _extractCodesCache = new Map<string, string[]>();
+
 /**
  * Strips common floor/zone/PM prefixes like 'PM-L1-HCM-2026-', 'L1-', 'F1-', '1F-', 'B1-', 'GF-', 'UG-', 'Unit '
  */
 function normalizeUnitCodeBase(code: string): string {
   if (!code) return '';
+  const cached = _normUnitCodeCache.get(code);
+  if (cached !== undefined) return cached;
+
   let str = code.toLowerCase().trim();
   str = str.replace(/^(unit|shop|lot|booth|kiosk|store)\s*[-_:]?\s*/i, '');
   str = str.replace(/^pm-(?:(?:b\d|l\d|\d+f|gf|ug|hcm|hn|20\d\d|y\d\d)[-_:]\s*)+/i, '');
   str = str.replace(/^(?:hcm|hn)[-_:]\s*/i, '');
   str = str.replace(/^(?:[blf]\d{1,2}|\d{1,2}f|gf|ug|mz|basement|ground)\s*[-_:]\s*/i, '');
-  return str.trim();
+  const res = str.trim();
+
+  if (_normUnitCodeCache.size >= 4000) {
+    _normUnitCodeCache.clear();
+  }
+  _normUnitCodeCache.set(code, res);
+  return res;
 }
 
 /**
  * Extracts all project codes from both project.code and project.linkCodes
  */
 export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: string | null }): string[] {
+  if (!p) return [];
+  const rawCodeKey = `${p.code || ''}|${p.linkCodes || ''}`;
+  if (rawCodeKey === '|') return [];
+  const cached = _extractCodesCache.get(rawCodeKey);
+  if (cached !== undefined) return cached;
+
   const codeSet = new Set<string>();
 
   const addIfValid = (rawCode: string) => {
@@ -102,7 +118,12 @@ export function extractAllProjectCodes(p: { code?: string | null; linkCodes?: st
     addIfValid(String(p.code));
   }
 
-  return Array.from(codeSet);
+  const result = Array.from(codeSet);
+  if (_extractCodesCache.size >= 4000) {
+    _extractCodesCache.clear();
+  }
+  _extractCodesCache.set(rawCodeKey, result);
+  return result;
 }
 
 /**

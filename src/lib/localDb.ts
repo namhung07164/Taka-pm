@@ -61,154 +61,130 @@ const tsOf = (v: any): number => {
 
 export const localDb = new TakaLocalDB();
 
-/**
- * Lưu hàng loạt Dự án vào Local Database (Dexie)
- */
+function cleanItemForLocalDb<T extends Record<string, any>>(item: T): T {
+  if (!item || typeof item !== 'object') return item;
+  if (
+    '_isVirtualSummary' in item ||
+    'realtimeUpdate' in item ||
+    'importComment' in item ||
+    'parentTaskCode' in item ||
+    'parentTaskName' in item
+  ) {
+    const { _isVirtualSummary, realtimeUpdate, importComment, parentTaskCode, parentTaskName, ...rest } = item as any;
+    return rest as T;
+  }
+  return item;
+}
+
+async function bulkPersistTable<T extends { id?: string; isDeleted?: boolean; _isVirtualSummary?: boolean }>(
+  table: Table<T, string>,
+  items: T[],
+  label: string
+): Promise<void> {
+  if (!items || items.length === 0) return;
+  try {
+    const toPut: T[] = [];
+    const toDelete: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (!it || !it.id) continue;
+      const idStr = String(it.id);
+      if (it._isVirtualSummary || idStr.startsWith('ts_')) continue;
+      if (it.isDeleted) {
+        toDelete.push(idStr);
+      } else {
+        toPut.push(cleanItemForLocalDb(it));
+      }
+    }
+    if (toPut.length > 0) await table.bulkPut(toPut);
+    if (toDelete.length > 0) await table.bulkDelete(toDelete);
+  } catch (err) {
+    console.warn(`[localDb] ${label} error:`, err);
+  }
+}
+
 export async function bulkPersistProjects(projects: Project[]): Promise<void> {
-  if (!projects || projects.length === 0) return;
-  try {
-    await localDb.projects.bulkPut(projects);
-  } catch (err) {
-    console.warn('[localDb] bulkPersistProjects error:', err);
-  }
+  return bulkPersistTable(localDb.projects, projects, 'bulkPersistProjects');
 }
 
-/**
- * Lưu hàng loạt Tasks vào Local Database (Dexie)
- */
 export async function bulkPersistTasks(tasks: Task[]): Promise<void> {
-  if (!tasks || tasks.length === 0) return;
-  try {
-    await localDb.tasks.bulkPut(tasks);
-  } catch (err) {
-    console.warn('[localDb] bulkPersistTasks error:', err);
-  }
+  return bulkPersistTable(localDb.tasks, tasks, 'bulkPersistTasks');
 }
 
-/**
- * Lưu hàng loạt Costs vào Local Database (Dexie)
- */
 export async function bulkPersistCosts(costs: Cost[]): Promise<void> {
-  if (!costs || costs.length === 0) return;
-  try {
-    await localDb.costs.bulkPut(costs);
-  } catch (err) {
-    console.warn('[localDb] bulkPersistCosts error:', err);
-  }
+  return bulkPersistTable(localDb.costs, costs, 'bulkPersistCosts');
 }
 
-/**
- * Lưu hàng loạt Delegation Groups vào Local Database (Dexie)
- */
 export async function bulkPersistDelegations(groups: DelegationGroup[]): Promise<void> {
-  if (!groups || groups.length === 0) return;
-  try {
-    await localDb.delegations.bulkPut(groups);
-  } catch (err) {
-    console.warn('[localDb] bulkPersistDelegations error:', err);
+  return bulkPersistTable(localDb.delegations, groups, 'bulkPersistDelegations');
+}
+
+function getTableByCollection(
+  collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations'
+): Table<any, string> {
+  switch (collectionName) {
+    case 'taka_projects': return localDb.projects;
+    case 'taka_tasks': return localDb.tasks;
+    case 'taka_costs': return localDb.costs;
+    case 'taka_delegations': return localDb.delegations;
   }
 }
 
-/**
- * Cập nhật hoặc thêm mới 1 bản ghi vào bảng tương ứng trong Local Database
- */
 export async function upsertLocalRecord(
   collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
   item: any
 ): Promise<void> {
-  if (!item?.id) return;
+  if (!item?.id || item._isVirtualSummary || String(item.id).startsWith('ts_')) return;
   try {
-    const table = (() => {
-      switch (collectionName) {
-        case 'taka_projects': return localDb.projects;
-        case 'taka_tasks': return localDb.tasks;
-        case 'taka_costs': return localDb.costs;
-        case 'taka_delegations': return localDb.delegations;
-      }
-    })();
-    
-    // [Safety Guard] If item is marked as deleted, remove it from local cache
-    if (item?.isDeleted) {
+    const table = getTableByCollection(collectionName);
+    if (item.isDeleted) {
       await table.delete(item.id);
       return;
     }
-
-    // [Safety Guard] Only upsert if the incoming doc is newer than what we have
     const existing = await table.get(item.id);
     const existingTs = tsOf(existing?.updatedAt);
     const incomingTs = tsOf(item.updatedAt);
     if (existing && existingTs > 0 && incomingTs > 0 && existingTs > incomingTs) return;
 
-    await table.put(item);
+    await table.put(cleanItemForLocalDb(item));
   } catch (err) {
     console.warn(`[localDb] upsertLocalRecord error on ${collectionName}:`, err);
   }
 }
 
-/**
- * Áp dụng field-level patch vào Local Database (Dexie)
- * Nếu bản ghi đã tồn tại: chỉ cập nhật các trường thay đổi (giữ nguyên các trường còn lại)
- * Nếu chưa tồn tại: thêm mới bản ghi
- */
 export async function patchLocalRecord(
   collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
   id: string,
   patch: Record<string, any>
 ): Promise<void> {
-  if (!id || !patch) return;
+  if (!id || !patch || String(id).startsWith('ts_')) return;
   try {
-    const table = (() => {
-      switch (collectionName) {
-        case 'taka_projects': return localDb.projects;
-        case 'taka_tasks': return localDb.tasks;
-        case 'taka_costs': return localDb.costs;
-        case 'taka_delegations': return localDb.delegations;
-      }
-    })();
-    
-    // Patch only existing rows. Creating a row from a partial patch produces ghost/incomplete records
+    const table = getTableByCollection(collectionName);
     const existing = await table.get(id);
     if (!existing) return;
 
-    // If patch marks doc as deleted, delete it from local Dexie immediately
-    if (patch?.isDeleted) {
+    if (patch.isDeleted) {
       await table.delete(id);
       return;
     }
 
-    // Only skip if incoming patch is explicitly older than existing (both timestamps valid)
     const existingTs = tsOf(existing.updatedAt);
     const incomingTs = tsOf(patch.updatedAt);
     if (existingTs > 0 && incomingTs > 0 && existingTs > incomingTs) return;
 
-    await (table as any).update(id, patch);
+    await table.update(id, cleanItemForLocalDb(patch));
   } catch (err) {
     console.warn(`[localDb] patchLocalRecord error on ${collectionName}:`, err);
   }
 }
 
-/**
- * Xóa 1 bản ghi khỏi Local Database
- */
 export async function deleteLocalRecord(
   collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
   id: string
 ): Promise<void> {
+  if (!id) return;
   try {
-    switch (collectionName) {
-      case 'taka_projects':
-        await localDb.projects.delete(id);
-        break;
-      case 'taka_tasks':
-        await localDb.tasks.delete(id);
-        break;
-      case 'taka_costs':
-        await localDb.costs.delete(id);
-        break;
-      case 'taka_delegations':
-        await localDb.delegations.delete(id);
-        break;
-    }
+    await getTableByCollection(collectionName).delete(id);
   } catch (err) {
     console.warn(`[localDb] deleteLocalRecord error on ${collectionName}:`, err);
   }

@@ -1,18 +1,22 @@
 /**
  * Unified PDF Binary & Persistent Thumbnail Cache Engine
- * - Normalizes all PDF sources (Cloudflare R2, r2://, Google Drive, Firebase Storage, HTTP)
- * - Shares downloaded PDF binaries between Tooltip Thumbnails and the Full PDF Viewer (0ms open)
- * - Persists both page thumbnails AND recent PDF binaries in IndexedDB (respecting iOS 40MB cap)
- * - Always clones (.slice(0)) before passing to PDF.js Worker so ArrayBuffer transfer never detaches cache
+ * Shares downloaded PDF binaries between Tooltip Thumbnails and Full PDF Viewer (0ms open),
+ * persists thumbnails + recent binaries in IndexedDB (respecting iOS 40MB cap), and clones before Worker transfer.
  */
 
 const memoryBinaryCache = new Map<string, Uint8Array>();
 const inFlightBinaryMap = new Map<string, Promise<Uint8Array | null>>();
 const memoryThumbCache = new Map<string, string>();
 
-const MAX_BINARY_CACHE_ENTRIES = 15;
-const MAX_IDB_BINARY_BYTES = 12 * 1024 * 1024; // Max 12MB per PDF in IDB to respect iOS 40MB limit
-const MAX_THUMB_MEMORY_ENTRIES = 300;
+const IS_CONSTRAINED_MEM =
+  typeof window !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+    (typeof navigator !== 'undefined' && typeof (navigator as any).deviceMemory === 'number' && (navigator as any).deviceMemory <= 4));
+
+const MAX_BINARY_CACHE_ENTRIES = IS_CONSTRAINED_MEM ? 5 : 15;
+const MAX_IDB_BINARY_BYTES = 12 * 1024 * 1024;
+const MAX_THUMB_MEMORY_ENTRIES = IS_CONSTRAINED_MEM ? 120 : 300;
 const IDB_NAME = 'TakaPdfThumbCacheDB';
 const IDB_VERSION = 2;
 const IDB_STORE = 'pageThumbs';
@@ -22,9 +26,7 @@ export function normalizePdfSourceUrl(rawUrl: string): string {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
   const trimmed = rawUrl.trim();
   if (!trimmed) return '';
-  if (trimmed.startsWith('r2://')) {
-    return `https://hcm.taka-pm.org/${trimmed.replace('r2://', '')}`;
-  }
+  if (trimmed.startsWith('r2://')) return `https://hcm.taka-pm.org/${trimmed.replace('r2://', '')}`;
   if (trimmed.includes('dropbox.com') && !trimmed.includes('raw=1')) {
     return trimmed.replace('www.dropbox.com', 'dl.dropboxusercontent.com').replace('?dl=0', '');
   }

@@ -102,10 +102,69 @@ export function getSuggestedCompletionTime(baseDate?: string | Date): string {
   return formatToDatetimeLocal(d);
 }
 
+const MAX_DATE_PARSE_CACHE = 4000;
+const _dateTimeMsCache = new Map<string, number>();
+const _dateMidnightMsCache = new Map<string, number>();
+
+let _cachedTodayMidnightMs = 0;
+let _cachedTodayCheckTs = 0;
+
+export function getTodayMidnightMs(): number {
+  const now = Date.now();
+  if (now - _cachedTodayCheckTs < 30000 && _cachedTodayMidnightMs > 0) {
+    return _cachedTodayMidnightMs;
+  }
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  _cachedTodayMidnightMs = d.getTime();
+  _cachedTodayCheckTs = now;
+  return _cachedTodayMidnightMs;
+}
+
+export function parseDateTimeMs(dateStr: string | undefined): number | null {
+  if (!dateStr) return null;
+  const cached = _dateTimeMsCache.get(dateStr);
+  if (cached !== undefined) {
+    return isNaN(cached) ? null : cached;
+  }
+  const d = dateStr.length === 10 ? new Date(dateStr + "T09:00") : new Date(dateStr);
+  const ms = d.getTime();
+  if (_dateTimeMsCache.size >= MAX_DATE_PARSE_CACHE) {
+    _dateTimeMsCache.clear();
+  }
+  _dateTimeMsCache.set(dateStr, ms);
+  return isNaN(ms) ? null : ms;
+}
+
+export function parseDateMidnightMs(dateStr: string | undefined): number | null {
+  if (!dateStr) return null;
+  const cached = _dateMidnightMsCache.get(dateStr);
+  if (cached !== undefined) {
+    return isNaN(cached) ? null : cached;
+  }
+  const ms = parseDateTimeMs(dateStr);
+  if (ms === null) {
+    if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
+      _dateMidnightMsCache.clear();
+    }
+    _dateMidnightMsCache.set(dateStr, NaN);
+    return null;
+  }
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  const midMs = d.getTime();
+  if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
+    _dateMidnightMsCache.clear();
+  }
+  _dateMidnightMsCache.set(dateStr, midMs);
+  return midMs;
+}
+
 export function parseDateTime(dateStr: string | undefined): Date | null {
   if (!dateStr) return null;
-  if (dateStr.length === 10) return new Date(dateStr + "T09:00");
-  return new Date(dateStr);
+  const ms = parseDateTimeMs(dateStr);
+  if (ms === null) return new Date(NaN);
+  return new Date(ms);
 }
 
 export function calculateDays(
@@ -113,10 +172,10 @@ export function calculateDays(
   finish: string | undefined,
 ): string {
   if (!start || !finish) return "";
-  const s = parseDateTime(start);
-  const f = parseDateTime(finish);
-  if (!s || !f) return "";
-  const diffTime = f.getTime() - s.getTime();
+  const sMs = parseDateTimeMs(start);
+  const fMs = parseDateTimeMs(finish);
+  if (sMs === null || fMs === null) return "";
+  const diffTime = fMs - sMs;
   const diffDays = diffTime / (1000 * 60 * 60 * 24);
   return (diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0) + " days";
 }

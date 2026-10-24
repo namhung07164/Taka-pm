@@ -84,8 +84,18 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
 
           // Step D: Decode via Blob ObjectURL
           createdBlobUrl = URL.createObjectURL(blob);
+          const blobUrlToRevoke = createdBlobUrl;
           const img = new Image();
-          img.src = createdBlobUrl;
+          img.src = blobUrlToRevoke;
+
+          const revokeBlobUrlSafely = () => {
+            if (createdBlobUrl === blobUrlToRevoke) {
+              createdBlobUrl = null;
+            }
+            try {
+              URL.revokeObjectURL(blobUrlToRevoke);
+            } catch (_) {}
+          };
 
           const onBlobImgDone = () => {
             if (isMounted) {
@@ -93,6 +103,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
               setImage(img);
               setStatus('loaded');
             }
+            setTimeout(revokeBlobUrlSafely, 100);
           };
 
           if (typeof img.decode === 'function') {
@@ -100,6 +111,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           } else {
             img.onload = onBlobImgDone;
             img.onerror = () => {
+              revokeBlobUrlSafely();
               if (isMounted) setStatus('failed');
             };
           }
@@ -165,6 +177,12 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
 
     return () => {
       isMounted = false;
+      if (createdBlobUrl) {
+        try {
+          URL.revokeObjectURL(createdBlobUrl);
+        } catch (_) {}
+        createdBlobUrl = null;
+      }
     };
   }, [url, crossOrigin]);
 

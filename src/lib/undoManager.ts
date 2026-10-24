@@ -18,6 +18,13 @@ let listeners: Listener[] = [];
 let currentBatch: UndoAction[] | null = null;
 let currentBatchDescription = "";
 
+const IS_LOW_MEM =
+  typeof window !== "undefined" &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ||
+    (typeof navigator !== "undefined" && typeof (navigator as any).deviceMemory === "number" && (navigator as any).deviceMemory <= 4));
+const MAX_UNDO_STACK = IS_LOW_MEM ? 20 : 50;
+
 export const logUserAction = async (description: string) => {
   try {
     const authData = safeGetItemLocal("taka_auth_v1");
@@ -90,7 +97,7 @@ export const undoManager = {
       action.timestamp = Date.now();
     }
     stack.push(action);
-    if (stack.length > 50) stack.shift(); // Keep last 50 actions in multi-level stack
+    if (stack.length > MAX_UNDO_STACK) stack.shift();
     
     // Clear redo stack on any new user action (standard undo/redo command pattern)
     redoStack = [];
@@ -108,7 +115,7 @@ export const undoManager = {
       try {
         await action.revert();
         redoStack.push(action);
-        if (redoStack.length > 50) redoStack.shift();
+        if (redoStack.length > MAX_UNDO_STACK) redoStack.shift();
         notify();
         logUserAction(`Undo: ${action.description}`);
       } catch (e) {
@@ -126,7 +133,7 @@ export const undoManager = {
           await action.redo();
         }
         stack.push(action);
-        if (stack.length > 50) stack.shift();
+        if (stack.length > MAX_UNDO_STACK) stack.shift();
         notify();
         logUserAction(`Redo: ${action.description}`);
       } catch (e) {

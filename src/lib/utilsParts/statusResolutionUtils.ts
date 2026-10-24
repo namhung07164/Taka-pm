@@ -1,5 +1,5 @@
 import { Project, Task, DelegationGroup } from "../../types";
-import { parseDateTime } from "./commonAndDateUtils";
+import { parseDateMidnightMs, getTodayMidnightMs } from "./commonAndDateUtils";
 import { isTaskBelongsToProject, isDelegationGroupBelongsToProject } from "./projectCodeAndScopeUtils";
 import {
   computePlanProgressPercent,
@@ -185,30 +185,27 @@ export function getStatus(
 ) {
   if (code && String(code).toLowerCase().includes("cancel")) return "Canceled";
   if (!start) return "Upcoming";
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const todayMs = getTodayMidnightMs();
 
-  const dStart = parseDateTime(start);
-  if (!dStart) return "Upcoming";
-  dStart.setHours(0, 0, 0, 0);
+  const dStartMs = parseDateMidnightMs(start);
+  if (dStartMs === null) return "Upcoming";
 
-  const dHandover = handover ? parseDateTime(handover) : null;
-  if (dHandover) dHandover.setHours(0, 0, 0, 0);
+  const dHandoverMs = handover ? parseDateMidnightMs(handover) : null;
+  const dOpeningMs = opening ? parseDateMidnightMs(opening) : null;
 
-  const dOpening = opening ? parseDateTime(opening) : null;
-  if (dOpening) dOpening.setHours(0, 0, 0, 0);
+  const dEndMs =
+    dOpeningMs !== null && dHandoverMs !== null
+      ? dOpeningMs > dHandoverMs
+        ? dOpeningMs
+        : dHandoverMs
+      : dOpeningMs !== null
+        ? dOpeningMs
+        : dHandoverMs;
 
-  const dEnd =
-    dOpening && dHandover
-      ? dOpening > dHandover
-        ? dOpening
-        : dHandover
-      : dOpening || dHandover;
+  if (todayMs < dStartMs) return "Upcoming";
+  if (dEndMs !== null && todayMs > dEndMs) return "Completed";
 
-  if (today < dStart) return "Upcoming";
-  if (dEnd && today > dEnd) return "Completed";
-
-  if (dHandover && dOpening && today >= dHandover && today <= dOpening)
+  if (dHandoverMs !== null && dOpeningMs !== null && todayMs >= dHandoverMs && todayMs <= dOpeningMs)
     return "Handover";
 
   return "On process";
@@ -219,17 +216,13 @@ export function getTaskStatus(
   finish: string | undefined,
 ): string {
   if (!start && !finish) return "Upcoming";
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const todayMs = getTodayMidnightMs();
 
-  const dStart = parseDateTime(start);
-  if (dStart) dStart.setHours(0, 0, 0, 0);
+  const dStartMs = parseDateMidnightMs(start);
+  const dFinishMs = parseDateMidnightMs(finish);
 
-  const dFinish = parseDateTime(finish);
-  if (dFinish) dFinish.setHours(0, 0, 0, 0);
-
-  if (dStart && today < dStart) return "Upcoming";
-  if (dFinish && today > dFinish) return "Completed";
+  if (dStartMs !== null && todayMs < dStartMs) return "Upcoming";
+  if (dFinishMs !== null && todayMs > dFinishMs) return "Completed";
 
   return "On process";
 }

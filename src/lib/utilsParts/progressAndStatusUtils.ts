@@ -1,5 +1,5 @@
 import { Task, DelegationGroup } from "../../types";
-import { parseDateTime } from "./commonAndDateUtils";
+import { parseDateTimeMs, parseDateMidnightMs, getTodayMidnightMs } from "./commonAndDateUtils";
 import { getTaskStatus } from "./statusResolutionUtils";
 
 export * from "./statusResolutionUtils";
@@ -8,9 +8,7 @@ export function computePlanProgressFromSummaries(
   summaries: Array<{ start?: string; finish?: string; [key: string]: any }>
 ): number {
   if (!summaries || summaries.length === 0) return 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayTime = today.getTime();
+  const todayTime = getTodayMidnightMs();
 
   let totalScore = 0;
   let validCount = 0;
@@ -19,17 +17,15 @@ export function computePlanProgressFromSummaries(
     if (!s.start && !s.finish) continue;
     validCount++;
 
-    const start = parseDateTime(s.start);
-    if (start) start.setHours(0, 0, 0, 0);
-    const finish = parseDateTime(s.finish);
-    if (finish) finish.setHours(0, 0, 0, 0);
+    const startMs = parseDateMidnightMs(s.start);
+    const finishMs = parseDateMidnightMs(s.finish);
 
-    if (finish && todayTime > finish.getTime()) {
+    if (finishMs !== null && todayTime > finishMs) {
       totalScore += 1;
-    } else if (start && finish && todayTime >= start.getTime() && todayTime <= finish.getTime()) {
-      const totalDuration = finish.getTime() - start.getTime();
+    } else if (startMs !== null && finishMs !== null && todayTime >= startMs && todayTime <= finishMs) {
+      const totalDuration = finishMs - startMs;
       if (totalDuration > 0) {
-        const passed = todayTime - start.getTime();
+        const passed = todayTime - startMs;
         totalScore += passed / totalDuration;
       } else {
         totalScore += 1;
@@ -45,9 +41,7 @@ export function computeActProgressFromSummaries(
   summaries: Array<{ start?: string; finish?: string; runningStatus?: string; approval?: string; [key: string]: any }>
 ): number {
   if (!summaries || summaries.length === 0) return 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayTime = today.getTime();
+  const todayTime = getTodayMidnightMs();
 
   const validScores: number[] = [];
 
@@ -74,17 +68,15 @@ export function computeActProgressFromSummaries(
       continue;
     }
 
-    const start = parseDateTime(s.start);
-    if (start) start.setHours(0, 0, 0, 0);
-    const finish = parseDateTime(s.finish);
-    if (finish) finish.setHours(0, 0, 0, 0);
+    const startMs = parseDateMidnightMs(s.start);
+    const finishMs = parseDateMidnightMs(s.finish);
 
-    if (finish && todayTime > finish.getTime()) {
+    if (finishMs !== null && todayTime > finishMs) {
       validScores.push(1.0);
-    } else if (start && finish && todayTime >= start.getTime() && todayTime <= finish.getTime()) {
-      const totalDuration = finish.getTime() - start.getTime();
+    } else if (startMs !== null && finishMs !== null && todayTime >= startMs && todayTime <= finishMs) {
+      const totalDuration = finishMs - startMs;
       if (totalDuration > 0) {
-        const passed = todayTime - start.getTime();
+        const passed = todayTime - startMs;
         validScores.push(Math.max(0.3, Math.min(0.9, passed / totalDuration)));
       } else {
         validScores.push(1.0);
@@ -118,33 +110,28 @@ export function computeActProgressFromSummaries(
 export function computePlanProgressPercent(groupTasks: Task[]): number {
   if (groupTasks.length === 0) return 0;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayTime = today.getTime();
-
+  const todayTime = getTodayMidnightMs();
   let totalScore = 0;
 
   for (const t of groupTasks) {
     if (!t.start && !t.finish) continue;
-    
-    const start = parseDateTime(t.start);
-    if (start) start.setHours(0, 0, 0, 0);
-    const finish = parseDateTime(t.finish);
-    if (finish) finish.setHours(0, 0, 0, 0);
 
-    if (finish && todayTime > finish.getTime()) {
+    const startMs = parseDateMidnightMs(t.start);
+    const finishMs = parseDateMidnightMs(t.finish);
+
+    if (finishMs !== null && todayTime > finishMs) {
       totalScore += 1;
-    } else if (start && finish && todayTime >= start.getTime() && todayTime <= finish.getTime()) {
-      const totalDuration = finish.getTime() - start.getTime();
+    } else if (startMs !== null && finishMs !== null && todayTime >= startMs && todayTime <= finishMs) {
+      const totalDuration = finishMs - startMs;
       if (totalDuration > 0) {
-        const passed = todayTime - start.getTime();
+        const passed = todayTime - startMs;
         totalScore += passed / totalDuration;
       } else {
         totalScore += 1;
       }
     }
   }
-  
+
   return Math.round((totalScore / groupTasks.length) * 100);
 }
 
@@ -275,9 +262,7 @@ export function computeActProgressPercent(
     return delegationGroups.find((g) => g.parentTaskId === tid);
   };
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayTime = today.getTime();
+  const todayTime = getTodayMidnightMs();
 
   const completedTaskStartTimestamps: number[] = [];
 
@@ -300,7 +285,7 @@ export function computeActProgressPercent(
     }
 
     if (isCompleted) {
-      const startTs = parseDateTime(t.start)?.getTime() || 0;
+      const startTs = parseDateTimeMs(t.start) || 0;
       if (startTs > 0) completedTaskStartTimestamps.push(startTs);
     }
   }
@@ -330,7 +315,7 @@ export function computeActProgressPercent(
       continue;
     }
 
-    const tFinishTs = parseDateTime(t.finish)?.getTime() || 0;
+    const tFinishTs = parseDateTimeMs(t.finish) || 0;
     if (
       tFinishTs > 0 &&
       maxCompletedStartTs > 0 &&
@@ -341,16 +326,16 @@ export function computeActProgressPercent(
     }
 
     if (running.includes("process") || running.includes("progress")) {
-      const start = parseDateTime(t.start);
-      const finish = parseDateTime(t.finish);
+      const startMs = parseDateTimeMs(t.start);
+      const finishMs = parseDateTimeMs(t.finish);
       if (
-        start &&
-        finish &&
-        todayTime >= start.getTime() &&
-        todayTime <= finish.getTime()
+        startMs !== null &&
+        finishMs !== null &&
+        todayTime >= startMs &&
+        todayTime <= finishMs
       ) {
-        const duration = finish.getTime() - start.getTime();
-        const passed = todayTime - start.getTime();
+        const duration = finishMs - startMs;
+        const passed = todayTime - startMs;
         rawScores.push(
           duration > 0 ? Math.max(0.3, Math.min(0.9, passed / duration)) : 0.5
         );
@@ -374,16 +359,16 @@ export function computeActProgressPercent(
     if (plStatus === "Completed") {
       rawScores.push(1.0);
     } else if (plStatus === "On process") {
-      const start = parseDateTime(t.start);
-      const finish = parseDateTime(t.finish);
+      const startMs = parseDateTimeMs(t.start);
+      const finishMs = parseDateTimeMs(t.finish);
       if (
-        start &&
-        finish &&
-        todayTime >= start.getTime() &&
-        todayTime <= finish.getTime()
+        startMs !== null &&
+        finishMs !== null &&
+        todayTime >= startMs &&
+        todayTime <= finishMs
       ) {
-        const duration = finish.getTime() - start.getTime();
-        const passed = todayTime - start.getTime();
+        const duration = finishMs - startMs;
+        const passed = todayTime - startMs;
         rawScores.push(
           duration > 0 ? Math.max(0.3, Math.min(0.9, passed / duration)) : 0.5
         );

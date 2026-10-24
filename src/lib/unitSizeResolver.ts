@@ -175,43 +175,42 @@ export interface MatchedUnitSizeResult {
   versionYear?: string;
 }
 
-/**
- * Finds the matching version for a Project's (store, location, year) and calculates
- * the total Size (m²) from the unit(s) mapped/matched to the project in that version.
- */
-export function resolveMatchedUnitSizeM2(projectOrInput: {
-  code?: string;
-  linkCodes?: string;
-  store?: string;
-  location?: string;
-  year?: string | number;
-}): MatchedUnitSizeResult {
-  ensureMappingConfigHydrated();
+interface ResolverCachedIndex {
+  storeLocationDataRef: any;
+  mapUnitsRef: any;
+  mapVersionsRef: any;
+  activeMapVersionIdRef: any;
+  unitInfoRef: any;
+  projectLinkRef: any;
+  storeRef: any;
+  locationRef: any;
+  localBackupRef: any;
+  allPartitions: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId: string | null }>;
+  partitionKeysByStore: { HCM: Array<{ key: string; loc: string }>; HN: Array<{ key: string; loc: string }> };
+  masterSizeByUnit: Map<string, number>;
+  projectLinkEntries: Array<{ unitLower: string; plCode: string }>;
+  combinedUnitsCache: Map<string, Map<string, UnitShape>>;
+  resultCache: Map<string, MatchedUnitSizeResult>;
+}
 
-  const pCodes = extractAllProjectCodes(projectOrInput);
-  if (pCodes.length === 0) {
-    return { sizeM2: undefined, matchedUnitNames: [] };
+let _resolverIndex: ResolverCachedIndex | null = null;
+
+function getOrBuildResolverIndex(state: ReturnType<typeof useDataStore.getState>): ResolverCachedIndex {
+  if (
+    _resolverIndex &&
+    _resolverIndex.storeLocationDataRef === state.storeLocationData &&
+    _resolverIndex.mapUnitsRef === state.mapUnits &&
+    _resolverIndex.mapVersionsRef === state.mapVersions &&
+    _resolverIndex.activeMapVersionIdRef === state.activeMapVersionId &&
+    _resolverIndex.unitInfoRef === state.unitInfo &&
+    _resolverIndex.projectLinkRef === state.projectLink &&
+    _resolverIndex.storeRef === state.store &&
+    _resolverIndex.locationRef === state.location &&
+    _resolverIndex.localBackupRef === _cachedLocalBackup
+  ) {
+    return _resolverIndex;
   }
 
-  const state = useDataStore.getState();
-  const targetStore = (String(projectOrInput.store || state.store || 'HCM').toUpperCase().trim() === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
-  const targetLoc = normalizeFloorCode(projectOrInput.location);
-  const targetYear = String(projectOrInput.year || '').trim();
-
-  // Also include any linked unit codes from projectLink table
-  const projectLink = state.projectLink || [];
-  const linkedUnitNames = new Set<string>();
-  projectLink.forEach((pl: any) => {
-    const u = String(pl?.unit || '').trim();
-    const plCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
-    if (u && plCode) {
-      if (pCodes.some(pc => pc.toLowerCase() === plCode || projectMatchesUnitCode([pc], plCode))) {
-        linkedUnitNames.add(u.toLowerCase());
-      }
-    }
-  });
-
-  // Build merged partitions dictionary including cached localStorage backup and active in-memory partition
   const activeKey = `${state.store}_${normalizeFloorCode(state.location)}`;
   const basePartitions =
     state.storeLocationData && Object.keys(state.storeLocationData).length > 0
@@ -229,22 +228,19 @@ export function resolveMatchedUnitSizeM2(projectOrInput: {
     };
   }
 
-  const isStorewideLoc =
-    !targetLoc ||
-    targetLoc === 'ALL' ||
-    targetLoc === 'STORE' ||
-    targetLoc === 'STOREWIDE' ||
-    targetLoc === 'WHOLE STORE' ||
-    targetLoc === 'ALL FLOORS';
+  const partitionKeysByStore: { HCM: Array<{ key: string; loc: string }>; HN: Array<{ key: string; loc: string }> } = {
+    HCM: [],
+    HN: [],
+  };
+  for (const k of Object.keys(allPartitions)) {
+    const loc = normalizeFloorCode(k.split('_')[1]);
+    if (k.startsWith('HCM_')) {
+      partitionKeysByStore.HCM.push({ key: k, loc });
+    } else if (k.startsWith('HN_')) {
+      partitionKeysByStore.HN.push({ key: k, loc });
+    }
+  }
 
-  const candidatePartitionKeys = Object.keys(allPartitions).filter((k) => {
-    if (!k.startsWith(`${targetStore}_`)) return false;
-    if (isStorewideLoc) return true;
-    const partLoc = normalizeFloorCode(k.split('_')[1]);
-    return partLoc === targetLoc;
-  });
-
-  // Master unitInfo fallback lookup
   const masterSizeByUnit = new Map<string, number>();
   (state.unitInfo || []).forEach((ui: any) => {
     const uKey = String(ui?.unit || '').trim().toLowerCase();
@@ -254,6 +250,97 @@ export function resolveMatchedUnitSizeM2(projectOrInput: {
     }
   });
 
+  const projectLinkEntries: Array<{ unitLower: string; plCode: string }> = [];
+  (state.projectLink || []).forEach((pl: any) => {
+    const u = String(pl?.unit || '').trim().toLowerCase();
+    const plCode = String(pl?.code || pl?.projectCode || pl?.project || '').trim().toLowerCase();
+    if (u && plCode) {
+      projectLinkEntries.push({ unitLower: u, plCode });
+    }
+  });
+
+  _resolverIndex = {
+    storeLocationDataRef: state.storeLocationData,
+    mapUnitsRef: state.mapUnits,
+    mapVersionsRef: state.mapVersions,
+    activeMapVersionIdRef: state.activeMapVersionId,
+    unitInfoRef: state.unitInfo,
+    projectLinkRef: state.projectLink,
+    storeRef: state.store,
+    locationRef: state.location,
+    localBackupRef: _cachedLocalBackup,
+    allPartitions,
+    partitionKeysByStore,
+    masterSizeByUnit,
+    projectLinkEntries,
+    combinedUnitsCache: new Map(),
+    resultCache: new Map(),
+  };
+
+  return _resolverIndex;
+}
+
+const EMPTY_MATCH_RESULT: MatchedUnitSizeResult = { sizeM2: undefined, matchedUnitNames: [] };
+
+/**
+ * Finds the matching version for a Project's (store, location, year) and calculates
+ * the total Size (m²) from the unit(s) mapped/matched to the project in that version.
+ */
+export function resolveMatchedUnitSizeM2(projectOrInput: {
+  code?: string;
+  linkCodes?: string;
+  store?: string;
+  location?: string;
+  year?: string | number;
+}): MatchedUnitSizeResult {
+  ensureMappingConfigHydrated();
+
+  const pCodes = extractAllProjectCodes(projectOrInput);
+  if (pCodes.length === 0) {
+    return EMPTY_MATCH_RESULT;
+  }
+
+  const state = useDataStore.getState();
+  const idx = getOrBuildResolverIndex(state);
+
+  const targetStore = (String(projectOrInput.store || state.store || 'HCM').toUpperCase().trim() === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+  const targetLoc = normalizeFloorCode(projectOrInput.location);
+  const targetYear = String(projectOrInput.year || '').trim();
+
+  const cacheKey = `${targetStore}|${targetLoc}|${targetYear}|${pCodes.join(',')}`;
+  const cachedResult = idx.resultCache.get(cacheKey);
+  if (cachedResult !== undefined) {
+    return cachedResult;
+  }
+
+  const linkedUnitNames = new Set<string>();
+  if (idx.projectLinkEntries.length > 0) {
+    for (let i = 0; i < idx.projectLinkEntries.length; i++) {
+      const { unitLower, plCode } = idx.projectLinkEntries[i];
+      if (pCodes.some(pc => pc === plCode || projectMatchesUnitCode([pc], plCode))) {
+        linkedUnitNames.add(unitLower);
+      }
+    }
+  }
+
+  const isStorewideLoc =
+    !targetLoc ||
+    targetLoc === 'ALL' ||
+    targetLoc === 'STORE' ||
+    targetLoc === 'STOREWIDE' ||
+    targetLoc === 'WHOLE STORE' ||
+    targetLoc === 'ALL FLOORS';
+
+  const storePartitions = idx.partitionKeysByStore[targetStore];
+  const candidatePartitionKeys: string[] = [];
+  for (let i = 0; i < storePartitions.length; i++) {
+    const entry = storePartitions[i];
+    if (isStorewideLoc || entry.loc === targetLoc) {
+      candidatePartitionKeys.push(entry.key);
+    }
+  }
+
+  const { allPartitions, masterSizeByUnit, combinedUnitsCache } = idx;
   const matchedSizeByUnitKey = new Map<string, { name: string; sizeM2: number; versionName?: string; versionYear?: string }>();
 
   for (const pKey of candidatePartitionKeys) {
@@ -281,29 +368,39 @@ export function resolveMatchedUnitSizeM2(projectOrInput: {
       }
     }
 
-    // Gather units from both the version's mapUnits and the partition's mapUnits
-    const versionUnits = Array.isArray(matchedVersion?.mapUnits) ? matchedVersion!.mapUnits! : [];
-    const partitionUnits = Array.isArray(part.mapUnits) ? part.mapUnits : [];
+    const combinedCacheKey = `${pKey}__${matchedVersion?.id || 'base'}`;
+    let combinedUnitsMap = combinedUnitsCache.get(combinedCacheKey);
+    if (!combinedUnitsMap) {
+      combinedUnitsMap = new Map<string, UnitShape>();
+      const partitionUnits = Array.isArray(part.mapUnits) ? part.mapUnits : [];
+      const versionUnits = Array.isArray(matchedVersion?.mapUnits) ? matchedVersion!.mapUnits! : [];
 
-    // Index versionUnits by id and name so version-specific unit shapes take precedence
-    const combinedUnitsMap = new Map<string, UnitShape>();
-    partitionUnits.forEach((u) => {
-      if (u && (u.name || u.id)) {
-        combinedUnitsMap.set(String(u.name || u.id).trim().toLowerCase(), u);
+      for (let i = 0; i < partitionUnits.length; i++) {
+        const u = partitionUnits[i];
+        if (u && (u.name || u.id)) {
+          combinedUnitsMap.set(String(u.name || u.id).trim().toLowerCase(), u);
+        }
       }
-    });
-    versionUnits.forEach((u) => {
-      if (u && (u.name || u.id)) {
-        const key = String(u.name || u.id).trim().toLowerCase();
-        const prev = combinedUnitsMap.get(key);
-        combinedUnitsMap.set(key, {
-          ...(prev || {}),
-          ...u,
-          sizeM2: u.sizeM2 ?? prev?.sizeM2,
-          size: u.size ?? prev?.size,
-        });
+      for (let i = 0; i < versionUnits.length; i++) {
+        const u = versionUnits[i];
+        if (u && (u.name || u.id)) {
+          const key = String(u.name || u.id).trim().toLowerCase();
+          const prev = combinedUnitsMap.get(key);
+          combinedUnitsMap.set(
+            key,
+            prev
+              ? {
+                  ...prev,
+                  ...u,
+                  sizeM2: u.sizeM2 ?? prev.sizeM2,
+                  size: u.size ?? prev.size,
+                }
+              : u
+          );
+        }
       }
-    });
+      combinedUnitsCache.set(combinedCacheKey, combinedUnitsMap);
+    }
 
     combinedUnitsMap.forEach((u) => {
       const uName = String(u.name || '').trim();
@@ -312,10 +409,7 @@ export function resolveMatchedUnitSizeM2(projectOrInput: {
       const uIdLower = uId.toLowerCase();
       if (!uNameLower && !uIdLower) return;
 
-      const isExact = pCodes.some((c) => {
-        const cl = c.toLowerCase();
-        return cl === uNameLower || (uIdLower && cl === uIdLower);
-      });
+      const isExact = pCodes.some((c) => c === uNameLower || (uIdLower && c === uIdLower));
       const isLinked = linkedUnitNames.has(uNameLower) || (uIdLower ? linkedUnitNames.has(uIdLower) : false);
       const isCodeMatch = isExact || isLinked || projectMatchesUnitCode(pCodes, uName || uId);
 
@@ -337,17 +431,20 @@ export function resolveMatchedUnitSizeM2(projectOrInput: {
 
   // Fallback: if no partition canvas unit had a match, check masterSizeByUnit for exact code matches
   if (matchedSizeByUnitKey.size === 0 && masterSizeByUnit.size > 0) {
-    pCodes.forEach((c) => {
-      const cl = c.toLowerCase().trim();
+    for (let i = 0; i < pCodes.length; i++) {
+      const cl = pCodes[i].toLowerCase().trim();
       const sz = masterSizeByUnit.get(cl);
       if (sz && sz > 0) {
-        matchedSizeByUnitKey.set(cl, { name: c, sizeM2: sz });
+        matchedSizeByUnitKey.set(cl, { name: pCodes[i], sizeM2: sz });
       }
-    });
+    }
   }
 
   if (matchedSizeByUnitKey.size === 0) {
-    return { sizeM2: undefined, matchedUnitNames: [] };
+    if (idx.resultCache.size < 4000) {
+      idx.resultCache.set(cacheKey, EMPTY_MATCH_RESULT);
+    }
+    return EMPTY_MATCH_RESULT;
   }
 
   let totalSize = 0;
@@ -363,12 +460,18 @@ export function resolveMatchedUnitSizeM2(projectOrInput: {
   });
 
   const roundedTotal = Math.round(totalSize * 100) / 100;
-  return {
+  const finalResult: MatchedUnitSizeResult = {
     sizeM2: roundedTotal > 0 ? roundedTotal : undefined,
     matchedUnitNames,
     versionName: firstVerName,
     versionYear: firstVerYear,
   };
+
+  if (idx.resultCache.size >= 4000) {
+    idx.resultCache.clear();
+  }
+  idx.resultCache.set(cacheKey, finalResult);
+  return finalResult;
 }
 
 export { syncProjectSizeToUnits, syncUnitSizeToMatchedProjects } from './unitProjectSizeSyncService';
