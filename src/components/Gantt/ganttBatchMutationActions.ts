@@ -5,13 +5,10 @@ import { doc, deleteField } from 'firebase/firestore';
 import { writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { recordBatchDeltas, recordDelta } from '../../lib/deltaSyncService';
-import {
-  deleteTaskStateUnified,
-  deleteProjectStateUnified,
-  saveTaskStateUnified,
-} from '../../lib/taskStateService';
+import { deleteTaskStateUnified, deleteProjectStateUnified, saveTaskStateUnified } from '../../lib/taskStateService';
 import { addPendingUpdate, isPermanentWriteError } from '../../lib/syncQueue';
 import { calculateParentTaskPredecessorsAndDates } from '../../lib/parentTaskPredecessorService';
+import { isTaskBelongToSameParentScope } from '../../lib/parentHierarchyUtils';
 
 export interface GanttBatchMutationContext {
   selectedTaskIds: string[];
@@ -48,31 +45,58 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
 
     const now = new Date().toISOString();
     const prevTasks = useAppStore.getState().tasks;
-    const childIdSet = new Set(childTaskIds.map(String));
     const parentIdStr = String(parentTaskId);
+    const parentObj = prevTasks.find((t) => String(t.id) === parentIdStr);
+    if (!parentObj) return;
+
+    // Strictly filter children belonging to the SAME project, year, store, and projectCode as parentObj
+    const validChildren = prevTasks.filter((t) => {
+      return childTaskIds.some(cid => String(cid) === String(t.id)) && isTaskBelongToSameParentScope(t, parentObj);
+    });
+
+    if (validChildren.length === 0) {
+      useAppStore.getState().setToast({
+        title: 'Notice',
+        message: 'No selected tasks belong to the same project scope as the parent task.'
+      });
+      return;
+    }
+
+    const validChildIdSet = new Set(validChildren.map((t) => String(t.id)));
+    const parentCanonicalId = String(parentObj.id);
+
+    // Patch children with parent's ID and inherit missing 4 keys
+    const childInheritedPatch = {
+      parentTaskId: parentCanonicalId,
+      parentId: parentCanonicalId,
+      ...(parentObj.projectId ? { projectId: parentObj.projectId } : {}),
+      ...(parentObj.projectCode ? { projectCode: parentObj.projectCode } : {}),
+      ...(parentObj.projectYear !== undefined ? { projectYear: parentObj.projectYear } : {}),
+      ...(parentObj.projectStore ? { projectStore: parentObj.projectStore } : {}),
+      updatedAt: now,
+    };
 
     const mapped = prevTasks.map((t) => {
       const tIdStr = String(t.id);
-      return childIdSet.has(tIdStr)
-        ? { ...t, parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now }
+      return validChildIdSet.has(tIdStr)
+        ? { ...t, ...childInheritedPatch }
         : t;
     });
 
-    const parentObj = mapped.find((t) => String(t.id) === parentIdStr);
-    const children = mapped.filter((t) => String(t.parentTaskId) === parentIdStr && String(t.id) !== parentIdStr);
+    const activeChildren = mapped.filter((t) => String(t.parentTaskId) === parentCanonicalId && String(t.id) !== parentCanonicalId);
     const projects = useAppStore.getState().projects;
-    const parentPatch = parentObj ? calculateParentTaskPredecessorsAndDates(parentObj, children, projects, mapped) : null;
+    const parentPatch = calculateParentTaskPredecessorsAndDates(parentObj, activeChildren, projects, mapped);
     const finalParentData = { isModularParent: true, ...(parentPatch || {}), updatedAt: now };
-    const updatedTasks = mapped.map((t) => (String(t.id) === parentIdStr ? { ...t, ...finalParentData } : t));
+    const updatedTasks = mapped.map((t) => (String(t.id) === parentCanonicalId ? { ...t, ...finalParentData } : t));
 
     useAppStore.getState().setTasks(updatedTasks);
     saveTaskStateUnified(
-      updatedTasks.filter((t) => childIdSet.has(String(t.id)) || String(t.id) === parentIdStr)
+      updatedTasks.filter((t) => validChildIdSet.has(String(t.id)) || String(t.id) === parentCanonicalId)
     ).catch(() => {});
 
     setExpandedModularTasks(prev => {
       const nextSet = new Set(prev.map(String));
-      nextSet.add(parentIdStr);
+      nextSet.add(parentCanonicalId);
       return Array.from(nextSet);
     });
 
@@ -80,18 +104,18 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
     setSelectedTaskIds([]);
 
     const batch = writeBatch(db);
-    childTaskIds.forEach((id) => {
-      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', String(id));
-      batch.set(docRef, { parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now }, { merge: true });
+    validChildren.forEach((child) => {
+      const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', String(child.id));
+      batch.set(docRef, childInheritedPatch, { merge: true });
     });
-    const parentDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', parentIdStr);
+    const parentDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', parentCanonicalId);
     batch.set(parentDocRef, finalParentData, { merge: true });
 
     try {
       const { localDb } = await import('../../lib/localDb');
       await Promise.all([
-        ...childTaskIds.map(id => (localDb.tasks.update as any)(String(id), { parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now })),
-        (localDb.tasks.update as any)(parentIdStr, finalParentData)
+        ...validChildren.map(c => (localDb.tasks.update as any)(String(c.id), childInheritedPatch)),
+        (localDb.tasks.update as any)(parentCanonicalId, finalParentData)
       ]);
     } catch (e) {
       console.warn('[useGanttBatchOps] Dexie update on group failed:', e);
@@ -100,29 +124,27 @@ export function createGanttBatchMutationActions(ctx: GanttBatchMutationContext) 
     try {
       await batch.commit();
       const deltaItems: TakaDeltaItem[] = [
-        ...childTaskIds.map(id => {
-          const t = taskByIdMap.get(String(id));
-          return {
-            docId: String(id),
-            collectionName: 'taka_tasks' as const,
-            action: 'update' as const,
-            isPatch: true,
-            data: { parentTaskId: parentIdStr, parentId: parentIdStr, updatedAt: now },
-            year: t?.projectYear ? String(t.projectYear) : undefined,
-          };
-        }),
+        ...validChildren.map(c => ({
+          docId: String(c.id),
+          collectionName: 'taka_tasks' as const,
+          action: 'update' as const,
+          isPatch: true,
+          data: childInheritedPatch,
+          year: parentObj.projectYear ? String(parentObj.projectYear) : (c.projectYear ? String(c.projectYear) : undefined),
+        })),
         {
-          docId: parentIdStr,
+          docId: parentCanonicalId,
           collectionName: 'taka_tasks' as const,
           action: 'update' as const,
           isPatch: true,
           data: finalParentData,
+          year: parentObj.projectYear ? String(parentObj.projectYear) : undefined,
         }
       ];
       recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
       useAppStore.getState().setToast({
         title: 'Success',
-        message: `Grouped ${childTaskIds.length} tasks under parent modular task.`
+        message: `Grouped ${validChildren.length} tasks under parent modular task.`
       });
     } catch (err) {
       console.error('[handleGroupModularTasks] Batch commit error:', err);

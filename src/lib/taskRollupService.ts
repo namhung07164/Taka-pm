@@ -1,5 +1,6 @@
 import { Task, DelegationGroup } from '../types';
 import { normalizeDashes } from './utils';
+import { isTaskBelongToSameParentScope } from './parentHierarchyUtils';
 
 function extractNumericSuffix(codeOrPhu?: string | null): number | null {
   if (!codeOrPhu) return null;
@@ -134,7 +135,7 @@ function resolveParentTaskInScope(
   if (!parentStr) return undefined;
 
   const byId = taskByIdLower.get(parentStr);
-  if (byId && String(byId.id) !== String(child.id)) return byId;
+  if (byId && String(byId.id) !== String(child.id) && isTaskBelongToSameParentScope(child, byId)) return byId;
 
   const scopes = getTaskProjectScopeKeys(child);
   for (let sIdx = 0; sIdx < scopes.length; sIdx++) {

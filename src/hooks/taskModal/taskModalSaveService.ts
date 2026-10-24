@@ -21,6 +21,7 @@ import { Project, Task, AppUser } from '../../types';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { recordBatchDeltas } from '../../lib/deltaSyncService';
 import { createPatchDeltaItem } from '../../lib/deltaPatchService';
+import { isTaskBelongToSameParentScope } from '../../lib/parentHierarchyUtils';
 
 export interface TaskSaveParams {
   formData: Partial<Task>;
@@ -286,6 +287,19 @@ export async function executeTaskSave({
     if (task?.parentTaskId && !finalFormData.parentTaskId) {
       dataToSave.parentTaskId = deleteField();
       dataToSave.parentId = null;
+    } else if (finalFormData.parentTaskId) {
+      const parentTask = tasks.find(t => String(t.id) === String(finalFormData.parentTaskId) || (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === String(finalFormData.parentTaskId).trim().toLowerCase()));
+      if (parentTask && isTaskBelongToSameParentScope(dataToSave, parentTask)) {
+        dataToSave.parentTaskId = String(parentTask.id);
+        dataToSave.parentId = String(parentTask.id);
+        if (!dataToSave.projectId && parentTask.projectId) dataToSave.projectId = parentTask.projectId;
+        if (!dataToSave.projectStore && parentTask.projectStore) dataToSave.projectStore = parentTask.projectStore;
+        if (dataToSave.projectYear === undefined && parentTask.projectYear !== undefined) dataToSave.projectYear = parentTask.projectYear;
+        if (!dataToSave.projectCode && parentTask.projectCode) dataToSave.projectCode = parentTask.projectCode;
+      } else if (parentTask && !isTaskBelongToSameParentScope(dataToSave, parentTask)) {
+        delete dataToSave.parentTaskId;
+        delete dataToSave.parentId;
+      }
     }
     if (task?.taskCodePhu && (!finalFormData.taskCodePhu || !finalFormData.taskCodePhu.trim())) {
       dataToSave.taskCodePhu = deleteField();

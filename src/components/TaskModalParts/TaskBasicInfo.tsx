@@ -8,6 +8,7 @@ import { FastToggle } from '../DetailTabParts/FastToggle';
 import { TaskDatesSection } from './TaskDatesSection';
 import { TaskPredecessorSection } from './TaskPredecessorSection';
 import { useAppStore } from '../../store/useAppStore';
+import { isTaskBelongToSameParentScope } from '../../lib/parentHierarchyUtils';
 
 export const TaskBasicInfo = memo(function TaskBasicInfo({ 
   logic, 
@@ -37,23 +38,14 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
     if (!task?.id) return [];
     const tId = String(task.id);
     const code = task.taskCodePhu ? String(task.taskCodePhu).trim().toLowerCase() : '';
-    const tProjId = task.projectId ? String(task.projectId).trim() : '';
-    const tCode = task.projectCode ? String(task.projectCode).trim().toLowerCase() : '';
-    const tYear = task.projectYear !== undefined && task.projectYear !== null ? String(task.projectYear).trim() : '';
-    const tStore = task.projectStore ? String(task.projectStore).trim().toUpperCase() : '';
     return tasks.filter(t => {
       if (String(t.id) === tId) return false;
       const raw = t.parentTaskId || (t as any).parentId;
       if (!raw) return false;
+      if (!isTaskBelongToSameParentScope(t, task)) return false;
       if (String(raw) === tId) return true;
       const rawStr = String(raw).trim().toLowerCase();
-      if (code && rawStr === code) {
-        if (tProjId && t.projectId && String(t.projectId).trim() !== tProjId) return false;
-        if (tCode && t.projectCode && String(t.projectCode).trim().toLowerCase() !== tCode) return false;
-        if (tYear && t.projectYear && String(t.projectYear).trim() !== tYear) return false;
-        if (tStore && t.projectStore && String(t.projectStore).trim().toUpperCase() !== tStore) return false;
-        return true;
-      }
+      if (code && rawStr === code) return true;
       return false;
     });
   }, [task, tasks]);

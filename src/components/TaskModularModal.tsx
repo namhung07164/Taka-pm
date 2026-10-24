@@ -18,6 +18,7 @@ import { Task, Project } from "../types";
 import { cn, matchesAdvancedSearch } from "../lib/utils";
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { getZIndexClass, useOverlayStack } from '../lib/zIndexManager';
+import { isTaskBelongToSameParentScope } from '../lib/parentHierarchyUtils';
 
 interface TaskModularModalProps {
   isOpen: boolean;
@@ -103,30 +104,35 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
     return selectedTasks.filter((t) => (childrenCountMap.get(String(t.id)) || 0) > 0);
   }, [selectedTasks, childrenCountMap]);
 
-  // All task IDs that will be grouped into the chosen parent
+  const chosenParentTask = useMemo(() => {
+    if (!selectedParentTaskId) return null;
+    return tasks.find((t) => String(t.id) === String(selectedParentTaskId)) || null;
+  }, [tasks, selectedParentTaskId]);
+
+  // All task IDs that will be grouped into the chosen parent (must belong to the same composite scope)
   const allTargetTaskIds = useMemo(() => {
-    const parentIdStr = selectedParentTaskId ? String(selectedParentTaskId) : null;
+    if (!chosenParentTask) return [];
+    const parentIdStr = String(chosenParentTask.id);
     const targetSet = new Set<string>();
 
-    selectedTaskIds.forEach((id) => {
-      const idStr = String(id);
-      if (idStr !== parentIdStr) {
+    selectedTasks.forEach((t) => {
+      const idStr = String(t.id);
+      if (idStr !== parentIdStr && isTaskBelongToSameParentScope(t, chosenParentTask)) {
         targetSet.add(idStr);
       }
     });
 
     return Array.from(targetSet);
-  }, [selectedTaskIds, selectedParentTaskId]);
+  }, [selectedTasks, chosenParentTask]);
 
   // Candidate parent tasks:
-  // Must be a top-level task (no parentTaskId).
-  // Can be one of the selected tasks if the user wants to pick a checked task as the parent!
+  // Must be a top-level task (no parentTaskId) and share project scope (year, store, project id/code).
   const candidateParentTasks = useMemo(() => {
     return tasks.filter((t) => {
       if (t.parentTaskId) return false;
-      if (filterScope === "same_project" && selectedProjectCodes.size > 0) {
-        const pCode = String(t.projectCode || "").trim().toLowerCase();
-        if (!selectedProjectCodes.has(pCode)) return false;
+      if (filterScope === "same_project" && selectedTasks.length > 0) {
+        const isCompatibleWithSelected = selectedTasks.some(st => isTaskBelongToSameParentScope(st, t));
+        if (!isCompatibleWithSelected) return false;
       }
       if (searchTerm.trim()) {
         const isMatch = matchesAdvancedSearch(searchTerm, [t.name, t.projectCode, t.party, t.taskCodePhu]);
@@ -134,7 +140,7 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
       }
       return true;
     });
-  }, [tasks, filterScope, selectedProjectCodes, searchTerm]);
+  }, [tasks, filterScope, selectedTasks, searchTerm]);
 
   const zInfo = useOverlayStack({
     layer: 'MODAL_MODULAR',
@@ -145,12 +151,10 @@ export const TaskModularModal: React.FC<TaskModularModalProps> = ({
 
   if (!isOpen) return null;
 
-  const chosenParentTask = selectedParentTaskId ? tasks.find((t) => String(t.id) === String(selectedParentTaskId)) : null;
-
   const handleConfirmGroup = () => {
-    if (!selectedParentTaskId || allTargetTaskIds.length === 0) return;
+    if (!chosenParentTask || allTargetTaskIds.length === 0) return;
     const groupFn = onGroupTasks || onGroup;
-    if (typeof groupFn === 'function') groupFn(String(selectedParentTaskId), allTargetTaskIds);
+    if (typeof groupFn === 'function') groupFn(String(chosenParentTask.id), allTargetTaskIds);
   };
 
   const handleConfirmUnlink = () => {
