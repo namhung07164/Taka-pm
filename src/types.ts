@@ -138,6 +138,7 @@ export interface Task {
   textColor?: string;
   taskCodePhu?: string;
   parentTaskId?: string;
+  isModularParent?: boolean;
   isDeleted?: boolean;
   predecessors?: TaskPredecessor[]; // Lưu trữ danh sách Hard Link dưới dạng mảng Object
   predecessorTaskIds?: string[]; // IDs of tasks mentioned in the predecessor string
@@ -148,10 +149,12 @@ export type PredecessorType = 'FS' | 'SS' | 'FF' | 'SF';
 export interface TaskPredecessor {
   taskId: string;
   type: PredecessorType;
+  lagDays?: number;
 }
 
 export interface Cost {
   id: string;
+  projectId?: string;
   projectCode: string;
   projectYear?: number | string;
   projectStore?: string;

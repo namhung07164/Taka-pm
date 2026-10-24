@@ -8,12 +8,30 @@ function extractNumericSuffix(codeOrPhu?: string | null): number | null {
   return m ? parseInt(m[1], 10) : null;
 }
 
-function getTaskProjectScopeKey(t: Partial<Task>): string {
-  if (t.projectId && String(t.projectId).trim()) return `pid:${String(t.projectId).trim()}`;
+function getTaskProjectScopeKeys(t: Partial<Task>): string[] {
+  const keys: string[] = [];
+  if (t.projectId && String(t.projectId).trim()) {
+    keys.push(`pid:${String(t.projectId).trim().toLowerCase()}`);
+  }
   const code = String(t.projectCode || '').trim().toLowerCase();
   const year = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
   const store = String(t.projectStore || '').trim().toLowerCase();
-  return `key:${code}|${year}|${store}`;
+  if (code || year || store) {
+    keys.push(`key:${code}|${year}|${store}`);
+    if (code && store) keys.push(`key:${code}|*|${store}`);
+    if (code && year) keys.push(`key:${code}|${year}|*`);
+  }
+  if (keys.length === 0) keys.push('key:||');
+  return keys;
+}
+
+function getPrimaryTaskScopeKey(t: Partial<Task>): string {
+  const code = String(t.projectCode || '').trim().toLowerCase();
+  const year = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+  const store = String(t.projectStore || '').trim().toLowerCase();
+  if (code) return `key:${code}|${year}|${store}`;
+  if (t.projectId && String(t.projectId).trim()) return `pid:${String(t.projectId).trim().toLowerCase()}`;
+  return 'key:||';
 }
 
 function compareTasksForCanonicalCode(a: Task, b: Task): number {
@@ -37,31 +55,53 @@ function compareTasksForCanonicalCode(a: Task, b: Task): number {
 function buildCanonicalTaskContext(tasks: Task[]): {
   taskByIdLower: Map<string, Task>;
   scopedTaskByCode: Map<string, Task>;
+  scopedTaskByName: Map<string, Task>;
   canonicalCodeByTaskId: Map<string, string>;
 } {
   const taskByIdLower = new Map<string, Task>();
   const scopedTaskByCode = new Map<string, Task>();
+  const scopedTaskByName = new Map<string, Task>();
   const canonicalCodeByTaskId = new Map<string, string>();
-  const groupsByScope = new Map<string, Task[]>();
+  const groupsByPrimaryScope = new Map<string, Task[]>();
 
   for (let i = 0; i < tasks.length; i++) {
     const t = tasks[i];
     if (!t || t.isDeleted) continue;
-    const scope = getTaskProjectScopeKey(t);
+    const scopes = getTaskProjectScopeKeys(t);
+    const primaryScope = getPrimaryTaskScopeKey(t);
     if (t.id) taskByIdLower.set(String(t.id).trim().toLowerCase(), t);
-    if (t.taskCodePhu) {
-      const cLower = String(t.taskCodePhu).trim().toLowerCase();
-      scopedTaskByCode.set(`${scope}:::${cLower}`, t);
-      if (cLower.includes('-')) scopedTaskByCode.set(`${scope}:::${cLower.replace(/-(\d+)$/, '#$1')}`, t);
-      const num = extractNumericSuffix(cLower);
-      if (num !== null) scopedTaskByCode.set(`${scope}:::#${num}`, t);
+
+    for (let sIdx = 0; sIdx < scopes.length; sIdx++) {
+      const scope = scopes[sIdx];
+      if (t.taskCodePhu) {
+        const cLower = String(t.taskCodePhu).trim().toLowerCase();
+        scopedTaskByCode.set(`${scope}:::${cLower}`, t);
+        if (cLower.includes('-')) scopedTaskByCode.set(`${scope}:::${cLower.replace(/-(\d+)$/, '#$1')}`, t);
+        const num = extractNumericSuffix(cLower);
+        if (num !== null) {
+          scopedTaskByCode.set(`${scope}:::#${num}`, t);
+          scopedTaskByCode.set(`${scope}:::${num}`, t);
+        }
+      }
+      if (t.orderIndex !== undefined && t.orderIndex !== null && !isNaN(Number(t.orderIndex))) {
+        const ordNum = Number(t.orderIndex) + 1;
+        if (!scopedTaskByCode.has(`${scope}:::#${ordNum}`)) scopedTaskByCode.set(`${scope}:::#${ordNum}`, t);
+        if (!scopedTaskByCode.has(`${scope}:::${ordNum}`)) scopedTaskByCode.set(`${scope}:::${ordNum}`, t);
+      }
+      if (t.name && String(t.name).trim()) {
+        const nLower = String(t.name).trim().toLowerCase();
+        if (!scopedTaskByName.has(`${scope}:::${nLower}`) || t.isModularParent) {
+          scopedTaskByName.set(`${scope}:::${nLower}`, t);
+        }
+      }
     }
-    const list = groupsByScope.get(scope) || [];
-    if (list.length === 0) groupsByScope.set(scope, list);
+
+    const list = groupsByPrimaryScope.get(primaryScope) || [];
+    if (list.length === 0) groupsByPrimaryScope.set(primaryScope, list);
     list.push(t);
   }
 
-  groupsByScope.forEach((groupTasks, scope) => {
+  groupsByPrimaryScope.forEach((groupTasks) => {
     const sorted = [...groupTasks].sort(compareTasksForCanonicalCode);
     for (let idx = 0; idx < sorted.length; idx++) {
       const t = sorted[idx];
@@ -69,18 +109,24 @@ function buildCanonicalTaskContext(tasks: Task[]): {
       const canonicalCode = pCode ? `${pCode}#${idx + 1}` : (t.taskCodePhu ? String(t.taskCodePhu).trim() : t.id);
       if (t.id && canonicalCode) canonicalCodeByTaskId.set(t.id, canonicalCode);
       const cLower = canonicalCode.toLowerCase();
-      if (!scopedTaskByCode.has(`${scope}:::${cLower}`)) scopedTaskByCode.set(`${scope}:::${cLower}`, t);
-      if (!scopedTaskByCode.has(`${scope}:::#${idx + 1}`)) scopedTaskByCode.set(`${scope}:::#${idx + 1}`, t);
+      const scopes = getTaskProjectScopeKeys(t);
+      for (let sIdx = 0; sIdx < scopes.length; sIdx++) {
+        const scope = scopes[sIdx];
+        if (!scopedTaskByCode.has(`${scope}:::${cLower}`)) scopedTaskByCode.set(`${scope}:::${cLower}`, t);
+        if (!scopedTaskByCode.has(`${scope}:::#${idx + 1}`)) scopedTaskByCode.set(`${scope}:::#${idx + 1}`, t);
+        if (!scopedTaskByCode.has(`${scope}:::${idx + 1}`)) scopedTaskByCode.set(`${scope}:::${idx + 1}`, t);
+      }
     }
   });
 
-  return { taskByIdLower, scopedTaskByCode, canonicalCodeByTaskId };
+  return { taskByIdLower, scopedTaskByCode, scopedTaskByName, canonicalCodeByTaskId };
 }
 
 function resolveParentTaskInScope(
   child: Task,
   taskByIdLower: Map<string, Task>,
-  scopedTaskByCode: Map<string, Task>
+  scopedTaskByCode: Map<string, Task>,
+  scopedTaskByName?: Map<string, Task>
 ): Task | undefined {
   const rawParent = child.parentTaskId || (child as any).parentId;
   if (!rawParent) return undefined;
@@ -88,46 +134,79 @@ function resolveParentTaskInScope(
   if (!parentStr) return undefined;
 
   const byId = taskByIdLower.get(parentStr);
-  if (byId) return byId;
+  if (byId && String(byId.id) !== String(child.id)) return byId;
 
-  const scope = getTaskProjectScopeKey(child);
-  const byScopedCode = scopedTaskByCode.get(`${scope}:::${parentStr}`);
-  if (byScopedCode) return byScopedCode;
+  const scopes = getTaskProjectScopeKeys(child);
+  for (let sIdx = 0; sIdx < scopes.length; sIdx++) {
+    const scope = scopes[sIdx];
+    const byScopedCode = scopedTaskByCode.get(`${scope}:::${parentStr}`);
+    if (byScopedCode && String(byScopedCode.id) !== String(child.id)) return byScopedCode;
 
-  const num = extractNumericSuffix(parentStr);
-  if (num !== null) {
-    const byScopedNum = scopedTaskByCode.get(`${scope}:::#${num}`);
-    if (byScopedNum) return byScopedNum;
+    if (parentStr.includes('-')) {
+      const normalizedHash = parentStr.replace(/-(\d+)$/, '#$1');
+      const byHash = scopedTaskByCode.get(`${scope}:::${normalizedHash}`);
+      if (byHash && String(byHash.id) !== String(child.id)) return byHash;
+    }
+
+    const num = extractNumericSuffix(parentStr);
+    if (num !== null) {
+      const byScopedNum = scopedTaskByCode.get(`${scope}:::#${num}`) || scopedTaskByCode.get(`${scope}:::${num}`);
+      if (byScopedNum && String(byScopedNum.id) !== String(child.id)) return byScopedNum;
+    }
+
+    if (scopedTaskByName) {
+      const byName = scopedTaskByName.get(`${scope}:::${parentStr}`);
+      if (byName && String(byName.id) !== String(child.id)) return byName;
+    }
   }
   return undefined;
 }
 
 /**
- * Promotes orphan subtasks (whose parentTaskId is missing or deleted) to root tasks in memory
+ * Promotes orphan subtasks (whose parentTaskId is missing, deleted, or self-referential) to root tasks in memory,
+ * enforces the Single-Level WBS hierarchy rule (a parent task with children cannot itself be hidden as a child),
  * and normalizes parentTaskId to the canonical parent task ID.
  */
 export function filterNonOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: number } {
   if (!tasks || tasks.length === 0) return { cleaned: tasks || [], fixedCount: 0 };
 
-  const { taskByIdLower, scopedTaskByCode } = buildCanonicalTaskContext(tasks);
+  const { taskByIdLower, scopedTaskByCode, scopedTaskByName } = buildCanonicalTaskContext(tasks);
 
   let fixedCount = 0;
+  const resolvedParentByTaskId = new Map<string, string>();
+  const activeParentIds = new Set<string>();
+
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (!t || !t.id || t.isDeleted) continue;
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) continue;
+
+    const parentTask = resolveParentTaskInScope(t, taskByIdLower, scopedTaskByCode, scopedTaskByName);
+    if (parentTask && !parentTask.isDeleted && String(parentTask.id) !== String(t.id)) {
+      resolvedParentByTaskId.set(String(t.id), String(parentTask.id));
+      activeParentIds.add(String(parentTask.id));
+    }
+  }
+
   const cleaned = tasks.map(t => {
     const rawParent = t.parentTaskId || (t as any).parentId;
     if (!rawParent) return t;
 
-    const parentTask = resolveParentTaskInScope(t, taskByIdLower, scopedTaskByCode);
+    const tIdStr = String(t.id || '');
+    // Single-Level WBS Rule: If this task is itself a parent of other tasks, it must be a root parent task
+    const canonicalParentId = activeParentIds.has(tIdStr) ? undefined : resolvedParentByTaskId.get(tIdStr);
 
-    if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
+    if (!canonicalParentId) {
       fixedCount++;
       const updated = { ...t, parentTaskId: undefined };
       delete (updated as any).parentId;
       return updated;
     }
 
-    if (t.parentTaskId !== parentTask.id) {
+    if (t.parentTaskId !== canonicalParentId) {
       fixedCount++;
-      return { ...t, parentTaskId: parentTask.id };
+      return { ...t, parentTaskId: canonicalParentId };
     }
 
     return t;
@@ -178,10 +257,14 @@ export function rollupParentTaskDatesAndStatus(
     return _lastRollupOutputRef;
   }
 
-  const { taskByIdLower, scopedTaskByCode, canonicalCodeByTaskId } = buildCanonicalTaskContext(tasks);
+  const { taskByIdLower, scopedTaskByCode, scopedTaskByName, canonicalCodeByTaskId } = buildCanonicalTaskContext(tasks);
   const childrenMap = new Map<string, Task[]>();
   const result = [...tasks];
   let anyNormalizedChild = false;
+
+  // Pass 1: Identify all valid parent IDs so parent tasks are never treated as child tasks (Single-Level WBS Rule)
+  const resolvedParentByIndex = new Map<number, string>();
+  const activeParentIds = new Set<string>();
 
   for (let i = 0; i < result.length; i++) {
     const t = result[i];
@@ -189,12 +272,31 @@ export function rollupParentTaskDatesAndStatus(
     const rawParent = t.parentTaskId || (t as any).parentId;
     if (!rawParent) continue;
 
-    const parentTask = resolveParentTaskInScope(t, taskByIdLower, scopedTaskByCode);
-    if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
+    const parentTask = resolveParentTaskInScope(t, taskByIdLower, scopedTaskByCode, scopedTaskByName);
+    if (parentTask && !parentTask.isDeleted && String(parentTask.id) !== String(t.id)) {
+      resolvedParentByIndex.set(i, String(parentTask.id));
+      activeParentIds.add(String(parentTask.id));
+    }
+  }
+
+  // Pass 2: Normalize valid children and strip orphan/self/nested parentTaskId references
+  for (let i = 0; i < result.length; i++) {
+    const t = result[i];
+    if (!t || !t.id || t.isDeleted) continue;
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) continue;
+
+    const tIdStr = String(t.id);
+    const canonicalParentId = activeParentIds.has(tIdStr) ? undefined : resolvedParentByIndex.get(i);
+
+    if (!canonicalParentId) {
+      const cleanedOrphan = { ...t, parentTaskId: undefined };
+      delete (cleanedOrphan as any).parentId;
+      result[i] = cleanedOrphan;
+      anyNormalizedChild = true;
       continue;
     }
 
-    const canonicalParentId = parentTask.id;
     let normalizedChild = t;
     if (t.parentTaskId !== canonicalParentId) {
       normalizedChild = { ...t, parentTaskId: canonicalParentId };

@@ -18,6 +18,7 @@ import {
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import { useAppStore } from '../../store/useAppStore';
 import { doesTaskMatchSearchTerm } from './useDetailFilterSync';
+import { buildProjectParentHierarchyIndex } from './useDetailFlatRows';
 
 export function parseStackedDate(dateStr: string | undefined): { month: string; day: string; year: string } | null {
   if (!dateStr) return null;
@@ -185,57 +186,31 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
     return taskFields.some(val => String(val || "").toLowerCase().includes(lowerSearchTerm));
   });
 
-  const parentTaskMap = new Map<string, Task>();
-  groupTasks.forEach(gt => {
-    if (gt.id) {
-      parentTaskMap.set(gt.id, gt);
-      parentTaskMap.set(gt.id.toLowerCase(), gt);
-    }
-    if (gt.taskCodePhu) {
-      const codeLower = gt.taskCodePhu.trim().toLowerCase();
-      parentTaskMap.set(codeLower, gt);
-      const numMatch = codeLower.match(/[-#]?(\d+)$/);
-      if (numMatch) { parentTaskMap.set(numMatch[1], gt); parentTaskMap.set(`#${numMatch[1]}`, gt); }
-    }
-    if (gt.name) parentTaskMap.set(String(gt.name).trim().toLowerCase(), gt);
-  });
+  const { parentTaskMap, groupTaskIndexMap, parentTaskIdsInProject, localChildCountByParentId, projectModularParentIds, projectChildTasksCount } = React.useMemo(
+    () => buildProjectParentHierarchyIndex(groupTasks),
+    [groupTasks]
+  );
 
   const visibleTasksToRender = tasksToRender.filter((t, tIdx) => {
-    if (t.parentTaskId) {
-      const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
-      if (!isDirectChildSearchHit) {
-        const rawParentId = String(t.parentTaskId).trim();
-        const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-        const candidateIds: string[] = [rawParentId, rawParentId.toLowerCase()];
-        if (matchedParent?.id) { candidateIds.push(String(matchedParent.id).trim(), String(matchedParent.id).trim().toLowerCase()); }
-        if (matchedParent?.taskCodePhu) { candidateIds.push(String(matchedParent.taskCodePhu).trim(), String(matchedParent.taskCodePhu).trim().toLowerCase()); }
-        const isParentExpanded = candidateIds.some(cid => expandedModularTasks?.has(cid));
-        if (!isParentExpanded) return false;
+    if (t.parentTaskId && !parentTaskIdsInProject.has(String(t.id))) {
+      const rawParentId = String(t.parentTaskId).trim();
+      const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
+      if (matchedParent && String(matchedParent.id) !== String(t.id)) {
+        const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
+        if (!isDirectChildSearchHit) {
+          const candidateIds: string[] = [rawParentId, rawParentId.toLowerCase(), String(matchedParent.id).trim(), String(matchedParent.id).trim().toLowerCase()];
+          if (matchedParent.taskCodePhu) { candidateIds.push(String(matchedParent.taskCodePhu).trim(), String(matchedParent.taskCodePhu).trim().toLowerCase()); }
+          if (!candidateIds.some(cid => expandedModularTasks?.has(cid))) return false;
+        }
       }
     }
     return true;
   });
 
-  const projectModularParentIds = React.useMemo(() => {
-    const parentIds = new Set<string>();
-    groupTasks.forEach((t) => {
-      if (t.parentTaskId) {
-        const rawParentId = String(t.parentTaskId).trim();
-        const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-        parentIds.add(matchedParent ? String(matchedParent.id) : rawParentId);
-      }
-    });
-    return Array.from(parentIds);
-  }, [groupTasks, parentTaskMap]);
-
   const hasModularTasks = projectModularParentIds.length > 0;
   const isProjectModularExpanded =
     hasModularTasks &&
     projectModularParentIds.some((id) => expandedModularTasks?.has(id) || expandedModularTasks?.has(id.toLowerCase()));
-
-  const projectChildTasksCount = React.useMemo(() => {
-    return groupTasks.filter((t) => Boolean(t.parentTaskId)).length;
-  }, [groupTasks]);
 
   const handleToggleProjectModular = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -451,7 +426,8 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
             </div>
           ) : (
             visibleTasksToRender.map((t, index) => {
-              const childCount = (childTasksCountMap?.get(t.id) || 0) + (t.taskCodePhu && t.taskCodePhu !== t.id ? (childTasksCountMap?.get(t.taskCodePhu) || 0) : 0);
+              const trueIdx = groupTaskIndexMap.get(String(t.id)) ?? index;
+              const childCount = localChildCountByParentId.get(String(t.id)) ?? ((childTasksCountMap?.get(t.id) || 0) + (t.taskCodePhu && t.taskCodePhu !== t.id ? (childTasksCountMap?.get(t.taskCodePhu) || 0) : 0));
               const isModularExpanded = expandedModularTasks
                 ? (expandedModularTasks.has(String(t.id)) ||
                    expandedModularTasks.has(String(t.id).toLowerCase()) ||
@@ -464,7 +440,7 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
                   task={t}
                   project={p}
                   groupTasks={groupTasks}
-                  index={index}
+                  index={trueIdx}
                   taskCode={taskCodeMap?.get(t.id) || t.taskCode || ''}
                   actStatus={taskActualStatusMap?.get(t.id) || { label: '0%', color: 'text-slate-400' }}
                   isFocused={initialFocusTaskId === t.id}

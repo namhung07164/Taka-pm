@@ -9,6 +9,7 @@ import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import { safeSetItemSession } from '../../lib/storage';
+import { buildProjectParentHierarchyIndex } from '../../lib/parentHierarchyUtils';
 
 export interface GanttProjectRowProps {
   p: Project;
@@ -102,17 +103,9 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
 
   const rowId = `project-${p.no}`;
 
-  // Find modular parent tasks belonging to this project
-  const projectModularParentIds = React.useMemo(() => {
-    const childParentIds = new Set<string>();
-    (projectTasks || []).forEach((t) => {
-      if (t.parentTaskId) {
-        childParentIds.add(String(t.parentTaskId));
-      }
-    });
-    return (projectTasks || [])
-      .filter((t) => childParentIds.has(String(t.id)))
-      .map((t) => String(t.id));
+  // Find modular parent tasks belonging to this project using shared hierarchy index
+  const { projectModularParentIds } = React.useMemo(() => {
+    return buildProjectParentHierarchyIndex(projectTasks || []);
   }, [projectTasks]);
 
   const hasModularTasks = projectModularParentIds.length > 0;

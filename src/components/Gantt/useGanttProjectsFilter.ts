@@ -12,6 +12,9 @@ import {
 } from '../../lib/utils';
 import { useLocationOptions } from '../../hooks/useLocationOptions';
 import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { deduplicateTasksInMemory } from '../../lib/taskDeduplicationService';
+import { filterNonOrphanTasks } from '../../lib/taskRollupService';
 
 interface UseGanttProjectsFilterParams {
   projects: Project[];
@@ -186,31 +189,50 @@ export function useGanttProjectsFilter({
 
   const getGroupTasksForProject = useCallback(
     (p: Project): Task[] => {
-      const mergedMap = new Map<string, Task>();
+      const realTasksMap = new Map<string, Task>();
+      const virtualTasksMap = new Map<string, Task>();
 
+      const pIdStr = p.id ? String(p.id).trim() : '';
       const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
-      const pYear = p.year ? String(p.year).trim() : '';
+      const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+
+      const tryAddTask = (t: Task) => {
+        if (!t || (!t.id && !t.name) || t.isDeleted) return;
+        const tIdStr = String(t.id || '').trim();
+        if (tIdStr && isTaskDeletedInTracker(tIdStr, pIdStr || undefined)) return;
+        if ((!t.name || !String(t.name).trim()) && (!t.start || !String(t.start).trim()) && (!t.finish || !String(t.finish).trim()) && !t.taskCodePhu) {
+          return;
+        }
+
+        const tProjId = t.projectId ? String(t.projectId).trim() : '';
+        if (tProjId && pIdStr) {
+          if (tProjId !== pIdStr) return;
+        } else {
+          const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+          const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+          if (pStore && tStore && pStore !== tStore) return;
+          if (pYear && tYear && pYear !== tYear) return;
+        }
+
+        const mapKey = (tIdStr || String(t.name)).toLowerCase();
+        const isVirtual = Boolean((t as any)._isVirtualSummary);
+        if (isVirtual) {
+          if (!virtualTasksMap.has(mapKey)) virtualTasksMap.set(mapKey, t);
+        } else {
+          realTasksMap.set(mapKey, t);
+        }
+      };
 
       // 1. By projectId
-      if (p.id && tasksByProjectId.has(String(p.id))) {
-        tasksByProjectId.get(String(p.id))!.forEach(t => {
-          if (t && (t.id || t.name)) {
-            const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
-            const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
-            if (pStore && tStore && pStore !== tStore) return;
-            if (pYear && tYear && pYear !== tYear) return;
-            mergedMap.set(String(t.id || t.name), t);
-          }
-        });
+      if (pIdStr && tasksByProjectId.has(pIdStr)) {
+        tasksByProjectId.get(pIdStr)!.forEach(tryAddTask);
       }
 
       // 2. By project key (CODE_YEAR_STORE)
-      const key = `${String(p.code || '').trim().toUpperCase()}_${String(p.year || '').trim()}_${String(p.store || '').trim().toUpperCase()}`;
+      const key = `${String(p.code || '').trim().toUpperCase()}_${pYear}_${pStore}`;
       const foundByKey = tasksByProject.get(key);
       if (foundByKey && foundByKey.length > 0) {
-        foundByKey.forEach(t => {
-          if (t && (t.id || t.name)) mergedMap.set(String(t.id || t.name), t);
-        });
+        foundByKey.forEach(tryAddTask);
       }
 
       // 3. By project code
@@ -218,38 +240,24 @@ export function useGanttProjectsFilter({
       if (codeKey) {
         const foundByCode = tasksMapByCode.get(codeKey);
         if (foundByCode && foundByCode.length > 0) {
-          foundByCode.forEach(t => {
-            const matchesStore = !t.projectStore || !p.store || String(t.projectStore).trim().toUpperCase() === String(p.store).trim().toUpperCase();
-            const matchesYear = !t.projectYear || !p.year || String(t.projectYear).trim() === String(p.year).trim();
-            if (matchesStore && matchesYear && t && (t.id || t.name)) {
-              mergedMap.set(String(t.id || t.name), t);
-            }
-          });
+          foundByCode.forEach(tryAddTask);
         }
       }
 
-      let resultTasks = Array.from(mergedMap.values());
-
-      // Fallback & Merge from taskSummaries if taskSummaries has more items
-      if (p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > resultTasks.length) {
-        const existingSet = new Set<string>();
-        resultTasks.forEach(t => {
-          if (t.id) existingSet.add(String(t.id).toLowerCase());
-          if (t.taskCodePhu) existingSet.add(String(t.taskCodePhu).trim().toLowerCase());
-          if (t.name) existingSet.add(String(t.name).trim().toLowerCase());
-        });
-
+      // 4. Fallback & Merge from taskSummaries if taskSummaries has more items than realTasksMap
+      if (p.taskSummaries && Array.isArray(p.taskSummaries) && realTasksMap.size < p.taskSummaries.length) {
         p.taskSummaries.forEach((ts, idx) => {
-          const tsId = ts.id ? String(ts.id).toLowerCase() : '';
-          const tsCode = ts.taskCodePhu ? String(ts.taskCodePhu).trim().toLowerCase() : '';
-          const tsName = ts.name ? String(ts.name).trim().toLowerCase() : '';
-          const hasMatch = (tsId && existingSet.has(tsId)) ||
-                           (tsCode && existingSet.has(tsCode)) ||
-                           (tsName && existingSet.has(tsName));
-          if (!hasMatch) {
-            resultTasks.push({
-              id: ts.id || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`,
-              name: ts.name || `Task ${idx + 1}`,
+          if (isTaskDeletedInTracker(ts.id, pIdStr || undefined)) return;
+          if ((!ts.name || !String(ts.name).trim()) && (!ts.start || !String(ts.start).trim()) && (!ts.finish || !String(ts.finish).trim()) && !ts.taskCodePhu) {
+            return;
+          }
+          const rawTsId = ts.id ? String(ts.id).trim() : '';
+          const tsId = rawTsId || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
+          const tsIdLower = tsId.toLowerCase();
+          if (!virtualTasksMap.has(tsIdLower)) {
+            virtualTasksMap.set(tsIdLower, {
+              id: tsId,
+              name: (ts.name && String(ts.name).trim()) ? ts.name : (ts.taskCodePhu || `Task ${idx + 1}`),
               start: ts.start || p.computedTakStart || p.start || '',
               finish: ts.finish || p.computedTakCompl || p.handover || '',
               projectCode: p.code || '',
@@ -259,16 +267,44 @@ export function useGanttProjectsFilter({
               runningStatus: ts.runningStatus || 'On process',
               duration: ts.duration || '',
               parentTaskId: ts.parentTaskId,
-              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}-${idx + 1}` : undefined),
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
               orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
               projectId: p.id,
-              ...ts
-            } as Task);
+              ...ts,
+              _isVirtualSummary: true,
+            } as unknown as Task);
           }
         });
       }
 
-      return resultTasks;
+      const rawGroupTasks: Task[] = Array.from(realTasksMap.values());
+      const realCodeSet = new Set<string>();
+      const realNameOrdSet = new Set<string>();
+      rawGroupTasks.forEach(rt => {
+        if (rt.taskCodePhu) realCodeSet.add(String(rt.taskCodePhu).trim().toLowerCase());
+        if (rt.name) {
+          const nLower = String(rt.name).trim().toLowerCase();
+          const ordStr = rt.orderIndex !== undefined && rt.orderIndex !== null ? String(rt.orderIndex) : '';
+          realNameOrdSet.add(`${nLower}|${ordStr}`);
+        }
+      });
+
+      virtualTasksMap.forEach((vt, mapKey) => {
+        if (realTasksMap.has(mapKey)) return;
+        const vtCode = vt.taskCodePhu ? String(vt.taskCodePhu).trim().toLowerCase() : '';
+        if (vtCode && realCodeSet.has(vtCode)) return;
+        const vtName = vt.name ? String(vt.name).trim().toLowerCase() : '';
+        const vtOrd = vt.orderIndex !== undefined && vt.orderIndex !== null ? String(vt.orderIndex) : '';
+        if (!vt.id || String(vt.id).startsWith('ts_')) {
+          if (vtName && realNameOrdSet.has(`${vtName}|${vtOrd}`)) return;
+        }
+        rawGroupTasks.push(vt);
+      });
+
+      if (rawGroupTasks.length <= 1) return rawGroupTasks;
+      const { dedupedTasks } = deduplicateTasksInMemory(rawGroupTasks, [p]);
+      const { cleaned } = filterNonOrphanTasks(dedupedTasks);
+      return cleaned;
     },
     [tasksByProjectId, tasksByProject, tasksMapByCode]
   );

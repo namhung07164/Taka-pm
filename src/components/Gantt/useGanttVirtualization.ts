@@ -4,6 +4,7 @@ import { GanttTableRow } from './ganttTypes';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { useAppStore } from '../../store/useAppStore';
+import { buildProjectParentHierarchyIndex } from '../../lib/parentHierarchyUtils';
 
 interface UseGanttVirtualizationParams {
   paginatedProjects: Project[];
@@ -90,52 +91,27 @@ export function useGanttVirtualization({
         if (t.id) pTaskIndexMap.set(t.id, idx);
       });
 
-      // Group parent and child tasks
+      // Group parent and child tasks using shared robust hierarchy index
+      const {
+        parentTaskMap,
+        parentTaskIdsInProject,
+      } = buildProjectParentHierarchyIndex(pTasks);
+
       const parentTasks: Task[] = [];
       const childTasksMap = new Map<string, Task[]>();
 
-      // 1. Index tasks in project by ID and taskCodePhu for robust parent matching
-      const projectTaskById = new Map<string, Task>();
-      const projectTaskByCode = new Map<string, Task>();
-      pTasks.forEach(t => {
-        if (t.id) projectTaskById.set(String(t.id), t);
-        if (t.taskCodePhu) {
-          projectTaskByCode.set(String(t.taskCodePhu).trim().toLowerCase(), t);
-        }
-      });
-
-      // 2. Identify tasks that are referenced as parent tasks by other tasks in this project
-      const parentTaskIdsInProject = new Set<string>();
-      pTasks.forEach(t => {
-        const rawParentId = t.parentTaskId || (t as any).parentId;
-        if (rawParentId) {
-          const parentKey = String(rawParentId).trim().toLowerCase();
-          const matchedParent = projectTaskById.get(String(rawParentId)) || projectTaskByCode.get(parentKey);
-          if (matchedParent && String(matchedParent.id) !== String(t.id)) {
-            parentTaskIdsInProject.add(String(matchedParent.id));
-          }
-        }
-      });
-
-      // 3. Partition tasks into root parentTasks vs childTasksMap
       pTasks.forEach(t => {
         const isSelfParent = parentTaskIdsInProject.has(String(t.id));
-        const rawParentId = t.parentTaskId || (t as any).parentId;
+        const matchedParent = parentTaskMap.get(String(t.id));
 
-        // If t is a parent task containing subtasks, it MUST be a root parent task (cannot be hidden as a child)
-        if (rawParentId && !isSelfParent) {
-          const parentKey = String(rawParentId).trim().toLowerCase();
-          const matchedParent = projectTaskById.get(String(rawParentId)) || projectTaskByCode.get(parentKey);
-
-          // ONLY treat as child if matchedParent exists in this project and is not self
-          if (matchedParent && String(matchedParent.id) !== String(t.id)) {
-            const effectiveParentId = String(matchedParent.id);
-            if (!childTasksMap.has(effectiveParentId)) {
-              childTasksMap.set(effectiveParentId, []);
-            }
-            childTasksMap.get(effectiveParentId)!.push(t);
-            return;
+        // If t is matched to a parent in this project and is NOT a parent itself, group it as child
+        if (matchedParent && !isSelfParent && String(matchedParent.id) !== String(t.id)) {
+          const effectiveParentId = String(matchedParent.id);
+          if (!childTasksMap.has(effectiveParentId)) {
+            childTasksMap.set(effectiveParentId, []);
           }
+          childTasksMap.get(effectiveParentId)!.push(t);
+          return;
         }
 
         // If no valid matched parent exists in this project, or t is a parent task itself,
@@ -150,7 +126,9 @@ export function useGanttVirtualization({
         const rawChildren = childTasksMap.get(String(t.id)) || childTasksMap.get(t.id) || [];
         const children = sortGroupTasks(rawChildren);
         const hasChildren = children.length > 0;
-        const isModularExpanded = expandedModularSet.has(String(t.id)) || expandedModularSet.has(t.id);
+        const isModularExpanded = expandedModularSet.has(String(t.id)) ||
+          expandedModularSet.has(String(t.id).toLowerCase()) ||
+          (t.taskCodePhu ? (expandedModularSet.has(String(t.taskCodePhu).trim()) || expandedModularSet.has(String(t.taskCodePhu).trim().toLowerCase())) : false);
         const tIndex = pTaskIndexMap.get(t.id) ?? ptIdx;
 
         rows.push({

@@ -10,7 +10,7 @@ import { computeAllTaskCodes } from '../../lib/ganttUtils';
 import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
 import { SortConfig } from './detailTypes';
 import { useDetailProjectInfo } from './useDetailProjectInfo';
-import { useDetailFlatRows } from './useDetailFlatRows';
+import { useDetailFlatRows, buildProjectParentHierarchyIndex } from './useDetailFlatRows';
 import { useDetailFocusTracking } from './useDetailFocusTracking';
 import { useDetailFilterSync, doesTaskMatchSearchTerm } from './useDetailFilterSync';
 
@@ -235,18 +235,21 @@ export function useDetailData({
     return map;
   }, [tasks, delegationGroupByParentKey]);
 
-  // Pre-indexed O(1) map of subtask counts per parent to avoid 250,000 array filters in DetailTaskRow
+  // Pre-indexed O(1) map of subtask counts per resolved canonical parent task ID
   const childTasksCountMap = useMemo(() => {
     const map = new Map<string, number>();
-    for (let idx = 0; idx < tasks.length; idx++) {
-      const child = tasks[idx];
-      if (child.parentTaskId) {
-        const pId = String(child.parentTaskId).trim();
-        map.set(pId, (map.get(pId) || 0) + 1);
-      }
-    }
+    projects.forEach(p => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const info = projectInfoMap.get(pKey) || getProjectInfo(p);
+      const pTasks = info.sortedTasks || [];
+      if (pTasks.length === 0) return;
+      const { localChildCountByParentId } = buildProjectParentHierarchyIndex(pTasks);
+      localChildCountByParentId.forEach((cnt, pid) => {
+        map.set(pid, cnt);
+      });
+    });
     return map;
-  }, [tasks]);
+  }, [projects, projectInfoMap, getProjectInfo]);
 
   // Modular parent task expand/collapse state (isolated to Detail Tab)
   const [expandedModularTasks, setExpandedModularTasks] = useState<string[]>(() => {
@@ -342,35 +345,23 @@ export function useDetailData({
     });
   }, [tasks]);
 
-  const currentModularParentIds = useMemo(() => {
+  const { currentModularParentIds, totalChildTasksCount } = useMemo(() => {
     const parentIdSet = new Set<string>();
+    let totalChildren = 0;
     filteredProjects.slice(0, visibleCount).forEach(p => {
       const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
       const info = projectInfoMap.get(pKey) || getProjectInfo(p);
       const pTasks = info.sortedTasks || [];
-      const taskById = new Map<string, Task>();
-      const taskByCode = new Map<string, Task>();
-
-      pTasks.forEach(t => {
-        if (t.id) taskById.set(String(t.id), t);
-        if (t.taskCodePhu) taskByCode.set(String(t.taskCodePhu).trim().toLowerCase(), t);
-      });
-
-      pTasks.forEach(t => {
-        const rawParentId = t.parentTaskId;
-        if (rawParentId) {
-          const parentKey = String(rawParentId).trim().toLowerCase();
-          const matchedParent = taskById.get(String(rawParentId)) || taskByCode.get(parentKey);
-          if (matchedParent && String(matchedParent.id) !== String(t.id)) {
-            parentIdSet.add(String(matchedParent.id));
-          } else {
-            parentIdSet.add(String(rawParentId).trim());
-          }
-        }
-      });
+      if (pTasks.length === 0) return;
+      const { projectModularParentIds, projectChildTasksCount } = buildProjectParentHierarchyIndex(pTasks);
+      projectModularParentIds.forEach(pid => parentIdSet.add(pid));
+      totalChildren += projectChildTasksCount;
     });
 
-    return Array.from(parentIdSet);
+    return {
+      currentModularParentIds: Array.from(parentIdSet),
+      totalChildTasksCount: totalChildren,
+    };
   }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo]);
 
   const isAllModularExpanded = useMemo(() => {
@@ -389,10 +380,6 @@ export function useDetailData({
       safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(currentModularParentIds));
     }
   }, [isAllModularExpanded, currentModularParentIds]);
-
-  const totalChildTasksCount = useMemo(() => {
-    return tasks.filter(t => Boolean(t.parentTaskId)).length;
-  }, [tasks]);
 
   const modularParentsCount = useMemo(() => {
     return currentModularParentIds.length;

@@ -117,12 +117,9 @@ function computeSingleProjectInfo(
     tryAddTask(candidates[i]);
   }
 
-  // Fallback or merge p.taskSummaries when no real tasks are loaded OR when project is not fully hydrated and only partial tasks are in RAM
+  // Fallback or merge p.taskSummaries when no real tasks are loaded OR when partial tasks are in RAM
   const hasSummaries = p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0;
-  if (
-    hasSummaries &&
-    (realTasksMap.size === 0 || (!isProjectTasksHydrated(pIdStr) && realTasksMap.size < p.taskSummaries!.length))
-  ) {
+  if (hasSummaries && realTasksMap.size < p.taskSummaries!.length) {
     p.taskSummaries!.forEach((ts, idx) => {
       if (isTaskDeletedInTracker(ts.id, pIdStr || undefined)) return;
       if (isForeignSummaryEntry(ts.id, p, taskById)) return;
@@ -157,18 +154,23 @@ function computeSingleProjectInfo(
 
   const rawGroupTasks: Task[] = Array.from(realTasksMap.values());
   const realCodeSet = new Set<string>();
-  const realNameSet = new Set<string>();
+  const realNameOrdSet = new Set<string>();
   rawGroupTasks.forEach(rt => {
     if (rt.taskCodePhu) realCodeSet.add(String(rt.taskCodePhu).trim().toLowerCase());
-    if (rt.name) realNameSet.add(String(rt.name).trim().toLowerCase());
+    if (rt.name) {
+      const nLower = String(rt.name).trim().toLowerCase();
+      const ordStr = rt.orderIndex !== undefined && rt.orderIndex !== null ? String(rt.orderIndex) : '';
+      realNameOrdSet.add(`${nLower}|${ordStr}`);
+    }
   });
   virtualTasksMap.forEach((vt, key) => {
     if (realTasksMap.has(key)) return;
     const vtCode = vt.taskCodePhu ? String(vt.taskCodePhu).trim().toLowerCase() : '';
     if (vtCode && realCodeSet.has(vtCode)) return;
     const vtName = vt.name ? String(vt.name).trim().toLowerCase() : '';
+    const vtOrd = vt.orderIndex !== undefined && vt.orderIndex !== null ? String(vt.orderIndex) : '';
     if (!vt.id || String(vt.id).startsWith('ts_')) {
-      if (vtName && realNameSet.has(vtName)) return;
+      if (vtName && realNameOrdSet.has(`${vtName}|${vtOrd}`)) return;
     }
     rawGroupTasks.push(vt);
   });

@@ -3,6 +3,7 @@ import { Project, Task } from '../../types';
 import { cn, formatDisplayDateTime, calculateDays } from '../../lib/utils';
 import { ChevronRight, ChevronDown, Plus, Trash2, Edit3, ArrowDownUp, GripVertical } from 'lucide-react';
 import { DetailTableRow } from './detailTypes';
+import { buildProjectParentHierarchyIndex } from './useDetailFlatRows';
 import { EditableCell } from './EditableCell';
 import { FastToggle } from './FastToggle';
 import { QuickNavButton } from '../QuickNavButton';
@@ -50,46 +51,10 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
   const groupTasks = item.groupTasks;
   const effectiveTaskCount = item.effectiveTaskCount;
 
-  const parentTaskMap = React.useMemo(() => {
-    const map = new Map<string, Task>();
-    (groupTasks || []).forEach((gt) => {
-      if (gt.id) {
-        const idStr = String(gt.id).trim();
-        map.set(idStr, gt);
-        map.set(idStr.toLowerCase(), gt);
-      }
-      if (gt.taskCodePhu) {
-        const codeStr = String(gt.taskCodePhu).trim().toLowerCase();
-        map.set(codeStr, gt);
-        const numMatch = codeStr.match(/[-#]?(\d+)$/);
-        if (numMatch) {
-          map.set(numMatch[1], gt);
-          map.set(`#${numMatch[1]}`, gt);
-        }
-      }
-      if (gt.orderIndex !== undefined && gt.orderIndex !== null) {
-        map.set(String(Number(gt.orderIndex) + 1), gt);
-        map.set(`#${Number(gt.orderIndex) + 1}`, gt);
-      }
-      if (gt.name) {
-        map.set(String(gt.name).trim().toLowerCase(), gt);
-      }
-    });
-    return map;
-  }, [groupTasks]);
-
-  const projectModularParentIds = React.useMemo(() => {
-    const parentIds = new Set<string>();
-    (groupTasks || []).forEach((t) => {
-      if (t.parentTaskId) {
-        const rawParentId = String(t.parentTaskId).trim();
-        const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-        const effectiveId = matchedParent ? String(matchedParent.id) : rawParentId;
-        parentIds.add(effectiveId);
-      }
-    });
-    return Array.from(parentIds);
-  }, [groupTasks, parentTaskMap]);
+  const { projectModularParentIds, projectChildTasksCount } = React.useMemo(
+    () => buildProjectParentHierarchyIndex(groupTasks || []),
+    [groupTasks]
+  );
 
   const hasModularTasks = projectModularParentIds.length > 0;
   const isProjectModularExpanded =
@@ -98,10 +63,6 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
       expandedModularTasks?.has(id) || 
       expandedModularTasks?.has(id.toLowerCase())
     );
-
-  const projectChildTasksCount = React.useMemo(() => {
-    return (groupTasks || []).filter((t) => Boolean(t.parentTaskId)).length;
-  }, [groupTasks]);
 
   const handleToggleProjectModular = (e: React.MouseEvent) => {
     e.stopPropagation();

@@ -21,6 +21,10 @@ interface UseDetailFlatRowsParams {
   taskCodeMap: Map<string, string>;
 }
 
+import { buildProjectParentHierarchyIndex, type ProjectParentHierarchyIndex } from '../../lib/parentHierarchyUtils';
+export { buildProjectParentHierarchyIndex, type ProjectParentHierarchyIndex };
+
+
 export function useDetailFlatRows({
   filteredProjects,
   visibleCount,
@@ -159,75 +163,51 @@ export function useDetailFlatRows({
         projectIndex: pIdx,
         effectiveTaskCount,
         isExpanded,
-        groupTasks,
+        groupTasks: validGroupTasks,
         isProjDelegationOn,
         planProgressPercent,
         actProgressPercent,
       });
 
       if (isExpanded) {
-        const groupTaskIndexMap = new Map<string, number>();
-        const parentTaskMap = new Map<string, Task>();
-        groupTasks.forEach((gt, idx) => {
-          if (gt.id) {
-            const idStr = String(gt.id).trim();
-            groupTaskIndexMap.set(idStr, idx);
-            parentTaskMap.set(idStr, gt);
-            parentTaskMap.set(idStr.toLowerCase(), gt);
-          }
-          if (gt.taskCodePhu) {
-            const codeStr = String(gt.taskCodePhu).trim().toLowerCase();
-            parentTaskMap.set(codeStr, gt);
-            const numMatch = codeStr.match(/[-#]?(\d+)$/);
-            if (numMatch) {
-              parentTaskMap.set(numMatch[1], gt);
-              parentTaskMap.set(`#${numMatch[1]}`, gt);
-            }
-          }
-          if (gt.orderIndex !== undefined && gt.orderIndex !== null) {
-            parentTaskMap.set(String(Number(gt.orderIndex) + 1), gt);
-            parentTaskMap.set(`#${Number(gt.orderIndex) + 1}`, gt);
-          }
-          if (gt.name) {
-            parentTaskMap.set(String(gt.name).trim().toLowerCase(), gt);
-          }
-        });
+        const { parentTaskMap, groupTaskIndexMap, parentTaskIdsInProject } = buildProjectParentHierarchyIndex(validGroupTasks);
 
         const seenRenderTaskIds = new Set<string>();
         tasksToRender.forEach((t, tIdx) => {
           if (t.id && seenRenderTaskIds.has(t.id)) return;
 
-          // If t is a child task, check if its parent task is expanded
-          if (t.parentTaskId) {
-            // Only bypass collapse if user explicitly searched for a term that directly matches this child task and does not match the project as a whole
-            const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
-            if (!isDirectChildSearchHit) {
-              const rawParentId = String(t.parentTaskId).trim();
-              const matchedParent =
-                parentTaskMap.get(rawParentId) ||
-                parentTaskMap.get(rawParentId.toLowerCase());
+          // If t is a valid child task (and not itself a parent task), check if its parent task is expanded
+          if (t.parentTaskId && !parentTaskIdsInProject.has(String(t.id))) {
+            const rawParentId = String(t.parentTaskId).trim();
+            const matchedParent =
+              parentTaskMap.get(rawParentId) ||
+              parentTaskMap.get(rawParentId.toLowerCase());
 
-              const candidateIds: string[] = [rawParentId, rawParentId.toLowerCase()];
-              if (matchedParent) {
-                if (matchedParent.id) {
-                  candidateIds.push(String(matchedParent.id).trim());
-                  candidateIds.push(String(matchedParent.id).trim().toLowerCase());
-                }
+            if (matchedParent && String(matchedParent.id) !== String(t.id)) {
+              // Only bypass collapse if user explicitly searched for a term that directly matches this child task and does not match the project as a whole
+              const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
+              if (!isDirectChildSearchHit) {
+                const candidateIds: string[] = [
+                  rawParentId,
+                  rawParentId.toLowerCase(),
+                  String(matchedParent.id).trim(),
+                  String(matchedParent.id).trim().toLowerCase(),
+                ];
                 if (matchedParent.taskCodePhu) {
                   candidateIds.push(String(matchedParent.taskCodePhu).trim());
                   candidateIds.push(String(matchedParent.taskCodePhu).trim().toLowerCase());
                 }
-              }
 
-              const isParentExpanded = candidateIds.some(cid => expandedModularTasks.has(cid));
-              if (!isParentExpanded) {
-                return; // Parent task is collapsed -> hide child task
+                const isParentExpanded = candidateIds.some(cid => expandedModularTasks.has(cid));
+                if (!isParentExpanded) {
+                  return; // Parent task is collapsed -> hide child task
+                }
               }
             }
           }
 
           if (t.id) seenRenderTaskIds.add(t.id);
-          const originalIndex = groupTaskIndexMap.get(t.id);
+          const originalIndex = groupTaskIndexMap.get(String(t.id));
           const i = originalIndex !== undefined ? originalIndex : tIdx;
           rows.push({
             type: 'task',
@@ -236,7 +216,7 @@ export function useDetailFlatRows({
             taskIndex: i,
             project: p,
             projectIndex: pIdx,
-            groupTasks,
+            groupTasks: validGroupTasks,
             isProjDelegationOn,
           });
         });

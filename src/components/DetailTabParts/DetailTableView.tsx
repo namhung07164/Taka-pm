@@ -199,7 +199,7 @@ export const DetailTableView = memo(function DetailTableView({
               }
               const t = item.task;
               const actStatus = taskActualStatusMap.get(t.id) || { label: 'Pending', color: 'bg-slate-50 text-slate-600' };
-              const childCount = (childTasksCountMap?.get(t.id) || 0) + (t.taskCodePhu && t.taskCodePhu !== t.id ? (childTasksCountMap?.get(t.taskCodePhu) || 0) : 0);
+              const childCount = childTasksCountMap?.get(String(t.id)) || childTasksCountMap?.get(t.id) || 0;
               const isModularExpanded = expandedModularTasks
                 ? (expandedModularTasks.has(String(t.id)) ||
                    expandedModularTasks.has(String(t.id).toLowerCase()) ||
