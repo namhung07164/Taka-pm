@@ -1,11 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
 import Draggable from 'react-draggable';
 import { Upload, X, ShieldAlert, Loader2 } from 'lucide-react';
-import {  db, APP_ID , writeBatch } from "../lib/firebase";
-import { collection, getDocs, doc } from 'firebase/firestore';
+import { db, APP_ID } from "../lib/firebase";
+import { collection, getDocs } from 'firebase/firestore';
 import { parseCSV } from '../lib/csvUtils';
 import { markRestoreVersionCompleted } from '../lib/deltaSyncService';
+import { executeMassBatchOperations, MassWriteOp } from '../lib/massBatchWriteEngine';
+import { useAppStore } from '../store/useAppStore';
 
 interface FullReplaceImportProps {
   collectionName: string;
@@ -15,6 +17,15 @@ interface FullReplaceImportProps {
   headersOrder?: string[];
   id?: string; hiddenBtn?: boolean;
   onRecordSave?: (record: any, batch: import('firebase/firestore').WriteBatch) => void;
+}
+
+function extractCollectionNameFromRef(ref: any, fallback: string): string {
+  const path = String(ref?.path || '');
+  if (path.includes('taka_delegation_groups')) return 'taka_delegation_groups';
+  if (path.includes('taka_tasks')) return 'taka_tasks';
+  if (path.includes('taka_costs')) return 'taka_costs';
+  if (path.includes('taka_projects')) return 'taka_projects';
+  return fallback;
 }
 
 export function FullReplaceImport({ 
@@ -89,47 +100,79 @@ export function FullReplaceImport({
         throw new Error('No valid data found to import.');
       }
 
-      // 1. Clear existing collection
+      // 1. Clear existing collection in safe chunks via Resilient Mass Batch Engine
       const collRef = collection(db, 'artifacts', APP_ID, 'public', 'data', collectionName);
       const snapshot = await getDocs(collRef);
-      
-      const deleteBatches = [];
-      let currentDeleteBatch = writeBatch(db);
-      let deleteCount = 0;
-
-      for (const d of snapshot.docs) {
-        currentDeleteBatch.delete(d.ref);
-        deleteCount++;
-        if (deleteCount === 500) {
-          deleteBatches.push(currentDeleteBatch.commit());
-          currentDeleteBatch = writeBatch(db);
-          deleteCount = 0;
-        }
+      const deleteOps: MassWriteOp[] = snapshot.docs.map((d) => ({
+        collectionName,
+        docId: d.id,
+        action: 'delete',
+      }));
+      if (deleteOps.length > 0) {
+        await executeMassBatchOperations(deleteOps);
       }
-      if (deleteCount > 0) {
-        deleteBatches.push(currentDeleteBatch.commit());
-      }
-      await Promise.all(deleteBatches);
 
-      // 2. Import new data
-      const writeBatches = [];
-      let currentWriteBatch = writeBatch(db);
-      let writeCount = 0;
+      // 2. Prepare new data with strict 4-key composite resolution (projectId + projectCode + year + store)
+      const storeProjects = useAppStore.getState().projects || [];
+      const writeOps: MassWriteOp[] = [];
+      const savedRecords: any[] = [];
+      const nowIso = new Date().toISOString();
       let totalImported = 0;
 
-      for (const data of parsedDataList) {
-        // Ensure ID
+      // Proxy WriteBatch that records every extra operation from onRecordSave into writeOps
+      // so the 500-op Firestore batch limit can never be exceeded when delegations are attached
+      const collectorBatch = {
+        set: (ref: any, data: any, opts?: any) => {
+          const targetCol = extractCollectionNameFromRef(ref, 'taka_delegation_groups');
+          const targetId = String(ref?.id || data?.id || `id_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`);
+          writeOps.push({
+            collectionName: targetCol,
+            docId: targetId,
+            action: 'set',
+            data,
+            merge: opts?.merge !== false,
+          });
+          return collectorBatch;
+        },
+        update: (ref: any, data: any) => {
+          const targetCol = extractCollectionNameFromRef(ref, collectionName);
+          const targetId = String(ref?.id || data?.id);
+          if (targetId) {
+            writeOps.push({
+              collectionName: targetCol,
+              docId: targetId,
+              action: 'update',
+              data,
+            });
+          }
+          return collectorBatch;
+        },
+        delete: (ref: any) => {
+          const targetCol = extractCollectionNameFromRef(ref, collectionName);
+          const targetId = String(ref?.id);
+          if (targetId) {
+            writeOps.push({
+              collectionName: targetCol,
+              docId: targetId,
+              action: 'delete',
+            });
+          }
+          return collectorBatch;
+        },
+        commit: async () => {},
+      } as unknown as import('firebase/firestore').WriteBatch;
+
+      for (let idx = 0; idx < parsedDataList.length; idx++) {
+        const data = parsedDataList[idx];
         let finalId = data.id;
         if (!finalId && data.no && !isNaN(Number(data.no))) {
           finalId = String(data.no);
         }
         if (!finalId) {
-          finalId = `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          finalId = `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${idx}`;
         }
-        
-        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', collectionName, finalId);
-        
-        const recordToSave = { ...data, id: finalId, updatedAt: new Date().toISOString() };
+
+        const recordToSave = { ...data, id: finalId, updatedAt: nowIso };
         if (recordToSave.year !== undefined && recordToSave.year !== null && recordToSave.year !== '' && !isNaN(Number(recordToSave.year))) {
           recordToSave.year = Number(recordToSave.year);
         }
@@ -137,23 +180,59 @@ export function FullReplaceImport({
           recordToSave.projectYear = Number(recordToSave.projectYear);
         }
 
-        currentWriteBatch.set(docRef, recordToSave);
-        if (onRecordSave) {
-          onRecordSave(recordToSave, currentWriteBatch);
+        // Resolve composite projectId when importing tasks or costs (Rule 16.1)
+        if ((collectionName === 'taka_tasks' || collectionName === 'taka_costs') && !recordToSave.projectId && storeProjects.length > 0) {
+          const pCode = String(recordToSave.projectCode || '').trim().toLowerCase();
+          const pYear = String(recordToSave.projectYear ?? '').trim();
+          const pStore = String(recordToSave.projectStore || '').trim().toLowerCase();
+          const matchedProj = storeProjects.find((p) => {
+            const codeMatch = String(p.code || '').trim().toLowerCase() === pCode;
+            const yearMatch = !pYear || String(p.year ?? '').trim() === pYear;
+            const storeMatch = !pStore || !p.store || String(p.store).trim().toLowerCase() === pStore;
+            return codeMatch && yearMatch && storeMatch;
+          });
+          if (matchedProj) {
+            recordToSave.projectId = String(matchedProj.id || matchedProj.no);
+          }
         }
-        writeCount++;
-        totalImported++;
 
-        if (writeCount === 500) {
-          writeBatches.push(currentWriteBatch.commit());
-          currentWriteBatch = writeBatch(db);
-          writeCount = 0;
+        writeOps.push({
+          collectionName,
+          docId: finalId,
+          action: 'set',
+          data: recordToSave,
+          merge: false,
+        });
+        savedRecords.push(recordToSave);
+
+        if (onRecordSave) {
+          onRecordSave(recordToSave, collectorBatch);
         }
+        totalImported++;
       }
-      if (writeCount > 0) {
-        writeBatches.push(currentWriteBatch.commit());
+
+      // 3. Commit all new records in byte-safe, operation-counted chunks with retry + offline queue fallback
+      await executeMassBatchOperations(writeOps);
+
+      // 4. Synchronize LocalDB (Dexie) and Zustand store so local cache has zero stale/zombie records
+      try {
+        const { localDb } = await import('../lib/localDb');
+        if (collectionName === 'taka_projects') {
+          await localDb.projects.clear();
+          await localDb.projects.bulkPut(savedRecords);
+          useAppStore.getState().setProjects(savedRecords);
+        } else if (collectionName === 'taka_tasks') {
+          await localDb.tasks.clear();
+          await localDb.tasks.bulkPut(savedRecords);
+          useAppStore.getState().setTasks(savedRecords);
+        } else if (collectionName === 'taka_costs') {
+          await localDb.costs.clear();
+          await localDb.costs.bulkPut(savedRecords);
+          useAppStore.getState().setCosts(savedRecords);
+        }
+      } catch {
+        // fallback if IDB unavailable
       }
-      await Promise.all(writeBatches);
 
       // Lock out pre-restore historical deltas so future updates won't re-read or re-apply faulty changes
       markRestoreVersionCompleted(Date.now());

@@ -242,14 +242,15 @@ export async function batchSaveTasksToFirestore(
   });
 
   // 1. Persist immediately to local Dexie database & Zustand delegations so local cache is 100% synced
-  import('./localDb')
-    .then(({ bulkPersistTasks, bulkPersistDelegations }) => {
-      bulkPersistTasks(tasksToSave).catch(() => {});
-      if (generatedDelegations.length > 0) {
-        bulkPersistDelegations(generatedDelegations).catch(() => {});
-      }
-    })
-    .catch(() => {});
+  try {
+    const { bulkPersistTasks, bulkPersistDelegations } = await import('./localDb');
+    await bulkPersistTasks(tasksToSave).catch(() => {});
+    if (generatedDelegations.length > 0) {
+      await bulkPersistDelegations(generatedDelegations).catch(() => {});
+    }
+  } catch {
+    // Fallback if IndexedDB is unavailable
+  }
 
   if (generatedDelegations.length > 0) {
     const store = useAppStore.getState();
@@ -261,96 +262,64 @@ export async function batchSaveTasksToFirestore(
     store.setDelegationGroups(Array.from(delMap.values()));
   }
 
-  // 2. Build chunks capped at 200 Firestore operations per batch (accounting for 2 ops when delegation exists)
-  const MAX_OPS_PER_BATCH = 200;
-  const chunks: Task[][] = [];
-  let currentChunk: Task[] = [];
-  let currentOps = 0;
+  // 2. Build MassWriteOp list and Delta list for all tasks and generated delegations
+  const { executeMassBatchOperations } = await import('./massBatchWriteEngine');
+  const writeOps: import('./massBatchWriteEngine').MassWriteOp[] = [];
+  const deltaItems: any[] = [];
 
   for (const t of tasksToSave) {
-    const opsForTask = taskDelegationMap.has(t.id) ? 2 : 1;
-    if (currentChunk.length > 0 && currentOps + opsForTask > MAX_OPS_PER_BATCH) {
-      chunks.push(currentChunk);
-      currentChunk = [];
-      currentOps = 0;
+    const freshTask: Task = { ...t, updatedAt: now };
+    writeOps.push({
+      collectionName: 'taka_tasks',
+      docId: freshTask.id,
+      action: 'set',
+      data: freshTask,
+      merge: true,
+    });
+
+    deltaItems.push({
+      docId: freshTask.id,
+      collectionName: 'taka_tasks' as const,
+      action: 'create' as const,
+      isPatch: false,
+      data: freshTask,
+      year: freshTask.projectYear ? String(freshTask.projectYear) : undefined,
+      projectId: freshTask.projectId ? String(freshTask.projectId) : undefined,
+      projectCode: freshTask.projectCode ? String(freshTask.projectCode) : undefined,
+      projectStore: freshTask.projectStore ? String(freshTask.projectStore) : undefined,
+    });
+
+    const delGroup = taskDelegationMap.get(freshTask.id);
+    if (delGroup) {
+      writeOps.push({
+        collectionName: 'taka_delegation_groups',
+        docId: delGroup.id,
+        action: 'set',
+        data: delGroup,
+        merge: true,
+      });
+
+      deltaItems.push({
+        docId: delGroup.id,
+        collectionName: 'taka_delegations' as const,
+        action: 'create' as const,
+        isPatch: false,
+        data: delGroup,
+        year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
+        projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
+        projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
+        projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
+      });
     }
-    currentChunk.push(t);
-    currentOps += opsForTask;
-  }
-  if (currentChunk.length > 0) {
-    chunks.push(currentChunk);
   }
 
-  // 3. Commit chunks with bounded concurrency (3 parallel batches) and Offline Queue fallback
-  const CONCURRENCY = 3;
-  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
-    const slice = chunks.slice(i, i + CONCURRENCY);
-    await Promise.all(
-      slice.map(async (chunk) => {
-        const batch = writeBatch(db);
-        const deltaItems: any[] = [];
-        const explicitMarksList: Array<{ docId: string; collectionName: string }> = [];
+  // 3. Commit all operations via Resilient Mass Batch Engine (byte-capped, retry with backoff, bisection, and Offline Queue fallback)
+  await executeMassBatchOperations(writeOps, {
+    suppressAutoDelta: true,
+  });
 
-        chunk.forEach((t) => {
-          const freshTask: Task = { ...t, updatedAt: now };
-          const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', freshTask.id);
-          explicitMarksList.push({ docId: freshTask.id, collectionName: 'taka_tasks' });
-          batch.set(tRef, freshTask, { merge: true });
-
-          deltaItems.push({
-            docId: freshTask.id,
-            collectionName: 'taka_tasks' as const,
-            action: 'create' as const,
-            isPatch: false,
-            data: freshTask,
-            year: freshTask.projectYear ? String(freshTask.projectYear) : undefined,
-            projectId: freshTask.projectId ? String(freshTask.projectId) : undefined,
-            projectCode: freshTask.projectCode ? String(freshTask.projectCode) : undefined,
-            projectStore: freshTask.projectStore ? String(freshTask.projectStore) : undefined,
-          });
-
-          const delGroup = taskDelegationMap.get(freshTask.id);
-          if (delGroup) {
-            const delRef = doc(
-              db,
-              'artifacts',
-              APP_ID,
-              'public',
-              'data',
-              'taka_delegation_groups',
-              delGroup.id
-            );
-            explicitMarksList.push({ docId: delGroup.id, collectionName: 'taka_delegations' });
-            batch.set(delRef, delGroup, { merge: true });
-            deltaItems.push({
-              docId: delGroup.id,
-              collectionName: 'taka_delegations' as const,
-              action: 'create' as const,
-              isPatch: false,
-              data: delGroup,
-              year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
-              projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
-              projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
-              projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
-            });
-          }
-        });
-
-        markExplicitDelta(explicitMarksList);
-
-        try {
-          await batch.commit();
-          await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
-        } catch (err) {
-          console.warn('[taskImportService] Batch commit failed, queuing to syncQueue:', err);
-          const { syncQueueManager } = await import('./syncQueue');
-          for (const t of chunk) {
-            syncQueueManager.addToQueue('taka_tasks', t.id, 'set', t).catch(() => {});
-          }
-        }
-      })
-    );
-  }
+  // 4. Broadcast coalesced batch deltas (chunked by count & byte size with retry)
+  await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
 }
 
 /**

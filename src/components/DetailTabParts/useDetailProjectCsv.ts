@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
-import { Project } from '../../types';
+import { Project, TakaDeltaItem } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { downloadCSV, parseCSV, generateCSV } from '../../lib/csvUtils';
-import { doc } from 'firebase/firestore';
-import { writeBatch } from '../../lib/firestoreWrites';
-import { db, APP_ID } from '../../lib/firebase';
 import { undoManager } from '../../lib/undoManager';
-import { recordDelta } from '../../lib/deltaSyncService';
+import { recordBatchDeltas } from '../../lib/deltaSyncService';
+import { executeMassBatchOperations, MassWriteOp } from '../../lib/massBatchWriteEngine';
 import { validateProjectsImportData, generateTaskErrorReportCSV, ImportValidationResult } from './importValidator';
 import { ImportErrorModal } from './ImportErrorModal';
 
@@ -71,19 +69,29 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
           return;
         }
 
-        let maxNo = projects.length > 0 ? Math.max(...projects.map(p => {
+        const currentStoreProjects = useAppStore.getState().projects.length > 0
+          ? useAppStore.getState().projects
+          : projects;
+
+        let maxNo = currentStoreProjects.length > 0 ? Math.max(...currentStoreProjects.map(p => {
           const n = Number(p.no);
           return isNaN(n) ? 0 : n;
         })) : 0;
 
         const processedProjects = new Map<string, Project>();
-        projects.forEach(p => {
+        const projectsById = new Map<string, Project>();
+        currentStoreProjects.forEach(p => {
           const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '').trim().toLowerCase()}_${String(p.store || '').trim().toLowerCase()}`;
           processedProjects.set(key, p);
+          if (p.id) projectsById.set(String(p.id), p);
         });
 
         const previousStates = new Map<string, any>();
         const newIds = new Set<string>();
+        const writeOps: MassWriteOp[] = [];
+        const deltaItems: TakaDeltaItem[] = [];
+        const touchedProjectsMap = new Map<string, Project>();
+        const nowIso = new Date().toISOString();
         let importCount = 0;
 
         for (const row of dataRows) {
@@ -131,6 +139,7 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
             const existing = processedProjects.get(key);
             let no = existing ? existing.no : null;
             let docId = existing ? (existing.id || String(existing.no)) : null;
+            const isExistingOnServer = Boolean(existing && !newIds.has(String(docId)));
             
             if (!no) {
               maxNo++;
@@ -141,67 +150,102 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
               docId = String(no);
             }
             
-            if (docId && !previousStates.has(docId) && existing) {
+            if (docId && !previousStates.has(docId) && existing && !newIds.has(docId)) {
               previousStates.set(docId, existing);
             }
             
-            const finalProject = existing ? { ...existing, ...p } : { ...p, no };
+            const projDocId = String(docId || no);
+            const finalProject: Project = existing
+              ? { ...existing, ...p, id: projDocId, no, updatedAt: nowIso }
+              : { ...p, id: projDocId, no, updatedAt: nowIso };
+
+            processedProjects.set(key, finalProject);
+            projectsById.set(projDocId, finalProject);
+            touchedProjectsMap.set(projDocId, finalProject);
             
             // Remove computed fields and undefined values before saving to Firestore
-            const toSave = { ...finalProject };
+            const toSave: Record<string, any> = { ...finalProject, updatedAt: nowIso };
             if (toSave.year !== undefined && toSave.year !== null && toSave.year !== '' && !isNaN(Number(toSave.year))) {
               toSave.year = Number(toSave.year);
             }
-            delete (toSave as any).id;
-            delete (toSave as any).computedTakStart;
-            delete (toSave as any).computedTakCompl;
-            delete (toSave as any).computedOpening;
-            delete (toSave as any).taskSummaries;
-            delete (toSave as any).taskCount;
+            delete toSave.id;
+            delete toSave.computedTakStart;
+            delete toSave.computedTakCompl;
+            delete toSave.computedOpening;
+            delete toSave.taskSummaries;
+            delete toSave.taskCount;
 
-            const projDocId = docId || String(finalProject.no);
-            try {
-              const projRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', projDocId);
-              const batch = writeBatch(db);
-              batch.set(projRef, toSave, { merge: true });
-              await batch.commit();
+            writeOps.push({
+              collectionName: 'taka_projects',
+              docId: projDocId,
+              action: 'set',
+              data: toSave,
+              merge: true,
+            });
 
-              recordDelta({
-                docId: projDocId,
-                collectionName: 'taka_projects',
-                action: existing ? 'update' : 'create',
-                data: toSave
-              });
+            deltaItems.push({
+              docId: projDocId,
+              collectionName: 'taka_projects',
+              action: isExistingOnServer ? 'update' : 'create',
+              isPatch: isExistingOnServer,
+              data: toSave,
+              year: toSave.year ? String(toSave.year) : undefined,
+              projectId: projDocId,
+              projectCode: toSave.code ? String(toSave.code) : undefined,
+              projectStore: toSave.store ? String(toSave.store) : undefined,
+            });
 
-              importCount++;
-            } catch (err) {
-              console.error('Error saving project:', err);
-            }
+            importCount++;
           }
         }
 
         if (importCount > 0) {
+          // 1. Optimistic UI + LocalDB (Dexie) update (0ms)
+          const updatedAllProjects = Array.from(projectsById.values());
+          useAppStore.getState().setProjects(updatedAllProjects);
+
+          const touchedList = Array.from(touchedProjectsMap.values());
+          try {
+            const { bulkPersistProjects } = await import('../../lib/localDb');
+            await bulkPersistProjects(touchedList).catch(() => {});
+          } catch {
+            // fallback
+          }
+
+          // 2. Resilient Mass Batch Commit to Firestore + Batch Deltas
+          await executeMassBatchOperations(writeOps, { suppressAutoDelta: true });
+          await recordBatchDeltas(deltaItems);
+
           undoManager.push({
             description: 'Import Projects',
             revert: async () => {
-              const batch = writeBatch(db);
+              const revertOps: MassWriteOp[] = [];
               previousStates.forEach((oldData, id) => {
                 const toSave = { ...oldData };
                 delete toSave.computedTakStart;
                 delete toSave.computedTakCompl;
                 delete toSave.computedOpening;
                 delete toSave.id;
-                batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', id), toSave);
+                revertOps.push({
+                  collectionName: 'taka_projects',
+                  docId: id,
+                  action: 'set',
+                  data: toSave,
+                  merge: false,
+                });
               });
               newIds.forEach(id => {
-                batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', id));
+                revertOps.push({
+                  collectionName: 'taka_projects',
+                  docId: id,
+                  action: 'delete',
+                });
               });
               try {
-                batch.commit().catch(e => console.error("Batch commit failed", e));
+                await executeMassBatchOperations(revertOps);
               } catch (error: any) {
                 console.error("Batch commit failed", error);
                 useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-                return;
               }
             }
           });

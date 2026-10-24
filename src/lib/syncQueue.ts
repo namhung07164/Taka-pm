@@ -287,6 +287,36 @@ export async function processPendingSync(): Promise<{ synced: number; failed: nu
   return { synced, failed };
 }
 
+export async function addPendingUpdatesBulk(
+  updates: Array<Omit<PendingUpdate, 'id' | 'timestamp'>>
+): Promise<void> {
+  const validUpdates = updates.filter(
+    (u) => u.docId && !String(u.docId).startsWith('ts_')
+  );
+  if (validUpdates.length === 0) return;
+
+  try {
+    const idb = await openDB();
+    const now = Date.now();
+    await new Promise<void>((resolve, reject) => {
+      const tx = idb.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      for (const u of validUpdates) {
+        const deterministicId = `${u.collectionPath}__${u.docId}`;
+        store.put({
+          ...u,
+          id: deterministicId,
+          timestamp: now,
+        });
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('Failed to bulk add pending updates to IDB', e);
+  }
+}
+
 export const syncQueueManager = {
   addToQueue: async (
     collectionName: string,
@@ -305,6 +335,29 @@ export const syncQueueManager = {
       data,
     });
 
+    if (getConnectionStatus() === 'online') {
+      processPendingSync().catch(() => {});
+    }
+  },
+
+  bulkAddToQueue: async (
+    items: Array<{
+      collectionName: string;
+      docId: string;
+      action: 'set' | 'update' | 'delete';
+      data: any;
+    }>
+  ) => {
+    if (!items || items.length === 0) return;
+    const formatted = items.map((item) => ({
+      collectionPath: item.collectionName.includes('/')
+        ? item.collectionName
+        : `artifacts/${APP_ID}/public/data/${item.collectionName}`,
+      action: item.action,
+      docId: item.docId,
+      data: item.data,
+    }));
+    await addPendingUpdatesBulk(formatted);
     if (getConnectionStatus() === 'online') {
       processPendingSync().catch(() => {});
     }

@@ -1,8 +1,6 @@
 import { Task, Project, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { doc } from 'firebase/firestore';
-import { writeBatch } from '../../lib/firestoreWrites';
-import { db, APP_ID } from '../../lib/firebase';
+import { executeMassBatchOperations, MassWriteOp } from '../../lib/massBatchWriteEngine';
 import { undoManager } from '../../lib/undoManager';
 import { formatToDatetimeLocal, getDefaultDatetimeLocal } from '../../lib/utils';
 import { getTasksForProject, calculateProjectComputedDates, matchProjectCode } from '../../lib/projectDatesService';
@@ -452,30 +450,32 @@ export async function executeImportTasks({
   // Save tasks FIRST, then project summaries to Firestore + Delta bus sequentially so other devices
   // always receive the complete task set before the authoritative project summary seals the state.
   const activeUser = useAppStore.getState().currentUser || currentUser;
-  const cloudSyncPromise = (async () => {
-    await batchSaveTasksToFirestore(finalTasksToSave, activeUser);
-    await syncAffectedProjectsSummaries(affectedProjects, computedByProjectId, activeUser);
-  })();
-
-  // Wait up to 2.5s for fast cloud commit; if mass import is very large, let remaining chunks finish in background without blocking the UI notification
-  await Promise.race([
-    cloudSyncPromise,
-    new Promise<void>(resolve => setTimeout(resolve, 2500)),
-  ]);
+  await batchSaveTasksToFirestore(finalTasksToSave, activeUser);
+  await syncAffectedProjectsSummaries(affectedProjects, computedByProjectId, activeUser);
 
   if (finalTasksToSave.length > 0) {
     undoManager.push({
       description: 'Import Tasks',
       revert: async () => {
-        const batch = writeBatch(db);
+        const revertOps: MassWriteOp[] = [];
         previousStates.forEach((oldData, id) => {
-          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), oldData);
+          revertOps.push({
+            collectionName: 'taka_tasks',
+            docId: id,
+            action: 'set',
+            data: oldData,
+            merge: false,
+          });
         });
-        newIds.forEach(id => {
-          batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id));
+        newIds.forEach((id) => {
+          revertOps.push({
+            collectionName: 'taka_tasks',
+            docId: id,
+            action: 'delete',
+          });
         });
-        await batch.commit();
-      }
+        await executeMassBatchOperations(revertOps);
+      },
     });
   }
 
