@@ -342,3 +342,62 @@ export async function repairLocalDevice(
 
   return { added: added.length, removed: toDelete.size, projectsRefreshed };
 }
+
+/**
+ * Xóa vĩnh viễn các task thừa trên Firestore (taka_tasks) không nằm trong Summary chuẩn của dự án.
+ * Đây là các task mồ côi / tàn dư từ các đợt import cũ, giúp đưa số task thật trên Firestore khớp 100% với Summary.
+ */
+export async function purgeExcessFirestoreTasks(
+  report: AuditReport,
+  targetProjectIds?: string[],
+  onProgress?: (done: number, total: number) => void
+): Promise<{ purgedTasks: number; updatedProjects: number }> {
+  if (Date.now() - report.generatedAt > 10 * 60 * 1000) {
+    throw new Error('Báo cáo đã cũ hơn 10 phút. Hãy chạy kiểm tra lại trước khi xóa.');
+  }
+
+  const targets = report.issues.filter((r) => {
+    if (targetProjectIds && targetProjectIds.length > 0) {
+      return targetProjectIds.includes(r.projectId) && r.missingInSummary.length > 0;
+    }
+    return r.missingInSummary.length > 0;
+  });
+
+  if (targets.length === 0) {
+    return { purgedTasks: 0, updatedProjects: 0 };
+  }
+
+  const { doc } = await import('firebase/firestore');
+  const { writeBatch } = await import('./firestoreWrites');
+  const { db, APP_ID } = await import('./firebase');
+  const { deleteLocalRecord } = await import('./localDb');
+  const st = useAppStore.getState();
+
+  const allTaskIdsToDelete: string[] = [];
+  targets.forEach((row) => {
+    row.missingInSummary.forEach((id) => allTaskIdsToDelete.push(id));
+  });
+
+  const BATCH_SIZE = 400;
+  for (let i = 0; i < allTaskIdsToDelete.length; i += BATCH_SIZE) {
+    const chunk = allTaskIdsToDelete.slice(i, i + BATCH_SIZE);
+    const batch = writeBatch(db);
+    chunk.forEach((id) => {
+      const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
+      batch.delete(ref);
+    });
+    await batch.commit();
+    onProgress?.(Math.min(i + BATCH_SIZE, allTaskIdsToDelete.length), allTaskIdsToDelete.length);
+  }
+
+  // Xóa khỏi Dexie và Zustand
+  const deletedSet = new Set(allTaskIdsToDelete);
+  for (const id of allTaskIdsToDelete) {
+    await deleteLocalRecord('taka_tasks', id).catch(() => {});
+  }
+  const remainingTasks = (st.tasks || []).filter((t) => !deletedSet.has(t.id));
+  st.setTasks(remainingTasks);
+
+  return { purgedTasks: allTaskIdsToDelete.length, updatedProjects: targets.length };
+}
+
