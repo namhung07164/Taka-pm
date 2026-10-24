@@ -80,7 +80,12 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
   // 1. Start safety polling timer (initial delta catch-up is already handled by startDeltaRealtimeListener's onSnapshot)
   startPolling();
 
-  // Khi syncResilience khôi phục xong mạng (sau disableNetwork -> enableNetwork hoặc ngủ qua đêm),發 sự kiện để deltaRealtimeListener gắn lại trên socket mới
+  // Schedule non-blocking background delta TTL cleanup (throttled once per 6h)
+  const purgeTimer = setTimeout(() => {
+    purgeOldDeltas().catch(() => {});
+  }, 20000);
+
+  // Khi syncResilience khôi phục xong mạng (sau disableNetwork -> enableNetwork hoặc ngủ qua đêm), phát sự kiện để deltaRealtimeListener gắn lại trên socket mới
   const stopNetworkRecovery = initNetworkRecovery(() => {
     window.dispatchEvent(new CustomEvent('taka_network_recovered'));
   });
@@ -116,6 +121,7 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
   window.addEventListener('online', handleOnline);
 
   return () => {
+    clearTimeout(purgeTimer);
     stopPolling();
     stopNetworkRecovery();
     stopRealtime();

@@ -8,6 +8,7 @@ import { convertAllSubtaskCodesAndPredecessorsToHash } from "../../lib/ganttUtil
 import { scanAndRemoveDuplicateTasksOnFirestore, deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
 import { 
   purgeDeletedTombstones, 
+  optimizeFirestoreStorage,
   standardizeFiscalYears, 
   repairMissingTaskYears, 
   archiveHistoricalData 
@@ -121,16 +122,26 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
   const handlePurgeOldTombstones = () => {
     if (!isAdmin) return;
     onConfirmAction(
-      "Purge Deleted Tombstones (> 60 days)",
-      "This will permanently remove soft-deleted records older than 60 days from Firestore (projects, tasks, costs). Continue?",
+      "Optimize & Purge Firestore Garbage",
+      "This will permanently remove soft-deleted tombstones, expired deltas (>24h), orphan tasks from deleted projects, redundant schedule-only audit logs, and stale device metrics (>7d) from Firestore. Continue?",
       async () => {
         setIsPurging(true);
         try {
-          const deletedCount = await purgeDeletedTombstones();
-          useAppStore.getState().setToast({ title: "Cleanup Complete", message: `Permanently purged ${deletedCount} obsolete tombstone record(s).` });
+          const rep = await optimizeFirestoreStorage();
+          const total =
+            rep.purgedDeltas +
+            rep.purgedTombstones +
+            rep.purgedOrphanTasks +
+            rep.purgedNoiseAuditLogs +
+            rep.purgedStaleMetrics;
+          useAppStore.getState().setToast({
+            title: "Firestore Storage Optimized",
+            message: `Removed ${total} garbage records (Deltas: ${rep.purgedDeltas}, Tombstones: ${rep.purgedTombstones}, Orphans: ${rep.purgedOrphanTasks}, Noise Logs: ${rep.purgedNoiseAuditLogs}, Metrics: ${rep.purgedStaleMetrics}).`,
+            type: "success",
+          });
         } catch (e) {
           console.error("Purge error:", e);
-          useAppStore.getState().setToast({ title: "Error", message: "Failed to purge tombstones. Check permissions." });
+          useAppStore.getState().setToast({ title: "Error", message: "Failed to optimize Firestore storage. Check permissions.", type: "error" });
         } finally {
           setIsPurging(false);
         }
@@ -386,11 +397,11 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
       <button
         onClick={handlePurgeOldTombstones}
         disabled={isPurging}
-        title="Purge soft-deleted records older than 60 days from Firestore"
-        className="px-5 py-2.5 rounded-lg border border-red-200 dark:border-red-900/40 bg-white dark:bg-[#1e1e20] hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors flex items-center gap-3 font-medium text-red-600 dark:text-red-400 shadow-sm text-sm disabled:opacity-50"
+        title="Purge soft-deleted tombstones, expired deltas, orphan tasks, redundant audit logs, and stale device metrics"
+        className="px-5 py-2.5 rounded-lg border border-red-200 dark:border-red-900/40 bg-white dark:bg-[#1e1e20] hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors flex items-center gap-3 font-medium text-red-600 dark:text-red-400 shadow-sm text-sm disabled:opacity-50 cursor-pointer"
       >
         <Trash2 className="w-4 h-4 text-red-500" />
-        {isPurging ? "Purging..." : "Purge Tombstones (>60d)"}
+        {isPurging ? "Optimizing..." : "Purge & Optimize Storage"}
       </button>
 
       <button

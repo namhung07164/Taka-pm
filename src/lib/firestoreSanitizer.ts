@@ -1,7 +1,14 @@
+const TRANSIENT_FIRESTORE_KEYS = new Set([
+  '_isVirtualSummary',
+  'realtimeUpdate',
+  'importComment',
+  'parentTaskCode',
+  'parentTaskName',
+]);
+
 /**
- * Deeply strips `undefined` properties from objects/arrays so Firestore operations
- * (setDoc, updateDoc, writeBatch.set, writeBatch.update) never fail with:
- * "FirebaseError: Function WriteBatch.set() called with invalid data. Unsupported field value: undefined"
+ * Deeply strips `undefined` properties and transient runtime-only flags from objects/arrays
+ * so Firestore operations never fail on `undefined` or store temporary UI/import garbage.
  *
  * Preserves custom objects/classes such as FieldValue (deleteField, serverTimestamp, increment)
  * and Date, RegExp, etc.
@@ -32,10 +39,10 @@ export function removeUndefinedDeep<T = any>(val: T): T {
     return val;
   }
 
-  // Plain object: remove keys where value is undefined, recurse on nested values
+  // Plain object: remove keys where value is undefined or transient runtime-only key
   const result: Record<string, any> = {};
   for (const [key, v] of Object.entries(val as Record<string, any>)) {
-    if (v !== undefined) {
+    if (v !== undefined && !TRANSIENT_FIRESTORE_KEYS.has(key)) {
       result[key] = removeUndefinedDeep(v);
     }
   }

@@ -413,7 +413,7 @@ export async function syncProjectDatesToFirestore(
       updatePayload.taskSummaries = safeTaskSummaries.map((ts: any) => {
         const item: Record<string, any> = {};
         for (const [k, v] of Object.entries(ts)) {
-          if (v !== undefined) {
+          if (v !== undefined && v !== null && v !== "" && v !== false && k !== "_isVirtualSummary") {
             item[k] = v;
           }
         }
