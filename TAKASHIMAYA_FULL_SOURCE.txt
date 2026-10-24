@@ -144582,6 +144582,14 @@ export function calculateDatesFromPredecessorsAndDuration(
   allContextTasks.forEach(t => workingMap.set(t.id, { ...t }));
   tasksToProcess.forEach(t => workingMap.set(t.id, { ...t }));
 
+  // Identify parent tasks so their dates are rolled up from children during convergence
+  const parentIds = new Set<string>();
+  workingMap.forEach(t => {
+    if (t && !t.isDeleted && t.parentTaskId) {
+      parentIds.add(t.parentTaskId);
+    }
+  });
+
   // Index taskNoMap for resolving predecessors
   const currentAllTasks = Array.from(workingMap.values());
   const taskNoMap = buildTaskNoMap(projects, currentAllTasks);
@@ -144595,7 +144603,21 @@ export function calculateDatesFromPredecessorsAndDuration(
     hasChanges = false;
     iteration++;
 
+    if (parentIds.size > 0) {
+      const rolledList = rollupParentTaskDatesAndStatus(Array.from(workingMap.values()));
+      for (const rt of rolledList) {
+        if (parentIds.has(rt.id)) {
+          const prev = workingMap.get(rt.id);
+          if (prev && (prev.start !== rt.start || prev.finish !== rt.finish || prev.predecessor !== rt.predecessor)) {
+            workingMap.set(rt.id, rt);
+            hasChanges = true;
+          }
+        }
+      }
+    }
+
     for (const t of tasksToProcess) {
+      if (parentIds.has(t.id)) continue;
       const current = workingMap.get(t.id);
       if (!current) continue;
 
@@ -144616,8 +144638,12 @@ export function calculateDatesFromPredecessorsAndDuration(
         continue;
       }
 
-      // Task has predecessor: parse and compute dates
-      const parsedPreds = parsePredecessors(predString, taskNoMap, current);
+      // Task has predecessor: parse from CSV string without stale predecessorTaskIds
+      const parsedPreds = parsePredecessors(
+        predString,
+        taskNoMap,
+        { ...current, predecessorTaskIds: undefined, predecessors: undefined }
+      );
       if (!parsedPreds.length) continue;
 
       const calcResult = calculateTaskDatesFromPredecessors(
@@ -145193,11 +145219,16 @@ export async function executeImportTasks({
         }
       }
 
+      const hasImportedParentRef = Boolean(t.parentTaskId || t.parentTaskCode || t.parentTaskName);
       const finalTask: Task = existing
         ? {
             ...existing,
             ...t,
             id: existing.id,
+            parentTaskId: hasImportedParentRef ? (t.parentTaskId || existing.parentTaskId) : undefined,
+            predecessorTaskIds: undefined,
+            predecessors: undefined,
+            isModularParent: false,
             comments: updatedComments,
             orderIndex: taskOrderIndex,
             taskCodePhu,
@@ -145296,19 +145327,22 @@ export async function executeImportTasks({
   );
 
   calculatedTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
-  const allTasksWithCalc = Array.from(tasksMapAfterCalc.values());
-  const { updatedParents, allTasksMap } = rollupParentTaskDates(allTasksWithCalc, undefined, projects);
+  const healedAll = healAllTasksPredecessors(Array.from(tasksMapAfterCalc.values()), projects);
+  const { updatedParents, allTasksMap } = rollupParentTaskDates(healedAll.updatedTasks, undefined, projects);
 
-  const tasksToSaveMap = new Map<string, Task>();
-  calculatedTasks.forEach(t => tasksToSaveMap.set(t.id, t));
-  updatedParents.forEach(p => tasksToSaveMap.set(p.id, p));
-  const rawTasksToSave = Array.from(tasksToSaveMap.values());
-
-  // Auto-heal predecessor string codes on imported CSV/Excel tasks and stamp fresh updatedAt
-  const healed = healAllTasksPredecessors(rawTasksToSave, projects);
+  const tasksToSaveIds = new Set<string>();
+  calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
+  updatedParents.forEach(p => tasksToSaveIds.add(p.id));
   const commitNowIso = new Date().toISOString();
-  const finalTasksToSave = healed.updatedTasks.map(t => ({ ...t, updatedAt: commitNowIso }));
-  finalTasksToSave.forEach(t => allTasksMap.set(t.id, t));
+  const finalTasksToSave: Task[] = [];
+  tasksToSaveIds.forEach(tid => {
+    const tk = allTasksMap.get(tid);
+    if (tk) {
+      const stamped = { ...tk, updatedAt: commitNowIso };
+      allTasksMap.set(tid, stamped);
+      finalTasksToSave.push(stamped);
+    }
+  });
 
   // Optimistic update (0ms UI)
   useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
@@ -146613,5 +146647,1470 @@ export async function hydrateDelegationsForTasks(taskIds: string[]): Promise<num
     console.warn('[backgroundSyncWorker] hydrateDelegationsForTasks error:', err);
     return 0;
   }
+}
+
+
+=== FILE: src/lib/taskRollupService.ts ===
+import { Task, DelegationGroup } from '../types';
+
+/**
+ * Promotes orphan subtasks (whose parentTaskId is missing or deleted) to root tasks in memory
+ * so parent rollup dates and task counts remain 100% consistent before and after project expansion.
+ */
+export function filterNonOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: number } {
+  if (!tasks || tasks.length === 0) return { cleaned: tasks || [], fixedCount: 0 };
+
+  const taskMap = new Map<string, Task>();
+  const taskCodeMap = new Map<string, Task>();
+
+  tasks.forEach(t => {
+    if (!t || t.isDeleted) return;
+    if (t.id) taskMap.set(String(t.id).toLowerCase(), t);
+    if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+  });
+
+  let fixedCount = 0;
+  const cleaned = tasks.map(t => {
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) return t;
+
+    const parentStr = String(rawParent).trim().toLowerCase();
+    const parentTask = taskMap.get(parentStr) || taskCodeMap.get(parentStr);
+
+    if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
+      fixedCount++;
+      const updated = { ...t, parentTaskId: undefined };
+      delete (updated as any).parentId;
+      return updated;
+    }
+
+    return t;
+  });
+
+  return { cleaned, fixedCount };
+}
+
+interface RollupNodeResult {
+  start: string;
+  finish: string;
+  allCompleted: boolean;
+  hasInProcess: boolean;
+  earliestChild: Task | null;
+  latestChild: Task | null;
+}
+
+function getTaskRefCodeForRollup(t: Task): string {
+  if (t.taskCodePhu && String(t.taskCodePhu).trim()) {
+    return String(t.taskCodePhu).trim();
+  }
+  if (t.projectCode && t.orderIndex !== undefined && t.orderIndex !== null) {
+    return `${String(t.projectCode).trim()}#${Number(t.orderIndex) + 1}`;
+  }
+  return t.id;
+}
+
+let _lastRollupInputRef: Task[] | null = null;
+let _lastRollupOutputRef: Task[] | null = null;
+
+/**
+ * Computes rolled up start date, finish date, duration, status, and SS/FF predecessors
+ * for parent tasks based on their child tasks in O(N) time with subtree memoization and circular loop guard.
+ */
+export function rollupParentTaskDatesAndStatus(
+  tasks: Task[],
+  _delegationGroups?: DelegationGroup[]
+): Task[] {
+  if (!Array.isArray(tasks) || tasks.length === 0) return tasks || [];
+  if (_lastRollupInputRef === tasks && _lastRollupOutputRef) {
+    return _lastRollupOutputRef;
+  }
+
+  const childrenMap = new Map<string, Task[]>();
+
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (!t || !t.id || t.isDeleted || !t.parentTaskId) continue;
+    let list = childrenMap.get(t.parentTaskId);
+    if (!list) {
+      list = [];
+      childrenMap.set(t.parentTaskId, list);
+    }
+    list.push(t);
+  }
+
+  if (childrenMap.size === 0) {
+    _lastRollupInputRef = tasks;
+    _lastRollupOutputRef = tasks;
+    return tasks;
+  }
+
+  const result = [...tasks];
+  const memoRollup = new Map<string, RollupNodeResult | null>();
+  const visiting = new Set<string>();
+
+  function getRolledUpDatesAndStatus(parentId: string): RollupNodeResult | null {
+    if (memoRollup.has(parentId)) return memoRollup.get(parentId)!;
+    if (visiting.has(parentId)) return null;
+
+    const children = childrenMap.get(parentId);
+    if (!children || children.length === 0) {
+      memoRollup.set(parentId, null);
+      return null;
+    }
+
+    visiting.add(parentId);
+    let minStart = '';
+    let maxFinish = '';
+    let minStartTime = Infinity;
+    let maxFinishTime = -Infinity;
+    let earliestChild: Task | null = null;
+    let latestChild: Task | null = null;
+    let allCompleted = true;
+    let hasInProcess = false;
+
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      const subRollup = child.id ? getRolledUpDatesAndStatus(child.id) : null;
+      const childStart = subRollup ? subRollup.start : (child.start || '');
+      const childFinish = subRollup ? subRollup.finish : (child.finish || childStart || '');
+
+      if (childStart) {
+        const sTime = new Date(childStart).getTime();
+        if (!isNaN(sTime)) {
+          if (sTime < minStartTime) {
+            minStartTime = sTime;
+            minStart = childStart;
+            earliestChild = child;
+          }
+        } else if (!minStart || childStart < minStart) {
+          minStart = childStart;
+          earliestChild = child;
+        }
+      }
+
+      if (childFinish) {
+        const fTime = new Date(childFinish).getTime();
+        if (!isNaN(fTime)) {
+          if (fTime >= maxFinishTime) {
+            maxFinishTime = fTime;
+            maxFinish = childFinish;
+            latestChild = child;
+          }
+        } else if (!maxFinish || childFinish >= maxFinish) {
+          maxFinish = childFinish;
+          latestChild = child;
+        }
+      }
+
+      const status = String(child.runningStatus || '').toLowerCase();
+      if (status !== 'completed' && status !== 'pj compl' && status !== 'done' && status !== '100%') {
+        allCompleted = false;
+      }
+      if (status === 'on process' || status === 'in progress' || status === 'running') {
+        hasInProcess = true;
+      }
+    }
+
+    visiting.delete(parentId);
+    const computed: RollupNodeResult = {
+      start: minStart,
+      finish: maxFinish,
+      allCompleted,
+      hasInProcess,
+      earliestChild,
+      latestChild,
+    };
+    memoRollup.set(parentId, computed);
+    return computed;
+  }
+
+  for (let i = 0; i < result.length; i++) {
+    const task = result[i];
+    if (!task || !task.id || !childrenMap.has(task.id)) continue;
+
+    const rolled = getRolledUpDatesAndStatus(task.id);
+    if (rolled) {
+      const newStart = rolled.start || '';
+      const newFinish = rolled.finish || '';
+
+      let newStatus = task.runningStatus;
+      if (rolled.allCompleted) {
+        newStatus = 'Completed';
+      } else if (rolled.hasInProcess) {
+        newStatus = 'On process';
+      }
+
+      let newPredecessor = task.predecessor || '';
+      let newPredecessorTaskIds = task.predecessorTaskIds;
+      let newPredecessors = task.predecessors;
+      let newDuration = task.duration;
+
+      if (rolled.earliestChild && rolled.latestChild) {
+        const earliestCode = getTaskRefCodeForRollup(rolled.earliestChild);
+        const latestCode = getTaskRefCodeForRollup(rolled.latestChild);
+        newPredecessor = `${earliestCode}SS, ${latestCode}FF`;
+        newPredecessorTaskIds = [rolled.earliestChild.id, rolled.latestChild.id];
+        newPredecessors = [
+          { taskId: rolled.earliestChild.id, type: 'SS', lagDays: 0 },
+          { taskId: rolled.latestChild.id, type: 'FF', lagDays: 0 },
+        ];
+      }
+
+      if (newStart && newFinish) {
+        const sMs = new Date(newStart).getTime();
+        const fMs = new Date(newFinish).getTime();
+        if (!isNaN(sMs) && !isNaN(fMs)) {
+          const diffDays = Math.max(0, Math.round((fMs - sMs) / (1000 * 60 * 60 * 24)));
+          newDuration = String(diffDays);
+        }
+      }
+
+      const predIdsChanged =
+        !task.predecessorTaskIds ||
+        !newPredecessorTaskIds ||
+        task.predecessorTaskIds[0] !== newPredecessorTaskIds[0] ||
+        task.predecessorTaskIds[1] !== newPredecessorTaskIds[1];
+
+      if (
+        newStart !== (task.start || '') ||
+        newFinish !== (task.finish || '') ||
+        newStatus !== task.runningStatus ||
+        newPredecessor !== (task.predecessor || '') ||
+        newDuration !== task.duration ||
+        predIdsChanged
+      ) {
+        result[i] = {
+          ...task,
+          start: newStart,
+          finish: newFinish,
+          duration: newDuration,
+          runningStatus: newStatus as any,
+          predecessor: newPredecessor,
+          predecessorTaskIds: newPredecessorTaskIds,
+          predecessors: newPredecessors,
+          isModularParent: true,
+        };
+      }
+    }
+  }
+
+  _lastRollupInputRef = tasks;
+  _lastRollupOutputRef = result;
+  return result;
+}
+
+/**
+ * Rolls up task summaries for project computed summaries in O(N).
+ */
+export function rollupTaskSummaries(summaries: any[]): any[] {
+  if (!Array.isArray(summaries) || summaries.length === 0) return summaries || [];
+
+  const childrenMap = new Map<string, any[]>();
+  for (let i = 0; i < summaries.length; i++) {
+    const s = summaries[i];
+    if (s && s.id && s.parentTaskId) {
+      let list = childrenMap.get(s.parentTaskId);
+      if (!list) {
+        list = [];
+        childrenMap.set(s.parentTaskId, list);
+      }
+      list.push(s);
+    }
+  }
+
+  if (childrenMap.size === 0) return summaries;
+
+  const result = [...summaries];
+  const memoSummary = new Map<string, { start: string; finish: string } | null>();
+  const visiting = new Set<string>();
+
+  function getSummaryRollup(parentId: string): { start: string; finish: string } | null {
+    if (memoSummary.has(parentId)) return memoSummary.get(parentId)!;
+    if (visiting.has(parentId)) return null;
+
+    const children = childrenMap.get(parentId);
+    if (!children || children.length === 0) {
+      memoSummary.set(parentId, null);
+      return null;
+    }
+
+    visiting.add(parentId);
+    let minStart = '';
+    let maxFinish = '';
+
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i];
+      const sub = child.id ? getSummaryRollup(child.id) : null;
+      const cStart = sub ? sub.start : (child.start || '');
+      const cFinish = sub ? sub.finish : (child.finish || '');
+
+      if (cStart && (!minStart || cStart < minStart)) minStart = cStart;
+      if (cFinish && (!maxFinish || cFinish > maxFinish)) maxFinish = cFinish;
+    }
+
+    visiting.delete(parentId);
+    const out = { start: minStart, finish: maxFinish };
+    memoSummary.set(parentId, out);
+    return out;
+  }
+
+  for (let i = 0; i < result.length; i++) {
+    const item = result[i];
+    if (item && item.id && childrenMap.has(item.id)) {
+      const rolled = getSummaryRollup(item.id);
+      if (rolled) {
+        result[i] = {
+          ...item,
+          start: rolled.start || '',
+          finish: rolled.finish || '',
+        };
+      }
+    }
+  }
+
+  return result;
+}
+
+
+=== FILE: src/lib/ganttUtilsParts/taskCodeIndexers.ts ===
+import { Task, Project } from '../../types';
+import { isTaskBelongsToProject, normalizeDashes } from '../utils';
+import { sortGroupTasks } from './taskSortingAndCodes';
+
+let _lastProjectsForNoMapRef: Project[] | null = null;
+let _lastTasksForNoMapRef: Task[] | null = null;
+let _cachedTaskNoMap: Map<string, Task[]> | null = null;
+
+export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, Task[]> {
+  if (
+    _lastProjectsForNoMapRef === projects &&
+    _lastTasksForNoMapRef === tasks &&
+    _cachedTaskNoMap !== null
+  ) {
+    return _cachedTaskNoMap;
+  }
+
+  const map = new Map<string, Task[]>();
+  const safeTasks = Array.isArray(tasks) ? tasks : [];
+  const safeProjects = Array.isArray(projects) ? projects : [];
+
+  const addKey = (t: Task, rawKey?: string | number | null) => {
+    if (rawKey === undefined || rawKey === null) return;
+    const rawStr = String(rawKey).trim();
+    if (!rawStr) return;
+    const k = rawStr.toLowerCase();
+    const normK = normalizeDashes(k);
+
+    const insert = (key: string) => {
+      let existing = map.get(key);
+      if (!existing) {
+        existing = [t];
+        map.set(key, existing);
+      } else if (!existing.some(item => item.id === t.id)) {
+        existing.push(t);
+      }
+    };
+
+    insert(k);
+    if (normK !== k) insert(normK);
+  };
+
+  const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);
+
+  // Pre-index tasks by projectId and projectCode parts in O(T) to eliminate O(P * T) scans
+  const tasksByProjectId = new Map<string, Task[]>();
+  const tasksByCodePart = new Map<string, Task[]>();
+
+  for (let i = 0; i < safeTasks.length; i++) {
+    const t = safeTasks[i];
+    if (!t || t.isDeleted) continue;
+    if (t.projectId) {
+      const pid = String(t.projectId).trim();
+      let list = tasksByProjectId.get(pid);
+      if (!list) {
+        list = [];
+        tasksByProjectId.set(pid, list);
+      }
+      list.push(t);
+    }
+    if (t.projectCode) {
+      const tCode = String(t.projectCode).trim().toLowerCase();
+      const parts = tCode.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+      const codes = parts.length > 0 ? parts : [tCode];
+      for (let cIdx = 0; cIdx < codes.length; cIdx++) {
+        const c = codes[cIdx];
+        let list = tasksByCodePart.get(c);
+        if (!list) {
+          list = [];
+          tasksByCodePart.set(c, list);
+        }
+        list.push(t);
+      }
+    }
+  }
+
+  safeProjects.forEach((p) => {
+    if (!p || p.isDeleted) return;
+    const pCode = String(p.code || '').trim();
+    if (!pCode) return;
+
+    const pId = p.id ? String(p.id).trim() : '';
+    const pCodeLower = pCode.toLowerCase();
+    const rawCodeCombined = (p.linkCodes && p.linkCodes.trim()) ? `${pCodeLower}, ${p.linkCodes.toLowerCase()}` : pCodeLower;
+    const pCodeParts = rawCodeCombined.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+
+    const matchedMap = new Map<string, Task>();
+    if (pId) {
+      const idTasks = tasksByProjectId.get(pId);
+      if (idTasks) {
+        for (let i = 0; i < idTasks.length; i++) {
+          const t = idTasks[i];
+          if (isTaskBelongsToProject(t, p, safeProjects)) {
+            matchedMap.set(t.id, t);
+          }
+        }
+      }
+    }
+    for (let i = 0; i < pCodeParts.length; i++) {
+      const candTasks = tasksByCodePart.get(pCodeParts[i]);
+      if (candTasks) {
+        for (let j = 0; j < candTasks.length; j++) {
+          const t = candTasks[j];
+          if (!matchedMap.has(t.id) && isTaskBelongsToProject(t, p, safeProjects)) {
+            matchedMap.set(t.id, t);
+          }
+        }
+      }
+    }
+
+    const pTasks = Array.from(matchedMap.values());
+    const groupTasks = sortGroupTasks(pTasks);
+    groupTasks.forEach((t, i) => {
+      if (!t) return;
+      const computed = taskCodeMap.get(t.id) || t.taskCodePhu || `${pCode}#${i + 1}`;
+      if (computed) {
+        addKey(t, computed);
+        if (computed.includes('#')) addKey(t, computed.replace('#', '-'));
+        if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#$1'));
+      }
+
+      if (t.taskCodePhu) {
+        addKey(t, t.taskCodePhu);
+        if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
+        if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
+      }
+
+      const explicitSubMatch = String(t.taskCodePhu || '').trim().match(/[#-](\d+)$/);
+      const explicitSubNum = explicitSubMatch ? parseInt(explicitSubMatch[1], 10) : null;
+
+      if (explicitSubNum !== null && !isNaN(explicitSubNum)) {
+        addKey(t, `${pCode}#${explicitSubNum}`);
+        addKey(t, `${pCode}-${explicitSubNum}`);
+        addKey(t, `#${explicitSubNum}`);
+      } else {
+        addKey(t, `${pCode}#${i + 1}`);
+        addKey(t, `${pCode}-${i + 1}`);
+        addKey(t, `#${i + 1}`);
+
+        if (t.orderIndex !== undefined && t.orderIndex !== null) {
+          addKey(t, `${pCode}#${Number(t.orderIndex) + 1}`);
+          addKey(t, `${pCode}-${Number(t.orderIndex) + 1}`);
+          addKey(t, `#${Number(t.orderIndex) + 1}`);
+        }
+      }
+
+      if (t.id) addKey(t, t.id);
+    });
+  });
+
+  safeTasks.forEach(t => {
+    if (!t || t.isDeleted) return;
+    const computed = taskCodeMap.get(t.id) || t.taskCodePhu || '';
+    if (computed) {
+      addKey(t, computed);
+      if (computed.includes('#')) addKey(t, computed.replace('#', '-'));
+      if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#$1'));
+    }
+    if (t.taskCodePhu) {
+      addKey(t, t.taskCodePhu);
+      if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
+      if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
+    }
+    const explicitSubMatch = String(t.taskCodePhu || '').trim().match(/[#-](\d+)$/);
+    if (!explicitSubMatch && t.orderIndex !== undefined && t.orderIndex !== null && t.projectCode) {
+      addKey(t, `${t.projectCode}#${Number(t.orderIndex) + 1}`);
+      addKey(t, `${t.projectCode}-${Number(t.orderIndex) + 1}`);
+    }
+    if (t.id) addKey(t, t.id);
+  });
+
+  _lastProjectsForNoMapRef = projects;
+  _lastTasksForNoMapRef = tasks;
+  _cachedTaskNoMap = map;
+  return map;
+}
+
+export function computeTaskCode(projects: Project[], tasks: Task[], task: Task): string {
+  if (!task || task.isDeleted) return '';
+
+  const allCodes = computeAllTaskCodes(projects || [], tasks || []);
+  const fastCode = allCodes.get(task.id);
+  if (fastCode) return fastCode;
+
+  const taskPCode = String(task.projectCode || '').trim();
+  const taskYear = task.projectYear !== undefined && task.projectYear !== null ? String(task.projectYear).trim() : '';
+  const taskStore = task.projectStore ? String(task.projectStore).trim().toUpperCase() : '';
+
+  const p =
+    (task.projectId ? (projects || []).find(proj => proj && !proj.isDeleted && String(proj.id) === String(task.projectId)) : undefined) ||
+    (projects || []).find(proj => proj && !proj.isDeleted && isTaskBelongsToProject(task, proj));
+
+  const currentPCode = p ? String(p.code).trim() : taskPCode;
+  
+  if (!currentPCode) return '';
+
+  const pTasks = p
+    ? (tasks || []).filter(t => isTaskBelongsToProject(t, p))
+    : (tasks || []).filter(t => {
+        if (!t || t.isDeleted) return false;
+        if (!t.projectCode || String(t.projectCode).trim().toLowerCase() !== currentPCode.toLowerCase()) return false;
+        const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+        const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+        if (taskYear && tYear && taskYear !== tYear) return false;
+        if (taskStore && tStore && taskStore !== tStore) return false;
+        return true;
+      });
+  
+  const sorted = sortGroupTasks(pTasks);
+  const idx = sorted.findIndex(t => t.id === task.id);
+  
+  const orderNum = idx !== -1 ? idx + 1 : (task.orderIndex !== undefined ? Number(task.orderIndex) + 1 : 1);
+
+  return `${currentPCode}#${orderNum}`;
+}
+
+let _lastProjectsForCodeMapRef: Project[] | null = null;
+let _lastTasksForCodeMapRef: Task[] | null = null;
+let _cachedTaskCodesMap: Map<string, string> | null = null;
+
+/**
+ * Pre-indexes all task codes in O(N log K) single pass instead of O(N^2 log N).
+ * Includes reference-level memoization to eliminate recalculations across sibling components.
+ */
+export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<string, string> {
+  if (
+    _lastProjectsForCodeMapRef === projects &&
+    _lastTasksForCodeMapRef === tasks &&
+    _cachedTaskCodesMap !== null
+  ) {
+    return _cachedTaskCodesMap;
+  }
+
+  const map = new Map<string, string>();
+  if (!tasks || !Array.isArray(tasks)) return map;
+
+  const projectMapByScopedCode = new Map<string, Project>();
+  const projectMapById = new Map<string, Project>();
+  const projectsByCodePart = new Map<string, Project[]>();
+
+  (projects || []).forEach(p => {
+    if (!p || p.isDeleted) return;
+    if (p.id) projectMapById.set(String(p.id).trim(), p);
+    if (p.code) {
+      const pCodeClean = String(p.code).trim();
+      const key = `${pCodeClean}-${p.year || ''}-${p.store || ''}`.toLowerCase();
+      projectMapByScopedCode.set(key, p);
+
+      const rawCombined = (p.linkCodes && p.linkCodes.trim())
+        ? `${pCodeClean.toLowerCase()}, ${p.linkCodes.toLowerCase()}`
+        : pCodeClean.toLowerCase();
+      const parts = rawCombined.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+      for (let i = 0; i < parts.length; i++) {
+        const c = parts[i];
+        let list = projectsByCodePart.get(c);
+        if (!list) {
+          list = [];
+          projectsByCodePart.set(c, list);
+        }
+        list.push(p);
+      }
+    }
+  });
+
+  const resolveTaskProject = (t: Task): Project | undefined => {
+    if (t.projectId) {
+      const byId = projectMapById.get(String(t.projectId).trim());
+      if (byId && isTaskBelongsToProject(t, byId, projects)) return byId;
+    }
+    if (t.projectCode) {
+      const tCodeClean = String(t.projectCode).trim();
+      const scopedKey = `${tCodeClean}-${t.projectYear || ''}-${t.projectStore || ''}`.toLowerCase();
+      const byScoped = projectMapByScopedCode.get(scopedKey);
+      if (byScoped && isTaskBelongsToProject(t, byScoped, projects)) return byScoped;
+
+      const tCodeParts = tCodeClean.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+      for (let i = 0; i < tCodeParts.length; i++) {
+        const candidates = projectsByCodePart.get(tCodeParts[i]);
+        if (candidates) {
+          for (let j = 0; j < candidates.length; j++) {
+            if (isTaskBelongsToProject(t, candidates[j], projects)) {
+              return candidates[j];
+            }
+          }
+        }
+      }
+    }
+    return undefined;
+  };
+
+  const tasksByGroupKey = new Map<string, { pCode: string; tasks: Task[] }>();
+  for (let idx = 0; idx < tasks.length; idx++) {
+    const t = tasks[idx];
+    if (!t || t.isDeleted) continue;
+    const p = resolveTaskProject(t);
+    const pCode = p ? String(p.code || '').trim() : String(t.projectCode || '').trim();
+
+    if (!pCode) {
+      if (t.taskCodePhu && t.taskCodePhu.trim()) {
+        map.set(t.id, t.taskCodePhu.trim());
+      }
+      continue;
+    }
+
+    const groupKey = p?.id
+      ? `pid:${p.id}`
+      : `${pCode}-${p?.year ?? t.projectYear ?? ''}-${p?.store ?? t.projectStore ?? ''}`.toLowerCase();
+    
+    let entry = tasksByGroupKey.get(groupKey);
+    if (!entry) {
+      entry = { pCode, tasks: [] };
+      tasksByGroupKey.set(groupKey, entry);
+    }
+    entry.tasks.push(t);
+  }
+
+  tasksByGroupKey.forEach(({ pCode, tasks: groupTasks }) => {
+    const sorted = sortGroupTasks(groupTasks);
+    sorted.forEach((t, i) => {
+      const orderNum = i + 1;
+      const code = pCode ? `${pCode}#${orderNum}` : (t.taskCodePhu || '');
+      map.set(t.id, code);
+    });
+  });
+
+  _lastProjectsForCodeMapRef = projects;
+  _lastTasksForCodeMapRef = tasks;
+  _cachedTaskCodesMap = map;
+  return map;
+}
+
+
+=== FILE: src/lib/ganttUtilsParts/predecessorHealingAndConversion.ts ===
+import { Task, Project } from '../../types';
+import { parsePredecessorToken } from '../predecessorMatchUtils';
+import {
+  sortGroupTasks,
+  buildTaskNoMap,
+  computeTaskCode,
+  computeAllTaskCodes,
+} from './taskSortingAndCodes';
+import { splitPredecessors } from './predecessorParsingAndCascades';
+
+/**
+ * Normalizes and heals a task's predecessor string by resolving legacy, shortened,
+ * or out-of-sync task codes.
+ */
+export function normalizeAndHealTaskPredecessors(
+  task: Task,
+  allTasks: Task[],
+  projects: Project[],
+  cachedTaskNoMap?: Map<string, Task[]>,
+  cachedKnownCodes?: Set<string>
+): { changed: boolean; newPredecessor: string } {
+  if (!task || !task.predecessor || typeof task.predecessor !== 'string' || !task.predecessor.trim()) {
+    return { changed: false, newPredecessor: task?.predecessor || '' };
+  }
+
+  const updatedAllTasks = allTasks || [];
+  const taskNoMap = cachedTaskNoMap || buildTaskNoMap(projects, updatedAllTasks);
+  const knownCodes = cachedKnownCodes || (() => {
+    const set = new Set<string>();
+    for (const k of taskNoMap.keys()) set.add(k.toLowerCase());
+    updatedAllTasks.forEach(t => {
+      if (t.taskCodePhu) set.add(t.taskCodePhu.toLowerCase());
+      if (t.projectCode) set.add(t.projectCode.toLowerCase());
+    });
+    return set;
+  })();
+
+  const tokens = splitPredecessors(task.predecessor, knownCodes);
+  let changed = false;
+
+  const sortedTaskNoMapEntries = Array.from(taskNoMap.entries()).sort((a, b) => b[0].length - a[0].length);
+
+  const resolvedTokens = tokens.map((token, tokIdx) => {
+    const rawToken = token.trim();
+    if (!rawToken) return token;
+
+    const lowerToken = rawToken.toLowerCase();
+    const hardLinkedId = task.predecessorTaskIds?.[tokIdx] || task.predecessors?.[tokIdx]?.taskId;
+
+    for (const [code, matchingTasks] of sortedTaskNoMapEntries) {
+      if (lowerToken.startsWith(code)) {
+        const remainder = lowerToken.substring(code.length);
+        if (remainder.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s+\d|$)/i.test(remainder)) {
+          let targetTask: Task | undefined;
+          if (matchingTasks && matchingTasks.length > 0) {
+            if (matchingTasks.length === 1) {
+              targetTask = matchingTasks[0];
+            } else {
+              const ctxPCode = String(task.projectCode || '').trim().toLowerCase();
+              const ctxYear = task.projectYear !== undefined && task.projectYear !== null ? String(task.projectYear).trim().toLowerCase() : '';
+              const ctxStore = String(task.projectStore || '').trim().toLowerCase();
+              const ctxLoc = String(task.location || '').trim().toLowerCase();
+              const ctxProjId = task.projectId || '';
+              const codeSubMatch = code.match(/[#-](\d+)$/);
+              const targetSubNum = codeSubMatch ? codeSubMatch[1] : null;
+
+              let bestScore = -Infinity;
+              for (const cand of matchingTasks) {
+                if (!cand) continue;
+                let candScore = 0;
+                if (hardLinkedId && String(cand.id) === String(hardLinkedId)) candScore += 50000;
+                if (targetSubNum) {
+                  const candCode = String(cand.taskCodePhu || '').trim();
+                  const candSubMatch = candCode.match(/[#-](\d+)$/);
+                  if (candSubMatch) {
+                    if (candSubMatch[1] === targetSubNum) candScore += 25000;
+                    else candScore -= 50000;
+                  }
+                }
+                if (ctxProjId && cand.projectId && ctxProjId === cand.projectId) candScore += 10000;
+                if (ctxPCode && cand.projectCode && ctxPCode === String(cand.projectCode).trim().toLowerCase()) candScore += 5000;
+                if (ctxYear && cand.projectYear) {
+                  if (ctxYear === String(cand.projectYear).trim().toLowerCase()) candScore += 3000;
+                  else candScore -= 4000;
+                }
+                if (ctxStore && cand.projectStore) {
+                  if (ctxStore === String(cand.projectStore).trim().toLowerCase()) candScore += 1500;
+                  else candScore -= 2000;
+                }
+                if (ctxLoc && cand.location) {
+                  if (ctxLoc === String(cand.location).trim().toLowerCase()) candScore += 500;
+                  else candScore -= 500;
+                }
+                if (candScore > bestScore) {
+                  bestScore = candScore;
+                  targetTask = cand;
+                }
+              }
+            }
+          }
+          if (targetTask) {
+            const currentTargetCode = targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask);
+            if (currentTargetCode && currentTargetCode.trim().toLowerCase() !== code) {
+              changed = true;
+              return `${currentTargetCode.trim()}${rawToken.substring(code.length)}`;
+            }
+          }
+          return token;
+        }
+      }
+    }
+
+    const suffixMatch = rawToken.match(/\s*((?:FS|SS|FF|SF)\s*(?:[+-]\s*\d+(?:\.\d+)?|\s+\d+(?:\.\d+)?)?|\+\s*\d+(?:\.\d+)?|\s+-\s*\d+(?:\.\d+)?|\s+\d+(?:\.\d+)?)\s*$/i);
+    let lagSuffix = "";
+    let baseToken = rawToken;
+
+    if (suffixMatch && suffixMatch.index !== undefined && suffixMatch[0].trim()) {
+      lagSuffix = suffixMatch[1].trim();
+      baseToken = rawToken.substring(0, suffixMatch.index).trim();
+    }
+
+    let codePrefix = "";
+    let subIndexNum: number | null = null;
+
+    if (/^\d+$/.test(baseToken)) {
+      subIndexNum = parseInt(baseToken, 10);
+      codePrefix = "";
+    } else {
+      const matchPrefix = baseToken.match(/^(.+)[-_\s]+(\d+)$/);
+      if (matchPrefix) {
+        codePrefix = matchPrefix[1].trim();
+        subIndexNum = parseInt(matchPrefix[2], 10);
+      } else {
+        codePrefix = baseToken;
+      }
+    }
+
+    if (subIndexNum !== null && !isNaN(subIndexNum)) {
+      const currentPCode = String(task.projectCode || '').trim();
+      const currentPCodeLower = currentPCode.toLowerCase();
+      const pCodeParts = currentPCodeLower.split(/[,;/]+/).map(p => p.trim()).filter(Boolean);
+
+      const isMatchingCurrentProject = !codePrefix || 
+        codePrefix.toLowerCase() === currentPCodeLower ||
+        pCodeParts.some(part => part === codePrefix.toLowerCase() || part.startsWith(codePrefix.toLowerCase()) || codePrefix.toLowerCase().startsWith(part));
+
+      if (isMatchingCurrentProject) {
+        const sameProjectTasks = sortGroupTasks(
+          updatedAllTasks.filter(t => {
+            if (!t) return false;
+            const tPCode = String(t.projectCode || '').trim().toLowerCase();
+            const sameProj = tPCode === currentPCodeLower ||
+              pCodeParts.some(p => p && (tPCode === p || tPCode.includes(p)));
+            if (!sameProj) return false;
+            if (task.projectYear && t.projectYear && String(t.projectYear) !== String(task.projectYear)) return false;
+            if (task.projectStore && t.projectStore && String(t.projectStore) !== String(task.projectStore)) return false;
+            return true;
+          })
+        );
+
+        let targetTask = sameProjectTasks.find(t => {
+          const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
+          return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`);
+        });
+
+        if (!targetTask && subIndexNum >= 1 && subIndexNum <= sameProjectTasks.length) {
+          targetTask = sameProjectTasks[subIndexNum - 1];
+        }
+
+        if (targetTask) {
+          const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask) || `${currentPCode}#${subIndexNum}`).trim();
+          if (newCode) {
+            changed = true;
+            return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
+          }
+        }
+      }
+
+      if (codePrefix) {
+        const lowerPrefix = codePrefix.toLowerCase();
+        const matchedProj = projects.find(p => {
+          if (!p || !p.code) return false;
+          const pLower = p.code.toLowerCase();
+          const parts = pLower.split(/[,;/]+/).map(item => item.trim()).filter(Boolean);
+          return pLower === lowerPrefix || parts.some(part => part === lowerPrefix || part.startsWith(lowerPrefix) || lowerPrefix.startsWith(part));
+        });
+
+        if (matchedProj) {
+          const targetTasks = sortGroupTasks(
+            updatedAllTasks.filter(t => 
+              t &&
+              String(t.projectCode || '').trim().toLowerCase() === String(matchedProj.code).trim().toLowerCase() &&
+              (matchedProj.year ? String(t.projectYear || '') === String(matchedProj.year) : true) &&
+              (matchedProj.store ? String(t.projectStore || '') === String(matchedProj.store) : true)
+            )
+          );
+
+          let targetTask = targetTasks.find(t => {
+            const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
+            return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`);
+          });
+
+          if (!targetTask && subIndexNum >= 1 && subIndexNum <= targetTasks.length) {
+            targetTask = targetTasks[subIndexNum - 1];
+          }
+
+          if (targetTask) {
+            const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask) || `${matchedProj.code}#${subIndexNum}`).trim();
+            if (newCode) {
+              changed = true;
+              return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
+            }
+          }
+        }
+      }
+    }
+
+    return token;
+  });
+
+  const newPredecessor = resolvedTokens.join(', ');
+  return {
+    changed: changed || newPredecessor !== task.predecessor,
+    newPredecessor
+  };
+}
+
+/**
+ * Sweeps through all tasks and heals any out-of-sync or legacy predecessor codes.
+ */
+export function healAllTasksPredecessors(
+  allTasks: Task[],
+  projects: Project[]
+): {
+  updatedTasks: Task[];
+  changedCount: number;
+  updatesToSave: { id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string }[];
+} {
+  const updatesToSave: { id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string }[] = [];
+  let changedCount = 0;
+  const safeTasks = Array.isArray(allTasks) ? allTasks : [];
+  const safeProjects = Array.isArray(projects) ? projects : [];
+
+  const parentIds = new Set<string>();
+  safeTasks.forEach(t => {
+    if (t && !t.isDeleted && t.parentTaskId) {
+      parentIds.add(t.parentTaskId);
+    }
+  });
+
+  const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);
+  const taskNoMap = buildTaskNoMap(safeProjects, safeTasks);
+  const knownCodes = new Set<string>();
+  for (const k of taskNoMap.keys()) knownCodes.add(k.toLowerCase());
+  safeTasks.forEach(t => {
+    if (t.taskCodePhu) knownCodes.add(t.taskCodePhu.toLowerCase());
+    if (t.projectCode) knownCodes.add(t.projectCode.toLowerCase());
+  });
+
+  const updatedTasks = safeTasks.map(t => {
+    let taskChanged = false;
+    let newPred = t.predecessor || '';
+    const originalTask = t;
+
+    const newPhu = t.taskCodePhu || taskCodeMap.get(t.id) || '';
+
+    // Skip string healing on parent tasks whose SS/FF predecessors are governed by child rollup
+    if (t.predecessor && !parentIds.has(t.id)) {
+      const { changed, newPredecessor } = normalizeAndHealTaskPredecessors(
+        { ...t, taskCodePhu: newPhu }, 
+        safeTasks, 
+        safeProjects,
+        taskNoMap,
+        knownCodes
+      );
+      if (changed && newPredecessor !== t.predecessor) {
+        newPred = newPredecessor;
+        taskChanged = true;
+      }
+    }
+
+    if (taskChanged) {
+      changedCount++;
+      const updatedAt = new Date().toISOString();
+      const origPhu = originalTask.taskCodePhu || '';
+      const origPred = originalTask.predecessor || '';
+
+      const updatePayload: { id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string } = {
+        id: t.id,
+        updatedAt
+      };
+      if (newPred !== origPred) updatePayload.predecessor = newPred;
+      if (newPhu !== origPhu) updatePayload.taskCodePhu = newPhu;
+
+      updatesToSave.push(updatePayload);
+      return {
+        ...t,
+        taskCodePhu: newPhu,
+        predecessor: newPred,
+        updatedAt
+      };
+    }
+    return t;
+  });
+
+  return {
+    updatedTasks,
+    changedCount,
+    updatesToSave
+  };
+}
+
+/**
+ * Scans all tasks and projects in the app and explicitly converts subtask codes and predecessor references
+ * from '-' format (e.g. B2-B208-1) to '#' format (e.g. B2-B208#1).
+ */
+export function convertAllSubtaskCodesAndPredecessorsToHash(
+  allTasks: Task[],
+  allProjects: Project[]
+): {
+  updatedTasks: Task[];
+  changedCount: number;
+  updatesToSave: Array<{ id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string }>;
+} {
+  const canonicalTaskCodes = computeAllTaskCodes(allProjects, allTasks);
+  const taskOldToNewCodeMap = new Map<string, string>();
+  const buildScopedOldKey = (t: Task, codeLower: string) =>
+    `${String(t.projectId || '').trim()}__${String(t.projectCode || '').trim().toLowerCase()}__${String(t.projectYear || '').trim()}__${String(t.projectStore || '').trim().toUpperCase()}__${codeLower}`;
+
+  const updatedTasksWithCodes = (allTasks || []).map((t, idx) => {
+    const oldCode = (t.taskCodePhu || '').trim();
+    const newCode = canonicalTaskCodes.get(t.id) || oldCode;
+
+    if (oldCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
+      taskOldToNewCodeMap.set(buildScopedOldKey(t, oldCode.toLowerCase()), newCode);
+      if (!taskOldToNewCodeMap.has(oldCode.toLowerCase())) {
+        taskOldToNewCodeMap.set(oldCode.toLowerCase(), newCode);
+      }
+    }
+
+    return {
+      ...t,
+      orderIndex: (t.orderIndex !== undefined && t.orderIndex !== null) ? t.orderIndex : idx,
+      taskCodePhu: newCode
+    };
+  });
+
+  let changedCount = 0;
+  const updatesToSave: Array<{ id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string }> = [];
+
+  const finalTasks = updatedTasksWithCodes.map((t, idx) => {
+    const originalTask = allTasks[idx];
+    let predChanged = false;
+    let newPred = t.predecessor || '';
+    const oldPred = t.predecessor || '';
+
+    if (oldPred && oldPred.trim()) {
+      const tokens = splitPredecessors(oldPred);
+      const convertedTokens = tokens.map(rawToken => {
+        const token = rawToken.trim();
+        if (!token) return token;
+
+        const { query, suffix } = parsePredecessorToken(token);
+        const queryLower = query.toLowerCase();
+
+        const scopedKey = buildScopedOldKey(t, queryLower);
+        const mapped = taskOldToNewCodeMap.get(scopedKey) || taskOldToNewCodeMap.get(queryLower);
+        if (mapped) {
+          const formattedSuffix = suffix ? (suffix.startsWith('+') || suffix.startsWith('-') || /^[a-zA-Z]/.test(suffix) ? suffix : ` ${suffix}`) : '';
+          return `${mapped}${formattedSuffix}`;
+        }
+
+        const dashMatch = query.match(/^(.*)-(\d+)$/);
+        if (dashMatch) {
+          const prefix = dashMatch[1];
+          const digits = dashMatch[2];
+          const isKnownProj = (allProjects || []).some(p => p.code && p.code.toLowerCase() === prefix.toLowerCase()) ||
+            (t.projectCode && prefix.toLowerCase() === String(t.projectCode).trim().toLowerCase());
+          
+          if (isKnownProj) {
+            const canonicalPrefix = (allProjects || []).find(p => p.code && p.code.toLowerCase() === prefix.toLowerCase())?.code || prefix;
+            const formattedSuffix = suffix ? (suffix.startsWith('+') || suffix.startsWith('-') || /^[a-zA-Z]/.test(suffix) ? suffix : ` ${suffix}`) : '';
+            return `${canonicalPrefix}#${digits}${formattedSuffix}`;
+          }
+        }
+
+        const formattedSuffix = suffix ? (suffix.startsWith('+') || suffix.startsWith('-') || /^[a-zA-Z]/.test(suffix) ? suffix : ` ${suffix}`) : '';
+        return `${query}${formattedSuffix}`;
+      });
+
+      newPred = convertedTokens.join(', ');
+      if (newPred !== oldPred) {
+        predChanged = true;
+      }
+    }
+
+    const codeChanged = (t.taskCodePhu || '') !== (originalTask.taskCodePhu || '');
+    if (codeChanged || predChanged) {
+      changedCount++;
+      const updatedAt = new Date().toISOString();
+      const updatePayload: { id: string; predecessor?: string; taskCodePhu?: string; updatedAt: string } = {
+        id: t.id,
+        updatedAt
+      };
+      if (codeChanged) updatePayload.taskCodePhu = t.taskCodePhu;
+      if (predChanged) updatePayload.predecessor = newPred;
+      updatesToSave.push(updatePayload);
+
+      return {
+        ...t,
+        predecessor: newPred,
+        updatedAt
+      };
+    }
+
+    return t;
+  });
+
+  return {
+    updatedTasks: finalTasks,
+    changedCount,
+    updatesToSave
+  };
+}
+
+
+=== FILE: src/components/Gantt/useGanttDependencies.ts ===
+import React, { useCallback, useMemo, useState } from 'react';
+import { Task, Project } from '../../types';
+import { DependencyLine, GanttTableRow } from './ganttTypes';
+import { computeAllTaskCodes } from '../../lib/ganttUtils';
+import { parseDateTime } from '../../lib/utils';
+import { findClosestTaskMatch, buildProjectLookupIndex, resolveProjectContext } from '../../lib/predecessorMatchUtils';
+
+interface UseGanttDependenciesParams {
+  tasks: Task[];
+  projects: Project[];
+  delegationGroups: any[];
+  visibleGanttRows?: GanttTableRow[];
+  startDate?: Date;
+  dayWidth?: number;
+  sideWidth?: number;
+  paddingTop?: number;
+  showStart?: boolean;
+  startColWidth?: number;
+  showFinish?: boolean;
+  finishColWidth?: number;
+  showParty?: boolean;
+  partyColWidth?: number;
+  showDuration?: boolean;
+  durationColWidth?: number;
+  showPredecessor?: boolean;
+  predecessorColWidth?: number;
+}
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+function buildRoundedOrthogonalPath(points: Point[], cornerRadius = 5): string {
+  if (points.length < 2) return '';
+  if (points.length === 2) {
+    return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  }
+
+  let path = `M ${points[0].x} ${points[0].y}`;
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const pPrev = points[i - 1];
+    const pCurr = points[i];
+    const pNext = points[i + 1];
+
+    const dx1 = pCurr.x - pPrev.x;
+    const dy1 = pCurr.y - pPrev.y;
+    const len1 = Math.hypot(dx1, dy1);
+
+    const dx2 = pNext.x - pCurr.x;
+    const dy2 = pNext.y - pCurr.y;
+    const len2 = Math.hypot(dx2, dy2);
+
+    const r = Math.min(cornerRadius, len1 / 2, len2 / 2);
+
+    if (r < 1 || len1 === 0 || len2 === 0) {
+      path += ` L ${pCurr.x} ${pCurr.y}`;
+    } else {
+      const startX = pCurr.x - (dx1 / len1) * r;
+      const startY = pCurr.y - (dy1 / len1) * r;
+      const endX = pCurr.x + (dx2 / len2) * r;
+      const endY = pCurr.y + (dy2 / len2) * r;
+
+      path += ` L ${startX} ${startY} Q ${pCurr.x} ${pCurr.y} ${endX} ${endY}`;
+    }
+  }
+
+  const last = points[points.length - 1];
+  path += ` L ${last.x} ${last.y}`;
+
+  return path;
+}
+
+export function generateGanttPath(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  relType: string = 'FS',
+  laneIndex: number = 0
+): { d: string; arrowDir: 'left' | 'right' } {
+  const laneOffset = (laneIndex % 5 - 2) * 4;
+
+  if (Math.abs(y1 - y2) < 2) {
+    if (relType === 'FS' || relType === 'SS') {
+      return { d: `M ${x1} ${y1} L ${x2} ${y2}`, arrowDir: 'right' };
+    }
+    return { d: `M ${x1} ${y1} L ${x2} ${y2}`, arrowDir: 'left' };
+  }
+
+  if (relType === 'FS') {
+    const arrowDir = 'right';
+    if (x2 >= x1 + 16) {
+      const xMid = Math.round(x1 + Math.min(18 + Math.abs(laneOffset), (x2 - x1) / 2));
+      const points: Point[] = [
+        { x: x1, y: y1 },
+        { x: xMid, y: y1 },
+        { x: xMid, y: y2 },
+        { x: x2, y: y2 },
+      ];
+      return { d: buildRoundedOrthogonalPath(points, 5), arrowDir };
+    } else {
+      const xExit = Math.round(x1 + 12 + Math.max(0, laneOffset));
+      const xEntry = Math.round(x2 - 12 - Math.max(0, -laneOffset));
+      const yMid = Math.round(y1 + (y2 - y1) / 2);
+
+      const points: Point[] = [
+        { x: x1, y: y1 },
+        { x: xExit, y: y1 },
+        { x: xExit, y: yMid },
+        { x: xEntry, y: yMid },
+        { x: xEntry, y: y2 },
+        { x: x2, y: y2 },
+      ];
+      return { d: buildRoundedOrthogonalPath(points, 5), arrowDir };
+    }
+  }
+
+  if (relType === 'SS') {
+    const arrowDir = 'right';
+    const xExit = Math.round(Math.min(x1, x2) - 14 - Math.abs(laneOffset));
+    const points: Point[] = [
+      { x: x1, y: y1 },
+      { x: xExit, y: y1 },
+      { x: xExit, y: y2 },
+      { x: x2, y: y2 },
+    ];
+    return { d: buildRoundedOrthogonalPath(points, 5), arrowDir };
+  }
+
+  if (relType === 'FF') {
+    const arrowDir = 'left';
+    const xExit = Math.round(Math.max(x1, x2) + 14 + Math.abs(laneOffset));
+    const points: Point[] = [
+      { x: x1, y: y1 },
+      { x: xExit, y: y1 },
+      { x: xExit, y: y2 },
+      { x: x2, y: y2 },
+    ];
+    return { d: buildRoundedOrthogonalPath(points, 5), arrowDir };
+  }
+
+  // SF (Start-to-Finish)
+  const arrowDir = 'left';
+  const xExit = Math.round(x1 - 12 - Math.abs(laneOffset));
+  const xEntry = Math.round(x2 + 12 + Math.abs(laneOffset));
+  const yMid = Math.round(y1 + (y2 - y1) / 2);
+
+  const points: Point[] = [
+    { x: x1, y: y1 },
+    { x: xExit, y: y1 },
+    { x: xExit, y: yMid },
+    { x: xEntry, y: yMid },
+    { x: xEntry, y: y2 },
+    { x: x2, y: y2 },
+  ];
+  return { d: buildRoundedOrthogonalPath(points, 5), arrowDir };
+}
+
+export function useGanttDependencies({
+  tasks,
+  projects,
+  delegationGroups,
+  visibleGanttRows = [],
+  startDate,
+  dayWidth = 24,
+  sideWidth = 220,
+  paddingTop = 0,
+  showStart = false,
+  startColWidth = 80,
+  showFinish = false,
+  finishColWidth = 80,
+  showParty = false,
+  partyColWidth = 70,
+  showDuration = false,
+  durationColWidth = 50,
+  showPredecessor = false,
+  predecessorColWidth = 90,
+}: UseGanttDependenciesParams) {
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+
+  const taskNoMap = useMemo(() => {
+    const map = new Map<string, Task>();
+    tasks.forEach(t => {
+      if (t.taskCodePhu) {
+        map.set(String(t.taskCodePhu).trim().toUpperCase(), t);
+      }
+      if (t.id) {
+        map.set(String(t.id).trim().toUpperCase(), t);
+      }
+    });
+    return map;
+  }, [tasks]);
+
+  const allCodesMap = useMemo(() => {
+    return computeAllTaskCodes(projects, tasks);
+  }, [projects, tasks]);
+
+  const projectIndex = useMemo(() => {
+    return buildProjectLookupIndex(projects);
+  }, [projects]);
+
+  const taskCodeMap = useMemo(() => {
+    const map = new Map<string, Task>();
+    tasks.forEach(t => {
+      const code = allCodesMap.get(t.id);
+      if (code) {
+        map.set(code.trim().toUpperCase(), t);
+      }
+      if (t.taskCodePhu) {
+        map.set(t.taskCodePhu.trim().toUpperCase(), t);
+      }
+    });
+    return map;
+  }, [tasks, allCodesMap]);
+
+  const delegationGroupByTaskId = useMemo(() => {
+    const map = new Map<string, any>();
+    delegationGroups.forEach(g => {
+      if (g.subTasks) {
+        g.subTasks.forEach((st: any) => {
+          if (st.taskId) {
+            map.set(st.taskId, g);
+          }
+        });
+      }
+    });
+    return map;
+  }, [delegationGroups]);
+
+  const dependencyLines = useMemo(() => {
+    if (!startDate || visibleGanttRows.length === 0) return [];
+
+    const taskPosMap = new Map<string, { xStart: number; xEnd: number; yCenter: number; t: Task }>();
+    let currentY = paddingTop;
+    const timelineLeft = sideWidth + (showStart ? startColWidth : 0) + (showFinish ? finishColWidth : 0) + (showParty ? partyColWidth : 0) + (showDuration ? durationColWidth : 0) + (showPredecessor ? predecessorColWidth : 0);
+
+    visibleGanttRows.forEach((row) => {
+      // GanttProjectRow is 48px, GanttTaskRow is 40px
+      const rowHeight = row.type === 'project' ? 48 : 40;
+      const yCenter = currentY + rowHeight / 2;
+      currentY += rowHeight;
+
+      if (row.type === 'task' && row.task) {
+        const t = row.task;
+        const dStart = t.start ? parseDateTime(t.start) : null;
+        const dEnd = t.finish ? parseDateTime(t.finish) : null;
+        if (dStart && dEnd) {
+          const isMilestone = Number(t.duration) === 0 || Math.abs(dStart.getTime() - dEnd.getTime()) < 3600000;
+          const offsetDays = (dStart.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+          const durationDays = Math.max((dEnd.getTime() - dStart.getTime()) / (1000 * 60 * 60 * 24) + 1, 1);
+          const barLeft = offsetDays * dayWidth;
+          const barWidth = isMilestone ? 16 : Math.max(durationDays * dayWidth, 8);
+
+          const xStart = timelineLeft + barLeft;
+          const xEnd = timelineLeft + barLeft + barWidth;
+
+          const posObj = { xStart, xEnd, yCenter, t };
+          taskPosMap.set(t.id, posObj);
+          if (t.taskCodePhu) {
+            taskPosMap.set(t.taskCodePhu.trim().toUpperCase(), posObj);
+          }
+          const computedCode = allCodesMap.get(t.id);
+          if (computedCode) {
+            taskPosMap.set(computedCode.trim().toUpperCase(), posObj);
+          }
+        }
+      }
+    });
+
+    const lines: DependencyLine[] = [];
+    let laneCounter = 0;
+
+    visibleGanttRows.forEach((row) => {
+      if (row.type !== 'task' || !row.task) return;
+      const succTask = row.task;
+      if (!succTask.predecessor) return;
+
+      const succPos = taskPosMap.get(succTask.id);
+      if (!succPos) return;
+
+      const predCodes = String(succTask.predecessor)
+        .split(/[,;]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      predCodes.forEach((token, idx) => {
+        const typeMatch = token.match(/^(.*?)(FS|SS|FF|SF)(\s*[+-]\s*\d+(?:\.\d+)?)?$/i);
+        const cleanQuery = typeMatch ? typeMatch[1].trim() : token.replace(/(\s*[+-]\s*\d+(?:\.\d+)?)?$/, '').trim();
+        const relType = typeMatch ? typeMatch[2].toUpperCase() : 'FS';
+
+        const linkedTaskId = succTask.predecessorTaskIds?.[idx] || succTask.predecessors?.[idx]?.taskId;
+        let predPos = linkedTaskId ? taskPosMap.get(String(linkedTaskId)) : undefined;
+        if (!predPos) {
+          predPos = taskPosMap.get(cleanQuery.toUpperCase()) || taskPosMap.get(token.toUpperCase());
+        }
+        if (!predPos) {
+          const match = findClosestTaskMatch(
+            cleanQuery,
+            tasks,
+            projects,
+            tasks,
+            succTask.projectCode,
+            650,
+            { projectCode: succTask.projectCode, projectYear: succTask.projectYear, projectStore: succTask.projectStore },
+            undefined,
+            { projectIndex, allTaskCodesMap: allCodesMap }
+          );
+          if (match && match.task) {
+            predPos = taskPosMap.get(match.task.id);
+          }
+        }
+        if (!predPos) return;
+
+        let x1 = predPos.xEnd;
+        let x2 = succPos.xStart;
+        if (relType === 'SS') {
+          x1 = predPos.xStart;
+          x2 = succPos.xStart;
+        } else if (relType === 'FF') {
+          x1 = predPos.xEnd;
+          x2 = succPos.xEnd;
+        } else if (relType === 'SF') {
+          x1 = predPos.xStart;
+          x2 = succPos.xEnd;
+        }
+
+        const y1 = predPos.yCenter;
+        const y2 = succPos.yCenter;
+
+        const pathResult = generateGanttPath(x1, y1, x2, y2, relType, laneCounter++);
+
+        lines.push({
+          id: `${predPos.t.id}->${succTask.id}-${relType}-${laneCounter}`,
+          d: pathResult.d,
+          arrowDir: pathResult.arrowDir,
+          fromTaskId: predPos.t.id,
+          toTaskId: succTask.id,
+          fromTaskCode: predPos.t.taskCodePhu || allCodesMap.get(predPos.t.id) || "",
+          fromTaskName: predPos.t.name,
+          toTaskCode: succTask.taskCodePhu || allCodesMap.get(succTask.id) || "",
+          toTaskName: succTask.name,
+          color: '#2563eb',
+        });
+      });
+    });
+
+    return lines;
+  }, [
+    visibleGanttRows,
+    startDate,
+    dayWidth,
+    sideWidth,
+    paddingTop,
+    showStart,
+    startColWidth,
+    showFinish,
+    finishColWidth,
+    showParty,
+    partyColWidth,
+    showDuration,
+    durationColWidth,
+    showPredecessor,
+    predecessorColWidth,
+    projects,
+    tasks,
+    allCodesMap,
+    projectIndex,
+  ]);
+
+  return {
+    activeTooltip,
+    setActiveTooltip,
+    dependencyLines,
+    taskNoMap,
+    taskCodeMap,
+    delegationGroupByTaskId,
+  };
 }
 

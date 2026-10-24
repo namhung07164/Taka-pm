@@ -280,11 +280,16 @@ export async function executeImportTasks({
         }
       }
 
+      const hasImportedParentRef = Boolean(t.parentTaskId || t.parentTaskCode || t.parentTaskName);
       const finalTask: Task = existing
         ? {
             ...existing,
             ...t,
             id: existing.id,
+            parentTaskId: hasImportedParentRef ? (t.parentTaskId || existing.parentTaskId) : undefined,
+            predecessorTaskIds: undefined,
+            predecessors: undefined,
+            isModularParent: false,
             comments: updatedComments,
             orderIndex: taskOrderIndex,
             taskCodePhu,
@@ -383,19 +388,22 @@ export async function executeImportTasks({
   );
 
   calculatedTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
-  const allTasksWithCalc = Array.from(tasksMapAfterCalc.values());
-  const { updatedParents, allTasksMap } = rollupParentTaskDates(allTasksWithCalc, undefined, projects);
+  const healedAll = healAllTasksPredecessors(Array.from(tasksMapAfterCalc.values()), projects);
+  const { updatedParents, allTasksMap } = rollupParentTaskDates(healedAll.updatedTasks, undefined, projects);
 
-  const tasksToSaveMap = new Map<string, Task>();
-  calculatedTasks.forEach(t => tasksToSaveMap.set(t.id, t));
-  updatedParents.forEach(p => tasksToSaveMap.set(p.id, p));
-  const rawTasksToSave = Array.from(tasksToSaveMap.values());
-
-  // Auto-heal predecessor string codes on imported CSV/Excel tasks and stamp fresh updatedAt
-  const healed = healAllTasksPredecessors(rawTasksToSave, projects);
+  const tasksToSaveIds = new Set<string>();
+  calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
+  updatedParents.forEach(p => tasksToSaveIds.add(p.id));
   const commitNowIso = new Date().toISOString();
-  const finalTasksToSave = healed.updatedTasks.map(t => ({ ...t, updatedAt: commitNowIso }));
-  finalTasksToSave.forEach(t => allTasksMap.set(t.id, t));
+  const finalTasksToSave: Task[] = [];
+  tasksToSaveIds.forEach(tid => {
+    const tk = allTasksMap.get(tid);
+    if (tk) {
+      const stamped = { ...tk, updatedAt: commitNowIso };
+      allTasksMap.set(tid, stamped);
+      finalTasksToSave.push(stamped);
+    }
+  });
 
   // Optimistic update (0ms UI)
   useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);

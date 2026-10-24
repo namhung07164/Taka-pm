@@ -42,14 +42,26 @@ interface RollupNodeResult {
   finish: string;
   allCompleted: boolean;
   hasInProcess: boolean;
+  earliestChild: Task | null;
+  latestChild: Task | null;
+}
+
+function getTaskRefCodeForRollup(t: Task): string {
+  if (t.taskCodePhu && String(t.taskCodePhu).trim()) {
+    return String(t.taskCodePhu).trim();
+  }
+  if (t.projectCode && t.orderIndex !== undefined && t.orderIndex !== null) {
+    return `${String(t.projectCode).trim()}#${Number(t.orderIndex) + 1}`;
+  }
+  return t.id;
 }
 
 let _lastRollupInputRef: Task[] | null = null;
 let _lastRollupOutputRef: Task[] | null = null;
 
 /**
- * Computes rolled up start date, finish date, duration, and status for parent tasks
- * based on their child tasks in O(N) time with subtree memoization and circular loop guard.
+ * Computes rolled up start date, finish date, duration, status, and SS/FF predecessors
+ * for parent tasks based on their child tasks in O(N) time with subtree memoization and circular loop guard.
  */
 export function rollupParentTaskDatesAndStatus(
   tasks: Task[],
@@ -96,6 +108,10 @@ export function rollupParentTaskDatesAndStatus(
     visiting.add(parentId);
     let minStart = '';
     let maxFinish = '';
+    let minStartTime = Infinity;
+    let maxFinishTime = -Infinity;
+    let earliestChild: Task | null = null;
+    let latestChild: Task | null = null;
     let allCompleted = true;
     let hasInProcess = false;
 
@@ -103,10 +119,35 @@ export function rollupParentTaskDatesAndStatus(
       const child = children[i];
       const subRollup = child.id ? getRolledUpDatesAndStatus(child.id) : null;
       const childStart = subRollup ? subRollup.start : (child.start || '');
-      const childFinish = subRollup ? subRollup.finish : (child.finish || '');
+      const childFinish = subRollup ? subRollup.finish : (child.finish || childStart || '');
 
-      if (childStart && (!minStart || childStart < minStart)) minStart = childStart;
-      if (childFinish && (!maxFinish || childFinish > maxFinish)) maxFinish = childFinish;
+      if (childStart) {
+        const sTime = new Date(childStart).getTime();
+        if (!isNaN(sTime)) {
+          if (sTime < minStartTime) {
+            minStartTime = sTime;
+            minStart = childStart;
+            earliestChild = child;
+          }
+        } else if (!minStart || childStart < minStart) {
+          minStart = childStart;
+          earliestChild = child;
+        }
+      }
+
+      if (childFinish) {
+        const fTime = new Date(childFinish).getTime();
+        if (!isNaN(fTime)) {
+          if (fTime >= maxFinishTime) {
+            maxFinishTime = fTime;
+            maxFinish = childFinish;
+            latestChild = child;
+          }
+        } else if (!maxFinish || childFinish >= maxFinish) {
+          maxFinish = childFinish;
+          latestChild = child;
+        }
+      }
 
       const status = String(child.runningStatus || '').toLowerCase();
       if (status !== 'completed' && status !== 'pj compl' && status !== 'done' && status !== '100%') {
@@ -118,7 +159,14 @@ export function rollupParentTaskDatesAndStatus(
     }
 
     visiting.delete(parentId);
-    const computed: RollupNodeResult = { start: minStart, finish: maxFinish, allCompleted, hasInProcess };
+    const computed: RollupNodeResult = {
+      start: minStart,
+      finish: maxFinish,
+      allCompleted,
+      hasInProcess,
+      earliestChild,
+      latestChild,
+    };
     memoRollup.set(parentId, computed);
     return computed;
   }
@@ -139,12 +187,55 @@ export function rollupParentTaskDatesAndStatus(
         newStatus = 'On process';
       }
 
-      if (newStart !== (task.start || '') || newFinish !== (task.finish || '') || newStatus !== task.runningStatus) {
+      let newPredecessor = task.predecessor || '';
+      let newPredecessorTaskIds = task.predecessorTaskIds;
+      let newPredecessors = task.predecessors;
+      let newDuration = task.duration;
+
+      if (rolled.earliestChild && rolled.latestChild) {
+        const earliestCode = getTaskRefCodeForRollup(rolled.earliestChild);
+        const latestCode = getTaskRefCodeForRollup(rolled.latestChild);
+        newPredecessor = `${earliestCode}SS, ${latestCode}FF`;
+        newPredecessorTaskIds = [rolled.earliestChild.id, rolled.latestChild.id];
+        newPredecessors = [
+          { taskId: rolled.earliestChild.id, type: 'SS', lagDays: 0 },
+          { taskId: rolled.latestChild.id, type: 'FF', lagDays: 0 },
+        ];
+      }
+
+      if (newStart && newFinish) {
+        const sMs = new Date(newStart).getTime();
+        const fMs = new Date(newFinish).getTime();
+        if (!isNaN(sMs) && !isNaN(fMs)) {
+          const diffDays = Math.max(0, Math.round((fMs - sMs) / (1000 * 60 * 60 * 24)));
+          newDuration = String(diffDays);
+        }
+      }
+
+      const predIdsChanged =
+        !task.predecessorTaskIds ||
+        !newPredecessorTaskIds ||
+        task.predecessorTaskIds[0] !== newPredecessorTaskIds[0] ||
+        task.predecessorTaskIds[1] !== newPredecessorTaskIds[1];
+
+      if (
+        newStart !== (task.start || '') ||
+        newFinish !== (task.finish || '') ||
+        newStatus !== task.runningStatus ||
+        newPredecessor !== (task.predecessor || '') ||
+        newDuration !== task.duration ||
+        predIdsChanged
+      ) {
         result[i] = {
           ...task,
           start: newStart,
           finish: newFinish,
+          duration: newDuration,
           runningStatus: newStatus as any,
+          predecessor: newPredecessor,
+          predecessorTaskIds: newPredecessorTaskIds,
+          predecessors: newPredecessors,
+          isModularParent: true,
         };
       }
     }

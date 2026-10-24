@@ -40,11 +40,12 @@ export function normalizeAndHealTaskPredecessors(
 
   const sortedTaskNoMapEntries = Array.from(taskNoMap.entries()).sort((a, b) => b[0].length - a[0].length);
 
-  const resolvedTokens = tokens.map(token => {
+  const resolvedTokens = tokens.map((token, tokIdx) => {
     const rawToken = token.trim();
     if (!rawToken) return token;
 
     const lowerToken = rawToken.toLowerCase();
+    const hardLinkedId = task.predecessorTaskIds?.[tokIdx] || task.predecessors?.[tokIdx]?.taskId;
 
     for (const [code, matchingTasks] of sortedTaskNoMapEntries) {
       if (lowerToken.startsWith(code)) {
@@ -60,11 +61,22 @@ export function normalizeAndHealTaskPredecessors(
               const ctxStore = String(task.projectStore || '').trim().toLowerCase();
               const ctxLoc = String(task.location || '').trim().toLowerCase();
               const ctxProjId = task.projectId || '';
+              const codeSubMatch = code.match(/[#-](\d+)$/);
+              const targetSubNum = codeSubMatch ? codeSubMatch[1] : null;
 
               let bestScore = -Infinity;
               for (const cand of matchingTasks) {
                 if (!cand) continue;
                 let candScore = 0;
+                if (hardLinkedId && String(cand.id) === String(hardLinkedId)) candScore += 50000;
+                if (targetSubNum) {
+                  const candCode = String(cand.taskCodePhu || '').trim();
+                  const candSubMatch = candCode.match(/[#-](\d+)$/);
+                  if (candSubMatch) {
+                    if (candSubMatch[1] === targetSubNum) candScore += 25000;
+                    else candScore -= 50000;
+                  }
+                }
                 if (ctxProjId && cand.projectId && ctxProjId === cand.projectId) candScore += 10000;
                 if (ctxPCode && cand.projectCode && ctxPCode === String(cand.projectCode).trim().toLowerCase()) candScore += 5000;
                 if (ctxYear && cand.projectYear) {
@@ -146,15 +158,13 @@ export function normalizeAndHealTaskPredecessors(
           })
         );
 
-        let targetTask = (subIndexNum >= 1 && subIndexNum <= sameProjectTasks.length)
-          ? sameProjectTasks[subIndexNum - 1]
-          : undefined;
+        let targetTask = sameProjectTasks.find(t => {
+          const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
+          return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`);
+        });
 
-        if (!targetTask) {
-          targetTask = sameProjectTasks.find(t => {
-            const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
-            return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`) || t.orderIndex === subIndexNum;
-          });
+        if (!targetTask && subIndexNum >= 1 && subIndexNum <= sameProjectTasks.length) {
+          targetTask = sameProjectTasks[subIndexNum - 1];
         }
 
         if (targetTask) {
@@ -185,15 +195,13 @@ export function normalizeAndHealTaskPredecessors(
             )
           );
 
-          let targetTask = (subIndexNum >= 1 && subIndexNum <= targetTasks.length)
-            ? targetTasks[subIndexNum - 1]
-            : undefined;
+          let targetTask = targetTasks.find(t => {
+            const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
+            return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`);
+          });
 
-          if (!targetTask) {
-            targetTask = targetTasks.find(t => {
-              const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
-              return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`) || t.orderIndex === subIndexNum;
-            });
+          if (!targetTask && subIndexNum >= 1 && subIndexNum <= targetTasks.length) {
+            targetTask = targetTasks[subIndexNum - 1];
           }
 
           if (targetTask) {
@@ -233,6 +241,13 @@ export function healAllTasksPredecessors(
   const safeTasks = Array.isArray(allTasks) ? allTasks : [];
   const safeProjects = Array.isArray(projects) ? projects : [];
 
+  const parentIds = new Set<string>();
+  safeTasks.forEach(t => {
+    if (t && !t.isDeleted && t.parentTaskId) {
+      parentIds.add(t.parentTaskId);
+    }
+  });
+
   const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);
   const taskNoMap = buildTaskNoMap(safeProjects, safeTasks);
   const knownCodes = new Set<string>();
@@ -249,7 +264,8 @@ export function healAllTasksPredecessors(
 
     const newPhu = t.taskCodePhu || taskCodeMap.get(t.id) || '';
 
-    if (t.predecessor) {
+    // Skip string healing on parent tasks whose SS/FF predecessors are governed by child rollup
+    if (t.predecessor && !parentIds.has(t.id)) {
       const { changed, newPredecessor } = normalizeAndHealTaskPredecessors(
         { ...t, taskCodePhu: newPhu }, 
         safeTasks, 

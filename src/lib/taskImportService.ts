@@ -42,6 +42,14 @@ export function calculateDatesFromPredecessorsAndDuration(
   allContextTasks.forEach(t => workingMap.set(t.id, { ...t }));
   tasksToProcess.forEach(t => workingMap.set(t.id, { ...t }));
 
+  // Identify parent tasks so their dates are rolled up from children during convergence
+  const parentIds = new Set<string>();
+  workingMap.forEach(t => {
+    if (t && !t.isDeleted && t.parentTaskId) {
+      parentIds.add(t.parentTaskId);
+    }
+  });
+
   // Index taskNoMap for resolving predecessors
   const currentAllTasks = Array.from(workingMap.values());
   const taskNoMap = buildTaskNoMap(projects, currentAllTasks);
@@ -55,7 +63,21 @@ export function calculateDatesFromPredecessorsAndDuration(
     hasChanges = false;
     iteration++;
 
+    if (parentIds.size > 0) {
+      const rolledList = rollupParentTaskDatesAndStatus(Array.from(workingMap.values()));
+      for (const rt of rolledList) {
+        if (parentIds.has(rt.id)) {
+          const prev = workingMap.get(rt.id);
+          if (prev && (prev.start !== rt.start || prev.finish !== rt.finish || prev.predecessor !== rt.predecessor)) {
+            workingMap.set(rt.id, rt);
+            hasChanges = true;
+          }
+        }
+      }
+    }
+
     for (const t of tasksToProcess) {
+      if (parentIds.has(t.id)) continue;
       const current = workingMap.get(t.id);
       if (!current) continue;
 
@@ -76,8 +98,12 @@ export function calculateDatesFromPredecessorsAndDuration(
         continue;
       }
 
-      // Task has predecessor: parse and compute dates
-      const parsedPreds = parsePredecessors(predString, taskNoMap, current);
+      // Task has predecessor: parse from CSV string without stale predecessorTaskIds
+      const parsedPreds = parsePredecessors(
+        predString,
+        taskNoMap,
+        { ...current, predecessorTaskIds: undefined, predecessors: undefined }
+      );
       if (!parsedPreds.length) continue;
 
       const calcResult = calculateTaskDatesFromPredecessors(

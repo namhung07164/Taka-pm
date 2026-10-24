@@ -285,12 +285,16 @@ export function useGanttDependencies({
         .map((s) => s.trim())
         .filter(Boolean);
 
-      predCodes.forEach((token) => {
+      predCodes.forEach((token, idx) => {
         const typeMatch = token.match(/^(.*?)(FS|SS|FF|SF)(\s*[+-]\s*\d+(?:\.\d+)?)?$/i);
         const cleanQuery = typeMatch ? typeMatch[1].trim() : token.replace(/(\s*[+-]\s*\d+(?:\.\d+)?)?$/, '').trim();
         const relType = typeMatch ? typeMatch[2].toUpperCase() : 'FS';
 
-        let predPos = taskPosMap.get(cleanQuery.toUpperCase()) || taskPosMap.get(token.toUpperCase());
+        const linkedTaskId = succTask.predecessorTaskIds?.[idx] || succTask.predecessors?.[idx]?.taskId;
+        let predPos = linkedTaskId ? taskPosMap.get(String(linkedTaskId)) : undefined;
+        if (!predPos) {
+          predPos = taskPosMap.get(cleanQuery.toUpperCase()) || taskPosMap.get(token.toUpperCase());
+        }
         if (!predPos) {
           const match = findClosestTaskMatch(
             cleanQuery,

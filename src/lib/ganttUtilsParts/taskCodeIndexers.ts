@@ -125,14 +125,23 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
         if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
       }
 
-      addKey(t, `${pCode}#${i + 1}`);
-      addKey(t, `${pCode}-${i + 1}`);
-      addKey(t, `#${i + 1}`);
+      const explicitSubMatch = String(t.taskCodePhu || '').trim().match(/[#-](\d+)$/);
+      const explicitSubNum = explicitSubMatch ? parseInt(explicitSubMatch[1], 10) : null;
 
-      if (t.orderIndex !== undefined && t.orderIndex !== null) {
-        addKey(t, `${pCode}#${Number(t.orderIndex) + 1}`);
-        addKey(t, `${pCode}-${Number(t.orderIndex) + 1}`);
-        addKey(t, `#${Number(t.orderIndex) + 1}`);
+      if (explicitSubNum !== null && !isNaN(explicitSubNum)) {
+        addKey(t, `${pCode}#${explicitSubNum}`);
+        addKey(t, `${pCode}-${explicitSubNum}`);
+        addKey(t, `#${explicitSubNum}`);
+      } else {
+        addKey(t, `${pCode}#${i + 1}`);
+        addKey(t, `${pCode}-${i + 1}`);
+        addKey(t, `#${i + 1}`);
+
+        if (t.orderIndex !== undefined && t.orderIndex !== null) {
+          addKey(t, `${pCode}#${Number(t.orderIndex) + 1}`);
+          addKey(t, `${pCode}-${Number(t.orderIndex) + 1}`);
+          addKey(t, `#${Number(t.orderIndex) + 1}`);
+        }
       }
 
       if (t.id) addKey(t, t.id);
@@ -152,7 +161,8 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
       if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
       if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
     }
-    if (t.orderIndex !== undefined && t.orderIndex !== null && t.projectCode) {
+    const explicitSubMatch = String(t.taskCodePhu || '').trim().match(/[#-](\d+)$/);
+    if (!explicitSubMatch && t.orderIndex !== undefined && t.orderIndex !== null && t.projectCode) {
       addKey(t, `${t.projectCode}#${Number(t.orderIndex) + 1}`);
       addKey(t, `${t.projectCode}-${Number(t.orderIndex) + 1}`);
     }
