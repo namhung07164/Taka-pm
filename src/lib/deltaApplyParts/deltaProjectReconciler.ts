@@ -138,8 +138,15 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
     if (validIdsLower.has(tIdLower)) {
       const s = summaryByIdLower.get(tIdLower);
       if (s && !isRecentLocal) {
-        const sParent = s.parentTaskId || undefined;
         const tParent = t.parentTaskId || undefined;
+        const tParentLower = tParent ? String(tParent).trim().toLowerCase() : '';
+        // Only overwrite local parentTaskId if summary explicitly has a parentTaskId or if local parentTaskId no longer exists in validIdsLower
+        const sParent =
+          s.parentTaskId !== undefined && s.parentTaskId !== null && String(s.parentTaskId).trim() !== ''
+            ? s.parentTaskId
+            : tParentLower && validIdsLower.has(tParentLower)
+              ? tParent
+              : undefined;
         const summaryDiffers =
           (s.name !== undefined && s.name !== t.name) ||
           (s.start !== undefined && s.start !== t.start) ||
@@ -301,8 +308,16 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
       ...(mergedTask.runningStatus !== undefined ? { runningStatus: mergedTask.runningStatus } : {}),
       ...(mergedTask.delegation !== undefined ? { delegation: mergedTask.delegation } : {}),
     };
-    if (mergedTask.parentTaskId) {
-      summaryItem.parentTaskId = mergedTask.parentTaskId;
+    const explicitParentUnset =
+      (mergedTask as any).parentTaskId === null ||
+      ('parentTaskId' in mergedTask && !mergedTask.parentTaskId);
+    const effectiveParentId = mergedTask.parentTaskId
+      ? mergedTask.parentTaskId
+      : explicitParentUnset
+        ? undefined
+        : existingSummary?.parentTaskId;
+    if (effectiveParentId) {
+      summaryItem.parentTaskId = effectiveParentId;
     } else {
       delete summaryItem.parentTaskId;
       delete summaryItem.parentId;

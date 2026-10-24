@@ -10,12 +10,12 @@ export function getTaskPredecessorRefCode(
   projects: Project[] = [],
   allTasks: Task[] = []
 ): string {
-  if (task.taskCodePhu && task.taskCodePhu.trim()) {
-    return task.taskCodePhu.trim();
-  }
   const computed = computeTaskCode(projects, allTasks, task);
   if (computed && computed.trim()) {
     return computed.trim();
+  }
+  if (task.taskCodePhu && task.taskCodePhu.trim()) {
+    return task.taskCodePhu.trim();
   }
   if (task.projectCode) {
     const idx = task.orderIndex !== undefined ? Number(task.orderIndex) + 1 : 1;
@@ -157,31 +157,48 @@ export function applyParentPredecessorsToTaskTree(
   }
 
   const childrenMap = new Map<string, Task[]>();
-  const taskById = new Map<string, Task>();
+  const taskByIdLower = new Map<string, Task>();
+  const taskByCodeLower = new Map<string, Task>();
 
   for (const t of tasks) {
     if (!t || !t.id || t.isDeleted) continue;
-    taskById.set(t.id, t);
-    const pId = t.parentTaskId || (t as any).parentId;
-    if (pId) {
-      const pIdStr = String(pId).trim();
-      let list = childrenMap.get(pIdStr);
-      if (!list) {
-        list = [];
-        childrenMap.set(pIdStr, list);
-      }
-      list.push(t);
+    taskByIdLower.set(String(t.id).trim().toLowerCase(), t);
+    const canonical = computeTaskCode(projects, tasks, t);
+    if (canonical) {
+      taskByCodeLower.set(canonical.trim().toLowerCase(), t);
+    }
+    if (t.taskCodePhu && t.taskCodePhu.trim()) {
+      taskByCodeLower.set(t.taskCodePhu.trim().toLowerCase(), t);
     }
   }
 
+  const normalizedTasks = tasks.map((t) => {
+    if (!t || !t.id || t.isDeleted) return t;
+    const pId = t.parentTaskId || (t as any).parentId;
+    if (!pId) return t;
+    const pIdLower = String(pId).trim().toLowerCase();
+    const resolvedParent = taskByIdLower.get(pIdLower) || taskByCodeLower.get(pIdLower);
+    if (resolvedParent && !resolvedParent.isDeleted && String(resolvedParent.id) !== String(t.id)) {
+      let list = childrenMap.get(resolvedParent.id);
+      if (!list) {
+        list = [];
+        childrenMap.set(resolvedParent.id, list);
+      }
+      const normChild = t.parentTaskId === resolvedParent.id ? t : { ...t, parentTaskId: resolvedParent.id };
+      list.push(normChild);
+      return normChild;
+    }
+    return t;
+  });
+
   if (childrenMap.size === 0) {
-    return { updatedTasks: tasks, updatedParents: [] };
+    return { updatedTasks: normalizedTasks, updatedParents: [] };
   }
 
   const updatedTasks: Task[] = [];
   const updatedParents: Task[] = [];
 
-  for (const t of tasks) {
+  for (const t of normalizedTasks) {
     if (!t || !t.id) {
       updatedTasks.push(t);
       continue;
@@ -189,11 +206,26 @@ export function applyParentPredecessorsToTaskTree(
 
     const children = childrenMap.get(t.id);
     if (!children || children.length === 0) {
-      updatedTasks.push(t);
+      const hasAutoRollupPred =
+        typeof t.predecessor === 'string' &&
+        /^[^,]+SS\s*,\s*[^,]+FF$/i.test(t.predecessor.trim());
+      if (t.isModularParent || hasAutoRollupPred) {
+        const cleanedParent: Task = {
+          ...t,
+          isModularParent: false,
+          ...(hasAutoRollupPred
+            ? { predecessor: '', predecessors: [], predecessorTaskIds: [] }
+            : {}),
+        };
+        updatedTasks.push(cleanedParent);
+        updatedParents.push(cleanedParent);
+      } else {
+        updatedTasks.push(t);
+      }
       continue;
     }
 
-    const patch = calculateParentTaskPredecessorsAndDates(t, children, projects, tasks);
+    const patch = calculateParentTaskPredecessorsAndDates(t, children, projects, normalizedTasks);
     if (patch) {
       const updatedParent: Task = {
         ...t,

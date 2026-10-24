@@ -103,8 +103,8 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
 }
 
 /**
- * Sorts tasks prioritizing predecessor dependency relationships and computed dates.
- * If Task B depends on Task A, Task A will always be positioned before Task B.
+ * Sorts tasks prioritizing predecessor dependency relationships and computed dates,
+ * while preserving parent-child hierarchy (child tasks are sorted and placed immediately after their parent task).
  */
 export function sortTasksByPredecessorsAndDates(
   groupTasks: Task[], 
@@ -112,149 +112,232 @@ export function sortTasksByPredecessorsAndDates(
   allTasks: Task[] = []
 ): Task[] {
   if (!Array.isArray(groupTasks) || groupTasks.length <= 1) return groupTasks || [];
-  
+
   const pool = groupTasks.length > 0 ? groupTasks : (allTasks.length > 0 ? allTasks : []);
   const taskNoMap = buildTaskNoMap(projects, pool);
-  const taskMap = new Map<string, Task>();
-  groupTasks.forEach(t => { if (t && t.id) taskMap.set(t.id, t); });
+  const taskById = new Map<string, Task>();
+  const taskByCodeLower = new Map<string, Task>();
 
-  const adjMap = new Map<string, string[]>();
-  const inDegree = new Map<string, number>();
-  const undirectedAdj = new Map<string, Set<string>>();
-
-  groupTasks.forEach(t => {
-    adjMap.set(t.id, []);
-    inDegree.set(t.id, 0);
-    undirectedAdj.set(t.id, new Set());
+  const initialOrdered = sortGroupTasks(groupTasks);
+  initialOrdered.forEach((t, idx) => {
+    if (!t || !t.id) return;
+    taskById.set(t.id, t);
+    taskById.set(String(t.id).trim().toLowerCase(), t);
+    if (t.taskCodePhu) {
+      taskByCodeLower.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+    }
+    if (t.projectCode) {
+      taskByCodeLower.set(`${String(t.projectCode).trim()}#${idx + 1}`.toLowerCase(), t);
+    }
+    taskByCodeLower.set(`#${idx + 1}`, t);
   });
 
+  // Identify parent-child hierarchy within groupTasks
+  const childrenByParentId = new Map<string, Task[]>();
+  const resolvedParentIdByChildId = new Map<string, string>();
+
   groupTasks.forEach(t => {
-    if (t.predecessor && t.predecessor.trim()) {
-      const parsed = parsePredecessors(t.predecessor, taskNoMap, t);
-      parsed.forEach(pObj => {
-        if (pObj?.task && pObj.task.id && pObj.task.id !== t.id && taskMap.has(pObj.task.id)) {
-          const u = pObj.task.id;
-          const v = t.id;
-          const neighbors = adjMap.get(u) || [];
-          if (!neighbors.includes(v)) {
-            neighbors.push(v);
-            adjMap.set(u, neighbors);
-            inDegree.set(v, (inDegree.get(v) || 0) + 1);
-          }
-          undirectedAdj.get(u)?.add(v);
-          undirectedAdj.get(v)?.add(u);
-        }
-      });
+    if (!t || !t.id) return;
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) return;
+    const rawParentLower = String(rawParent).trim().toLowerCase();
+    const parentTask = taskById.get(String(rawParent).trim()) || taskById.get(rawParentLower) || taskByCodeLower.get(rawParentLower);
+    if (parentTask && parentTask.id !== t.id) {
+      resolvedParentIdByChildId.set(t.id, parentTask.id);
+      const list = childrenByParentId.get(parentTask.id) || [];
+      list.push(t.parentTaskId === parentTask.id ? t : { ...t, parentTaskId: parentTask.id });
+      childrenByParentId.set(parentTask.id, list);
     }
   });
 
-  const visited = new Set<string>();
-  const components: Task[][] = [];
+  const sortFlatTaskSubset = (subset: Task[]): Task[] => {
+    if (subset.length <= 1) return subset;
+    const subsetMap = new Map<string, Task>();
+    subset.forEach(t => { if (t && t.id) subsetMap.set(t.id, t); });
 
-  groupTasks.forEach(t => {
-    if (visited.has(t.id)) return;
+    const adjMap = new Map<string, string[]>();
+    const inDegree = new Map<string, number>();
+    const undirectedAdj = new Map<string, Set<string>>();
 
-    const compTasks: Task[] = [];
-    const queue = [t.id];
-    visited.add(t.id);
+    subset.forEach(t => {
+      adjMap.set(t.id, []);
+      inDegree.set(t.id, 0);
+      undirectedAdj.set(t.id, new Set());
+    });
 
-    while (queue.length > 0) {
-      const currId = queue.shift()!;
-      const currTask = taskMap.get(currId);
-      if (currTask) compTasks.push(currTask);
+    subset.forEach(t => {
+      // Skip auto-rollup SS/FF predecessor string on parent tasks so parents don't depend on their own children
+      const isParentTask = childrenByParentId.has(t.id) || Boolean(t.isModularParent);
+      if (isParentTask) return;
 
-      const neighbors = undirectedAdj.get(currId);
-      if (neighbors) {
-        neighbors.forEach(neighborId => {
-          if (!visited.has(neighborId)) {
-            visited.add(neighborId);
-            queue.push(neighborId);
+      if (t.predecessor && t.predecessor.trim()) {
+        const parsed = parsePredecessors(t.predecessor, taskNoMap, t);
+        parsed.forEach(pObj => {
+          if (pObj?.task && pObj.task.id && pObj.task.id !== t.id) {
+            // If dependency points to a child of another root task while sorting roots, lift to its root parent
+            let u = pObj.task.id;
+            if (!subsetMap.has(u)) {
+              const parentOfU = resolvedParentIdByChildId.get(u);
+              if (parentOfU && subsetMap.has(parentOfU)) {
+                u = parentOfU;
+              }
+            }
+            const v = t.id;
+            if (u !== v && subsetMap.has(u)) {
+              const neighbors = adjMap.get(u) || [];
+              if (!neighbors.includes(v)) {
+                neighbors.push(v);
+                adjMap.set(u, neighbors);
+                inDegree.set(v, (inDegree.get(v) || 0) + 1);
+              }
+              undirectedAdj.get(u)?.add(v);
+              undirectedAdj.get(v)?.add(u);
+            }
           }
         });
       }
-    }
-    components.push(compTasks);
-  });
-
-  const compareTasks = (a: Task, b: Task) => {
-    const startA = a.start || '9999-12-31';
-    const startB = b.start || '9999-12-31';
-    if (startA !== startB) return startA < startB ? -1 : 1;
-    
-    const finishA = a.finish || '9999-12-31';
-    const finishB = b.finish || '9999-12-31';
-    if (finishA !== finishB) return finishA < finishB ? -1 : 1;
-
-    const ordA = a.orderIndex !== undefined ? a.orderIndex : 0;
-    const ordB = b.orderIndex !== undefined ? b.orderIndex : 0;
-    if (ordA !== ordB) return ordA - ordB;
-
-    return String(a.id || '').localeCompare(String(b.id || ''));
-  };
-
-  const sortedComponents = components.map(compTasks => {
-    if (compTasks.length <= 1) return compTasks;
-
-    const compSet = new Set(compTasks.map(ct => ct.id));
-    const compInDegree = new Map<string, number>();
-    compTasks.forEach(ct => {
-      let deg = 0;
-      groupTasks.forEach(other => {
-        if (compSet.has(other.id) && other.id !== ct.id) {
-          const neighbors = adjMap.get(other.id) || [];
-          if (neighbors.includes(ct.id)) deg++;
-        }
-      });
-      compInDegree.set(ct.id, deg);
     });
 
-    const ready: Task[] = compTasks.filter(ct => (compInDegree.get(ct.id) || 0) === 0);
-    ready.sort(compareTasks);
+    const visited = new Set<string>();
+    const components: Task[][] = [];
 
-    const compResult: Task[] = [];
-    const compProcessed = new Set<string>();
+    subset.forEach(t => {
+      if (visited.has(t.id)) return;
 
-    while (ready.length > 0) {
-      const u = ready.shift()!;
-      compResult.push(u);
-      compProcessed.add(u.id);
+      const compTasks: Task[] = [];
+      const queue = [t.id];
+      visited.add(t.id);
 
-      const neighbors = adjMap.get(u.id) || [];
-      let newlyReady = false;
-      for (const vId of neighbors) {
-        if (!compSet.has(vId)) continue;
-        const currentDeg = (compInDegree.get(vId) || 0) - 1;
-        compInDegree.set(vId, currentDeg);
-        if (currentDeg === 0 && !compProcessed.has(vId)) {
-          const vTask = taskMap.get(vId);
-          if (vTask) {
-            ready.push(vTask);
-            newlyReady = true;
-          }
+      while (queue.length > 0) {
+        const currId = queue.shift()!;
+        const currTask = subsetMap.get(currId);
+        if (currTask) compTasks.push(currTask);
+
+        const neighbors = undirectedAdj.get(currId);
+        if (neighbors) {
+          neighbors.forEach(neighborId => {
+            if (!visited.has(neighborId)) {
+              visited.add(neighborId);
+              queue.push(neighborId);
+            }
+          });
         }
       }
-      if (newlyReady) {
-        ready.sort(compareTasks);
+      components.push(compTasks);
+    });
+
+    const compareTasks = (a: Task, b: Task) => {
+      const startA = a.start || '9999-12-31';
+      const startB = b.start || '9999-12-31';
+      if (startA !== startB) return startA < startB ? -1 : 1;
+      
+      const finishA = a.finish || '9999-12-31';
+      const finishB = b.finish || '9999-12-31';
+      if (finishA !== finishB) return finishA < finishB ? -1 : 1;
+
+      const ordA = a.orderIndex !== undefined ? a.orderIndex : 0;
+      const ordB = b.orderIndex !== undefined ? b.orderIndex : 0;
+      if (ordA !== ordB) return ordA - ordB;
+
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    };
+
+    const sortedComponents = components.map(compTasks => {
+      if (compTasks.length <= 1) return compTasks;
+
+      const compSet = new Set(compTasks.map(ct => ct.id));
+      const compInDegree = new Map<string, number>();
+      compTasks.forEach(ct => {
+        let deg = 0;
+        subset.forEach(other => {
+          if (compSet.has(other.id) && other.id !== ct.id) {
+            const neighbors = adjMap.get(other.id) || [];
+            if (neighbors.includes(ct.id)) deg++;
+          }
+        });
+        compInDegree.set(ct.id, deg);
+      });
+
+      const ready: Task[] = compTasks.filter(ct => (compInDegree.get(ct.id) || 0) === 0);
+      ready.sort(compareTasks);
+
+      const compResult: Task[] = [];
+      const compProcessed = new Set<string>();
+
+      while (ready.length > 0) {
+        const u = ready.shift()!;
+        compResult.push(u);
+        compProcessed.add(u.id);
+
+        const neighbors = adjMap.get(u.id) || [];
+        let newlyReady = false;
+        for (const vId of neighbors) {
+          if (!compSet.has(vId)) continue;
+          const currentDeg = (compInDegree.get(vId) || 0) - 1;
+          compInDegree.set(vId, currentDeg);
+          if (currentDeg === 0 && !compProcessed.has(vId)) {
+            const vTask = subsetMap.get(vId);
+            if (vTask) {
+              ready.push(vTask);
+              newlyReady = true;
+            }
+          }
+        }
+        if (newlyReady) {
+          ready.sort(compareTasks);
+        }
       }
-    }
 
-    if (compResult.length < compTasks.length) {
-      const remaining = compTasks.filter(ct => !compProcessed.has(ct.id));
-      remaining.sort(compareTasks);
-      compResult.push(...remaining);
-    }
+      if (compResult.length < compTasks.length) {
+        const remaining = compTasks.filter(ct => !compProcessed.has(ct.id));
+        remaining.sort(compareTasks);
+        compResult.push(...remaining);
+      }
 
-    return compResult;
+      return compResult;
+    });
+
+    sortedComponents.sort((compA, compB) => {
+      const rootA = compA[0];
+      const rootB = compB[0];
+      if (!rootA && !rootB) return 0;
+      if (!rootA) return 1;
+      if (!rootB) return -1;
+      return compareTasks(rootA, rootB);
+    });
+
+    return sortedComponents.flat();
+  };
+
+  // If no parent-child tasks exist in groupTasks, sort flat directly
+  if (childrenByParentId.size === 0) {
+    return sortFlatTaskSubset(groupTasks);
+  }
+
+  // Sort root tasks, and immediately place each parent's sorted children right after their parent
+  const rootTasks = groupTasks.filter(t => t && t.id && !resolvedParentIdByChildId.has(t.id));
+  const sortedRoots = sortFlatTaskSubset(rootTasks);
+
+  const finalResult: Task[] = [];
+  const emittedIds = new Set<string>();
+
+  const emitWithChildren = (task: Task) => {
+    if (!task || !task.id || emittedIds.has(task.id)) return;
+    emittedIds.add(task.id);
+    finalResult.push(task);
+    const children = childrenByParentId.get(task.id);
+    if (children && children.length > 0) {
+      const sortedChildren = sortFlatTaskSubset(children);
+      sortedChildren.forEach(child => emitWithChildren(child));
+    }
+  };
+
+  sortedRoots.forEach(root => emitWithChildren(root));
+  groupTasks.forEach(t => {
+    if (t && t.id && !emittedIds.has(t.id)) {
+      emitWithChildren(t);
+    }
   });
 
-  sortedComponents.sort((compA, compB) => {
-    const rootA = compA[0];
-    const rootB = compB[0];
-    if (!rootA && !rootB) return 0;
-    if (!rootA) return 1;
-    if (!rootB) return -1;
-    return compareTasks(rootA, rootB);
-  });
-
-  return sortedComponents.flat();
+  return finalResult;
 }

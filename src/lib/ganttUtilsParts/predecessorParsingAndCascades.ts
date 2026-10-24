@@ -32,8 +32,9 @@ export function getPredecessorCodeUpdates(
 
     if (newPrimaryCode) {
       oldCodes.forEach(oldCode => {
+        // Never map bare '#1' or numeric shorthand globally across projects in oldCodeToNewCode
+        if (!oldCode || oldCode.startsWith('#') || /^\d+$/.test(oldCode)) return;
         if (
-          oldCode &&
           oldCode.toLowerCase() !== newPrimaryCode.toLowerCase() &&
           oldCode.toLowerCase() !== t.id.toLowerCase()
         ) {
@@ -58,12 +59,13 @@ export function updatePredecessorsStrings(
   const normalizedMap = new Map<string, string>();
   if (oldCodeToNewCode) {
     for (const [k, v] of oldCodeToNewCode.entries()) {
-      if (k && v) {
+      if (k && v && !k.trim().startsWith('#')) {
         normalizedMap.set(k.trim().toLowerCase(), v.trim());
       }
     }
   }
 
+  const canonicalCodeMap = computeAllTaskCodes(projects || [], allTasks);
   const taskIdToNewTask = new Map<string, Task>();
   allTasks.forEach(t => {
     if (t && t.id) taskIdToNewTask.set(t.id, t);
@@ -95,7 +97,9 @@ export function updatePredecessorsStrings(
           const targetTaskObj = parsed[0].task;
           const updatedTargetTask = taskIdToNewTask.get(targetTaskObj.id);
           if (updatedTargetTask) {
-            const newPrimaryCode = updatedTargetTask.taskCodePhu || 
+            const newPrimaryCode =
+              canonicalCodeMap.get(updatedTargetTask.id) ||
+              updatedTargetTask.taskCodePhu ||
               (updatedTargetTask.projectCode ? `${updatedTargetTask.projectCode}#${(updatedTargetTask.orderIndex ?? 0) + 1}` : updatedTargetTask.id);
 
             let remainder = parsePredecessorToken(trimmed).suffix;

@@ -145569,8 +145569,15 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
     if (validIdsLower.has(tIdLower)) {
       const s = summaryByIdLower.get(tIdLower);
       if (s && !isRecentLocal) {
-        const sParent = s.parentTaskId || undefined;
         const tParent = t.parentTaskId || undefined;
+        const tParentLower = tParent ? String(tParent).trim().toLowerCase() : '';
+        // Only overwrite local parentTaskId if summary explicitly has a parentTaskId or if local parentTaskId no longer exists in validIdsLower
+        const sParent =
+          s.parentTaskId !== undefined && s.parentTaskId !== null && String(s.parentTaskId).trim() !== ''
+            ? s.parentTaskId
+            : tParentLower && validIdsLower.has(tParentLower)
+              ? tParent
+              : undefined;
         const summaryDiffers =
           (s.name !== undefined && s.name !== t.name) ||
           (s.start !== undefined && s.start !== t.start) ||
@@ -145732,8 +145739,16 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
       ...(mergedTask.runningStatus !== undefined ? { runningStatus: mergedTask.runningStatus } : {}),
       ...(mergedTask.delegation !== undefined ? { delegation: mergedTask.delegation } : {}),
     };
-    if (mergedTask.parentTaskId) {
-      summaryItem.parentTaskId = mergedTask.parentTaskId;
+    const explicitParentUnset =
+      (mergedTask as any).parentTaskId === null ||
+      ('parentTaskId' in mergedTask && !mergedTask.parentTaskId);
+    const effectiveParentId = mergedTask.parentTaskId
+      ? mergedTask.parentTaskId
+      : explicitParentUnset
+        ? undefined
+        : existingSummary?.parentTaskId;
+    if (effectiveParentId) {
+      summaryItem.parentTaskId = effectiveParentId;
     } else {
       delete summaryItem.parentTaskId;
       delete summaryItem.parentId;
@@ -145865,7 +145880,6 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
 
   return { nextProjects, touchedProjectsToPersist };
 }
-
 
 === FILE: src/hooks/useFirebaseDataParts/projectsHydrationHelpers.ts ===
 import { Project, Task } from '../../types';
@@ -146088,8 +146102,14 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
         const localUpdatedMs = tsOf(localT.updatedAt);
         const isRecentlyEditedLocally = localUpdatedMs > 0 && nowMs - localUpdatedMs <= 60000;
         if (!isRecentlyEditedLocally) {
-          const sParent = s.parentTaskId || undefined;
           const localParent = localT.parentTaskId || undefined;
+          const localParentLower = localParent ? String(localParent).trim().toLowerCase() : '';
+          const sParent =
+            s.parentTaskId !== undefined && s.parentTaskId !== null && String(s.parentTaskId).trim() !== ''
+              ? s.parentTaskId
+              : localParentLower && serverSummaryIds.has(localParentLower)
+                ? localParent
+                : undefined;
           const summaryDiffers =
             (s.name !== undefined && s.name !== localT.name) ||
             (s.start !== undefined && s.start !== localT.start) ||
@@ -146184,8 +146204,14 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           } else {
             const s = summaryById.get(tidLower);
             if (s) {
-              const sParent = s.parentTaskId || undefined;
               const tParent = t.parentTaskId || undefined;
+              const tParentLower = tParent ? String(tParent).trim().toLowerCase() : '';
+              const sParent =
+                s.parentTaskId !== undefined && s.parentTaskId !== null && String(s.parentTaskId).trim() !== ''
+                  ? s.parentTaskId
+                  : tParentLower && summaryIds.has(tParentLower)
+                    ? tParent
+                    : undefined;
               const needsPatch =
                 (s.name !== undefined && s.name !== t.name) ||
                 (s.start !== undefined && s.start !== t.start) ||
@@ -146255,7 +146281,6 @@ export function buildZombieProjectRemovalsForYear(
 
   return zombieRemovals;
 }
-
 
 === FILE: src/lib/backgroundSyncParts/localHydrationHelpers.ts ===
 import {
@@ -146658,36 +146683,136 @@ export async function hydrateDelegationsForTasks(taskIds: string[]): Promise<num
 
 === FILE: src/lib/taskRollupService.ts ===
 import { Task, DelegationGroup } from '../types';
+import { normalizeDashes } from './utils';
+
+function extractNumericSuffix(codeOrPhu?: string | null): number | null {
+  if (!codeOrPhu) return null;
+  const str = normalizeDashes(String(codeOrPhu)).trim();
+  const m = str.match(/#\s*(\d+)/) || str.match(/[-_.:/\s]+(\d+)\s*$/) || str.match(/^(\d+)$/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function getTaskProjectScopeKey(t: Partial<Task>): string {
+  if (t.projectId && String(t.projectId).trim()) return `pid:${String(t.projectId).trim()}`;
+  const code = String(t.projectCode || '').trim().toLowerCase();
+  const year = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+  const store = String(t.projectStore || '').trim().toLowerCase();
+  return `key:${code}|${year}|${store}`;
+}
+
+function compareTasksForCanonicalCode(a: Task, b: Task): number {
+  const ordA = a.orderIndex !== undefined && a.orderIndex !== null ? Number(a.orderIndex) : null;
+  const ordB = b.orderIndex !== undefined && b.orderIndex !== null ? Number(b.orderIndex) : null;
+  if (ordA !== null && ordB !== null && ordA !== ordB) return ordA - ordB;
+  if (ordA !== null && ordB === null) return -1;
+  if (ordA === null && ordB !== null) return 1;
+  const codeA = a.taskCodePhu || (a.projectCode && ordA !== null ? `${a.projectCode}#${ordA + 1}` : a.name || '');
+  const codeB = b.taskCodePhu || (b.projectCode && ordB !== null ? `${b.projectCode}#${ordB + 1}` : b.name || '');
+  const numA = extractNumericSuffix(codeA);
+  const numB = extractNumericSuffix(codeB);
+  if (numA !== null && numB !== null && numA !== numB) return numA - numB;
+  if (numA !== null && numB === null) return -1;
+  if (numA === null && numB !== null) return 1;
+  if (a.start && b.start && a.start !== b.start) return a.start.localeCompare(b.start);
+  if (a.finish && b.finish && a.finish !== b.finish) return a.finish.localeCompare(b.finish);
+  return String(a.id || '').localeCompare(String(b.id || ''));
+}
+
+function buildCanonicalTaskContext(tasks: Task[]): {
+  taskByIdLower: Map<string, Task>;
+  scopedTaskByCode: Map<string, Task>;
+  canonicalCodeByTaskId: Map<string, string>;
+} {
+  const taskByIdLower = new Map<string, Task>();
+  const scopedTaskByCode = new Map<string, Task>();
+  const canonicalCodeByTaskId = new Map<string, string>();
+  const groupsByScope = new Map<string, Task[]>();
+
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (!t || t.isDeleted) continue;
+    const scope = getTaskProjectScopeKey(t);
+    if (t.id) taskByIdLower.set(String(t.id).trim().toLowerCase(), t);
+    if (t.taskCodePhu) {
+      const cLower = String(t.taskCodePhu).trim().toLowerCase();
+      scopedTaskByCode.set(`${scope}:::${cLower}`, t);
+      if (cLower.includes('-')) scopedTaskByCode.set(`${scope}:::${cLower.replace(/-(\d+)$/, '#=== FILE: src/lib/taskRollupService.ts ===
+')}`, t);
+      const num = extractNumericSuffix(cLower);
+      if (num !== null) scopedTaskByCode.set(`${scope}:::#${num}`, t);
+    }
+    const list = groupsByScope.get(scope) || [];
+    if (list.length === 0) groupsByScope.set(scope, list);
+    list.push(t);
+  }
+
+  groupsByScope.forEach((groupTasks, scope) => {
+    const sorted = [...groupTasks].sort(compareTasksForCanonicalCode);
+    for (let idx = 0; idx < sorted.length; idx++) {
+      const t = sorted[idx];
+      const pCode = String(t.projectCode || '').trim();
+      const canonicalCode = pCode ? `${pCode}#${idx + 1}` : (t.taskCodePhu ? String(t.taskCodePhu).trim() : t.id);
+      if (t.id && canonicalCode) canonicalCodeByTaskId.set(t.id, canonicalCode);
+      const cLower = canonicalCode.toLowerCase();
+      if (!scopedTaskByCode.has(`${scope}:::${cLower}`)) scopedTaskByCode.set(`${scope}:::${cLower}`, t);
+      if (!scopedTaskByCode.has(`${scope}:::#${idx + 1}`)) scopedTaskByCode.set(`${scope}:::#${idx + 1}`, t);
+    }
+  });
+
+  return { taskByIdLower, scopedTaskByCode, canonicalCodeByTaskId };
+}
+
+function resolveParentTaskInScope(
+  child: Task,
+  taskByIdLower: Map<string, Task>,
+  scopedTaskByCode: Map<string, Task>
+): Task | undefined {
+  const rawParent = child.parentTaskId || (child as any).parentId;
+  if (!rawParent) return undefined;
+  const parentStr = String(rawParent).trim().toLowerCase();
+  if (!parentStr) return undefined;
+
+  const byId = taskByIdLower.get(parentStr);
+  if (byId) return byId;
+
+  const scope = getTaskProjectScopeKey(child);
+  const byScopedCode = scopedTaskByCode.get(`${scope}:::${parentStr}`);
+  if (byScopedCode) return byScopedCode;
+
+  const num = extractNumericSuffix(parentStr);
+  if (num !== null) {
+    const byScopedNum = scopedTaskByCode.get(`${scope}:::#${num}`);
+    if (byScopedNum) return byScopedNum;
+  }
+  return undefined;
+}
 
 /**
  * Promotes orphan subtasks (whose parentTaskId is missing or deleted) to root tasks in memory
- * so parent rollup dates and task counts remain 100% consistent before and after project expansion.
+ * and normalizes parentTaskId to the canonical parent task ID.
  */
 export function filterNonOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: number } {
   if (!tasks || tasks.length === 0) return { cleaned: tasks || [], fixedCount: 0 };
 
-  const taskMap = new Map<string, Task>();
-  const taskCodeMap = new Map<string, Task>();
-
-  tasks.forEach(t => {
-    if (!t || t.isDeleted) return;
-    if (t.id) taskMap.set(String(t.id).toLowerCase(), t);
-    if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
-  });
+  const { taskByIdLower, scopedTaskByCode } = buildCanonicalTaskContext(tasks);
 
   let fixedCount = 0;
   const cleaned = tasks.map(t => {
     const rawParent = t.parentTaskId || (t as any).parentId;
     if (!rawParent) return t;
 
-    const parentStr = String(rawParent).trim().toLowerCase();
-    const parentTask = taskMap.get(parentStr) || taskCodeMap.get(parentStr);
+    const parentTask = resolveParentTaskInScope(t, taskByIdLower, scopedTaskByCode);
 
     if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
       fixedCount++;
       const updated = { ...t, parentTaskId: undefined };
       delete (updated as any).parentId;
       return updated;
+    }
+
+    if (t.parentTaskId !== parentTask.id) {
+      fixedCount++;
+      return { ...t, parentTaskId: parentTask.id };
     }
 
     return t;
@@ -146705,7 +146830,9 @@ interface RollupNodeResult {
   latestChild: Task | null;
 }
 
-function getTaskRefCodeForRollup(t: Task): string {
+function getTaskRefCodeForRollup(t: Task, canonicalCodeByTaskId: Map<string, string>): string {
+  const canonical = t.id ? canonicalCodeByTaskId.get(t.id) : undefined;
+  if (canonical) return canonical;
   if (t.taskCodePhu && String(t.taskCodePhu).trim()) {
     return String(t.taskCodePhu).trim();
   }
@@ -146713,6 +146840,11 @@ function getTaskRefCodeForRollup(t: Task): string {
     return `${String(t.projectCode).trim()}#${Number(t.orderIndex) + 1}`;
   }
   return t.id;
+}
+
+function isAutoRollupPredecessorPattern(pred?: string): boolean {
+  if (!pred || typeof pred !== 'string') return false;
+  return /^\s*[^,\s]+?\s*SS\s*,\s*[^,\s]+?\s*FF\s*$/i.test(pred.trim());
 }
 
 let _lastRollupInputRef: Task[] | null = null;
@@ -146731,26 +146863,38 @@ export function rollupParentTaskDatesAndStatus(
     return _lastRollupOutputRef;
   }
 
+  const { taskByIdLower, scopedTaskByCode, canonicalCodeByTaskId } = buildCanonicalTaskContext(tasks);
   const childrenMap = new Map<string, Task[]>();
+  const result = [...tasks];
+  let anyNormalizedChild = false;
 
-  for (let i = 0; i < tasks.length; i++) {
-    const t = tasks[i];
-    if (!t || !t.id || t.isDeleted || !t.parentTaskId) continue;
-    let list = childrenMap.get(t.parentTaskId);
+  for (let i = 0; i < result.length; i++) {
+    const t = result[i];
+    if (!t || !t.id || t.isDeleted) continue;
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) continue;
+
+    const parentTask = resolveParentTaskInScope(t, taskByIdLower, scopedTaskByCode);
+    if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
+      continue;
+    }
+
+    const canonicalParentId = parentTask.id;
+    let normalizedChild = t;
+    if (t.parentTaskId !== canonicalParentId) {
+      normalizedChild = { ...t, parentTaskId: canonicalParentId };
+      result[i] = normalizedChild;
+      anyNormalizedChild = true;
+    }
+
+    let list = childrenMap.get(canonicalParentId);
     if (!list) {
       list = [];
-      childrenMap.set(t.parentTaskId, list);
+      childrenMap.set(canonicalParentId, list);
     }
-    list.push(t);
+    list.push(normalizedChild);
   }
 
-  if (childrenMap.size === 0) {
-    _lastRollupInputRef = tasks;
-    _lastRollupOutputRef = tasks;
-    return tasks;
-  }
-
-  const result = [...tasks];
   const memoRollup = new Map<string, RollupNodeResult | null>();
   const visiting = new Set<string>();
 
@@ -146774,8 +146918,10 @@ export function rollupParentTaskDatesAndStatus(
     let allCompleted = true;
     let hasInProcess = false;
 
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i];
+    const sortedChildren = [...children].sort(compareTasksForCanonicalCode);
+
+    for (let i = 0; i < sortedChildren.length; i++) {
+      const child = sortedChildren[i];
       const subRollup = child.id ? getRolledUpDatesAndStatus(child.id) : null;
       const childStart = subRollup ? subRollup.start : (child.start || '');
       const childFinish = subRollup ? subRollup.finish : (child.finish || childStart || '');
@@ -146830,9 +146976,26 @@ export function rollupParentTaskDatesAndStatus(
     return computed;
   }
 
+  let anyParentChanged = false;
+
   for (let i = 0; i < result.length; i++) {
     const task = result[i];
-    if (!task || !task.id || !childrenMap.has(task.id)) continue;
+    if (!task || !task.id) continue;
+
+    if (!childrenMap.has(task.id)) {
+      if (task.isModularParent || isAutoRollupPredecessorPattern(task.predecessor)) {
+        const cleanedTask: Task = {
+          ...task,
+          isModularParent: false,
+          predecessor: isAutoRollupPredecessorPattern(task.predecessor) ? '' : task.predecessor,
+          predecessorTaskIds: undefined,
+          predecessors: undefined,
+        };
+        result[i] = cleanedTask;
+        anyParentChanged = true;
+      }
+      continue;
+    }
 
     const rolled = getRolledUpDatesAndStatus(task.id);
     if (rolled) {
@@ -146852,8 +147015,8 @@ export function rollupParentTaskDatesAndStatus(
       let newDuration = task.duration;
 
       if (rolled.earliestChild && rolled.latestChild) {
-        const earliestCode = getTaskRefCodeForRollup(rolled.earliestChild);
-        const latestCode = getTaskRefCodeForRollup(rolled.latestChild);
+        const earliestCode = getTaskRefCodeForRollup(rolled.earliestChild, canonicalCodeByTaskId);
+        const latestCode = getTaskRefCodeForRollup(rolled.latestChild, canonicalCodeByTaskId);
         newPredecessor = `${earliestCode}SS, ${latestCode}FF`;
         newPredecessorTaskIds = [rolled.earliestChild.id, rolled.latestChild.id];
         newPredecessors = [
@@ -146883,6 +147046,7 @@ export function rollupParentTaskDatesAndStatus(
         newStatus !== task.runningStatus ||
         newPredecessor !== (task.predecessor || '') ||
         newDuration !== task.duration ||
+        !task.isModularParent ||
         predIdsChanged
       ) {
         result[i] = {
@@ -146896,13 +147060,15 @@ export function rollupParentTaskDatesAndStatus(
           predecessors: newPredecessors,
           isModularParent: true,
         };
+        anyParentChanged = true;
       }
     }
   }
 
+  const finalOut = anyNormalizedChild || anyParentChanged ? result : tasks;
   _lastRollupInputRef = tasks;
-  _lastRollupOutputRef = result;
-  return result;
+  _lastRollupOutputRef = finalOut;
+  return finalOut;
 }
 
 /**
@@ -146911,22 +147077,40 @@ export function rollupParentTaskDatesAndStatus(
 export function rollupTaskSummaries(summaries: any[]): any[] {
   if (!Array.isArray(summaries) || summaries.length === 0) return summaries || [];
 
-  const childrenMap = new Map<string, any[]>();
+  const summaryByIdLower = new Map<string, any>();
+  const summaryByCodeLower = new Map<string, any>();
   for (let i = 0; i < summaries.length; i++) {
     const s = summaries[i];
-    if (s && s.id && s.parentTaskId) {
-      let list = childrenMap.get(s.parentTaskId);
+    if (!s) continue;
+    if (s.id) summaryByIdLower.set(String(s.id).trim().toLowerCase(), s);
+    if (s.taskCodePhu) summaryByCodeLower.set(String(s.taskCodePhu).trim().toLowerCase(), s);
+  }
+
+  const childrenMap = new Map<string, any[]>();
+  const result = [...summaries];
+
+  for (let i = 0; i < result.length; i++) {
+    const s = result[i];
+    const rawP = s?.parentTaskId || s?.parentId;
+    if (s && s.id && rawP) {
+      const pLower = String(rawP).trim().toLowerCase();
+      const matchedParent = summaryByIdLower.get(pLower) || summaryByCodeLower.get(pLower);
+      const canonicalParentId = matchedParent?.id ? String(matchedParent.id) : String(rawP);
+      if (canonicalParentId === String(s.id)) continue;
+      if (s.parentTaskId !== canonicalParentId) {
+        result[i] = { ...s, parentTaskId: canonicalParentId };
+      }
+      let list = childrenMap.get(canonicalParentId);
       if (!list) {
         list = [];
-        childrenMap.set(s.parentTaskId, list);
+        childrenMap.set(canonicalParentId, list);
       }
-      list.push(s);
+      list.push(result[i]);
     }
   }
 
   if (childrenMap.size === 0) return summaries;
 
-  const result = [...summaries];
   const memoSummary = new Map<string, { start: string; finish: string } | null>();
   const visiting = new Set<string>();
 
@@ -147097,32 +147281,32 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
       if (computed) {
         addKey(t, computed);
         if (computed.includes('#')) addKey(t, computed.replace('#', '-'));
-        if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#$1'));
+        if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#=== FILE: src/lib/ganttUtilsParts/taskCodeIndexers.ts ===
+'));
       }
 
       if (t.taskCodePhu) {
         addKey(t, t.taskCodePhu);
         if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
-        if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
+        if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#=== FILE: src/lib/ganttUtilsParts/taskCodeIndexers.ts ===
+'));
       }
+
+      addKey(t, `${pCode}#${i + 1}`);
+      addKey(t, `${pCode}-${i + 1}`);
+      addKey(t, `#${i + 1}`);
 
       const explicitSubMatch = String(t.taskCodePhu || '').trim().match(/[#-](\d+)$/);
       const explicitSubNum = explicitSubMatch ? parseInt(explicitSubMatch[1], 10) : null;
 
-      if (explicitSubNum !== null && !isNaN(explicitSubNum)) {
+      if (explicitSubNum !== null && !isNaN(explicitSubNum) && explicitSubNum !== i + 1) {
         addKey(t, `${pCode}#${explicitSubNum}`);
         addKey(t, `${pCode}-${explicitSubNum}`);
         addKey(t, `#${explicitSubNum}`);
-      } else {
-        addKey(t, `${pCode}#${i + 1}`);
-        addKey(t, `${pCode}-${i + 1}`);
-        addKey(t, `#${i + 1}`);
-
-        if (t.orderIndex !== undefined && t.orderIndex !== null) {
-          addKey(t, `${pCode}#${Number(t.orderIndex) + 1}`);
-          addKey(t, `${pCode}-${Number(t.orderIndex) + 1}`);
-          addKey(t, `#${Number(t.orderIndex) + 1}`);
-        }
+      } else if (t.orderIndex !== undefined && t.orderIndex !== null && Number(t.orderIndex) !== i) {
+        addKey(t, `${pCode}#${Number(t.orderIndex) + 1}`);
+        addKey(t, `${pCode}-${Number(t.orderIndex) + 1}`);
+        addKey(t, `#${Number(t.orderIndex) + 1}`);
       }
 
       if (t.id) addKey(t, t.id);
@@ -147135,12 +147319,14 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
     if (computed) {
       addKey(t, computed);
       if (computed.includes('#')) addKey(t, computed.replace('#', '-'));
-      if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#$1'));
+      if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#=== FILE: src/lib/ganttUtilsParts/taskCodeIndexers.ts ===
+'));
     }
     if (t.taskCodePhu) {
       addKey(t, t.taskCodePhu);
       if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
-      if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
+      if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#=== FILE: src/lib/ganttUtilsParts/taskCodeIndexers.ts ===
+'));
     }
     const explicitSubMatch = String(t.taskCodePhu || '').trim().match(/[#-](\d+)$/);
     if (!explicitSubMatch && t.orderIndex !== undefined && t.orderIndex !== null && t.projectCode) {
@@ -147310,7 +147496,6 @@ export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<str
   return map;
 }
 
-
 === FILE: src/lib/ganttUtilsParts/predecessorHealingAndConversion.ts ===
 import { Task, Project } from '../../types';
 import { parsePredecessorToken } from '../predecessorMatchUtils';
@@ -147413,7 +147598,7 @@ export function normalizeAndHealTaskPredecessors(
             }
           }
           if (targetTask) {
-            const currentTargetCode = targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask);
+            const currentTargetCode = computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu;
             if (currentTargetCode && currentTargetCode.trim().toLowerCase() !== code) {
               changed = true;
               return `${currentTargetCode.trim()}${rawToken.substring(code.length)}`;
@@ -147473,7 +147658,7 @@ export function normalizeAndHealTaskPredecessors(
         );
 
         let targetTask = sameProjectTasks.find(t => {
-          const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
+          const code = String(computeTaskCode(projects, updatedAllTasks, t) || t.taskCodePhu || '').trim();
           return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`);
         });
 
@@ -147482,7 +147667,7 @@ export function normalizeAndHealTaskPredecessors(
         }
 
         if (targetTask) {
-          const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask) || `${currentPCode}#${subIndexNum}`).trim();
+          const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${currentPCode}#${subIndexNum}`).trim();
           if (newCode) {
             changed = true;
             return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
@@ -147510,7 +147695,7 @@ export function normalizeAndHealTaskPredecessors(
           );
 
           let targetTask = targetTasks.find(t => {
-            const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
+            const code = String(computeTaskCode(projects, updatedAllTasks, t) || t.taskCodePhu || '').trim();
             return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`);
           });
 
@@ -147519,7 +147704,7 @@ export function normalizeAndHealTaskPredecessors(
           }
 
           if (targetTask) {
-            const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask) || `${matchedProj.code}#${subIndexNum}`).trim();
+            const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${matchedProj.code}#${subIndexNum}`).trim();
             if (newCode) {
               changed = true;
               return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
@@ -147540,7 +147725,8 @@ export function normalizeAndHealTaskPredecessors(
 }
 
 /**
- * Sweeps through all tasks and heals any out-of-sync or legacy predecessor codes.
+ * Sweeps through all tasks and heals any out-of-sync or legacy predecessor codes,
+ * including parent tasks' auto-rollup SS/FF predecessor codes.
  */
 export function healAllTasksPredecessors(
   allTasks: Task[],
@@ -147555,14 +147741,32 @@ export function healAllTasksPredecessors(
   const safeTasks = Array.isArray(allTasks) ? allTasks : [];
   const safeProjects = Array.isArray(projects) ? projects : [];
 
-  const parentIds = new Set<string>();
+  const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);
+  const taskByIdLower = new Map<string, Task>();
+  const taskByCodeLower = new Map<string, Task>();
+
   safeTasks.forEach(t => {
-    if (t && !t.isDeleted && t.parentTaskId) {
-      parentIds.add(t.parentTaskId);
+    if (!t || !t.id || t.isDeleted) return;
+    taskByIdLower.set(String(t.id).trim().toLowerCase(), t);
+    const canonical = taskCodeMap.get(t.id);
+    if (canonical) taskByCodeLower.set(canonical.trim().toLowerCase(), t);
+    if (t.taskCodePhu) taskByCodeLower.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+  });
+
+  const childrenByParentId = new Map<string, Task[]>();
+  safeTasks.forEach(t => {
+    if (!t || !t.id || t.isDeleted) return;
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) return;
+    const rawParentLower = String(rawParent).trim().toLowerCase();
+    const resolvedParent = taskByIdLower.get(rawParentLower) || taskByCodeLower.get(rawParentLower);
+    if (resolvedParent && resolvedParent.id !== t.id) {
+      const list = childrenByParentId.get(resolvedParent.id) || [];
+      list.push(t);
+      childrenByParentId.set(resolvedParent.id, list);
     }
   });
 
-  const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);
   const taskNoMap = buildTaskNoMap(safeProjects, safeTasks);
   const knownCodes = new Set<string>();
   for (const k of taskNoMap.keys()) knownCodes.add(k.toLowerCase());
@@ -147576,20 +147780,57 @@ export function healAllTasksPredecessors(
     let newPred = t.predecessor || '';
     const originalTask = t;
 
-    const newPhu = t.taskCodePhu || taskCodeMap.get(t.id) || '';
+    const newPhu = taskCodeMap.get(t.id) || t.taskCodePhu || '';
+    if (newPhu && t.taskCodePhu && newPhu !== t.taskCodePhu) {
+      taskChanged = true;
+    }
 
-    // Skip string healing on parent tasks whose SS/FF predecessors are governed by child rollup
-    if (t.predecessor && !parentIds.has(t.id)) {
-      const { changed, newPredecessor } = normalizeAndHealTaskPredecessors(
-        { ...t, taskCodePhu: newPhu }, 
-        safeTasks, 
-        safeProjects,
-        taskNoMap,
-        knownCodes
-      );
-      if (changed && newPredecessor !== t.predecessor) {
-        newPred = newPredecessor;
+    const children = childrenByParentId.get(t.id);
+    if (children && children.length > 0) {
+      // Recompute canonical SS/FF predecessor for parent task based on its children's canonical codes
+      const validChildren = children.filter(c => c && !c.isDeleted && (c.start || c.finish));
+      if (validChildren.length > 0) {
+        let earliestChild = validChildren[0];
+        let latestChild = validChildren[0];
+        let minStartStr = String(earliestChild.start || earliestChild.finish || '9999-12-31');
+        let maxFinishStr = String(latestChild.finish || latestChild.start || '');
+        for (const c of validChildren) {
+          const sStr = String(c.start || c.finish || '9999-12-31');
+          const fStr = String(c.finish || c.start || '');
+          if (sStr < minStartStr) {
+            minStartStr = sStr;
+            earliestChild = c;
+          }
+          if (fStr > maxFinishStr) {
+            maxFinishStr = fStr;
+            latestChild = c;
+          }
+        }
+        const eCode = taskCodeMap.get(earliestChild.id) || earliestChild.taskCodePhu || earliestChild.id;
+        const lCode = taskCodeMap.get(latestChild.id) || latestChild.taskCodePhu || latestChild.id;
+        const canonicalParentPred = `${eCode}SS, ${lCode}FF`;
+        if (canonicalParentPred !== newPred) {
+          newPred = canonicalParentPred;
+          taskChanged = true;
+        }
+      }
+    } else if (t.predecessor) {
+      const hasStaleAutoRollupPred = /^[^,]+SS\s*,\s*[^,]+FF$/i.test(t.predecessor.trim()) && Boolean(t.isModularParent);
+      if (hasStaleAutoRollupPred) {
+        newPred = '';
         taskChanged = true;
+      } else {
+        const { changed, newPredecessor } = normalizeAndHealTaskPredecessors(
+          { ...t, taskCodePhu: newPhu }, 
+          safeTasks, 
+          safeProjects,
+          taskNoMap,
+          knownCodes
+        );
+        if (changed && newPredecessor !== t.predecessor) {
+          newPred = newPredecessor;
+          taskChanged = true;
+        }
       }
     }
 
@@ -147736,7 +147977,6 @@ export function convertAllSubtaskCodesAndPredecessorsToHash(
     updatesToSave
   };
 }
-
 
 === FILE: src/components/Gantt/useGanttDependencies.ts ===
 import React, { useCallback, useMemo, useState } from 'react';
@@ -149030,4 +149270,2393 @@ export const SettingDataMaintenance: React.FC<SettingDataMaintenanceProps> = ({
     </div>
   );
 };
+
+
+=== FILE: src/lib/parentTaskPredecessorService.ts ===
+import { Task, Project, TaskPredecessor, PredecessorType } from '../types';
+import { computeTaskCode } from './ganttUtils';
+import { parseDateTime, formatToDatetimeLocal } from './utils';
+
+/**
+ * Resolves the cleanest task code for predecessor references (e.g. A01#1 or taskCodePhu).
+ */
+export function getTaskPredecessorRefCode(
+  task: Task,
+  projects: Project[] = [],
+  allTasks: Task[] = []
+): string {
+  const computed = computeTaskCode(projects, allTasks, task);
+  if (computed && computed.trim()) {
+    return computed.trim();
+  }
+  if (task.taskCodePhu && task.taskCodePhu.trim()) {
+    return task.taskCodePhu.trim();
+  }
+  if (task.projectCode) {
+    const idx = task.orderIndex !== undefined ? Number(task.orderIndex) + 1 : 1;
+    return `${task.projectCode}#${idx}`;
+  }
+  return task.id;
+}
+
+export interface ParentPredecessorPatch {
+  predecessor: string;
+  predecessors: TaskPredecessor[];
+  predecessorTaskIds: string[];
+  start: string;
+  finish: string;
+  duration: string;
+  durationManual: boolean;
+  isModularParent: boolean;
+  runningStatus?: any;
+  updatedAt: string;
+}
+
+/**
+ * Computes start date, end date, duration and sets multi-predecessors:
+ * - SS with the earliest start child task
+ * - FF with the latest finish child task
+ */
+export function calculateParentTaskPredecessorsAndDates(
+  parentTask: Task,
+  childTasks: Task[],
+  projects: Project[] = [],
+  allTasks: Task[] = []
+): ParentPredecessorPatch | null {
+  if (!parentTask || !Array.isArray(childTasks) || childTasks.length === 0) {
+    return null;
+  }
+
+  // Filter valid, non-deleted children with at least a start or finish date
+  const validChildren = childTasks.filter(
+    (c) => c && !c.isDeleted && String(c.id) !== String(parentTask.id) && (c.start || c.finish)
+  );
+
+  if (validChildren.length === 0) {
+    return null;
+  }
+
+  let earliestChild: Task | null = null;
+  let minStartMs = Infinity;
+
+  let latestChild: Task | null = null;
+  let maxFinishMs = -Infinity;
+
+  let allCompleted = true;
+  let hasInProcess = false;
+
+  for (const child of validChildren) {
+    const sDate = child.start ? parseDateTime(child.start) : null;
+    const fDate = child.finish ? parseDateTime(child.finish) : null;
+
+    const childStartMs = sDate ? sDate.getTime() : (fDate ? fDate.getTime() : null);
+    const childFinishMs = fDate ? fDate.getTime() : (sDate ? sDate.getTime() : null);
+
+    if (childStartMs !== null && childStartMs < minStartMs) {
+      minStartMs = childStartMs;
+      earliestChild = child;
+    }
+
+    if (childFinishMs !== null && childFinishMs > maxFinishMs) {
+      maxFinishMs = childFinishMs;
+      latestChild = child;
+    }
+
+    const status = String(child.runningStatus || '').toLowerCase();
+    if (status !== 'completed' && status !== 'pj compl' && status !== 'done' && status !== '100%') {
+      allCompleted = false;
+    }
+    if (status === 'on process' || status === 'in progress' || status === 'running') {
+      hasInProcess = true;
+    }
+  }
+
+  if (!earliestChild || !latestChild) {
+    return null;
+  }
+
+  const tasksContext = allTasks.length > 0 ? allTasks : validChildren;
+  const earliestCode = getTaskPredecessorRefCode(earliestChild, projects, tasksContext);
+  const latestCode = getTaskPredecessorRefCode(latestChild, projects, tasksContext);
+
+  // Multi-predecessor format: <earliestCode>SS, <latestCode>FF
+  const predecessorStr = `${earliestCode}SS, ${latestCode}FF`;
+
+  const predecessors: TaskPredecessor[] = [
+    { taskId: earliestChild.id, type: 'SS' as PredecessorType },
+    { taskId: latestChild.id, type: 'FF' as PredecessorType },
+  ];
+
+  const predecessorTaskIds = [earliestChild.id, latestChild.id];
+
+  const newStart = earliestChild.start || earliestChild.finish || '';
+  const newFinish = latestChild.finish || latestChild.start || '';
+
+  let newDuration = parentTask.duration || '0';
+  if (minStartMs !== Infinity && maxFinishMs !== -Infinity && maxFinishMs >= minStartMs) {
+    const diffDays = (maxFinishMs - minStartMs) / (1000 * 60 * 60 * 24);
+    newDuration = String(Number(diffDays.toFixed(2)));
+  }
+
+  let runningStatus = parentTask.runningStatus;
+  if (allCompleted) {
+    runningStatus = 'Completed';
+  } else if (hasInProcess) {
+    runningStatus = 'On process';
+  }
+
+  return {
+    predecessor: predecessorStr,
+    predecessors,
+    predecessorTaskIds,
+    start: newStart,
+    finish: newFinish,
+    duration: newDuration,
+    durationManual: true,
+    isModularParent: true,
+    runningStatus: runningStatus as any,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Applies parent multi-predecessors (SS earliest child, FF latest child) and dates
+ * across an entire task list.
+ */
+export function applyParentPredecessorsToTaskTree(
+  tasks: Task[],
+  projects: Project[] = []
+): { updatedTasks: Task[]; updatedParents: Task[] } {
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    return { updatedTasks: tasks || [], updatedParents: [] };
+  }
+
+  const childrenMap = new Map<string, Task[]>();
+  const taskByIdLower = new Map<string, Task>();
+  const taskByCodeLower = new Map<string, Task>();
+
+  for (const t of tasks) {
+    if (!t || !t.id || t.isDeleted) continue;
+    taskByIdLower.set(String(t.id).trim().toLowerCase(), t);
+    const canonical = computeTaskCode(projects, tasks, t);
+    if (canonical) {
+      taskByCodeLower.set(canonical.trim().toLowerCase(), t);
+    }
+    if (t.taskCodePhu && t.taskCodePhu.trim()) {
+      taskByCodeLower.set(t.taskCodePhu.trim().toLowerCase(), t);
+    }
+  }
+
+  const normalizedTasks = tasks.map((t) => {
+    if (!t || !t.id || t.isDeleted) return t;
+    const pId = t.parentTaskId || (t as any).parentId;
+    if (!pId) return t;
+    const pIdLower = String(pId).trim().toLowerCase();
+    const resolvedParent = taskByIdLower.get(pIdLower) || taskByCodeLower.get(pIdLower);
+    if (resolvedParent && !resolvedParent.isDeleted && String(resolvedParent.id) !== String(t.id)) {
+      let list = childrenMap.get(resolvedParent.id);
+      if (!list) {
+        list = [];
+        childrenMap.set(resolvedParent.id, list);
+      }
+      const normChild = t.parentTaskId === resolvedParent.id ? t : { ...t, parentTaskId: resolvedParent.id };
+      list.push(normChild);
+      return normChild;
+    }
+    return t;
+  });
+
+  if (childrenMap.size === 0) {
+    return { updatedTasks: normalizedTasks, updatedParents: [] };
+  }
+
+  const updatedTasks: Task[] = [];
+  const updatedParents: Task[] = [];
+
+  for (const t of normalizedTasks) {
+    if (!t || !t.id) {
+      updatedTasks.push(t);
+      continue;
+    }
+
+    const children = childrenMap.get(t.id);
+    if (!children || children.length === 0) {
+      const hasAutoRollupPred =
+        typeof t.predecessor === 'string' &&
+        /^[^,]+SS\s*,\s*[^,]+FF$/i.test(t.predecessor.trim());
+      if (t.isModularParent || hasAutoRollupPred) {
+        const cleanedParent: Task = {
+          ...t,
+          isModularParent: false,
+          ...(hasAutoRollupPred
+            ? { predecessor: '', predecessors: [], predecessorTaskIds: [] }
+            : {}),
+        };
+        updatedTasks.push(cleanedParent);
+        updatedParents.push(cleanedParent);
+      } else {
+        updatedTasks.push(t);
+      }
+      continue;
+    }
+
+    const patch = calculateParentTaskPredecessorsAndDates(t, children, projects, normalizedTasks);
+    if (patch) {
+      const updatedParent: Task = {
+        ...t,
+        ...patch,
+      };
+      updatedTasks.push(updatedParent);
+      updatedParents.push(updatedParent);
+    } else {
+      updatedTasks.push(t);
+    }
+  }
+
+  return { updatedTasks, updatedParents };
+}
+
+
+=== FILE: src/lib/taskStateService.ts ===
+import { Task, Project } from '../types';
+import { useAppStore } from '../store/useAppStore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db, APP_ID } from './firebase';
+import {
+  getTasksForProject,
+  calculateProjectComputedDates,
+  syncProjectDatesToFirestore,
+} from './projectDatesService';
+import { isTaskDeletedInTracker } from './taskDeletedTracker';
+import { isTaskBelongsToProject as isTaskBelongsToProjectCore, normalizeDashes } from './utils';
+import {
+  deleteTaskStateUnified,
+  deleteProjectStateUnified,
+} from './taskStateParts/taskDeletionService';
+
+export { deleteTaskStateUnified, deleteProjectStateUnified };
+
+// Cache in-flight requests to avoid duplicate fetches
+const pendingProjectFetches = new Map<string, Promise<Task[]>>();
+
+/**
+ * Validates whether a task belongs to a specific project by verifying projectId, store, code, and year.
+ */
+export function isTaskBelongsToProject(t: Partial<Task>, p: Partial<Project>): boolean {
+  return isTaskBelongsToProjectCore(t, p);
+}
+
+export interface EnsureProjectTasksContext {
+  projectId?: string;
+  store?: string;
+  year?: string | number;
+}
+
+/**
+ * Ensures tasks for a specific projectCode (and optional 4-key context) are loaded into Zustand store.
+ * Useful when resolving cross-project predecessors dynamically.
+ */
+export async function ensureProjectTasksLoaded(
+  projectCode: string,
+  context?: EnsureProjectTasksContext
+): Promise<Task[]> {
+  if (!projectCode && !context?.projectId) return [];
+  const cleanCode = normalizeDashes(projectCode || '').trim();
+  const cleanCodeLower = cleanCode.toLowerCase();
+  const ctxProjectId = context?.projectId ? String(context.projectId).trim() : '';
+  const ctxStoreLower = context?.store ? String(context.store).trim().toLowerCase() : '';
+  const ctxYearStr =
+    context?.year !== undefined && context?.year !== null ? String(context.year).trim() : '';
+
+  const matchesContext = (t: Partial<Task>): boolean => {
+    if (t.isDeleted || (t.id && isTaskDeletedInTracker(t.id))) return false;
+    if (ctxProjectId && t.projectId) {
+      return String(t.projectId).trim() === ctxProjectId;
+    }
+    const tCodeLower = t.projectCode ? normalizeDashes(t.projectCode).trim().toLowerCase() : '';
+    if (ctxProjectId && !t.projectId) {
+      if (cleanCodeLower && (!tCodeLower || tCodeLower !== cleanCodeLower)) {
+        return false;
+      }
+      if (ctxStoreLower && t.projectStore && t.projectStore.trim().toLowerCase() !== ctxStoreLower) {
+        return false;
+      }
+      if (
+        ctxYearStr &&
+        t.projectYear !== undefined &&
+        t.projectYear !== null &&
+        String(t.projectYear).trim() !== ctxYearStr
+      ) {
+        return false;
+      }
+      return Boolean(cleanCodeLower);
+    }
+    if (cleanCodeLower && (!tCodeLower || tCodeLower !== cleanCodeLower)) {
+      return false;
+    }
+    if (ctxStoreLower && t.projectStore && t.projectStore.trim().toLowerCase() !== ctxStoreLower) {
+      return false;
+    }
+    if (
+      ctxYearStr &&
+      t.projectYear !== undefined &&
+      t.projectYear !== null &&
+      String(t.projectYear).trim() !== ctxYearStr
+    ) {
+      return false;
+    }
+    return true;
+  };
+
+  const currentTasks = useAppStore.getState().tasks || [];
+
+  // 1. If we already have tasks for this specific project context in memory, return them (0 Read)
+  const existing = currentTasks.filter(matchesContext);
+  if (existing.length > 0) return existing;
+
+  const cacheKey = `${ctxProjectId || '*'}|${cleanCodeLower}|${ctxStoreLower || '*'}|${ctxYearStr || '*'}`;
+
+  // If already fetching, return existing promise
+  if (pendingProjectFetches.has(cacheKey)) {
+    return pendingProjectFetches.get(cacheKey)!;
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      // 2. Check Dexie Local-First Database before touching Firestore (0 Read)
+      const { getLocalTasksForProjects, bulkPersistTasks } = await import('./localDb');
+      const lookupKeys = [ctxProjectId, cleanCode].filter(Boolean);
+      const localTasks = await getLocalTasksForProjects(
+        lookupKeys,
+        ctxYearStr || undefined,
+        ctxStoreLower || undefined
+      );
+      const validLocal = (localTasks || []).filter(matchesContext);
+      if (validLocal.length > 0) {
+        const latestTasks = useAppStore.getState().tasks || [];
+        const currentIds = new Set(latestTasks.map((t) => t.id));
+        const toAdd = validLocal.filter((t) => !currentIds.has(t.id));
+        if (toAdd.length > 0) {
+          useAppStore.getState().setTasks([...latestTasks, ...toAdd]);
+        }
+        return validLocal;
+      }
+
+      // 3. Check if project has 0 tasks according to project summary (0 Read)
+      const projects = useAppStore.getState().projects || [];
+      const matchingProjs = projects.filter((p) => {
+        if (ctxProjectId && p.id === ctxProjectId) return true;
+        if (ctxProjectId && p.id && p.id !== ctxProjectId) return false;
+        if (cleanCodeLower && (!p.code || p.code.trim().toLowerCase() !== cleanCodeLower)) return false;
+        if (ctxStoreLower && p.store && p.store.trim().toLowerCase() !== ctxStoreLower) return false;
+        if (ctxYearStr && p.year !== undefined && String(p.year).trim() !== ctxYearStr) return false;
+        return true;
+      });
+      if (
+        matchingProjs.length > 0 &&
+        matchingProjs.every(
+          (p) =>
+            (p.taskCount || 0) === 0 && (!p.taskSummaries || p.taskSummaries.length === 0)
+        )
+      ) {
+        return [];
+      }
+
+      // 4. Fallback to Firestore only when Dexie is empty and project expects tasks
+      const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks');
+      const q = ctxProjectId
+        ? query(colRef, where('projectId', '==', ctxProjectId))
+        : query(colRef, where('projectCode', '==', cleanCode));
+      const snap = await getDocs(q);
+      const loaded: Task[] = [];
+      snap.forEach((docSnap) => {
+        const d = { id: docSnap.id, ...docSnap.data() } as Task;
+        if (matchesContext(d)) loaded.push(d);
+      });
+
+      if (loaded.length > 0) {
+        bulkPersistTasks(loaded).catch(() => {});
+        const latestTasks = useAppStore.getState().tasks || [];
+        const currentIds = new Set(latestTasks.map((t) => t.id));
+        const toAdd = loaded.filter((t) => !currentIds.has(t.id));
+        if (toAdd.length > 0) {
+          useAppStore.getState().setTasks([...latestTasks, ...toAdd]);
+        }
+      }
+      return loaded;
+    } catch (err) {
+      console.warn('Failed to fetch tasks for external project:', cleanCode, err);
+      return [];
+    } finally {
+      pendingProjectFetches.delete(cacheKey);
+    }
+  })();
+
+  pendingProjectFetches.set(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+/**
+ * Tìm toàn bộ danh sách Projects bị ảnh hưởng bởi danh sách Tasks đưa vào.
+ * Tiền xử lý Map dự án theo ID và Code (O(P + T) thay vì O(T * P)).
+ */
+export function findAffectedProjects(
+  tasksToCheck: Partial<Task>[],
+  allProjects?: Project[]
+): Project[] {
+  const projects = allProjects || useAppStore.getState().projects;
+  if (!tasksToCheck.length || !projects.length) return [];
+
+  const projectsById = new Map<string, Project>();
+  const projectsByCodePart = new Map<string, Project[]>();
+
+  for (let i = 0; i < projects.length; i++) {
+    const p = projects[i];
+    if (!p || (!p.id && !p.code)) continue;
+    if (p.id) {
+      projectsById.set(String(p.id).trim(), p);
+    }
+    const rawCodes = (p as any).linkCodes
+      ? `${p.code || ''}, ${(p as any).linkCodes}`
+      : String(p.code || '');
+    const parts = rawCodes
+      .toLowerCase()
+      .split(/[,;/]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (let j = 0; j < parts.length; j++) {
+      const part = parts[j];
+      let list = projectsByCodePart.get(part);
+      if (!list) {
+        list = [];
+        projectsByCodePart.set(part, list);
+      }
+      list.push(p);
+    }
+  }
+
+  const affectedMap = new Map<string, Project>();
+
+  for (let i = 0; i < tasksToCheck.length; i++) {
+    const t = tasksToCheck[i];
+    if (!t) continue;
+    const tWithActive = { ...t, isDeleted: false };
+
+    const tProjId = t.projectId ? String(t.projectId).trim() : '';
+    if (tProjId) {
+      const pById = projectsById.get(tProjId);
+      if (pById && isTaskBelongsToProjectCore(tWithActive, pById, projects)) {
+        affectedMap.set(pById.id || pById.code, pById);
+        continue;
+      }
+    }
+
+    if (t.projectCode) {
+      const tCodeParts = String(t.projectCode)
+        .toLowerCase()
+        .split(/[,;/]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (let j = 0; j < tCodeParts.length; j++) {
+        const candidates = projectsByCodePart.get(tCodeParts[j]);
+        if (!candidates) continue;
+        for (let k = 0; k < candidates.length; k++) {
+          const p = candidates[k];
+          const key = p.id || p.code;
+          if (!affectedMap.has(key) && isTaskBelongsToProjectCore(tWithActive, p, projects)) {
+            affectedMap.set(key, p);
+          }
+        }
+      }
+    }
+  }
+
+  return Array.from(affectedMap.values());
+}
+
+/**
+ * Đồng bộ tính toán lại mốc thời gian và tiến độ cho các dự án bị ảnh hưởng
+ * Cập nhật ngay tức thì vào Zustand store (0ms) và đẩy ngầm Firestore (Dirty-checked).
+ */
+export async function syncAffectedProjects(
+  affectedProjects: Project[],
+  allTasks?: Task[]
+): Promise<void> {
+  if (!affectedProjects.length) return;
+
+  const currentTasks = allTasks || useAppStore.getState().tasks;
+  const delegationGroups = useAppStore.getState().delegationGroups;
+
+  for (const project of affectedProjects) {
+    if (!project.id) continue;
+    const projectTasks = getTasksForProject(project, currentTasks);
+    const computedDates = calculateProjectComputedDates(
+      project,
+      projectTasks,
+      delegationGroups
+    );
+    await syncProjectDatesToFirestore(project.id, computedDates);
+  }
+}
+
+/**
+ * Shared State Handler: Cập nhật / Thêm mới Tasks đồng bộ giữa mọi Tab (DetailTab <-> GeneralTab)
+ */
+export async function saveTaskStateUnified(
+  taskUpdates: (Partial<Task> & { id: string })[],
+  options?: { syncProjects?: boolean; allTasksOverride?: Task[] }
+): Promise<void> {
+  if (!taskUpdates || taskUpdates.length === 0) return;
+
+  useAppStore.getState().optimisticUpdateTasks(taskUpdates);
+
+  if (options?.syncProjects === false) return;
+
+  const updatedTasks = options?.allTasksOverride || useAppStore.getState().tasks;
+  const affectedProjects = findAffectedProjects(taskUpdates);
+
+  await syncAffectedProjects(affectedProjects, updatedTasks);
+}
+
+/**
+ * Tự động phát hiện và xử lý các task mồ côi trong bộ nhớ (task con có parentTaskId chỉ đến task mẹ đã bị xóa)
+ */
+export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: number } {
+  if (!tasks || tasks.length === 0) return { cleaned: tasks, fixedCount: 0 };
+
+  const projects = useAppStore.getState().projects || [];
+  const taskMap = new Map<string, Task>();
+  const taskCodeMap = new Map<string, Task>();
+  const summaryTaskIds = new Set<string>();
+
+  projects.forEach((p) => {
+    if (!p || p.isDeleted || !Array.isArray(p.taskSummaries)) return;
+    p.taskSummaries.forEach((s: any) => {
+      if (s?.id && !String(s.id).startsWith('ts_')) {
+        summaryTaskIds.add(String(s.id).trim().toLowerCase());
+      }
+      if (s?.taskCodePhu) {
+        summaryTaskIds.add(String(s.taskCodePhu).trim().toLowerCase());
+      }
+    });
+  });
+
+  // Group tasks by project scope to index canonical ${projectCode}#${idx + 1} codes
+  const scopedBuckets = new Map<string, Task[]>();
+  tasks.forEach((t) => {
+    if (!t) return;
+    if (t.id) taskMap.set(String(t.id).trim().toLowerCase(), t);
+    if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+    const scopeKey = t.projectId
+      ? `pid:${String(t.projectId).trim()}`
+      : `code:${String(t.projectCode || '').trim().toLowerCase()}|${String(t.projectStore || '').trim().toLowerCase()}|${String(t.projectYear || '').trim()}`;
+    let list = scopedBuckets.get(scopeKey);
+    if (!list) {
+      list = [];
+      scopedBuckets.set(scopeKey, list);
+    }
+    list.push(t);
+  });
+
+  scopedBuckets.forEach((bucket, scopeKey) => {
+    const sorted = [...bucket].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+    sorted.forEach((t, idx) => {
+      if (!t || !t.id) return;
+      const num = idx + 1;
+      const pCode = String(t.projectCode || '').trim();
+      if (pCode) {
+        const canonicalLower = `${pCode}#${num}`.toLowerCase();
+        taskCodeMap.set(`${scopeKey}__${canonicalLower}`, t);
+        if (!taskCodeMap.has(canonicalLower)) taskCodeMap.set(canonicalLower, t);
+      }
+      taskCodeMap.set(`${scopeKey}__#${num}`, t);
+      taskCodeMap.set(`${scopeKey}__${num}`, t);
+    });
+  });
+
+  let fixedCount = 0;
+
+  const cleaned = tasks.map((t) => {
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) return t;
+
+    const parentStr = String(rawParent).trim().toLowerCase();
+    const scopeKey = t.projectId
+      ? `pid:${String(t.projectId).trim()}`
+      : `code:${String(t.projectCode || '').trim().toLowerCase()}|${String(t.projectStore || '').trim().toLowerCase()}|${String(t.projectYear || '').trim()}`;
+
+    const parentTask =
+      taskMap.get(parentStr) ||
+      taskCodeMap.get(`${scopeKey}__${parentStr}`) ||
+      taskCodeMap.get(parentStr);
+
+    if (parentTask && !parentTask.isDeleted && String(parentTask.id) !== String(t.id)) {
+      if (t.parentTaskId !== parentTask.id) {
+        return { ...t, parentTaskId: parentTask.id };
+      }
+      return t;
+    }
+
+    // If parent is not yet hydrated in tasks array but exists in project.taskSummaries, preserve linkage
+    if (summaryTaskIds.has(parentStr) && parentStr !== String(t.id).trim().toLowerCase()) {
+      return t;
+    }
+
+    fixedCount++;
+    // Do NOT stamp a fresh updatedAt here: in-memory orphan cleanup must not masquerade as a user edit
+    // that blocks authoritative server taskSummaries reconciliation.
+    const updated = { ...t, parentTaskId: undefined };
+    delete (updated as any).parentId;
+    return updated;
+  });
+
+  return { cleaned, fixedCount };
+}
+
+/**
+ * Shared State Handler: Sắp xếp / Đổi toàn bộ danh sách Tasks (Reorder / Batch Sort)
+ */
+export async function reorderTasksStateUnified(
+  allUpdatedTasks: Task[],
+  options?: { affectedProjectIds?: string[]; syncProjects?: boolean }
+): Promise<void> {
+  if (!allUpdatedTasks) return;
+
+  useAppStore.getState().setTasks(allUpdatedTasks);
+
+  if (options?.syncProjects === false) return;
+
+  const allProjects = useAppStore.getState().projects;
+  let targetProjects: Project[] = [];
+
+  if (options?.affectedProjectIds && options.affectedProjectIds.length > 0) {
+    const idSet = new Set(options.affectedProjectIds);
+    targetProjects = allProjects.filter((p) => p.id && idSet.has(p.id));
+  } else {
+    targetProjects = findAffectedProjects(allUpdatedTasks, allProjects);
+  }
+
+  await syncAffectedProjects(targetProjects, allUpdatedTasks);
+}
+
+
+=== FILE: src/lib/ganttUtilsParts/taskSortingAndCodes.ts ===
+import { Task, Project } from '../../types';
+import { normalizeDashes } from '../utils';
+import { parsePredecessors } from './predecessorParsingAndCascades';
+import { buildTaskNoMap, computeTaskCode, computeAllTaskCodes } from './taskCodeIndexers';
+
+export { buildTaskNoMap, computeTaskCode, computeAllTaskCodes };
+
+/**
+ * Extracts a numeric subtask index from any taskCodePhu representation.
+ * Supports "#13", "L3-304#13", "L3-304-13", "CP-01-2", "HN-TKV-SMZ2-85", "Task 13", "13", etc.
+ */
+export function extractSubtaskIndex(codeOrPhu?: string | null): number | null {
+  if (!codeOrPhu) return null;
+  const str = normalizeDashes(String(codeOrPhu)).trim();
+  if (!str) return null;
+
+  const hashMatch = str.match(/#\s*(\d+)/);
+  if (hashMatch) {
+    const num = parseInt(hashMatch[1], 10);
+    if (!isNaN(num)) return num;
+  }
+
+  const delimiterMatch = str.match(/[-_.:/\s]+(\d+)\s*$/);
+  if (delimiterMatch) {
+    const num = parseInt(delimiterMatch[1], 10);
+    if (!isNaN(num)) return num;
+  }
+
+  if (/^\d+$/.test(str)) {
+    const num = parseInt(str, 10);
+    if (!isNaN(num)) return num;
+  }
+
+  const prefixMatch = str.match(/(?:task|step|no\.?|t)\s*[-#.:]?\s*(\d+)/i);
+  if (prefixMatch) {
+    const num = parseInt(prefixMatch[1], 10);
+    if (!isNaN(num)) return num;
+  }
+
+  const trailingDigitsMatch = str.match(/(\d+)\s*$/);
+  if (trailingDigitsMatch) {
+    const num = parseInt(trailingDigitsMatch[1], 10);
+    if (!isNaN(num)) return num;
+  }
+
+  return null;
+}
+
+export function sortGroupTasks(tasks: Task[]): Task[] {
+  if (!Array.isArray(tasks)) return [];
+  return [...tasks].sort((a, b) => {
+    if (!a && !b) return 0;
+    if (!a) return 1;
+    if (!b) return -1;
+
+    const valAOrder = a.orderIndex !== undefined && a.orderIndex !== null ? Number(a.orderIndex) : null;
+    const valBOrder = b.orderIndex !== undefined && b.orderIndex !== null ? Number(b.orderIndex) : null;
+
+    if (valAOrder !== null && valBOrder !== null && valAOrder !== valBOrder) {
+      return valAOrder - valBOrder;
+    }
+    if (valAOrder !== null && valBOrder === null) return -1;
+    if (valAOrder === null && valBOrder !== null) return 1;
+
+    const codeA = a.taskCodePhu || (a.projectCode && a.orderIndex !== undefined ? `${a.projectCode}#${a.orderIndex + 1}` : a.name || '');
+    const codeB = b.taskCodePhu || (b.projectCode && b.orderIndex !== undefined ? `${b.projectCode}#${b.orderIndex + 1}` : b.name || '');
+    const numA = extractSubtaskIndex(codeA);
+    const numB = extractSubtaskIndex(codeB);
+
+    if (numA !== null && numB !== null) {
+      if (numA !== numB) return numA - numB;
+    } else if (numA !== null && numB === null) {
+      return -1;
+    } else if (numA === null && numB !== null) {
+      return 1;
+    }
+
+    if (codeA && codeB && codeA !== codeB) {
+      const codeCmp = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+      if (codeCmp !== 0) return codeCmp;
+    }
+
+    const startA = a.start || '';
+    const startB = b.start || '';
+    if (startA && startB && startA !== startB) {
+      return startA.localeCompare(startB);
+    }
+    const finishA = a.finish || '';
+    const finishB = b.finish || '';
+    if (finishA && finishB && finishA !== finishB) {
+      return finishA.localeCompare(finishB);
+    }
+
+    const nameA = a.name || '';
+    const nameB = b.name || '';
+    if (nameA && nameB && nameA !== nameB) {
+      const nameCmp = nameA.localeCompare(nameB, undefined, { numeric: true, sensitivity: 'base' });
+      if (nameCmp !== 0) return nameCmp;
+    }
+
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+}
+
+/**
+ * Sorts tasks prioritizing predecessor dependency relationships and computed dates,
+ * while preserving parent-child hierarchy (child tasks are sorted and placed immediately after their parent task).
+ */
+export function sortTasksByPredecessorsAndDates(
+  groupTasks: Task[], 
+  projects: Project[] = [], 
+  allTasks: Task[] = []
+): Task[] {
+  if (!Array.isArray(groupTasks) || groupTasks.length <= 1) return groupTasks || [];
+
+  const pool = groupTasks.length > 0 ? groupTasks : (allTasks.length > 0 ? allTasks : []);
+  const taskNoMap = buildTaskNoMap(projects, pool);
+  const taskById = new Map<string, Task>();
+  const taskByCodeLower = new Map<string, Task>();
+
+  const initialOrdered = sortGroupTasks(groupTasks);
+  initialOrdered.forEach((t, idx) => {
+    if (!t || !t.id) return;
+    taskById.set(t.id, t);
+    taskById.set(String(t.id).trim().toLowerCase(), t);
+    if (t.taskCodePhu) {
+      taskByCodeLower.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+    }
+    if (t.projectCode) {
+      taskByCodeLower.set(`${String(t.projectCode).trim()}#${idx + 1}`.toLowerCase(), t);
+    }
+    taskByCodeLower.set(`#${idx + 1}`, t);
+  });
+
+  // Identify parent-child hierarchy within groupTasks
+  const childrenByParentId = new Map<string, Task[]>();
+  const resolvedParentIdByChildId = new Map<string, string>();
+
+  groupTasks.forEach(t => {
+    if (!t || !t.id) return;
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) return;
+    const rawParentLower = String(rawParent).trim().toLowerCase();
+    const parentTask = taskById.get(String(rawParent).trim()) || taskById.get(rawParentLower) || taskByCodeLower.get(rawParentLower);
+    if (parentTask && parentTask.id !== t.id) {
+      resolvedParentIdByChildId.set(t.id, parentTask.id);
+      const list = childrenByParentId.get(parentTask.id) || [];
+      list.push(t.parentTaskId === parentTask.id ? t : { ...t, parentTaskId: parentTask.id });
+      childrenByParentId.set(parentTask.id, list);
+    }
+  });
+
+  const sortFlatTaskSubset = (subset: Task[]): Task[] => {
+    if (subset.length <= 1) return subset;
+    const subsetMap = new Map<string, Task>();
+    subset.forEach(t => { if (t && t.id) subsetMap.set(t.id, t); });
+
+    const adjMap = new Map<string, string[]>();
+    const inDegree = new Map<string, number>();
+    const undirectedAdj = new Map<string, Set<string>>();
+
+    subset.forEach(t => {
+      adjMap.set(t.id, []);
+      inDegree.set(t.id, 0);
+      undirectedAdj.set(t.id, new Set());
+    });
+
+    subset.forEach(t => {
+      // Skip auto-rollup SS/FF predecessor string on parent tasks so parents don't depend on their own children
+      const isParentTask = childrenByParentId.has(t.id) || Boolean(t.isModularParent);
+      if (isParentTask) return;
+
+      if (t.predecessor && t.predecessor.trim()) {
+        const parsed = parsePredecessors(t.predecessor, taskNoMap, t);
+        parsed.forEach(pObj => {
+          if (pObj?.task && pObj.task.id && pObj.task.id !== t.id) {
+            // If dependency points to a child of another root task while sorting roots, lift to its root parent
+            let u = pObj.task.id;
+            if (!subsetMap.has(u)) {
+              const parentOfU = resolvedParentIdByChildId.get(u);
+              if (parentOfU && subsetMap.has(parentOfU)) {
+                u = parentOfU;
+              }
+            }
+            const v = t.id;
+            if (u !== v && subsetMap.has(u)) {
+              const neighbors = adjMap.get(u) || [];
+              if (!neighbors.includes(v)) {
+                neighbors.push(v);
+                adjMap.set(u, neighbors);
+                inDegree.set(v, (inDegree.get(v) || 0) + 1);
+              }
+              undirectedAdj.get(u)?.add(v);
+              undirectedAdj.get(v)?.add(u);
+            }
+          }
+        });
+      }
+    });
+
+    const visited = new Set<string>();
+    const components: Task[][] = [];
+
+    subset.forEach(t => {
+      if (visited.has(t.id)) return;
+
+      const compTasks: Task[] = [];
+      const queue = [t.id];
+      visited.add(t.id);
+
+      while (queue.length > 0) {
+        const currId = queue.shift()!;
+        const currTask = subsetMap.get(currId);
+        if (currTask) compTasks.push(currTask);
+
+        const neighbors = undirectedAdj.get(currId);
+        if (neighbors) {
+          neighbors.forEach(neighborId => {
+            if (!visited.has(neighborId)) {
+              visited.add(neighborId);
+              queue.push(neighborId);
+            }
+          });
+        }
+      }
+      components.push(compTasks);
+    });
+
+    const compareTasks = (a: Task, b: Task) => {
+      const startA = a.start || '9999-12-31';
+      const startB = b.start || '9999-12-31';
+      if (startA !== startB) return startA < startB ? -1 : 1;
+      
+      const finishA = a.finish || '9999-12-31';
+      const finishB = b.finish || '9999-12-31';
+      if (finishA !== finishB) return finishA < finishB ? -1 : 1;
+
+      const ordA = a.orderIndex !== undefined ? a.orderIndex : 0;
+      const ordB = b.orderIndex !== undefined ? b.orderIndex : 0;
+      if (ordA !== ordB) return ordA - ordB;
+
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    };
+
+    const sortedComponents = components.map(compTasks => {
+      if (compTasks.length <= 1) return compTasks;
+
+      const compSet = new Set(compTasks.map(ct => ct.id));
+      const compInDegree = new Map<string, number>();
+      compTasks.forEach(ct => {
+        let deg = 0;
+        subset.forEach(other => {
+          if (compSet.has(other.id) && other.id !== ct.id) {
+            const neighbors = adjMap.get(other.id) || [];
+            if (neighbors.includes(ct.id)) deg++;
+          }
+        });
+        compInDegree.set(ct.id, deg);
+      });
+
+      const ready: Task[] = compTasks.filter(ct => (compInDegree.get(ct.id) || 0) === 0);
+      ready.sort(compareTasks);
+
+      const compResult: Task[] = [];
+      const compProcessed = new Set<string>();
+
+      while (ready.length > 0) {
+        const u = ready.shift()!;
+        compResult.push(u);
+        compProcessed.add(u.id);
+
+        const neighbors = adjMap.get(u.id) || [];
+        let newlyReady = false;
+        for (const vId of neighbors) {
+          if (!compSet.has(vId)) continue;
+          const currentDeg = (compInDegree.get(vId) || 0) - 1;
+          compInDegree.set(vId, currentDeg);
+          if (currentDeg === 0 && !compProcessed.has(vId)) {
+            const vTask = subsetMap.get(vId);
+            if (vTask) {
+              ready.push(vTask);
+              newlyReady = true;
+            }
+          }
+        }
+        if (newlyReady) {
+          ready.sort(compareTasks);
+        }
+      }
+
+      if (compResult.length < compTasks.length) {
+        const remaining = compTasks.filter(ct => !compProcessed.has(ct.id));
+        remaining.sort(compareTasks);
+        compResult.push(...remaining);
+      }
+
+      return compResult;
+    });
+
+    sortedComponents.sort((compA, compB) => {
+      const rootA = compA[0];
+      const rootB = compB[0];
+      if (!rootA && !rootB) return 0;
+      if (!rootA) return 1;
+      if (!rootB) return -1;
+      return compareTasks(rootA, rootB);
+    });
+
+    return sortedComponents.flat();
+  };
+
+  // If no parent-child tasks exist in groupTasks, sort flat directly
+  if (childrenByParentId.size === 0) {
+    return sortFlatTaskSubset(groupTasks);
+  }
+
+  // Sort root tasks, and immediately place each parent's sorted children right after their parent
+  const rootTasks = groupTasks.filter(t => t && t.id && !resolvedParentIdByChildId.has(t.id));
+  const sortedRoots = sortFlatTaskSubset(rootTasks);
+
+  const finalResult: Task[] = [];
+  const emittedIds = new Set<string>();
+
+  const emitWithChildren = (task: Task) => {
+    if (!task || !task.id || emittedIds.has(task.id)) return;
+    emittedIds.add(task.id);
+    finalResult.push(task);
+    const children = childrenByParentId.get(task.id);
+    if (children && children.length > 0) {
+      const sortedChildren = sortFlatTaskSubset(children);
+      sortedChildren.forEach(child => emitWithChildren(child));
+    }
+  };
+
+  sortedRoots.forEach(root => emitWithChildren(root));
+  groupTasks.forEach(t => {
+    if (t && t.id && !emittedIds.has(t.id)) {
+      emitWithChildren(t);
+    }
+  });
+
+  return finalResult;
+}
+
+
+=== FILE: src/lib/ganttUtilsParts/predecessorParsingAndCascades.ts ===
+import { Task, Project } from '../../types';
+import { parsePredecessorToken } from '../predecessorMatchUtils';
+import { sortGroupTasks, computeAllTaskCodes } from './taskSortingAndCodes';
+import { splitPredecessors, parsePredecessors } from './predecessorParsingUtils';
+
+export { splitPredecessors, parsePredecessors };
+
+export function getPredecessorCodeUpdates(
+  oldTaskNoMap: Map<string, Task[]>,
+  newTaskNoMap: Map<string, Task[]>,
+  projects: Project[],
+  newTasks: Task[]
+): Map<string, string> {
+  const oldCodeToNewCode = new Map<string, string>();
+  const taskIdToOldCodes = new Map<string, string[]>();
+
+  for (const [code, groupTasks] of oldTaskNoMap.entries()) {
+    groupTasks.forEach(t => {
+      if (!t || !t.id) return;
+      const list = taskIdToOldCodes.get(t.id) || [];
+      if (!list.includes(code)) list.push(code);
+      taskIdToOldCodes.set(t.id, list);
+    });
+  }
+
+  const taskCodeMap = computeAllTaskCodes(projects, newTasks);
+
+  newTasks.forEach(t => {
+    if (!t || !t.id) return;
+    const oldCodes = taskIdToOldCodes.get(t.id) || [];
+    const newPrimaryCode = taskCodeMap.get(t.id) || t.taskCodePhu || (t.projectCode ? `${t.projectCode}#${(t.orderIndex ?? 0) + 1}` : t.id);
+
+    if (newPrimaryCode) {
+      oldCodes.forEach(oldCode => {
+        // Never map bare '#1' or numeric shorthand globally across projects in oldCodeToNewCode
+        if (!oldCode || oldCode.startsWith('#') || /^\d+$/.test(oldCode)) return;
+        if (
+          oldCode.toLowerCase() !== newPrimaryCode.toLowerCase() &&
+          oldCode.toLowerCase() !== t.id.toLowerCase()
+        ) {
+          oldCodeToNewCode.set(oldCode.toLowerCase(), newPrimaryCode);
+        }
+      });
+    }
+  });
+
+  return oldCodeToNewCode;
+}
+
+export function updatePredecessorsStrings(
+  oldCodeToNewCode: Map<string, string>, 
+  allTasks: Task[],
+  projects?: Project[],
+  oldTaskNoMap?: Map<string, Task[]>
+): {id: string, predecessor: string, updatedAt: string}[] {
+  const updates: {id: string, predecessor: string, updatedAt: string}[] = [];
+  if ((!oldCodeToNewCode || oldCodeToNewCode.size === 0) && !oldTaskNoMap) return updates;
+  
+  const normalizedMap = new Map<string, string>();
+  if (oldCodeToNewCode) {
+    for (const [k, v] of oldCodeToNewCode.entries()) {
+      if (k && v && !k.trim().startsWith('#')) {
+        normalizedMap.set(k.trim().toLowerCase(), v.trim());
+      }
+    }
+  }
+
+  const canonicalCodeMap = computeAllTaskCodes(projects || [], allTasks);
+  const taskIdToNewTask = new Map<string, Task>();
+  allTasks.forEach(t => {
+    if (t && t.id) taskIdToNewTask.set(t.id, t);
+  });
+
+  const knownCodes = new Set<string>();
+  for (const k of normalizedMap.keys()) knownCodes.add(k);
+  for (const v of normalizedMap.values()) knownCodes.add(v.toLowerCase());
+  if (oldTaskNoMap) {
+    for (const k of oldTaskNoMap.keys()) knownCodes.add(k.toLowerCase());
+  }
+  allTasks.forEach(t => {
+    if (t.taskCodePhu) knownCodes.add(t.taskCodePhu.toLowerCase());
+    if (t.projectCode) knownCodes.add(t.projectCode.toLowerCase());
+  });
+
+  allTasks.forEach(t => {
+    if (!t || !t.predecessor) return;
+    const preds = splitPredecessors(t.predecessor, knownCodes);
+    let changed = false;
+    const newPreds = preds.map((pMatches, tokIdx) => {
+      const trimmed = pMatches.trim();
+      if (!trimmed) return pMatches;
+
+      if (oldTaskNoMap) {
+        const tokenCtx = { ...t, predecessorTaskIds: [(t.predecessorTaskIds || [])[tokIdx] || ''] } as Task;
+        const parsed = parsePredecessors(trimmed, oldTaskNoMap, tokenCtx);
+        if (parsed.length > 0 && parsed[0]?.task) {
+          const targetTaskObj = parsed[0].task;
+          const updatedTargetTask = taskIdToNewTask.get(targetTaskObj.id);
+          if (updatedTargetTask) {
+            const newPrimaryCode =
+              canonicalCodeMap.get(updatedTargetTask.id) ||
+              updatedTargetTask.taskCodePhu ||
+              (updatedTargetTask.projectCode ? `${updatedTargetTask.projectCode}#${(updatedTargetTask.orderIndex ?? 0) + 1}` : updatedTargetTask.id);
+
+            let remainder = parsePredecessorToken(trimmed).suffix;
+            const lowerMatches = trimmed.toLowerCase();
+            if (!remainder) {
+              if (parsed[0].no && lowerMatches.startsWith(parsed[0].no.toLowerCase()) && parsed[0].no.length < trimmed.length) {
+                remainder = trimmed.substring(parsed[0].no.length);
+              } else if (!(parsed[0].no && lowerMatches === parsed[0].no.toLowerCase())) {
+                remainder = trimmed.replace(/^[-#\s]*\d+/, '').replace(/^[a-zA-Z0-9_-]+[-#]\d+/, '').trim();
+              }
+            }
+
+            const shortMatch = trimmed.match(/^([-#\s]*)(\d+)(.*)$/);
+            const isSameProject = t.projectId && updatedTargetTask.projectId
+              ? t.projectId === updatedTargetTask.projectId
+              : (t.projectCode && updatedTargetTask.projectCode && 
+                 String(t.projectCode).trim().toLowerCase() === String(updatedTargetTask.projectCode).trim().toLowerCase());
+
+            if (shortMatch && isSameProject) {
+              const prefixSymbol = shortMatch[1];
+              const newSubtaskNum = (updatedTargetTask.orderIndex !== undefined ? updatedTargetTask.orderIndex : 0) + 1;
+              const restSuffix = shortMatch[3];
+              const reassembled = `${prefixSymbol}${newSubtaskNum}${restSuffix}`;
+              if (reassembled !== trimmed) {
+                changed = true;
+                return reassembled;
+              }
+              return trimmed;
+            } else {
+              const reassembled = `${newPrimaryCode}${remainder}`;
+              if (reassembled !== trimmed) {
+                changed = true;
+                return reassembled;
+              }
+              return trimmed;
+            }
+          }
+        }
+      }
+
+      const lowerMatches = trimmed.toLowerCase();
+      let longestMatch = "";
+      for (const oldCode of normalizedMap.keys()) {
+        if (lowerMatches.startsWith(oldCode) && oldCode.length > longestMatch.length) {
+          const remainder = lowerMatches.substring(oldCode.length);
+          if (remainder.length === 0 || /^(\s*(?:fs|ss|ff|sf)|\s*[+-]|\s*\d|$)/i.test(remainder)) {
+            longestMatch = oldCode;
+          }
+        }
+      }
+      if (longestMatch) {
+        const newCode = normalizedMap.get(longestMatch)!;
+        if (newCode.toLowerCase() !== longestMatch) {
+          changed = true;
+          let replacementCode = newCode;
+          const originalMatchStr = trimmed.substring(0, longestMatch.length);
+          if (originalMatchStr === originalMatchStr.toUpperCase()) {
+            replacementCode = replacementCode.toUpperCase();
+          }
+          return replacementCode + trimmed.substring(longestMatch.length);
+        }
+      }
+      return pMatches;
+    });
+
+    if (changed) {
+      updates.push({
+        id: t.id,
+        predecessor: newPreds.join(', '),
+        updatedAt: new Date().toISOString()
+      });
+    }
+  });
+
+  return updates;
+}
+
+export function getProjectCodeChangePredecessorUpdates(
+  oldProject: Project,
+  newCode: string,
+  newYear: number | string | undefined,
+  newStore: string | undefined,
+  allTasks: Task[],
+  projects: Project[]
+): {
+  oldCodeToNewCode: Map<string, string>;
+  taskUpdates: Map<string, { taskCodePhu?: string; projectCode: string; projectYear?: number; projectStore?: string }>;
+  predecessorUpdates: { id: string; predecessor: string; updatedAt: string }[];
+} {
+  const oldCodeToNewCode = new Map<string, string>();
+  const taskUpdates = new Map<string, { taskCodePhu?: string; projectCode: string; projectYear?: number; projectStore?: string }>();
+
+  const oldPCode = String(oldProject.code || '').trim();
+  const newPCode = String(newCode || '').trim();
+  const oldYear = oldProject.year;
+  const oldStore = oldProject.store;
+
+  const yearNum = (newYear !== undefined && newYear !== null && !isNaN(Number(newYear))) 
+    ? Number(newYear) 
+    : (oldYear !== undefined && !isNaN(Number(oldYear)) ? Number(oldYear) : undefined);
+
+  const relatedTasks = allTasks.filter(t => {
+    const matchesCode = String(t.projectCode || '').trim().toLowerCase() === oldPCode.toLowerCase();
+    const matchesYear = !t.projectYear || !oldYear || String(t.projectYear) === String(oldYear);
+    const matchesStore = !t.projectStore || !oldStore || String(t.projectStore) === String(oldStore);
+    return matchesCode && matchesYear && matchesStore;
+  });
+
+  const sortedTasks = sortGroupTasks(relatedTasks);
+
+  sortedTasks.forEach((t, i) => {
+    const order = (t.orderIndex !== undefined ? t.orderIndex : i) + 1;
+    const defaultOldCode = `${oldPCode}#${order}`;
+    const defaultNewCode = `${newPCode}#${order}`;
+    
+    oldCodeToNewCode.set(defaultOldCode.toLowerCase(), defaultNewCode);
+
+    const newTaskCodePhu = `${newPCode}#${order}`;
+    
+    if (t.taskCodePhu && t.taskCodePhu.trim()) {
+      const lowerPhu = t.taskCodePhu.trim().toLowerCase();
+      oldCodeToNewCode.set(lowerPhu, newTaskCodePhu);
+    }
+
+    taskUpdates.set(t.id, {
+      projectCode: newPCode,
+      ...(yearNum !== undefined ? { projectYear: yearNum } : {}),
+      ...(newStore ? { projectStore: newStore } : {}),
+      taskCodePhu: newTaskCodePhu
+    });
+  });
+
+  const predecessorUpdates = updatePredecessorsStrings(oldCodeToNewCode, allTasks, projects);
+
+  return {
+    oldCodeToNewCode,
+    taskUpdates,
+    predecessorUpdates
+  };
+}
+
+
+=== FILE: src/hooks/useDetailTaskReorder.ts ===
+import React, { Dispatch, SetStateAction, useCallback, useMemo, useState } from 'react';
+import { Project, Task, TakaDeltaItem } from '../types';
+import { useAppStore } from '../store/useAppStore';
+import { db, APP_ID, writeBatch } from '../lib/firebase';
+import { doc } from 'firebase/firestore';
+import { recordBatchDeltas } from '../lib/deltaSyncService';
+import { 
+  sortTasksByPredecessorsAndDates, 
+  updatePredecessorsStrings, 
+  healAllTasksPredecessors, 
+  reorderAndCalculateTasks,
+  buildTaskNoMap,
+  getPredecessorCodeUpdates
+} from '../lib/ganttUtils';
+import { reorderTasksStateUnified } from '../lib/taskStateService';
+
+interface UseDetailTaskReorderParams {
+  tasks: Task[];
+  projects: Project[];
+  selectedTaskIds: Set<string>;
+  setSelectedTaskIds: React.Dispatch<React.SetStateAction<Set<string>>>;
+}
+
+export function useDetailTaskReorder({
+  tasks,
+  projects,
+  selectedTaskIds,
+  setSelectedTaskIds,
+}: UseDetailTaskReorderParams) {
+  const [draggingTaskIds, setDraggingTaskIds] = useState<string[]>([]);
+  const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
+
+  const draggingTaskNames = useMemo(() => {
+    if (draggingTaskIds.length === 0) return '';
+    return tasks.filter(tk => draggingTaskIds.includes(tk.id)).map(tk => tk.name).join(', ');
+  }, [draggingTaskIds, tasks]);
+
+  const handleSortSubTasks = useCallback(async (p: Project, groupTasks: Task[]) => {
+    try {
+      const oldTaskNoMap = buildTaskNoMap(projects, tasks);
+      const sorted = sortTasksByPredecessorsAndDates(groupTasks, projects, tasks);
+
+      const batch = writeBatch(db);
+      const updatesPerTask = new Map<string, any>();
+      const now = new Date().toISOString();
+
+      sorted.forEach((t, index) => {
+        const newCode = `${p.code}#${index + 1}`;
+        const origTask = groupTasks.find(gt => gt.id === t.id) || t;
+        const parentChanged = t.parentTaskId !== origTask.parentTaskId;
+        if (t.orderIndex !== index || t.taskCodePhu !== newCode || parentChanged) {
+          updatesPerTask.set(t.id, { 
+            orderIndex: index, 
+            taskCodePhu: newCode,
+            ...(t.parentTaskId ? { parentTaskId: t.parentTaskId } : {}),
+            updatedAt: now 
+          });
+        }
+      });
+
+      let allUpdatedTasks = tasks.map(t => {
+        const up = updatesPerTask.get(t.id);
+        return up ? { ...t, ...up } : t;
+      });
+
+      const newTaskNoMap = buildTaskNoMap(projects, allUpdatedTasks);
+      const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, allUpdatedTasks);
+
+      const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects, oldTaskNoMap);
+      if (predUpdates.length > 0) {
+        const predMap = new Map(predUpdates.map(pu => [pu.id, pu]));
+        predUpdates.forEach(pu => {
+          const existingUpdates = updatesPerTask.get(pu.id) || {};
+          updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        });
+        allUpdatedTasks = allUpdatedTasks.map(t => {
+          const pu = predMap.get(t.id);
+          return pu ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t;
+        });
+      }
+
+      // Heal all remaining legacy or out-of-sync predecessors (including parent task SS/FF rollup predecessors)
+      const healed = healAllTasksPredecessors(allUpdatedTasks, projects);
+      if (healed.changedCount > 0) {
+        allUpdatedTasks = healed.updatedTasks;
+        healed.updatesToSave.forEach(u => {
+          const existingUpdates = updatesPerTask.get(u.id) || {};
+          updatesPerTask.set(u.id, {
+            ...existingUpdates,
+            ...(u.predecessor !== undefined ? { predecessor: u.predecessor } : {}),
+            ...(u.taskCodePhu !== undefined ? { taskCodePhu: u.taskCodePhu } : {}),
+            updatedAt: u.updatedAt,
+          });
+        });
+      }
+
+      // Optimistic UI update in Zustand & sync project dates immediately (0ms)
+      reorderTasksStateUnified(allUpdatedTasks, { affectedProjectIds: [p.id] });
+
+      updatesPerTask.forEach((updates, taskId) => {
+        const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
+        batch.update(tRef, updates);
+      });
+
+      try {
+        batch.commit().catch(e => console.error("Batch commit failed", e));
+        const deltaItems: TakaDeltaItem[] = Array.from(updatesPerTask.entries()).map(([taskId, patch]) => ({
+          docId: taskId,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          isPatch: true,
+          data: patch,
+          year: p.year ? String(p.year) : undefined,
+        }));
+        recordBatchDeltas(deltaItems, useAppStore.getState().currentUser?.email || 'reorder_tasks').catch(() => {});
+      } catch (error: any) {
+        console.error("Batch commit failed", error);
+        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+        return;
+      }
+
+      useAppStore.getState().setToast({
+        title: "Sắp xếp thành công",
+        message: "Đã đánh lại số thứ tự và tự động điền lại Predecessor theo Task code mới.",
+        type: "success"
+      });
+    } catch (error) {
+      console.error(error);
+    }
+  }, [tasks, projects]);
+
+  const handleMoveTask = useCallback(async (p: Project, groupTasks: Task[], index: number, direction: 'up' | 'down') => {
+    if ((direction === 'up' && index === 0) || (direction === 'down' && index === groupTasks.length - 1)) return;
+
+    try {
+      const oldTaskNoMap = buildTaskNoMap(projects, tasks);
+      const sorted = [...groupTasks];
+      const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      const [movedTask] = sorted.splice(index, 1);
+      sorted.splice(targetIndex, 0, movedTask);
+
+      const batch = writeBatch(db);
+      const updatesPerTask = new Map<string, any>();
+      const now = new Date().toISOString();
+
+      sorted.forEach((t, newIdx) => {
+        const newCode = `${p.code}#${newIdx + 1}`;
+        if (t.orderIndex !== newIdx || t.taskCodePhu !== newCode) {
+          updatesPerTask.set(t.id, { 
+            orderIndex: newIdx, 
+            taskCodePhu: newCode, 
+            updatedAt: now 
+          });
+        }
+      });
+
+      let allUpdatedTasks = tasks.map(t => {
+        const up = updatesPerTask.get(t.id);
+        return up ? { ...t, ...up } : t;
+      });
+
+      const newTaskNoMap = buildTaskNoMap(projects, allUpdatedTasks);
+      const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, allUpdatedTasks);
+
+      const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects, oldTaskNoMap);
+      if (predUpdates.length > 0) {
+        const predMap = new Map(predUpdates.map(pu => [pu.id, pu]));
+        predUpdates.forEach(pu => {
+          const existingUpdates = updatesPerTask.get(pu.id) || {};
+          updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        });
+        allUpdatedTasks = allUpdatedTasks.map(t => {
+          const pu = predMap.get(t.id);
+          return pu ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t;
+        });
+      }
+
+      // Heal any remaining legacy or out-of-sync predecessors (including parent task SS/FF rollup predecessors)
+      const healed = healAllTasksPredecessors(allUpdatedTasks, projects);
+      if (healed.changedCount > 0) {
+        allUpdatedTasks = healed.updatedTasks;
+        healed.updatesToSave.forEach(u => {
+          const existingUpdates = updatesPerTask.get(u.id) || {};
+          updatesPerTask.set(u.id, {
+            ...existingUpdates,
+            ...(u.predecessor !== undefined ? { predecessor: u.predecessor } : {}),
+            ...(u.taskCodePhu !== undefined ? { taskCodePhu: u.taskCodePhu } : {}),
+            updatedAt: u.updatedAt,
+          });
+        });
+      }
+
+      // Optimistic UI update in Zustand & sync project dates immediately (0ms)
+      reorderTasksStateUnified(allUpdatedTasks, { affectedProjectIds: [p.id] });
+
+      updatesPerTask.forEach((updates, taskId) => {
+        const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
+        batch.update(tRef, updates);
+      });
+
+      try {
+        batch.commit().catch(e => console.error("Batch commit failed", e));
+        const deltaItems: TakaDeltaItem[] = Array.from(updatesPerTask.entries()).map(([taskId, patch]) => ({
+          docId: taskId,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          isPatch: true,
+          data: patch,
+          year: p.year ? String(p.year) : undefined,
+        }));
+        recordBatchDeltas(deltaItems, useAppStore.getState().currentUser?.email || 'move_task').catch(() => {});
+      } catch (error: any) {
+        console.error("Batch commit failed", error);
+        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+        return;
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, [tasks, projects]);
+
+  const handleDetailTaskDragStart = useCallback((e: React.DragEvent, taskId: string) => {
+    const tasksToMove = selectedTaskIds.has(taskId)
+      ? Array.from(selectedTaskIds)
+      : [taskId];
+    setDraggingTaskIds(tasksToMove);
+    e.dataTransfer.setData(
+      "application/json",
+      JSON.stringify({
+        type: "task-reorder",
+        tasks: tasksToMove,
+      })
+    );
+    e.dataTransfer.effectAllowed = "move";
+    try {
+      const cell = (e.currentTarget as HTMLElement).querySelector("td");
+      if (cell) e.dataTransfer.setDragImage(cell, 10, 10);
+    } catch (err) {}
+  }, [selectedTaskIds]);
+
+  const handleDetailTaskDragOver = useCallback((e: React.DragEvent, taskId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (draggingTaskIds.includes(taskId)) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const relY = e.clientY - rect.top;
+    const pos: 'before' | 'after' = relY < rect.height / 2 ? 'before' : 'after';
+
+    if (dragOverTaskId !== taskId || dropPosition !== pos) {
+      setDragOverTaskId(taskId);
+      setDropPosition(pos);
+    }
+  }, [draggingTaskIds, dragOverTaskId, dropPosition]);
+
+  const handleDetailTaskDragLeave = useCallback((e: React.DragEvent, taskId: string) => {
+    const related = e.relatedTarget as Node | null;
+    if (related && (e.currentTarget as HTMLElement).contains(related)) {
+      return;
+    }
+    if (dragOverTaskId === taskId) {
+      setDragOverTaskId(null);
+      setDropPosition(null);
+    }
+  }, [dragOverTaskId]);
+
+  const handleDetailTaskDragEnd = useCallback((e: React.DragEvent) => {
+    setDraggingTaskIds([]);
+    setDragOverTaskId(null);
+    setDropPosition(null);
+    const tr = e.currentTarget as HTMLTableRowElement;
+    if (tr) tr.removeAttribute('draggable');
+  }, []);
+
+  const handleDetailTaskDrop = useCallback(async (e: React.DragEvent, targetTask: Task, targetProject: Project) => {
+    e.preventDefault();
+    const position = dropPosition || 'before';
+    setDragOverTaskId(null);
+    setDropPosition(null);
+    setDraggingTaskIds([]);
+
+    try {
+      let payloadStr = e.dataTransfer.getData("application/json");
+      if (!payloadStr) {
+        const textPlain = e.dataTransfer.getData("text/plain");
+        if (textPlain) {
+          const parsed = JSON.parse(textPlain);
+          if (!parsed.type) parsed.type = "task-reorder";
+          payloadStr = JSON.stringify(parsed);
+        }
+      }
+
+      if (!payloadStr) return;
+      const data = JSON.parse(payloadStr);
+      if (data.type !== "task-reorder" || !data.tasks || !Array.isArray(data.tasks)) return;
+
+      const tasksToMoveIds: string[] = data.tasks;
+      if (tasksToMoveIds.length === 0) return;
+      if (tasksToMoveIds.includes(targetTask.id)) return;
+
+      const result = reorderAndCalculateTasks(
+        tasks,
+        projects,
+        targetProject,
+        tasksToMoveIds,
+        targetTask.id,
+        position
+      );
+      if (!result) return;
+
+      // Optimistic local state update in Zustand & sync project dates immediately
+      reorderTasksStateUnified(result.allUpdatedTasks);
+
+      const writeBatches: any[] = [];
+      let currentWriteBatch = writeBatch(db);
+      let writeCount = 0;
+
+      for (const tu of result.taskUpdates) {
+        const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", tu.id);
+        currentWriteBatch.update(tRef, tu.updates);
+        writeCount++;
+        if (writeCount >= 400) {
+          writeBatches.push(currentWriteBatch.commit());
+          currentWriteBatch = writeBatch(db);
+          writeCount = 0;
+        }
+      }
+
+      for (const pu of result.predecessorUpdates) {
+        const alreadyInBatch = result.taskUpdates.some((tu) => tu.id === pu.id);
+        if (!alreadyInBatch) {
+          const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", pu.id);
+          currentWriteBatch.update(tRef, {
+            predecessor: pu.predecessor,
+            updatedAt: pu.updatedAt,
+          });
+          writeCount++;
+          if (writeCount >= 400) {
+            writeBatches.push(currentWriteBatch.commit());
+            currentWriteBatch = writeBatch(db);
+            writeCount = 0;
+          }
+        }
+      }
+
+      if (writeCount > 0) writeBatches.push(currentWriteBatch.commit());
+      await Promise.all(writeBatches);
+
+      const deltaItems: TakaDeltaItem[] = [];
+      result.taskUpdates.forEach((tu) => {
+        deltaItems.push({
+          docId: tu.id,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          isPatch: true,
+          data: tu.updates,
+        });
+      });
+      result.predecessorUpdates.forEach((pu) => {
+        if (!result.taskUpdates.some((tu) => tu.id === pu.id)) {
+          deltaItems.push({
+            docId: pu.id,
+            collectionName: 'taka_tasks',
+            action: 'update',
+            isPatch: true,
+            data: { predecessor: pu.predecessor, updatedAt: pu.updatedAt },
+          });
+        }
+      });
+      if (deltaItems.length > 0) {
+        recordBatchDeltas(deltaItems, useAppStore.getState().currentUser?.email || 'drag_reorder').catch(() => {});
+      }
+
+      setSelectedTaskIds(new Set());
+    } catch (err) {
+      console.error("DetailTab drop error:", err);
+    }
+  }, [dropPosition, tasks, projects, setSelectedTaskIds]);
+
+  return {
+    draggingTaskIds,
+    dragOverTaskId,
+    dropPosition,
+    draggingTaskNames,
+    handleSortSubTasks,
+    handleMoveTask,
+    handleDetailTaskDragStart,
+    handleDetailTaskDragOver,
+    handleDetailTaskDragLeave,
+    handleDetailTaskDragEnd,
+    handleDetailTaskDrop,
+  };
+}
+
+
+=== FILE: src/lib/deltaPatchService.ts ===
+import { TakaDeltaItem } from '../types';
+
+/**
+ * Compares two values for equality in the context of entity field comparisons.
+ */
+export function isEqualValue(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (a === null || a === undefined) return b === null || b === undefined;
+  if (b === null || b === undefined) return false;
+
+  // Primitive types
+  if (typeof a !== 'object' || typeof b !== 'object') {
+    return a === b;
+  }
+
+  // Dates
+  if (a instanceof Date && b instanceof Date) {
+    return a.getTime() === b.getTime();
+  }
+
+  // Arrays
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+      return false;
+    }
+  }
+
+  // Plain objects
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Computes a field-level patch representing only the changed, added, or removed keys
+ * between previous and current entity snapshots.
+ *
+ * Saves 80% - 95% bandwidth by stripping dozens of unchanged fields (e.g. comments, logs,
+ * coordinates, checklists, member descriptions) while keeping essential identifiers.
+ */
+export function computeFieldPatch<T extends Record<string, any>>(
+  previous: T | null | undefined,
+  current: T
+): Record<string, any> {
+  if (!previous) {
+    // New entity creation: return full object
+    return { ...current };
+  }
+
+  const patch: Record<string, any> = {};
+  let hasChanges = false;
+
+  // Detect modified or added fields
+  for (const key of Object.keys(current)) {
+    // Always preserve essential identifier & discriminator metadata
+    if (key === 'id') {
+      patch.id = current.id;
+      continue;
+    }
+
+    const prevVal = previous[key];
+    const currVal = current[key];
+
+    if (!isEqualValue(prevVal, currVal)) {
+      patch[key] = currVal;
+      hasChanges = true;
+    }
+  }
+
+  // Detect removed fields (present in previous but absent/undefined in current)
+  for (const key of Object.keys(previous)) {
+    if (key === 'id') continue;
+    if (previous[key] !== undefined && current[key] === undefined) {
+      patch[key] = null;
+      hasChanges = true;
+    }
+  }
+
+  // If no functional fields changed, return minimal stub with timestamp
+  if (!hasChanges) {
+    patch.id = current.id;
+    if (current.updatedAt) patch.updatedAt = current.updatedAt;
+    return patch;
+  }
+
+  // Always include updatedAt if present on current
+  if (current.updatedAt && !patch.updatedAt) {
+    patch.updatedAt = current.updatedAt;
+  }
+
+  // Preserve 4-key isolation markers if present to support Tri-Gate / year filter routing
+  if (current.projectId && !patch.projectId) {
+    patch.projectId = current.projectId;
+  }
+  if (current.projectCode && !patch.projectCode) {
+    patch.projectCode = current.projectCode;
+  }
+  if (current.projectYear !== undefined && patch.projectYear === undefined) {
+    patch.projectYear = current.projectYear;
+  }
+  if (current.projectStore && !patch.projectStore) {
+    patch.projectStore = current.projectStore;
+  }
+  if (current.code && !patch.code) {
+    patch.code = current.code;
+  }
+  if (current.year !== undefined && patch.year === undefined) {
+    patch.year = current.year;
+  }
+  if (current.store && !patch.store) {
+    patch.store = current.store;
+  }
+  if (current.parentTaskId !== undefined && patch.parentTaskId === undefined) {
+    patch.parentTaskId = current.parentTaskId;
+  }
+
+  return patch;
+}
+
+/**
+ * Safely applies a field-level patch onto an in-memory entity.
+ * Prevents concurrent clobbering: fields not present in the patch remain untouched.
+ */
+export function applyFieldPatch<T extends Record<string, any>>(
+  target: T,
+  patch: Record<string, any>
+): T {
+  if (!target) return { ...patch } as T;
+  if (!patch) return target;
+
+  const result: any = { ...target };
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) {
+      delete result[key];
+    } else {
+      result[key] = value;
+    }
+  }
+
+  return result as T;
+}
+
+/**
+ * Creates an optimized TakaDeltaItem containing only field-level changes.
+ */
+export function createPatchDeltaItem(params: {
+  docId: string;
+  collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
+  previous?: any;
+  updated: any;
+  action?: 'create' | 'update' | 'delete';
+  year?: string;
+  forcePatch?: boolean;
+}): TakaDeltaItem {
+  const { docId, collectionName, previous, updated, year } = params;
+  const action = params.action || (previous ? 'update' : 'create');
+
+  if (action === 'delete') {
+    return {
+      docId,
+      collectionName,
+      action: 'delete',
+      year,
+    };
+  }
+
+  if (action === 'create' || !previous) {
+    return {
+      docId,
+      collectionName,
+      action: 'create',
+      data: updated,
+      isPatch: false,
+      year: year || (updated?.projectYear ? String(updated.projectYear) : undefined),
+    };
+  }
+
+  // Action is update: compute granular field diff
+  const patch = computeFieldPatch(previous, updated);
+
+  return {
+    docId,
+    collectionName,
+    action: 'update',
+    isPatch: true,
+    data: patch,
+    year: year || (updated?.projectYear ? String(updated.projectYear) : undefined),
+  };
+}
+
+/**
+ * Batch version: transforms multiple mutations into field-level granular delta items.
+ */
+export function createBatchPatchDeltaItems(
+  items: Array<{
+    docId: string;
+    collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
+    previous?: any;
+    updated: any;
+    action?: 'create' | 'update' | 'delete';
+    year?: string;
+  }>
+): TakaDeltaItem[] {
+  return items.map((item) => createPatchDeltaItem(item));
+}
+
+/**
+ * Calculates raw byte size difference to monitor bandwidth optimization.
+ */
+export function measurePayloadDiff(
+  fullObj: any,
+  patchObj: any
+): {
+  fullBytes: number;
+  patchBytes: number;
+  savedBytes: number;
+  percentSaved: number;
+} {
+  const fullStr = JSON.stringify(fullObj || {});
+  const patchStr = JSON.stringify(patchObj || {});
+  const fullBytes = new TextEncoder().encode(fullStr).length;
+  const patchBytes = new TextEncoder().encode(patchStr).length;
+  const savedBytes = Math.max(0, fullBytes - patchBytes);
+  const percentSaved = fullBytes > 0 ? Number(((savedBytes / fullBytes) * 100).toFixed(1)) : 0;
+
+  return {
+    fullBytes,
+    patchBytes,
+    savedBytes,
+    percentSaved,
+  };
+}
+
+
+=== FILE: src/lib/deltaApplyService.ts ===
+import { useAppStore } from '../store/useAppStore';
+import { usePerformanceStore } from '../store/usePerformanceStore';
+import { TakaDelta, TakaDeltaItem, Project, Task, Cost, DelegationGroup } from '../types';
+import { localDb } from './localDb';
+import { applyDeltasToLocalDatabase } from './backgroundSyncWorker';
+import { triggerBatchChangeFlash } from './changeFlashService';
+import { broadcastAppliedDeltas } from './broadcastSyncService';
+import { applyFieldPatch } from './deltaPatchService';
+import { resolveInvalidations } from './deltaInvalidateService';
+import {
+  deltaTime,
+  serverDeltaTime,
+  getLastDeltaSyncTime,
+  getRestoreCutoffTimestamp,
+  markRestoreVersionCompleted,
+} from './deltaSyncService';
+import { CLIENT_SESSION_ID, DELTA_COLLECTION, LAST_SYNC_KEY } from './deltaConstants';
+import { safeSetItemLocal } from './storage';
+import { markTasksDeleted } from './taskDeletedTracker';
+import {
+  tsOf,
+  buildDeltaProjectsIndex,
+  purgeProjectAndTasksOnDeleteDelta,
+  unlinkChildTasksOnTaskDeleteDelta,
+  removeDeletedTaskSummaryFromProjects,
+  reconcileTasksAgainstIncomingProjectSummaries,
+  upsertTaskSummaryIntoMatchingProjects,
+  recalculateTouchedProjectsAfterDeltas,
+} from './deltaApplyParts/deltaProjectReconciler';
+import { rollupParentTaskDatesAndStatus } from './taskRollupService';
+
+/**
+ * Applies a list of (already de-duplicated) deltas to Zustand + Dexie. Shared by the real-time listener and the
+ * safety poll. Returns the number of deltas processed.
+ * Pre-indexes projects in O(P) to eliminate linear scans per task delta.
+ */
+export function applyIncomingDeltas(deltas: TakaDelta[]): number {
+  if (!deltas || deltas.length === 0) return 0;
+
+  usePerformanceStore
+    .getState()
+    .trackGetDoc(DELTA_COLLECTION, false, deltas.length, `Pulled ${deltas.length} deltas`);
+
+  const lastSyncTime = getLastDeltaSyncTime();
+  let maxTime = lastSyncTime;
+  const store = useAppStore.getState();
+
+  let updatedProjects = [...(store.projects || [])];
+  let updatedTasks = [...(store.tasks || [])];
+  let updatedCosts = [...(store.costs || [])];
+  let updatedDelegations = [...(store.delegationGroups || [])];
+
+  // Pre-index projects by ID and Code in O(P) (rebuilt only when projects array length changes)
+  let projectsIndex = buildDeltaProjectsIndex(updatedProjects);
+
+  let projectsChanged = false;
+  let tasksChanged = false;
+  let costsChanged = false;
+  let delegationsChanged = false;
+
+  const invalidations: TakaDeltaItem[] = [];
+
+  const touchedProjectIds = new Set<string>();
+  const touchedProjectCodes = new Set<string>();
+  const noteTouchedProject = (t: any) => {
+    if (!t) return;
+    if (t.projectId) {
+      touchedProjectIds.add(String(t.projectId));
+    } else if (t.projectCode) {
+      const codeKey = String(t.projectCode).trim().toLowerCase();
+      const storeKey = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '*';
+      const yearKey =
+        t.projectYear !== undefined && t.projectYear !== null
+          ? String(t.projectYear).trim()
+          : '*';
+      touchedProjectCodes.add(`${codeKey}|${storeKey}|${yearKey}`);
+    }
+  };
+
+  const directlyAppliedDocIds = new Set<string>();
+
+  const applyItem = (
+    docId: string,
+    collectionNameRaw: string,
+    action: 'create' | 'update' | 'delete',
+    data: any,
+    meta?: { year?: string; projectId?: string; projectCode?: string; projectStore?: string; isPatch?: boolean }
+  ) => {
+    if (docId) directlyAppliedDocIds.add(docId);
+    const collectionName =
+      collectionNameRaw === 'taka_delegation_groups' ? 'taka_delegations' : collectionNameRaw;
+
+    const isDelete = action === 'delete' || data?.isDeleted === true;
+
+    const isStaleVsLocal = (existing: any): boolean => {
+      if (isDelete || !data) return false;
+      const incoming = tsOf(data.updatedAt);
+      if (!incoming) return false;
+      return tsOf(existing?.updatedAt) > incoming;
+    };
+
+    switch (collectionName) {
+      case 'taka_projects': {
+        const idx = projectsIndex.byId.get(String(docId)) ?? updatedProjects.findIndex((p) => p.id === docId);
+        if (isDelete || data?.isDeleted) {
+          const purged = purgeProjectAndTasksOnDeleteDelta(docId, data, updatedProjects, updatedTasks);
+          if (purged.projectsChanged) {
+            projectsChanged = true;
+            updatedProjects = purged.nextProjects;
+            projectsIndex = buildDeltaProjectsIndex(updatedProjects);
+          }
+          if (purged.tasksChanged) {
+            tasksChanged = true;
+            updatedTasks = purged.nextTasks;
+          }
+          break;
+        }
+        if (idx !== -1 && isStaleVsLocal(updatedProjects[idx])) return;
+
+        projectsChanged = true;
+        let nextProj: Project | null = null;
+        if (idx !== -1) {
+          const prevProj = updatedProjects[idx];
+          nextProj = applyFieldPatch(prevProj, data) as Project;
+          if (Array.isArray(data?.taskSummaries)) {
+            nextProj.taskCount = data.taskSummaries.length;
+          }
+          updatedProjects[idx] = nextProj;
+        } else if (action === 'create' || (action === 'update' && data?.code && data?.name)) {
+          nextProj = { id: docId, ...data } as Project;
+          updatedProjects.push(nextProj);
+          projectsIndex = buildDeltaProjectsIndex(updatedProjects);
+        } else if (action === 'update') {
+          directlyAppliedDocIds.delete(docId);
+          invalidations.push({
+            docId,
+            collectionName: 'taka_projects',
+            action: 'update',
+            data: {},
+            isPatch: true,
+            invalidate: true,
+            year: meta?.year,
+          });
+        }
+
+        if (nextProj && Array.isArray(data?.taskSummaries)) {
+          const reconciled = reconcileTasksAgainstIncomingProjectSummaries(
+            nextProj,
+            data.taskSummaries,
+            updatedTasks
+          );
+          if (reconciled.tasksChanged) {
+            updatedTasks = reconciled.nextTasks;
+            tasksChanged = true;
+          }
+        }
+        break;
+      }
+
+      case 'taka_tasks': {
+        const idx = updatedTasks.findIndex((t) => t.id === docId);
+        const existingTask = idx !== -1 ? updatedTasks[idx] : null;
+        const enrichedData = {
+          ...(meta?.projectId ? { projectId: meta.projectId } : {}),
+          ...(meta?.projectCode ? { projectCode: meta.projectCode } : {}),
+          ...(meta?.projectStore ? { projectStore: meta.projectStore } : {}),
+          ...(meta?.year ? { projectYear: meta.year } : {}),
+          ...(data || {}),
+        };
+        noteTouchedProject(existingTask);
+        noteTouchedProject(enrichedData);
+        if (isDelete || data?.isDeleted) {
+          const pIdHint = enrichedData?.projectId || existingTask?.projectId;
+          const delProjCodeLower = String(enrichedData?.projectCode || existingTask?.projectCode || '')
+            .trim()
+            .toLowerCase();
+          const delProjStoreLower = String(enrichedData?.projectStore || existingTask?.projectStore || '')
+            .trim()
+            .toLowerCase();
+          const delProjYearStr = String(enrichedData?.projectYear ?? existingTask?.projectYear ?? '').trim();
+
+          markTasksDeleted([docId], pIdHint ? String(pIdHint) : undefined);
+          localDb.tasks.delete(docId).catch(() => {});
+          if (idx !== -1) {
+            tasksChanged = true;
+            updatedTasks = updatedTasks.filter((t) => t.id !== docId);
+          }
+          const docIdLower = String(docId).trim().toLowerCase();
+          const delNameLower = String(data?.name || existingTask?.name || '')
+            .trim()
+            .toLowerCase();
+          const delCodeLower = String(data?.taskCodePhu || existingTask?.taskCodePhu || '')
+            .trim()
+            .toLowerCase();
+
+          const unlinkedRes = unlinkChildTasksOnTaskDeleteDelta(docIdLower, delCodeLower, pIdHint, updatedTasks);
+          if (unlinkedRes.tasksChanged) {
+            tasksChanged = true;
+            updatedTasks = unlinkedRes.nextTasks;
+          }
+
+          const summaryRes = removeDeletedTaskSummaryFromProjects({
+            docId,
+            docIdLower,
+            delNameLower,
+            delCodeLower,
+            pIdHint,
+            delProjCodeLower,
+            delProjStoreLower,
+            delProjYearStr,
+            updatedProjects,
+            noteTouchedProject,
+          });
+          if (summaryRes.projectsChanged) {
+            projectsChanged = true;
+            updatedProjects = summaryRes.nextProjects;
+          }
+          break;
+        }
+        if (idx !== -1 && isStaleVsLocal(updatedTasks[idx])) return;
+
+        const mergedTask = (
+          idx !== -1 ? applyFieldPatch(updatedTasks[idx], enrichedData) : { id: docId, ...enrichedData }
+        ) as Task;
+
+        // O(1) upsert into matching project's taskSummaries via pre-built projectsIndex
+        if (
+          upsertTaskSummaryIntoMatchingProjects({
+            docId,
+            action,
+            mergedTask,
+            updatedProjects,
+            projectsIndex,
+            touchedProjectIds,
+          })
+        ) {
+          projectsChanged = true;
+        }
+
+        if (idx !== -1) {
+          tasksChanged = true;
+          updatedTasks[idx] = mergedTask;
+        } else if (
+          action === 'create' ||
+          (action === 'update' &&
+            !meta?.isPatch &&
+            Boolean(enrichedData?.name && (enrichedData?.projectCode || enrichedData?.projectId)))
+        ) {
+          if (store.isTasksRequested || updatedTasks.length > 0) {
+            const expandedSet = new Set(
+              [...(store.expandedProjectIds || []), ...(store.searchActiveProjectIds || [])].map(
+                String
+              )
+            );
+            const tProjId = mergedTask.projectId ? String(mergedTask.projectId).trim() : '';
+            const tCode = mergedTask.projectCode ? String(mergedTask.projectCode).trim() : '';
+            const tStoreLower = mergedTask.projectStore
+              ? String(mergedTask.projectStore).trim().toLowerCase()
+              : '';
+            const tYearStr =
+              mergedTask.projectYear !== undefined && mergedTask.projectYear !== null
+                ? String(mergedTask.projectYear).trim()
+                : '';
+
+            const activeYearFilter = store.globalYearFilter
+              ? String(store.globalYearFilter).trim()
+              : '';
+            const matchesActiveYear =
+              !activeYearFilter ||
+              activeYearFilter.toLowerCase() === 'all' ||
+              !tYearStr ||
+              tYearStr === activeYearFilter;
+
+            const projInMemory = updatedTasks.some((t) => {
+              if (tProjId && t.projectId) {
+                return String(t.projectId).trim() === tProjId;
+              }
+              if (tProjId || t.projectId) return false;
+              if (!tCode || String(t.projectCode || '').trim().toLowerCase() !== tCode.toLowerCase()) {
+                return false;
+              }
+              if (tStoreLower && t.projectStore && String(t.projectStore).trim().toLowerCase() !== tStoreLower) {
+                return false;
+              }
+              if (tYearStr && t.projectYear !== undefined && String(t.projectYear).trim() !== tYearStr) {
+                return false;
+              }
+              return true;
+            });
+
+            let matchingIdx = tProjId ? projectsIndex.byId.get(tProjId) : undefined;
+            if (matchingIdx === undefined && !tProjId && tCode) {
+              const candidates = projectsIndex.byCodePart.get(tCode.toLowerCase()) || [];
+              matchingIdx = candidates.find((cIdx) => {
+                const cp = updatedProjects[cIdx];
+                if (!cp) return false;
+                if (tStoreLower && cp.store && String(cp.store).trim().toLowerCase() !== tStoreLower) return false;
+                if (tYearStr && cp.year !== undefined && String(cp.year).trim() !== tYearStr) return false;
+                return true;
+              });
+            }
+
+            const matchingProj =
+              matchingIdx !== undefined ? updatedProjects[matchingIdx] : undefined;
+            const isProjExpandedOrEmpty =
+              (store.isTasksRequested && matchesActiveYear) ||
+              projInMemory ||
+              (tProjId && expandedSet.has(tProjId)) ||
+              (matchingProj?.id && expandedSet.has(String(matchingProj.id))) ||
+              (!tProjId && tCode && expandedSet.has(tCode)) ||
+              !matchingProj ||
+              (matchingProj.taskSummaries?.length || 0) <= 1;
+
+            if (isProjExpandedOrEmpty) {
+              tasksChanged = true;
+              updatedTasks.push(mergedTask);
+            }
+          }
+        }
+        break;
+      }
+
+      case 'taka_costs': {
+        const idx = updatedCosts.findIndex((c) => c.id === docId);
+        if (isDelete || data?.isDeleted) {
+          localDb.costs.delete(docId).catch(() => {});
+          if (idx !== -1) {
+            costsChanged = true;
+            updatedCosts = updatedCosts.filter((c) => c.id !== docId);
+          }
+          break;
+        }
+        if (!store.isCostsRequested && updatedCosts.length === 0) return;
+        if (idx !== -1 && isStaleVsLocal(updatedCosts[idx])) return;
+
+        costsChanged = true;
+        if (idx !== -1) {
+          updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
+        } else if (action === 'create') {
+          updatedCosts.push({ id: docId, ...data } as Cost);
+        }
+        break;
+      }
+
+      case 'taka_delegations': {
+        const idx = updatedDelegations.findIndex((g) => g.id === docId);
+        if (isDelete || data?.isDeleted) {
+          localDb.delegations.delete(docId).catch(() => {});
+          if (idx !== -1) {
+            delegationsChanged = true;
+            updatedDelegations = updatedDelegations.filter((g) => g.id !== docId);
+          }
+          break;
+        }
+        if (!store.isDelegationsRequested && updatedDelegations.length === 0) return;
+        if (idx !== -1 && isStaleVsLocal(updatedDelegations[idx])) return;
+
+        delegationsChanged = true;
+        if (idx !== -1) {
+          updatedDelegations[idx] = applyFieldPatch(
+            updatedDelegations[idx],
+            data
+          ) as DelegationGroup;
+        } else if (action === 'create') {
+          updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
+        }
+        break;
+      }
+    }
+  };
+
+  deltas.forEach((delta) => {
+    const srvMs = serverDeltaTime(delta);
+    if (srvMs > maxTime) {
+      maxTime = srvMs;
+    }
+
+    if (delta.docId === 'sys_restore_signal' || delta.data?.type === 'VERSION_RESTORE') {
+      const cutoff = delta.data?.restoreCutoff || deltaTime(delta);
+      if (cutoff > getRestoreCutoffTimestamp()) {
+        markRestoreVersionCompleted(cutoff, true);
+        localDb.projects.clear().catch(() => {});
+        localDb.tasks.clear().catch(() => {});
+        localDb.costs.clear().catch(() => {});
+        localDb.delegations.clear().catch(() => {});
+      }
+      return;
+    }
+
+    if (delta.sessionId && delta.sessionId === CLIENT_SESSION_ID) {
+      return;
+    }
+
+    if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
+      delta.batchItems.forEach((item) => {
+        if (item.invalidate) {
+          invalidations.push(item);
+          return;
+        }
+        try {
+          applyItem(item.docId, item.collectionName, item.action, item.data, {
+            year: item.year || delta.year,
+            projectId: (item as any).projectId || delta.projectId,
+            projectCode: (item as any).projectCode || delta.projectCode,
+            projectStore: (item as any).projectStore || delta.projectStore,
+            isPatch: item.isPatch,
+          });
+        } catch (err) {
+          console.warn('[deltaSync] applyItem failed (batch item skipped):', item.docId, err);
+        }
+      });
+    } else if (delta.docId && delta.collectionName) {
+      try {
+        applyItem(delta.docId, delta.collectionName, delta.action as any, delta.data, {
+          year: delta.year,
+          projectId: delta.projectId,
+          projectCode: delta.projectCode,
+          projectStore: delta.projectStore,
+          isPatch: delta.isPatch,
+        });
+      } catch (err) {
+        console.warn('[deltaSync] applyItem failed (delta skipped):', delta.docId, err);
+      }
+    }
+  });
+
+  if (tasksChanged && updatedTasks.length > 0) {
+    updatedTasks = rollupParentTaskDatesAndStatus(updatedTasks, updatedDelegations);
+  }
+
+  let touchedProjectsToPersist: Project[] = [];
+  if (
+    (tasksChanged || projectsChanged) &&
+    (touchedProjectIds.size > 0 || touchedProjectCodes.size > 0)
+  ) {
+    const recalculated = recalculateTouchedProjectsAfterDeltas({
+      updatedProjects,
+      updatedTasks,
+      delegationGroups: updatedDelegations,
+      touchedProjectIds,
+      touchedProjectCodes,
+    });
+    updatedProjects = recalculated.nextProjects;
+    touchedProjectsToPersist = recalculated.touchedProjectsToPersist;
+    projectsChanged = true;
+  }
+
+  if (projectsChanged) store.setProjects(updatedProjects);
+  if (tasksChanged) store.setTasks(updatedTasks);
+  if (costsChanged) store.setCosts(updatedCosts);
+  if (delegationsChanged) store.setDelegationGroups(updatedDelegations);
+
+  if (touchedProjectsToPersist.length > 0) {
+    localDb.projects.bulkPut(touchedProjectsToPersist).catch(() => {});
+  }
+
+  const flashEntries: Array<{ docId: string; collectionName: any; updatedBy?: string }> = [];
+  deltas.forEach((d) => {
+    if (d.action === 'batch_update' && Array.isArray(d.batchItems)) {
+      d.batchItems.forEach((item) => {
+        if (item.action === 'create' || item.action === 'update') {
+          flashEntries.push({ docId: item.docId, collectionName: item.collectionName, updatedBy: d.updatedBy });
+        }
+      });
+    } else if ((d.action === 'create' || d.action === 'update') && d.docId && d.collectionName) {
+      flashEntries.push({ docId: d.docId, collectionName: d.collectionName, updatedBy: d.updatedBy });
+    }
+  });
+  if (flashEntries.length > 0) triggerBatchChangeFlash(flashEntries);
+
+  applyDeltasToLocalDatabase(deltas).catch(() => {});
+  broadcastAppliedDeltas(deltas);
+  if (maxTime > lastSyncTime) {
+    safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
+  }
+
+  const pendingInvalidations = invalidations.filter(
+    (item) => !directlyAppliedDocIds.has(item.docId)
+  );
+
+  if (pendingInvalidations.length > 0) {
+    resolveInvalidations(pendingInvalidations)
+      .then((synthetic) => {
+        if (synthetic.length > 0) applyIncomingDeltas(synthetic);
+      })
+      .catch((err) => console.warn('[deltaSync] invalidate resolve failed:', err));
+  }
+
+  return deltas.length;
+}
 

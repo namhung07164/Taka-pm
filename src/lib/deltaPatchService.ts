@@ -115,6 +115,9 @@ export function computeFieldPatch<T extends Record<string, any>>(
   if (current.store && !patch.store) {
     patch.store = current.store;
   }
+  if (current.parentTaskId !== undefined && patch.parentTaskId === undefined) {
+    patch.parentTaskId = current.parentTaskId;
+  }
 
   return patch;
 }

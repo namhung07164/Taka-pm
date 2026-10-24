@@ -1,34 +1,133 @@
 import { Task, DelegationGroup } from '../types';
+import { normalizeDashes } from './utils';
+
+function extractNumericSuffix(codeOrPhu?: string | null): number | null {
+  if (!codeOrPhu) return null;
+  const str = normalizeDashes(String(codeOrPhu)).trim();
+  const m = str.match(/#\s*(\d+)/) || str.match(/[-_.:/\s]+(\d+)\s*$/) || str.match(/^(\d+)$/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function getTaskProjectScopeKey(t: Partial<Task>): string {
+  if (t.projectId && String(t.projectId).trim()) return `pid:${String(t.projectId).trim()}`;
+  const code = String(t.projectCode || '').trim().toLowerCase();
+  const year = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+  const store = String(t.projectStore || '').trim().toLowerCase();
+  return `key:${code}|${year}|${store}`;
+}
+
+function compareTasksForCanonicalCode(a: Task, b: Task): number {
+  const ordA = a.orderIndex !== undefined && a.orderIndex !== null ? Number(a.orderIndex) : null;
+  const ordB = b.orderIndex !== undefined && b.orderIndex !== null ? Number(b.orderIndex) : null;
+  if (ordA !== null && ordB !== null && ordA !== ordB) return ordA - ordB;
+  if (ordA !== null && ordB === null) return -1;
+  if (ordA === null && ordB !== null) return 1;
+  const codeA = a.taskCodePhu || (a.projectCode && ordA !== null ? `${a.projectCode}#${ordA + 1}` : a.name || '');
+  const codeB = b.taskCodePhu || (b.projectCode && ordB !== null ? `${b.projectCode}#${ordB + 1}` : b.name || '');
+  const numA = extractNumericSuffix(codeA);
+  const numB = extractNumericSuffix(codeB);
+  if (numA !== null && numB !== null && numA !== numB) return numA - numB;
+  if (numA !== null && numB === null) return -1;
+  if (numA === null && numB !== null) return 1;
+  if (a.start && b.start && a.start !== b.start) return a.start.localeCompare(b.start);
+  if (a.finish && b.finish && a.finish !== b.finish) return a.finish.localeCompare(b.finish);
+  return String(a.id || '').localeCompare(String(b.id || ''));
+}
+
+function buildCanonicalTaskContext(tasks: Task[]): {
+  taskByIdLower: Map<string, Task>;
+  scopedTaskByCode: Map<string, Task>;
+  canonicalCodeByTaskId: Map<string, string>;
+} {
+  const taskByIdLower = new Map<string, Task>();
+  const scopedTaskByCode = new Map<string, Task>();
+  const canonicalCodeByTaskId = new Map<string, string>();
+  const groupsByScope = new Map<string, Task[]>();
+
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (!t || t.isDeleted) continue;
+    const scope = getTaskProjectScopeKey(t);
+    if (t.id) taskByIdLower.set(String(t.id).trim().toLowerCase(), t);
+    if (t.taskCodePhu) {
+      const cLower = String(t.taskCodePhu).trim().toLowerCase();
+      scopedTaskByCode.set(`${scope}:::${cLower}`, t);
+      if (cLower.includes('-')) scopedTaskByCode.set(`${scope}:::${cLower.replace(/-(\d+)$/, '#$1')}`, t);
+      const num = extractNumericSuffix(cLower);
+      if (num !== null) scopedTaskByCode.set(`${scope}:::#${num}`, t);
+    }
+    const list = groupsByScope.get(scope) || [];
+    if (list.length === 0) groupsByScope.set(scope, list);
+    list.push(t);
+  }
+
+  groupsByScope.forEach((groupTasks, scope) => {
+    const sorted = [...groupTasks].sort(compareTasksForCanonicalCode);
+    for (let idx = 0; idx < sorted.length; idx++) {
+      const t = sorted[idx];
+      const pCode = String(t.projectCode || '').trim();
+      const canonicalCode = pCode ? `${pCode}#${idx + 1}` : (t.taskCodePhu ? String(t.taskCodePhu).trim() : t.id);
+      if (t.id && canonicalCode) canonicalCodeByTaskId.set(t.id, canonicalCode);
+      const cLower = canonicalCode.toLowerCase();
+      if (!scopedTaskByCode.has(`${scope}:::${cLower}`)) scopedTaskByCode.set(`${scope}:::${cLower}`, t);
+      if (!scopedTaskByCode.has(`${scope}:::#${idx + 1}`)) scopedTaskByCode.set(`${scope}:::#${idx + 1}`, t);
+    }
+  });
+
+  return { taskByIdLower, scopedTaskByCode, canonicalCodeByTaskId };
+}
+
+function resolveParentTaskInScope(
+  child: Task,
+  taskByIdLower: Map<string, Task>,
+  scopedTaskByCode: Map<string, Task>
+): Task | undefined {
+  const rawParent = child.parentTaskId || (child as any).parentId;
+  if (!rawParent) return undefined;
+  const parentStr = String(rawParent).trim().toLowerCase();
+  if (!parentStr) return undefined;
+
+  const byId = taskByIdLower.get(parentStr);
+  if (byId) return byId;
+
+  const scope = getTaskProjectScopeKey(child);
+  const byScopedCode = scopedTaskByCode.get(`${scope}:::${parentStr}`);
+  if (byScopedCode) return byScopedCode;
+
+  const num = extractNumericSuffix(parentStr);
+  if (num !== null) {
+    const byScopedNum = scopedTaskByCode.get(`${scope}:::#${num}`);
+    if (byScopedNum) return byScopedNum;
+  }
+  return undefined;
+}
 
 /**
  * Promotes orphan subtasks (whose parentTaskId is missing or deleted) to root tasks in memory
- * so parent rollup dates and task counts remain 100% consistent before and after project expansion.
+ * and normalizes parentTaskId to the canonical parent task ID.
  */
 export function filterNonOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: number } {
   if (!tasks || tasks.length === 0) return { cleaned: tasks || [], fixedCount: 0 };
 
-  const taskMap = new Map<string, Task>();
-  const taskCodeMap = new Map<string, Task>();
-
-  tasks.forEach(t => {
-    if (!t || t.isDeleted) return;
-    if (t.id) taskMap.set(String(t.id).toLowerCase(), t);
-    if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
-  });
+  const { taskByIdLower, scopedTaskByCode } = buildCanonicalTaskContext(tasks);
 
   let fixedCount = 0;
   const cleaned = tasks.map(t => {
     const rawParent = t.parentTaskId || (t as any).parentId;
     if (!rawParent) return t;
 
-    const parentStr = String(rawParent).trim().toLowerCase();
-    const parentTask = taskMap.get(parentStr) || taskCodeMap.get(parentStr);
+    const parentTask = resolveParentTaskInScope(t, taskByIdLower, scopedTaskByCode);
 
     if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
       fixedCount++;
       const updated = { ...t, parentTaskId: undefined };
       delete (updated as any).parentId;
       return updated;
+    }
+
+    if (t.parentTaskId !== parentTask.id) {
+      fixedCount++;
+      return { ...t, parentTaskId: parentTask.id };
     }
 
     return t;
@@ -46,7 +145,9 @@ interface RollupNodeResult {
   latestChild: Task | null;
 }
 
-function getTaskRefCodeForRollup(t: Task): string {
+function getTaskRefCodeForRollup(t: Task, canonicalCodeByTaskId: Map<string, string>): string {
+  const canonical = t.id ? canonicalCodeByTaskId.get(t.id) : undefined;
+  if (canonical) return canonical;
   if (t.taskCodePhu && String(t.taskCodePhu).trim()) {
     return String(t.taskCodePhu).trim();
   }
@@ -54,6 +155,11 @@ function getTaskRefCodeForRollup(t: Task): string {
     return `${String(t.projectCode).trim()}#${Number(t.orderIndex) + 1}`;
   }
   return t.id;
+}
+
+function isAutoRollupPredecessorPattern(pred?: string): boolean {
+  if (!pred || typeof pred !== 'string') return false;
+  return /^\s*[^,\s]+?\s*SS\s*,\s*[^,\s]+?\s*FF\s*$/i.test(pred.trim());
 }
 
 let _lastRollupInputRef: Task[] | null = null;
@@ -72,26 +178,38 @@ export function rollupParentTaskDatesAndStatus(
     return _lastRollupOutputRef;
   }
 
+  const { taskByIdLower, scopedTaskByCode, canonicalCodeByTaskId } = buildCanonicalTaskContext(tasks);
   const childrenMap = new Map<string, Task[]>();
+  const result = [...tasks];
+  let anyNormalizedChild = false;
 
-  for (let i = 0; i < tasks.length; i++) {
-    const t = tasks[i];
-    if (!t || !t.id || t.isDeleted || !t.parentTaskId) continue;
-    let list = childrenMap.get(t.parentTaskId);
+  for (let i = 0; i < result.length; i++) {
+    const t = result[i];
+    if (!t || !t.id || t.isDeleted) continue;
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) continue;
+
+    const parentTask = resolveParentTaskInScope(t, taskByIdLower, scopedTaskByCode);
+    if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
+      continue;
+    }
+
+    const canonicalParentId = parentTask.id;
+    let normalizedChild = t;
+    if (t.parentTaskId !== canonicalParentId) {
+      normalizedChild = { ...t, parentTaskId: canonicalParentId };
+      result[i] = normalizedChild;
+      anyNormalizedChild = true;
+    }
+
+    let list = childrenMap.get(canonicalParentId);
     if (!list) {
       list = [];
-      childrenMap.set(t.parentTaskId, list);
+      childrenMap.set(canonicalParentId, list);
     }
-    list.push(t);
+    list.push(normalizedChild);
   }
 
-  if (childrenMap.size === 0) {
-    _lastRollupInputRef = tasks;
-    _lastRollupOutputRef = tasks;
-    return tasks;
-  }
-
-  const result = [...tasks];
   const memoRollup = new Map<string, RollupNodeResult | null>();
   const visiting = new Set<string>();
 
@@ -115,8 +233,10 @@ export function rollupParentTaskDatesAndStatus(
     let allCompleted = true;
     let hasInProcess = false;
 
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i];
+    const sortedChildren = [...children].sort(compareTasksForCanonicalCode);
+
+    for (let i = 0; i < sortedChildren.length; i++) {
+      const child = sortedChildren[i];
       const subRollup = child.id ? getRolledUpDatesAndStatus(child.id) : null;
       const childStart = subRollup ? subRollup.start : (child.start || '');
       const childFinish = subRollup ? subRollup.finish : (child.finish || childStart || '');
@@ -171,9 +291,26 @@ export function rollupParentTaskDatesAndStatus(
     return computed;
   }
 
+  let anyParentChanged = false;
+
   for (let i = 0; i < result.length; i++) {
     const task = result[i];
-    if (!task || !task.id || !childrenMap.has(task.id)) continue;
+    if (!task || !task.id) continue;
+
+    if (!childrenMap.has(task.id)) {
+      if (task.isModularParent || isAutoRollupPredecessorPattern(task.predecessor)) {
+        const cleanedTask: Task = {
+          ...task,
+          isModularParent: false,
+          predecessor: isAutoRollupPredecessorPattern(task.predecessor) ? '' : task.predecessor,
+          predecessorTaskIds: undefined,
+          predecessors: undefined,
+        };
+        result[i] = cleanedTask;
+        anyParentChanged = true;
+      }
+      continue;
+    }
 
     const rolled = getRolledUpDatesAndStatus(task.id);
     if (rolled) {
@@ -193,8 +330,8 @@ export function rollupParentTaskDatesAndStatus(
       let newDuration = task.duration;
 
       if (rolled.earliestChild && rolled.latestChild) {
-        const earliestCode = getTaskRefCodeForRollup(rolled.earliestChild);
-        const latestCode = getTaskRefCodeForRollup(rolled.latestChild);
+        const earliestCode = getTaskRefCodeForRollup(rolled.earliestChild, canonicalCodeByTaskId);
+        const latestCode = getTaskRefCodeForRollup(rolled.latestChild, canonicalCodeByTaskId);
         newPredecessor = `${earliestCode}SS, ${latestCode}FF`;
         newPredecessorTaskIds = [rolled.earliestChild.id, rolled.latestChild.id];
         newPredecessors = [
@@ -224,6 +361,7 @@ export function rollupParentTaskDatesAndStatus(
         newStatus !== task.runningStatus ||
         newPredecessor !== (task.predecessor || '') ||
         newDuration !== task.duration ||
+        !task.isModularParent ||
         predIdsChanged
       ) {
         result[i] = {
@@ -237,13 +375,15 @@ export function rollupParentTaskDatesAndStatus(
           predecessors: newPredecessors,
           isModularParent: true,
         };
+        anyParentChanged = true;
       }
     }
   }
 
+  const finalOut = anyNormalizedChild || anyParentChanged ? result : tasks;
   _lastRollupInputRef = tasks;
-  _lastRollupOutputRef = result;
-  return result;
+  _lastRollupOutputRef = finalOut;
+  return finalOut;
 }
 
 /**
@@ -252,22 +392,40 @@ export function rollupParentTaskDatesAndStatus(
 export function rollupTaskSummaries(summaries: any[]): any[] {
   if (!Array.isArray(summaries) || summaries.length === 0) return summaries || [];
 
-  const childrenMap = new Map<string, any[]>();
+  const summaryByIdLower = new Map<string, any>();
+  const summaryByCodeLower = new Map<string, any>();
   for (let i = 0; i < summaries.length; i++) {
     const s = summaries[i];
-    if (s && s.id && s.parentTaskId) {
-      let list = childrenMap.get(s.parentTaskId);
+    if (!s) continue;
+    if (s.id) summaryByIdLower.set(String(s.id).trim().toLowerCase(), s);
+    if (s.taskCodePhu) summaryByCodeLower.set(String(s.taskCodePhu).trim().toLowerCase(), s);
+  }
+
+  const childrenMap = new Map<string, any[]>();
+  const result = [...summaries];
+
+  for (let i = 0; i < result.length; i++) {
+    const s = result[i];
+    const rawP = s?.parentTaskId || s?.parentId;
+    if (s && s.id && rawP) {
+      const pLower = String(rawP).trim().toLowerCase();
+      const matchedParent = summaryByIdLower.get(pLower) || summaryByCodeLower.get(pLower);
+      const canonicalParentId = matchedParent?.id ? String(matchedParent.id) : String(rawP);
+      if (canonicalParentId === String(s.id)) continue;
+      if (s.parentTaskId !== canonicalParentId) {
+        result[i] = { ...s, parentTaskId: canonicalParentId };
+      }
+      let list = childrenMap.get(canonicalParentId);
       if (!list) {
         list = [];
-        childrenMap.set(s.parentTaskId, list);
+        childrenMap.set(canonicalParentId, list);
       }
-      list.push(s);
+      list.push(result[i]);
     }
   }
 
   if (childrenMap.size === 0) return summaries;
 
-  const result = [...summaries];
   const memoSummary = new Map<string, { start: string; finish: string } | null>();
   const visiting = new Set<string>();
 
@@ -317,3 +475,4 @@ export function rollupTaskSummaries(summaries: any[]): any[] {
 
   return result;
 }
+

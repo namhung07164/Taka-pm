@@ -47,10 +47,13 @@ export function useDetailTaskReorder({
 
       sorted.forEach((t, index) => {
         const newCode = `${p.code}#${index + 1}`;
-        if (t.orderIndex !== index || t.taskCodePhu !== newCode) {
+        const origTask = groupTasks.find(gt => gt.id === t.id) || t;
+        const parentChanged = t.parentTaskId !== origTask.parentTaskId;
+        if (t.orderIndex !== index || t.taskCodePhu !== newCode || parentChanged) {
           updatesPerTask.set(t.id, { 
             orderIndex: index, 
-            taskCodePhu: newCode, 
+            taskCodePhu: newCode,
+            ...(t.parentTaskId ? { parentTaskId: t.parentTaskId } : {}),
             updatedAt: now 
           });
         }
@@ -77,13 +80,18 @@ export function useDetailTaskReorder({
         });
       }
 
-      // Heal all remaining legacy or out-of-sync predecessors
+      // Heal all remaining legacy or out-of-sync predecessors (including parent task SS/FF rollup predecessors)
       const healed = healAllTasksPredecessors(allUpdatedTasks, projects);
       if (healed.changedCount > 0) {
         allUpdatedTasks = healed.updatedTasks;
         healed.updatesToSave.forEach(u => {
           const existingUpdates = updatesPerTask.get(u.id) || {};
-          updatesPerTask.set(u.id, { ...existingUpdates, predecessor: u.predecessor, updatedAt: u.updatedAt });
+          updatesPerTask.set(u.id, {
+            ...existingUpdates,
+            ...(u.predecessor !== undefined ? { predecessor: u.predecessor } : {}),
+            ...(u.taskCodePhu !== undefined ? { taskCodePhu: u.taskCodePhu } : {}),
+            updatedAt: u.updatedAt,
+          });
         });
       }
 
@@ -168,13 +176,18 @@ export function useDetailTaskReorder({
         });
       }
 
-      // Heal any remaining legacy or out-of-sync predecessors
+      // Heal any remaining legacy or out-of-sync predecessors (including parent task SS/FF rollup predecessors)
       const healed = healAllTasksPredecessors(allUpdatedTasks, projects);
       if (healed.changedCount > 0) {
         allUpdatedTasks = healed.updatedTasks;
         healed.updatesToSave.forEach(u => {
           const existingUpdates = updatesPerTask.get(u.id) || {};
-          updatesPerTask.set(u.id, { ...existingUpdates, predecessor: u.predecessor, updatedAt: u.updatedAt });
+          updatesPerTask.set(u.id, {
+            ...existingUpdates,
+            ...(u.predecessor !== undefined ? { predecessor: u.predecessor } : {}),
+            ...(u.taskCodePhu !== undefined ? { taskCodePhu: u.taskCodePhu } : {}),
+            updatedAt: u.updatedAt,
+          });
         });
       }
 

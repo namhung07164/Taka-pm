@@ -27,6 +27,7 @@ import {
   upsertTaskSummaryIntoMatchingProjects,
   recalculateTouchedProjectsAfterDeltas,
 } from './deltaApplyParts/deltaProjectReconciler';
+import { rollupParentTaskDatesAndStatus } from './taskRollupService';
 
 /**
  * Applies a list of (already de-duplicated) deltas to Zustand + Dexie. Shared by the real-time listener and the
@@ -241,7 +242,9 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           updatedTasks[idx] = mergedTask;
         } else if (
           action === 'create' ||
-          (action === 'update' && Boolean(enrichedData?.name && (enrichedData?.projectCode || enrichedData?.projectId)))
+          (action === 'update' &&
+            !meta?.isPatch &&
+            Boolean(enrichedData?.name && (enrichedData?.projectCode || enrichedData?.projectId)))
         ) {
           if (store.isTasksRequested || updatedTasks.length > 0) {
             const expandedSet = new Set(
@@ -421,6 +424,10 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     }
   });
 
+  if (tasksChanged && updatedTasks.length > 0) {
+    updatedTasks = rollupParentTaskDatesAndStatus(updatedTasks, updatedDelegations);
+  }
+
   let touchedProjectsToPersist: Project[] = [];
   if (
     (tasksChanged || projectsChanged) &&
@@ -429,7 +436,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     const recalculated = recalculateTouchedProjectsAfterDeltas({
       updatedProjects,
       updatedTasks,
-      delegationGroups: store.delegationGroups || [],
+      delegationGroups: updatedDelegations,
       touchedProjectIds,
       touchedProjectCodes,
     });

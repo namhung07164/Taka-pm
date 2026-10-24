@@ -304,15 +304,56 @@ export async function saveTaskStateUnified(
 export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: number } {
   if (!tasks || tasks.length === 0) return { cleaned: tasks, fixedCount: 0 };
 
+  const projects = useAppStore.getState().projects || [];
   const taskMap = new Map<string, Task>();
   const taskCodeMap = new Map<string, Task>();
+  const summaryTaskIds = new Set<string>();
 
-  tasks.forEach((t) => {
-    if (t.id) taskMap.set(String(t.id).toLowerCase(), t);
-    if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+  projects.forEach((p) => {
+    if (!p || p.isDeleted || !Array.isArray(p.taskSummaries)) return;
+    p.taskSummaries.forEach((s: any) => {
+      if (s?.id && !String(s.id).startsWith('ts_')) {
+        summaryTaskIds.add(String(s.id).trim().toLowerCase());
+      }
+      if (s?.taskCodePhu) {
+        summaryTaskIds.add(String(s.taskCodePhu).trim().toLowerCase());
+      }
+    });
   });
 
-  const now = new Date().toISOString();
+  // Group tasks by project scope to index canonical ${projectCode}#${idx + 1} codes
+  const scopedBuckets = new Map<string, Task[]>();
+  tasks.forEach((t) => {
+    if (!t) return;
+    if (t.id) taskMap.set(String(t.id).trim().toLowerCase(), t);
+    if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+    const scopeKey = t.projectId
+      ? `pid:${String(t.projectId).trim()}`
+      : `code:${String(t.projectCode || '').trim().toLowerCase()}|${String(t.projectStore || '').trim().toLowerCase()}|${String(t.projectYear || '').trim()}`;
+    let list = scopedBuckets.get(scopeKey);
+    if (!list) {
+      list = [];
+      scopedBuckets.set(scopeKey, list);
+    }
+    list.push(t);
+  });
+
+  scopedBuckets.forEach((bucket, scopeKey) => {
+    const sorted = [...bucket].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+    sorted.forEach((t, idx) => {
+      if (!t || !t.id) return;
+      const num = idx + 1;
+      const pCode = String(t.projectCode || '').trim();
+      if (pCode) {
+        const canonicalLower = `${pCode}#${num}`.toLowerCase();
+        taskCodeMap.set(`${scopeKey}__${canonicalLower}`, t);
+        if (!taskCodeMap.has(canonicalLower)) taskCodeMap.set(canonicalLower, t);
+      }
+      taskCodeMap.set(`${scopeKey}__#${num}`, t);
+      taskCodeMap.set(`${scopeKey}__${num}`, t);
+    });
+  });
+
   let fixedCount = 0;
 
   const cleaned = tasks.map((t) => {
@@ -320,16 +361,33 @@ export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: 
     if (!rawParent) return t;
 
     const parentStr = String(rawParent).trim().toLowerCase();
-    const parentTask = taskMap.get(parentStr) || taskCodeMap.get(parentStr);
+    const scopeKey = t.projectId
+      ? `pid:${String(t.projectId).trim()}`
+      : `code:${String(t.projectCode || '').trim().toLowerCase()}|${String(t.projectStore || '').trim().toLowerCase()}|${String(t.projectYear || '').trim()}`;
 
-    if (!parentTask || parentTask.isDeleted || String(parentTask.id) === String(t.id)) {
-      fixedCount++;
-      const updated = { ...t, parentTaskId: undefined, updatedAt: now };
-      delete (updated as any).parentId;
-      return updated;
+    const parentTask =
+      taskMap.get(parentStr) ||
+      taskCodeMap.get(`${scopeKey}__${parentStr}`) ||
+      taskCodeMap.get(parentStr);
+
+    if (parentTask && !parentTask.isDeleted && String(parentTask.id) !== String(t.id)) {
+      if (t.parentTaskId !== parentTask.id) {
+        return { ...t, parentTaskId: parentTask.id };
+      }
+      return t;
     }
 
-    return t;
+    // If parent is not yet hydrated in tasks array but exists in project.taskSummaries, preserve linkage
+    if (summaryTaskIds.has(parentStr) && parentStr !== String(t.id).trim().toLowerCase()) {
+      return t;
+    }
+
+    fixedCount++;
+    // Do NOT stamp a fresh updatedAt here: in-memory orphan cleanup must not masquerade as a user edit
+    // that blocks authoritative server taskSummaries reconciliation.
+    const updated = { ...t, parentTaskId: undefined };
+    delete (updated as any).parentId;
+    return updated;
   });
 
   return { cleaned, fixedCount };

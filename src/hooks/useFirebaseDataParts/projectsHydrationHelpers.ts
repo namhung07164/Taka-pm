@@ -218,8 +218,14 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
         const localUpdatedMs = tsOf(localT.updatedAt);
         const isRecentlyEditedLocally = localUpdatedMs > 0 && nowMs - localUpdatedMs <= 60000;
         if (!isRecentlyEditedLocally) {
-          const sParent = s.parentTaskId || undefined;
           const localParent = localT.parentTaskId || undefined;
+          const localParentLower = localParent ? String(localParent).trim().toLowerCase() : '';
+          const sParent =
+            s.parentTaskId !== undefined && s.parentTaskId !== null && String(s.parentTaskId).trim() !== ''
+              ? s.parentTaskId
+              : localParentLower && serverSummaryIds.has(localParentLower)
+                ? localParent
+                : undefined;
           const summaryDiffers =
             (s.name !== undefined && s.name !== localT.name) ||
             (s.start !== undefined && s.start !== localT.start) ||
@@ -314,8 +320,14 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           } else {
             const s = summaryById.get(tidLower);
             if (s) {
-              const sParent = s.parentTaskId || undefined;
               const tParent = t.parentTaskId || undefined;
+              const tParentLower = tParent ? String(tParent).trim().toLowerCase() : '';
+              const sParent =
+                s.parentTaskId !== undefined && s.parentTaskId !== null && String(s.parentTaskId).trim() !== ''
+                  ? s.parentTaskId
+                  : tParentLower && summaryIds.has(tParentLower)
+                    ? tParent
+                    : undefined;
               const needsPatch =
                 (s.name !== undefined && s.name !== t.name) ||
                 (s.start !== undefined && s.start !== t.start) ||

@@ -99,7 +99,7 @@ export function normalizeAndHealTaskPredecessors(
             }
           }
           if (targetTask) {
-            const currentTargetCode = targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask);
+            const currentTargetCode = computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu;
             if (currentTargetCode && currentTargetCode.trim().toLowerCase() !== code) {
               changed = true;
               return `${currentTargetCode.trim()}${rawToken.substring(code.length)}`;
@@ -159,7 +159,7 @@ export function normalizeAndHealTaskPredecessors(
         );
 
         let targetTask = sameProjectTasks.find(t => {
-          const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
+          const code = String(computeTaskCode(projects, updatedAllTasks, t) || t.taskCodePhu || '').trim();
           return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`);
         });
 
@@ -168,7 +168,7 @@ export function normalizeAndHealTaskPredecessors(
         }
 
         if (targetTask) {
-          const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask) || `${currentPCode}#${subIndexNum}`).trim();
+          const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${currentPCode}#${subIndexNum}`).trim();
           if (newCode) {
             changed = true;
             return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
@@ -196,7 +196,7 @@ export function normalizeAndHealTaskPredecessors(
           );
 
           let targetTask = targetTasks.find(t => {
-            const code = String(t.taskCodePhu || computeTaskCode(projects, updatedAllTasks, t) || '').trim();
+            const code = String(computeTaskCode(projects, updatedAllTasks, t) || t.taskCodePhu || '').trim();
             return code.endsWith(`#${subIndexNum}`) || code.endsWith(`-${subIndexNum}`);
           });
 
@@ -205,7 +205,7 @@ export function normalizeAndHealTaskPredecessors(
           }
 
           if (targetTask) {
-            const newCode = (targetTask.taskCodePhu || computeTaskCode(projects, updatedAllTasks, targetTask) || `${matchedProj.code}#${subIndexNum}`).trim();
+            const newCode = (computeTaskCode(projects, updatedAllTasks, targetTask) || targetTask.taskCodePhu || `${matchedProj.code}#${subIndexNum}`).trim();
             if (newCode) {
               changed = true;
               return `${newCode}${lagSuffix ? (lagSuffix.startsWith('+') || lagSuffix.startsWith('-') || /^[a-z]/i.test(lagSuffix) ? lagSuffix : ` ${lagSuffix}`) : ''}`;
@@ -226,7 +226,8 @@ export function normalizeAndHealTaskPredecessors(
 }
 
 /**
- * Sweeps through all tasks and heals any out-of-sync or legacy predecessor codes.
+ * Sweeps through all tasks and heals any out-of-sync or legacy predecessor codes,
+ * including parent tasks' auto-rollup SS/FF predecessor codes.
  */
 export function healAllTasksPredecessors(
   allTasks: Task[],
@@ -241,14 +242,32 @@ export function healAllTasksPredecessors(
   const safeTasks = Array.isArray(allTasks) ? allTasks : [];
   const safeProjects = Array.isArray(projects) ? projects : [];
 
-  const parentIds = new Set<string>();
+  const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);
+  const taskByIdLower = new Map<string, Task>();
+  const taskByCodeLower = new Map<string, Task>();
+
   safeTasks.forEach(t => {
-    if (t && !t.isDeleted && t.parentTaskId) {
-      parentIds.add(t.parentTaskId);
+    if (!t || !t.id || t.isDeleted) return;
+    taskByIdLower.set(String(t.id).trim().toLowerCase(), t);
+    const canonical = taskCodeMap.get(t.id);
+    if (canonical) taskByCodeLower.set(canonical.trim().toLowerCase(), t);
+    if (t.taskCodePhu) taskByCodeLower.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+  });
+
+  const childrenByParentId = new Map<string, Task[]>();
+  safeTasks.forEach(t => {
+    if (!t || !t.id || t.isDeleted) return;
+    const rawParent = t.parentTaskId || (t as any).parentId;
+    if (!rawParent) return;
+    const rawParentLower = String(rawParent).trim().toLowerCase();
+    const resolvedParent = taskByIdLower.get(rawParentLower) || taskByCodeLower.get(rawParentLower);
+    if (resolvedParent && resolvedParent.id !== t.id) {
+      const list = childrenByParentId.get(resolvedParent.id) || [];
+      list.push(t);
+      childrenByParentId.set(resolvedParent.id, list);
     }
   });
 
-  const taskCodeMap = computeAllTaskCodes(safeProjects, safeTasks);
   const taskNoMap = buildTaskNoMap(safeProjects, safeTasks);
   const knownCodes = new Set<string>();
   for (const k of taskNoMap.keys()) knownCodes.add(k.toLowerCase());
@@ -262,20 +281,57 @@ export function healAllTasksPredecessors(
     let newPred = t.predecessor || '';
     const originalTask = t;
 
-    const newPhu = t.taskCodePhu || taskCodeMap.get(t.id) || '';
+    const newPhu = taskCodeMap.get(t.id) || t.taskCodePhu || '';
+    if (newPhu && t.taskCodePhu && newPhu !== t.taskCodePhu) {
+      taskChanged = true;
+    }
 
-    // Skip string healing on parent tasks whose SS/FF predecessors are governed by child rollup
-    if (t.predecessor && !parentIds.has(t.id)) {
-      const { changed, newPredecessor } = normalizeAndHealTaskPredecessors(
-        { ...t, taskCodePhu: newPhu }, 
-        safeTasks, 
-        safeProjects,
-        taskNoMap,
-        knownCodes
-      );
-      if (changed && newPredecessor !== t.predecessor) {
-        newPred = newPredecessor;
+    const children = childrenByParentId.get(t.id);
+    if (children && children.length > 0) {
+      // Recompute canonical SS/FF predecessor for parent task based on its children's canonical codes
+      const validChildren = children.filter(c => c && !c.isDeleted && (c.start || c.finish));
+      if (validChildren.length > 0) {
+        let earliestChild = validChildren[0];
+        let latestChild = validChildren[0];
+        let minStartStr = String(earliestChild.start || earliestChild.finish || '9999-12-31');
+        let maxFinishStr = String(latestChild.finish || latestChild.start || '');
+        for (const c of validChildren) {
+          const sStr = String(c.start || c.finish || '9999-12-31');
+          const fStr = String(c.finish || c.start || '');
+          if (sStr < minStartStr) {
+            minStartStr = sStr;
+            earliestChild = c;
+          }
+          if (fStr > maxFinishStr) {
+            maxFinishStr = fStr;
+            latestChild = c;
+          }
+        }
+        const eCode = taskCodeMap.get(earliestChild.id) || earliestChild.taskCodePhu || earliestChild.id;
+        const lCode = taskCodeMap.get(latestChild.id) || latestChild.taskCodePhu || latestChild.id;
+        const canonicalParentPred = `${eCode}SS, ${lCode}FF`;
+        if (canonicalParentPred !== newPred) {
+          newPred = canonicalParentPred;
+          taskChanged = true;
+        }
+      }
+    } else if (t.predecessor) {
+      const hasStaleAutoRollupPred = /^[^,]+SS\s*,\s*[^,]+FF$/i.test(t.predecessor.trim()) && Boolean(t.isModularParent);
+      if (hasStaleAutoRollupPred) {
+        newPred = '';
         taskChanged = true;
+      } else {
+        const { changed, newPredecessor } = normalizeAndHealTaskPredecessors(
+          { ...t, taskCodePhu: newPhu }, 
+          safeTasks, 
+          safeProjects,
+          taskNoMap,
+          knownCodes
+        );
+        if (changed && newPredecessor !== t.predecessor) {
+          newPred = newPredecessor;
+          taskChanged = true;
+        }
       }
     }
 
