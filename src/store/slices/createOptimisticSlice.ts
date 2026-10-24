@@ -8,12 +8,20 @@ export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSli
     if (!updatedTasks || updatedTasks.length === 0) return state;
     const updatedMap = new Map(updatedTasks.map(t => [t.id, t]));
     const existingIds = new Set(state.tasks.map(t => t.id));
+    let hasIdentityOrNameChange = false;
     
     const mapped = state.tasks
       .map(t => {
         const update = updatedMap.get(t.id);
         if (update) {
           if ((update as any).isDeleted) return null;
+          if (
+            (update.name !== undefined && update.name !== t.name) ||
+            (update.taskCodePhu !== undefined && update.taskCodePhu !== t.taskCodePhu) ||
+            (update.projectCode !== undefined && update.projectCode !== t.projectCode)
+          ) {
+            hasIdentityOrNameChange = true;
+          }
           return { ...t, ...update } as Task;
         }
         return t;
@@ -23,6 +31,10 @@ export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSli
     const newTasks = updatedTasks.filter(
       t => t.id && !existingIds.has(t.id) && !(t as any).isDeleted
     ) as Task[];
+
+    if (newTasks.length === 0 && !hasIdentityOrNameChange) {
+      return { tasks: mapped };
+    }
 
     const combined = newTasks.length > 0 ? [...mapped, ...newTasks] : mapped;
     const { dedupedTasks } = deduplicateTasksInMemory(combined, state.projects);

@@ -2,17 +2,16 @@ import { Task, Project } from '../../types';
 import { isTaskBelongsToProject, normalizeDashes } from '../utils';
 import { sortGroupTasks } from './taskSortingAndCodes';
 
-let _lastProjectsForNoMapRef: Project[] | null = null;
-let _lastTasksForNoMapRef: Task[] | null = null;
-let _cachedTaskNoMap: Map<string, Task[]> | null = null;
+const _taskNoMapWeakCache = new WeakMap<Task[], WeakMap<Project[], Map<string, Task[]>>>();
+const EMPTY_PROJECTS_REF: Project[] = [];
+const EMPTY_TASKS_REF: Task[] = [];
 
 export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, Task[]> {
-  if (
-    _lastProjectsForNoMapRef === projects &&
-    _lastTasksForNoMapRef === tasks &&
-    _cachedTaskNoMap !== null
-  ) {
-    return _cachedTaskNoMap;
+  const tasksKey = Array.isArray(tasks) && tasks.length > 0 ? tasks : EMPTY_TASKS_REF;
+  const projectsKey = Array.isArray(projects) && projects.length > 0 ? projects : EMPTY_PROJECTS_REF;
+  const cachedByProj = _taskNoMapWeakCache.get(tasksKey)?.get(projectsKey);
+  if (cachedByProj) {
+    return cachedByProj;
   }
 
   const map = new Map<string, Task[]>();
@@ -167,9 +166,12 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
     if (t.id) addKey(t, t.id);
   });
 
-  _lastProjectsForNoMapRef = projects;
-  _lastTasksForNoMapRef = tasks;
-  _cachedTaskNoMap = map;
+  let projCache = _taskNoMapWeakCache.get(tasksKey);
+  if (!projCache) {
+    projCache = new WeakMap<Project[], Map<string, Task[]>>();
+    _taskNoMapWeakCache.set(tasksKey, projCache);
+  }
+  projCache.set(projectsKey, map);
   return map;
 }
 
@@ -212,21 +214,18 @@ export function computeTaskCode(projects: Project[], tasks: Task[], task: Task):
   return `${currentPCode}#${orderNum}`;
 }
 
-let _lastProjectsForCodeMapRef: Project[] | null = null;
-let _lastTasksForCodeMapRef: Task[] | null = null;
-let _cachedTaskCodesMap: Map<string, string> | null = null;
+const _taskCodesWeakCache = new WeakMap<Task[], WeakMap<Project[], Map<string, string>>>();
 
 /**
  * Pre-indexes all task codes in O(N log K) single pass instead of O(N^2 log N).
- * Includes reference-level memoization to eliminate recalculations across sibling components.
+ * Uses WeakMap reference caching across multiple task/project array views (storeTasks, pool, filteredTasks).
  */
 export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<string, string> {
-  if (
-    _lastProjectsForCodeMapRef === projects &&
-    _lastTasksForCodeMapRef === tasks &&
-    _cachedTaskCodesMap !== null
-  ) {
-    return _cachedTaskCodesMap;
+  const tasksKey = Array.isArray(tasks) && tasks.length > 0 ? tasks : EMPTY_TASKS_REF;
+  const projectsKey = Array.isArray(projects) && projects.length > 0 ? projects : EMPTY_PROJECTS_REF;
+  const cachedByProj = _taskCodesWeakCache.get(tasksKey)?.get(projectsKey);
+  if (cachedByProj) {
+    return cachedByProj;
   }
 
   const map = new Map<string, string>();
@@ -321,8 +320,11 @@ export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<str
     });
   });
 
-  _lastProjectsForCodeMapRef = projects;
-  _lastTasksForCodeMapRef = tasks;
-  _cachedTaskCodesMap = map;
+  let projCache = _taskCodesWeakCache.get(tasksKey);
+  if (!projCache) {
+    projCache = new WeakMap<Project[], Map<string, string>>();
+    _taskCodesWeakCache.set(tasksKey, projCache);
+  }
+  projCache.set(projectsKey, map);
   return map;
 }

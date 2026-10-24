@@ -299,15 +299,38 @@ export function useDetailTaskMutations({
         newT = scheduledUpdatedTask as any;
       }
 
-      const allCurrentTasksWithScheduled = tasks.map(tsk => {
-        if (tsk.id === newT.id) return newT;
-        const dep = updatesToDependents.find(d => d.id === tsk.id);
-        return dep || tsk;
-      });
-      if (!allCurrentTasksWithScheduled.some(tsk => tsk.id === newT.id)) {
-        allCurrentTasksWithScheduled.push(newT);
+      const depUpdateMap = new Map<string, Task>();
+      updatesToDependents.forEach(d => depUpdateMap.set(d.id, d));
+
+      const affectedProjIds = new Set<string>();
+      const affectedProjCodes = new Set<string>();
+      const registerScope = (item: Partial<Task>) => {
+        if (item.projectId) affectedProjIds.add(String(item.projectId).trim());
+        if (item.projectCode) affectedProjCodes.add(String(item.projectCode).trim().toLowerCase());
+      };
+      registerScope(newT);
+      updatesToDependents.forEach(registerScope);
+
+      const scopedTasksForRollup: Task[] = [];
+      let foundNewT = false;
+      for (let i = 0; i < tasks.length; i++) {
+        const tsk = tasks[i];
+        if (!tsk || tsk.isDeleted) continue;
+        const matchesScope =
+          (tsk.projectId && affectedProjIds.has(String(tsk.projectId).trim())) ||
+          (tsk.projectCode && affectedProjCodes.has(String(tsk.projectCode).trim().toLowerCase()));
+        if (!matchesScope) continue;
+        if (tsk.id === newT.id) {
+          scopedTasksForRollup.push(newT);
+          foundNewT = true;
+        } else {
+          scopedTasksForRollup.push(depUpdateMap.get(tsk.id) || tsk);
+        }
       }
-      const { updatedParents } = rollupParentTaskDates(allCurrentTasksWithScheduled);
+      if (!foundNewT) {
+        scopedTasksForRollup.push(newT);
+      }
+      const { updatedParents } = rollupParentTaskDates(scopedTasksForRollup);
 
       batch.set(tRef, newT, { merge: true });
 
@@ -355,7 +378,7 @@ export function useDetailTaskMutations({
       });
 
       predecessorUpdates.forEach(pu => {
-        if (pu.id !== t.id && !updatesToDependents.some(d => d.id === pu.id)) {
+        if (pu.id !== t.id && !depUpdateMap.has(pu.id)) {
           const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id);
           batch.update(pRef, { predecessor: pu.predecessor, updatedAt: pu.updatedAt });
         }
@@ -364,44 +387,54 @@ export function useDetailTaskMutations({
       const allUpdatesToSave = [
         newT,
         ...depUpdates,
-        ...updatedParents.filter(pt => pt.id !== newT.id && !depUpdates.some(d => d.id === pt.id)),
-        ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdates.some(d => d.id === pu.id))
+        ...updatedParents.filter(pt => pt.id !== newT.id && !depUpdateMap.has(pt.id)),
+        ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdateMap.has(pu.id))
       ];
-      const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
-        const prev = tasks.find((tsk) => tsk.id === item.id);
-        return createPatchDeltaItem({
-          docId: item.id,
-          collectionName: 'taka_tasks',
-          previous: prev,
-          updated: item,
-          action: 'update',
-          year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
-        });
-      });
 
-      // Ensure all delta items have the 4-key identity from the original task context
-      deltaItems.forEach(di => {
-        if (di.action === 'update' && di.data) {
-           if (!di.data.projectId && t.projectId) di.data.projectId = t.projectId;
-           if (!di.data.projectCode && t.projectCode) di.data.projectCode = t.projectCode;
-           if (!di.data.projectStore && t.projectStore) di.data.projectStore = t.projectStore;
-           if (!di.data.projectYear && t.projectYear) di.data.projectYear = t.projectYear;
+      // 1. Update Zustand immediately in 0ms so UI responds instantaneously
+      useAppStore.getState().optimisticUpdateTasks(allUpdatesToSave);
+
+      // 2. Offload Firestore commit, Delta broadcast, and Project Date sync to background microtask
+      setTimeout(async () => {
+        try {
+          const prevTaskById = new Map<string, Task>();
+          for (let i = 0; i < tasks.length; i++) {
+            const item = tasks[i];
+            if (item?.id) prevTaskById.set(item.id, item);
+          }
+
+          const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
+            const prev = prevTaskById.get(item.id);
+            return createPatchDeltaItem({
+              docId: item.id,
+              collectionName: 'taka_tasks',
+              previous: prev,
+              updated: item,
+              action: 'update',
+              year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
+            });
+          });
+
+          deltaItems.forEach(di => {
+            if (di.action === 'update' && di.data) {
+              if (!di.data.projectId && t.projectId) di.data.projectId = t.projectId;
+              if (!di.data.projectCode && t.projectCode) di.data.projectCode = t.projectCode;
+              if (!di.data.projectStore && t.projectStore) di.data.projectStore = t.projectStore;
+              if (!di.data.projectYear && t.projectYear) di.data.projectYear = t.projectYear;
+            }
+          });
+
+          const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+          markExplicitDelta(deltaItems);
+          await batch.commit();
+          recordBatchDeltas(deltaItems, currentUser.username || currentUser.id).catch(() => {});
+          await saveTaskStateUnified(allUpdatesToSave, { syncProjects: true });
+        } catch (error: any) {
+          console.error("Batch commit failed", error);
+          useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+          saveTaskStateUnified([t, ...depUpdates.map(d => tasks.find(tsk => tsk.id === d.id) || d)]);
         }
-      });
-
-      saveTaskStateUnified(allUpdatesToSave);
-
-      try {
-        const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
-        markExplicitDelta(deltaItems);
-        await batch.commit();
-        recordBatchDeltas(deltaItems, currentUser.username || currentUser.id).catch(() => {});
-      } catch (error: any) {
-        console.error("Batch commit failed", error);
-        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-        saveTaskStateUnified([t, ...depUpdates.map(d => tasks.find(tsk => tsk.id === d.id) || d)]);
-        return;
-      }
+      }, 0);
       
       undoManager.push({
         description: `Update Task Schedule: ${t.name}`,

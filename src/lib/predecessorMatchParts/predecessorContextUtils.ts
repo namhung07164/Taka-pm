@@ -25,7 +25,7 @@ export function extractTrailingTaskNumber(str: string): number | null {
  * Bigram / Sorensen-Dice string similarity calculation (0 to 1).
  * Highly efficient O(N + M) implementation resilient to typos, transposed chars, and omitted characters.
  */
-export function stringSimilarity(str1: string, str2: string): number {
+export function stringSimilarity(str1: string, str2: string, minScore: number = 0): number {
   if (!str1 || !str2) return 0;
   const s1 = str1.trim().toLowerCase();
   const s2 = str2.trim().toLowerCase();
@@ -33,6 +33,12 @@ export function stringSimilarity(str1: string, str2: string): number {
 
   if (s1.length < 2 || s2.length < 2) {
     return s1.includes(s2) || s2.includes(s1) ? 0.75 : 0;
+  }
+
+  const b1 = s1.length - 1;
+  const b2 = s2.length - 1;
+  if (minScore > 0 && (2 * Math.min(b1, b2)) / (b1 + b2) < minScore) {
+    return 0;
   }
 
   const bigrams1 = new Map<string, number>();
@@ -124,6 +130,7 @@ export interface ProjectDiffDetails {
 export interface ProjectLookupIndex {
   byId: Map<string, Project>;
   byCodeLower: Map<string, Project[]>;
+  taskContextCache?: WeakMap<Task, ResolvedProjectContext>;
 }
 
 let _lastProjectsForIndexRef: Project[] | null = null;
@@ -162,7 +169,11 @@ export function buildProjectLookupIndex(projects: Project[]): ProjectLookupIndex
     }
   }
 
-  const index: ProjectLookupIndex = { byId, byCodeLower };
+  const index: ProjectLookupIndex = {
+    byId,
+    byCodeLower,
+    taskContextCache: new WeakMap<Task, ResolvedProjectContext>(),
+  };
   _lastProjectsForIndexRef = projects;
   _cachedProjectLookupIndex = index;
   return index;
@@ -233,6 +244,10 @@ export function resolveTaskProjectContext(
   projects: Project[],
   projectIndex?: ProjectLookupIndex
 ): ResolvedProjectContext {
+  const idx = projectIndex || buildProjectLookupIndex(projects);
+  const cached = idx.taskContextCache?.get(task);
+  if (cached) return cached;
+
   const taskProjId = (task.projectId || '').trim();
   let taskCode = (task.projectCode || '').trim();
   let taskYear =
@@ -243,7 +258,6 @@ export function resolveTaskProjectContext(
   let taskLoc = (task.location || (task as any).projectLocation || '').trim();
 
   if ((!taskYear || !taskStore || !taskLoc || !taskCode) && (taskProjId || taskCode)) {
-    const idx = projectIndex || buildProjectLookupIndex(projects);
     const parent = findParentProjectFromIndex(taskProjId, taskCode, taskYear, taskStore, idx);
     if (parent) {
       if (!taskCode && parent.code) taskCode = parent.code;
@@ -253,13 +267,15 @@ export function resolveTaskProjectContext(
     }
   }
 
-  return {
+  const resolved: ResolvedProjectContext = {
     projectId: taskProjId,
     code: taskCode,
     year: taskYear,
     store: taskStore,
     location: taskLoc,
   };
+  idx.taskContextCache?.set(task, resolved);
+  return resolved;
 }
 
 /**

@@ -166,45 +166,117 @@ export function calculateTaskDatesFromPredecessors(
 }
 
 export function scheduleDependentTasks(updatedTask: Task, allTasks: Task[], projects: Project[]): Task[] {
-  const mergedTasks = allTasks.map(t => t.id === updatedTask.id ? updatedTask : t);
-  if (!allTasks.some(t => t.id === updatedTask.id)) {
-    mergedTasks.push(updatedTask);
-  }
-  const taskNoMap = buildTaskNoMap(projects, mergedTasks);
+  // Reuse WeakMap-cached taskNoMap for allTasks instead of cloning allTasks into a new array reference
+  const taskNoMap = buildTaskNoMap(projects, allTasks);
   const taskParsedPreds = new Map<string, any[]>();
   const dependencyGraph = new Map<string, string[]>();
+  const currentStates = new Map<string, Task>();
 
-  mergedTasks.forEach(tsk => {
-    if (tsk.predecessor) {
-      const parsed = parsePredecessors(tsk.predecessor, taskNoMap, tsk);
-      
-      if (parsed.length > 0) {
-        taskParsedPreds.set(tsk.id, parsed);
-        parsed.forEach(pred => {
-          const predTask = pred?.task;
-          if (predTask) {
-            const deps = dependencyGraph.get(predTask.id) || [];
-            deps.push(tsk.id);
-            dependencyGraph.set(predTask.id, deps);
-          }
-        });
+  const tasksWithPredByProjectKey = new Map<string, Task[]>();
+  const crossProjectPredTasks: Task[] = [];
+
+  const getProjScopeKey = (t: Partial<Task>) => {
+    if (t.projectId) return `id:${String(t.projectId).trim()}`;
+    return `code:${String(t.projectCode || '').trim().toLowerCase()}|${String(t.projectStore || '').trim().toLowerCase()}|${String(t.projectYear || '').trim()}`;
+  };
+
+  for (let i = 0; i < allTasks.length; i++) {
+    const raw = allTasks[i];
+    if (!raw || raw.isDeleted) continue;
+    const tsk = raw.id === updatedTask.id ? updatedTask : raw;
+    currentStates.set(tsk.id, tsk);
+    if (tsk.predecessor && tsk.predecessor.trim()) {
+      const pKey = getProjScopeKey(tsk);
+      let list = tasksWithPredByProjectKey.get(pKey);
+      if (!list) {
+        list = [];
+        tasksWithPredByProjectKey.set(pKey, list);
+      }
+      list.push(tsk);
+
+      const pCodeLower = String(tsk.projectCode || '').trim().toLowerCase();
+      const predLower = tsk.predecessor.toLowerCase();
+      // If predecessor string contains '#' and is not strictly a local '#N' or same-project 'CODE#N', mark as potential cross-project dependent
+      if (
+        (tsk.predecessorTaskIds && tsk.predecessorTaskIds.length > 0) ||
+        (predLower.includes('#') && (!pCodeLower || !predLower.startsWith(pCodeLower + '#')))
+      ) {
+        crossProjectPredTasks.push(tsk);
       }
     }
-  });
+  }
+  if (!currentStates.has(updatedTask.id)) {
+    currentStates.set(updatedTask.id, updatedTask);
+    if (updatedTask.predecessor && updatedTask.predecessor.trim()) {
+      const pKey = getProjScopeKey(updatedTask);
+      let list = tasksWithPredByProjectKey.get(pKey);
+      if (!list) {
+        list = [];
+        tasksWithPredByProjectKey.set(pKey, list);
+      }
+      list.push(updatedTask);
+    }
+  }
+
+  const parsedScopes = new Set<string>();
+  const parsedTaskIds = new Set<string>();
+
+  const parseTaskPred = (tsk: Task) => {
+    if (parsedTaskIds.has(tsk.id)) return;
+    parsedTaskIds.add(tsk.id);
+    if (!tsk.predecessor) return;
+    const parsed = parsePredecessors(tsk.predecessor, taskNoMap, tsk);
+    if (parsed.length > 0) {
+      taskParsedPreds.set(tsk.id, parsed);
+      for (let i = 0; i < parsed.length; i++) {
+        const predTask = parsed[i]?.task;
+        if (predTask && predTask.id) {
+          let deps = dependencyGraph.get(predTask.id);
+          if (!deps) {
+            deps = [];
+            dependencyGraph.set(predTask.id, deps);
+          }
+          deps.push(tsk.id);
+        }
+      }
+    }
+  };
+
+  const ensureScopeParsed = (tsk: Task) => {
+    const scopeKey = getProjScopeKey(tsk);
+    if (!parsedScopes.has(scopeKey)) {
+      parsedScopes.add(scopeKey);
+      const scopeTasks = tasksWithPredByProjectKey.get(scopeKey);
+      if (scopeTasks) {
+        for (let i = 0; i < scopeTasks.length; i++) {
+          parseTaskPred(scopeTasks[i]);
+        }
+      }
+    }
+    const pCodeLower = String(tsk.projectCode || '').trim().toLowerCase();
+    for (let i = 0; i < crossProjectPredTasks.length; i++) {
+      const cpTask = crossProjectPredTasks[i];
+      if (parsedTaskIds.has(cpTask.id)) continue;
+      const hasHardLink = cpTask.predecessorTaskIds?.includes(tsk.id);
+      const mentionsCode = pCodeLower && cpTask.predecessor?.toLowerCase().includes(pCodeLower);
+      if (hasHardLink || mentionsCode) {
+        parseTaskPred(cpTask);
+      }
+    }
+  };
+
+  parseTaskPred(updatedTask);
+  ensureScopeParsed(updatedTask);
 
   const queue: string[] = [];
   const processed = new Set<string>();
   const updatesToApply = new Map<string, Task>();
-  const currentStates = new Map<string, Task>();
-  
-  mergedTasks.forEach(tsk => currentStates.set(tsk.id, tsk));
-  currentStates.set(updatedTask.id, updatedTask);
 
   const updatedTaskPreds = taskParsedPreds.get(updatedTask.id) || [];
   updatedTaskPreds.forEach(pred => {
-    if (pred) {
-      const predTask = pred.task;
-      if (predTask) queue.push(predTask.id);
+    if (pred?.task?.id) {
+      ensureScopeParsed(pred.task);
+      queue.push(pred.task.id);
     }
   });
   queue.push(updatedTask.id);
@@ -214,10 +286,16 @@ export function scheduleDependentTasks(updatedTask: Task, allTasks: Task[], proj
     if (processed.has(currentId)) continue;
     processed.add(currentId);
 
+    const currentTaskObj = currentStates.get(currentId);
+    if (currentTaskObj) {
+      ensureScopeParsed(currentTaskObj);
+    }
+
     const dependents = dependencyGraph.get(currentId) || [];
     
     dependents.forEach(depId => {
-      const depTask = currentStates.get(depId)!;
+      const depTask = currentStates.get(depId);
+      if (!depTask) return;
       const preds = taskParsedPreds.get(depId) || [];
       
       const isFlexible = Boolean(depTask.predecessor?.trim());

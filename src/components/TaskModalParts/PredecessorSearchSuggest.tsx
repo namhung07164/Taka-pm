@@ -2,27 +2,17 @@ import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef,
 import { Task, Project, PredecessorType } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { cn } from '../../lib/utils';
-import {
-  buildTaskNoMap,
-  computeTaskCode,
-  parsePredecessors,
-  splitPredecessors,
-} from '../../lib/ganttUtils';
+import { buildTaskNoMap, computeAllTaskCodes, parsePredecessors, splitPredecessors } from '../../lib/ganttUtils';
 import {
   rankCandidateTasks,
-  getTaskProjectDiffDetails,
+  buildProjectLookupIndex,
+  resolveProjectContext,
+  getTaskProjectDiffDetailsWithResolved,
   parsePredecessorToken,
   PredecessorContext,
   RankedPredecessorMatch,
 } from '../../lib/predecessorMatchUtils';
-import {
-  Search,
-  X,
-  AlertTriangle,
-  ExternalLink,
-  Sparkles,
-  Loader2,
-} from 'lucide-react';
+import { Search, X, AlertTriangle, ExternalLink, Sparkles, Loader2 } from 'lucide-react';
 import {
   PredecessorChange,
   LinkItem,
@@ -73,9 +63,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
     useEffect(() => {
       if (open && listRef.current && listRef.current.children[hi]) {
         const activeEl = listRef.current.children[hi] as HTMLElement;
-        if (activeEl) {
-          activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        }
+        if (activeEl) activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     }, [hi, open]);
 
@@ -90,8 +78,18 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
       [source?.projectId, source?.projectCode, source?.projectYear, source?.projectStore, source?.location]
     );
 
-    const pool = useMemo(() => (storeTasks || []).filter((t) => t && !t.isDeleted), [storeTasks]);
-    const taskNoMap = useMemo(() => buildTaskNoMap(projects, storeTasks || []), [projects, storeTasks]);
+    const pool = useMemo(() => {
+      const list = storeTasks || [];
+      return list.some((t) => !t || t.isDeleted) ? list.filter((t) => t && !t.isDeleted) : list;
+    }, [storeTasks]);
+
+    const projectIndex = useMemo(() => buildProjectLookupIndex(projects), [projects]);
+    const allCodesMap = useMemo(() => computeAllTaskCodes(projects, pool), [projects, pool]);
+    const resolvedContext = useMemo(
+      () => resolveProjectContext(ctx, projects, projectIndex),
+      [ctx, projects, projectIndex]
+    );
+    const taskNoMap = useMemo(() => buildTaskNoMap(projects, pool), [projects, pool]);
 
     const items = useMemo<LinkItem[]>(() => {
       const str = String(source?.predecessor || '').trim();
@@ -107,8 +105,8 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
           p = undefined;
         }
         if (p && p.task) {
-          const diff = getTaskProjectDiffDetails(ctx, p.task, projects);
-          const code = computeTaskCode(projects, storeTasks || [], p.task) || p.task.taskCodePhu || p.no || tok;
+          const diff = getTaskProjectDiffDetailsWithResolved(resolvedContext, p.task, projects, projectIndex);
+          const code = allCodesMap.get(p.task.id) || p.task.taskCodePhu || p.no || tok;
           return {
             key: `${p.task.id}-${i}`,
             resolved: true,
@@ -137,19 +135,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
           externalLabel: '',
         };
       });
-    }, [
-      source?.predecessor,
-      source?.predecessorTaskIds,
-      source?.projectId,
-      source?.projectCode,
-      source?.projectYear,
-      source?.projectStore,
-      source?.location,
-      taskNoMap,
-      ctx,
-      projects,
-      storeTasks,
-    ]);
+    }, [source, taskNoMap, resolvedContext, projects, projectIndex, allCodesMap]);
 
     useEffect(() => {
       const handler = (e: MouseEvent | TouchEvent) => {
@@ -179,7 +165,11 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
       const q = deferredQuery.trim();
 
       if (q) {
-        return rankCandidateTasks(q, pool, projects, pool, source?.projectCode, ctx)
+        return rankCandidateTasks(q, pool, projects, pool, source?.projectCode, ctx, {
+          projectIndex,
+          allTaskCodesMap: allCodesMap,
+          resolvedContext,
+        })
           .filter((m) => !excluded.has(m.task.id))
           .slice(0, 20);
       }
@@ -188,21 +178,21 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
       const sameCode = base.filter((t) => t.projectCode === source?.projectCode);
       if (sameCode.length > 0) base = sameCode;
       base = base
-        .filter((t) => !getTaskProjectDiffDetails(ctx, t, projects).isDifferent)
+        .filter((t) => !getTaskProjectDiffDetailsWithResolved(resolvedContext, t, projects, projectIndex).isDifferent)
         .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
         .slice(0, 25);
 
       return base.map((t) => {
-        const diff = getTaskProjectDiffDetails(ctx, t, projects);
+        const diff = getTaskProjectDiffDetailsWithResolved(resolvedContext, t, projects, projectIndex);
         return {
           task: t,
           score: 0,
-          exactTaskCode: computeTaskCode(projects, pool, t) || t.taskCodePhu || t.id,
+          exactTaskCode: allCodesMap.get(t.id) || t.taskCodePhu || t.id,
           isExternal: !!diff.isDifferent,
           diffDetails: diff,
         } as RankedPredecessorMatch;
       });
-    }, [open, deferredQuery, pool, projects, excluded, source?.projectCode, ctx]);
+    }, [open, deferredQuery, pool, projects, excluded, source?.projectCode, ctx, projectIndex, allCodesMap, resolvedContext]);
 
     const commit = useCallback(
       async (list: LinkItem[]) => {
@@ -266,7 +256,7 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
         resolved: true,
         taskId: t.id,
         task: t,
-        code: m.exactTaskCode || computeTaskCode(projects, pool, t) || t.taskCodePhu || t.id,
+        code: m.exactTaskCode || allCodesMap.get(t.id) || t.taskCodePhu || t.id,
         type: idx === 0 ? 'FS' : 'FF',
         lagSign: '+',
         lagValue: 0,

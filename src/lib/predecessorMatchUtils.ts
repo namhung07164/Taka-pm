@@ -3,39 +3,27 @@ import { normalizeDashes } from './utils';
 import { computeTaskCode, computeAllTaskCodes, splitPredecessors } from './ganttUtils';
 import { useAppStore } from '../store/useAppStore';
 import {
-  extractTrailingTaskNumber,
-  stringSimilarity,
-  parsePredecessorToken,
-  PredecessorContext,
-  ResolvedProjectContext,
-  ProjectDiffDetails,
-  ProjectLookupIndex,
-  buildProjectLookupIndex,
-  resolveProjectContext,
-  resolveTaskProjectContext,
-  getTaskProjectDiffDetailsWithResolved,
-  getTaskProjectDiffDetails,
-  isTaskDifferentProject,
+  extractTrailingTaskNumber, stringSimilarity, parsePredecessorToken,
+  PredecessorContext, ResolvedProjectContext, ProjectDiffDetails, ProjectLookupIndex,
+  buildProjectLookupIndex, resolveProjectContext, resolveTaskProjectContext,
+  getTaskProjectDiffDetailsWithResolved, getTaskProjectDiffDetails, isTaskDifferentProject,
 } from './predecessorMatchParts/predecessorContextUtils';
 
 export {
-  extractTrailingTaskNumber,
-  stringSimilarity,
-  parsePredecessorToken,
-  buildProjectLookupIndex,
-  resolveProjectContext,
-  resolveTaskProjectContext,
-  getTaskProjectDiffDetailsWithResolved,
-  getTaskProjectDiffDetails,
-  isTaskDifferentProject,
+  extractTrailingTaskNumber, stringSimilarity, parsePredecessorToken,
+  buildProjectLookupIndex, resolveProjectContext, resolveTaskProjectContext,
+  getTaskProjectDiffDetailsWithResolved, getTaskProjectDiffDetails, isTaskDifferentProject,
 };
+export type { PredecessorContext, ResolvedProjectContext, ProjectDiffDetails, ProjectLookupIndex };
 
-export type {
-  PredecessorContext,
-  ResolvedProjectContext,
-  ProjectDiffDetails,
-  ProjectLookupIndex,
-};
+export interface PrecomputedQueryInfo {
+  q: string;
+  qAlphaNum: string;
+  qTaskNum: number | null;
+  digitNum: number | null;
+  qParts: string[];
+  currentPCode: string;
+}
 
 export interface PrecomputedMatchOptions {
   precomputedTaskCode?: string;
@@ -43,6 +31,19 @@ export interface PrecomputedMatchOptions {
   resolvedTaskInfo?: ResolvedProjectContext;
   projectIndex?: ProjectLookupIndex;
   allTaskCodesMap?: Map<string, string>;
+  precomputedQuery?: PrecomputedQueryInfo;
+  skipFuzzy?: boolean;
+}
+
+function buildPrecomputedQuery(rawQuery: string, currentProjectCode?: string, context?: PredecessorContext): PrecomputedQueryInfo {
+  const q = normalizeDashes(rawQuery || '').trim().toLowerCase();
+  const qAlphaNum = q.replace(/[^a-z0-9]/g, '');
+  const qTaskNum = extractTrailingTaskNumber(q);
+  const digitMatch = q.match(/^[-#\s]*(\d+)$/);
+  const digitNum = digitMatch ? parseInt(digitMatch[1], 10) : null;
+  const qParts = q.split(/[-_#\s]+/).filter(Boolean);
+  const currentPCode = normalizeDashes(context?.projectCode || currentProjectCode || '').trim().toLowerCase();
+  return { q, qAlphaNum, qTaskNum, digitNum, qParts, currentPCode };
 }
 
 /**
@@ -105,7 +106,8 @@ export function scoreTaskPredecessorMatch(
   options?: PrecomputedMatchOptions
 ): number {
   if (!rawQuery || !task) return 0;
-  const q = normalizeDashes(rawQuery).trim().toLowerCase();
+  const pq = options?.precomputedQuery || buildPrecomputedQuery(rawQuery, currentProjectCode, context);
+  const { q, qAlphaNum, qTaskNum, digitNum, qParts, currentPCode } = pq;
   if (!q) return 0;
 
   const computedCode =
@@ -117,7 +119,6 @@ export function scoreTaskPredecessorMatch(
   const codePhu = normalizeDashes(task.taskCodePhu || '').trim().toLowerCase();
   const name = (task.name || '').trim().toLowerCase();
   const taskPCode = normalizeDashes(task.projectCode || '').trim().toLowerCase();
-  const currentPCode = normalizeDashes(context?.projectCode || currentProjectCode || '').trim().toLowerCase();
 
   const projectIndex = options?.projectIndex || buildProjectLookupIndex(projects);
   const ctx = options?.resolvedContext || resolveProjectContext(context, projects, projectIndex);
@@ -145,18 +146,13 @@ export function scoreTaskPredecessorMatch(
   const isExactSameParentProject =
     isSameProjectId || (isSameCode && !isDiffYear && !isDiffStore && !isDiffLocation);
 
-  const qAlphaNum = q.replace(/[^a-z0-9]/g, '');
   const fullCodeAlphaNum = fullCode.replace(/[^a-z0-9]/g, '');
-  const codePhuAlphaNum = codePhu.replace(/[^a-z0-9]/g, '');
-  const pCodeAlphaNum = taskPCode.replace(/[^a-z0-9]/g, '');
+  const codePhuAlphaNum = codePhu ? codePhu.replace(/[^a-z0-9]/g, '') : '';
+  const pCodeAlphaNum = taskPCode ? taskPCode.replace(/[^a-z0-9]/g, '') : '';
 
   // Numerical Conflict Guard:
-  // If the search query explicitly contains a task number (e.g. "-2" in "B2-B208-2" or standalone "2" / "#2"),
-  // and the candidate task has a different number (e.g. "-1" or "-3"),
-  // they are FUNDAMENTALLY DIFFERENT tasks. They must NEVER match!
-  const qTaskNum = extractTrailingTaskNumber(q);
   const fullCodeNum = extractTrailingTaskNumber(fullCode);
-  const codePhuNum = extractTrailingTaskNumber(codePhu);
+  const codePhuNum = codePhu ? extractTrailingTaskNumber(codePhu) : null;
   const orderNum = task.orderIndex !== undefined ? task.orderIndex + 1 : null;
   const hasAnyCandidateNum = fullCodeNum !== null || codePhuNum !== null || orderNum !== null;
   const matchesAnyCandidateNum =
@@ -168,89 +164,66 @@ export function scoreTaskPredecessorMatch(
 
   let baseScore = 0;
 
-  // 1. Exact match on full code or code phu
   if (fullCode === q || codePhu === q) {
     baseScore = 1000;
   } else if (qAlphaNum && (fullCodeAlphaNum === qAlphaNum || codePhuAlphaNum === qAlphaNum)) {
-    // 2. Alphanumeric exact match (ignoring dashes/dots/spaces)
     baseScore = 950;
+  } else if (digitNum !== null) {
+    const isNumMatch = fullCodeNum === digitNum || codePhuNum === digitNum || orderNum === digitNum;
+    if (isNumMatch) {
+      if (isExactSameParentProject) baseScore = 920;
+      else if (isSameCode) baseScore = 860;
+      else baseScore = 760;
+    }
+  } else if (fullCode.endsWith(q) || (codePhu && codePhu.endsWith(q))) {
+    baseScore = 850;
+  } else if (
+    qAlphaNum.length >= 2 &&
+    (fullCodeAlphaNum.endsWith(qAlphaNum) || (codePhuAlphaNum && codePhuAlphaNum.endsWith(qAlphaNum)))
+  ) {
+    baseScore = 820;
+  } else if (fullCode.startsWith(q) || (codePhu && codePhu.startsWith(q))) {
+    baseScore = 800;
+  } else if (
+    qAlphaNum.length >= 2 &&
+    (fullCodeAlphaNum.startsWith(qAlphaNum) || (codePhuAlphaNum && codePhuAlphaNum.startsWith(qAlphaNum)))
+  ) {
+    baseScore = 780;
+  } else if (fullCode.includes(q) || (codePhu && codePhu.includes(q))) {
+    baseScore = 750;
+  } else if (
+    qAlphaNum.length >= 2 &&
+    (fullCodeAlphaNum.includes(qAlphaNum) || (codePhuAlphaNum && codePhuAlphaNum.includes(qAlphaNum)))
+  ) {
+    baseScore = 720;
   } else {
-    // 3. User typed only digits or #digits (e.g. "85", "2", "#2", "-2")
-    const digitMatch = q.match(/^[-#\s]*(\d+)$/);
-    if (digitMatch) {
-      const num = parseInt(digitMatch[1], 10);
-      const isNumMatch = fullCodeNum === num || codePhuNum === num || orderNum === num;
-
-      if (isNumMatch) {
-        if (isExactSameParentProject) {
-          baseScore = 920;
-        } else if (isSameCode) {
-          baseScore = 860;
-        } else {
-          baseScore = 760;
-        }
+    if (qParts.length >= 2) {
+      const candidatePCodePart = qParts.slice(0, -1).join('');
+      const candidateNumPart = qParts[qParts.length - 1];
+      if (
+        pCodeAlphaNum.includes(candidatePCodePart.replace(/[^a-z0-9]/g, '')) &&
+        (fullCode.endsWith(candidateNumPart) || (codePhu && codePhu.endsWith(candidateNumPart)))
+      ) {
+        baseScore = 880;
       }
-    } else if (fullCode.endsWith(q) || (codePhu && codePhu.endsWith(q))) {
-      // 4. Code ends with query
-      baseScore = 850;
-    } else if (
-      qAlphaNum.length >= 2 &&
-      (fullCodeAlphaNum.endsWith(qAlphaNum) || (codePhuAlphaNum && codePhuAlphaNum.endsWith(qAlphaNum)))
-    ) {
-      baseScore = 820;
-    } else if (fullCode.startsWith(q) || (codePhu && codePhu.startsWith(q))) {
-      // 5. Code starts with query
-      baseScore = 800;
-    } else if (
-      qAlphaNum.length >= 2 &&
-      (fullCodeAlphaNum.startsWith(qAlphaNum) || (codePhuAlphaNum && codePhuAlphaNum.startsWith(qAlphaNum)))
-    ) {
-      baseScore = 780;
-    } else if (fullCode.includes(q) || (codePhu && codePhu.includes(q))) {
-      // 6. Code contains query
-      baseScore = 750;
-    } else if (
-      qAlphaNum.length >= 2 &&
-      (fullCodeAlphaNum.includes(qAlphaNum) || (codePhuAlphaNum && codePhuAlphaNum.includes(qAlphaNum)))
-    ) {
-      baseScore = 720;
-    } else {
-      // 7. Project Code contains part of query and query contains task number
-      const qParts = q.split(/[-_#\s]+/).filter(Boolean);
-      if (qParts.length >= 2) {
-        const candidatePCodePart = qParts.slice(0, -1).join('');
-        const candidateNumPart = qParts[qParts.length - 1];
-        if (
-          pCodeAlphaNum.includes(candidatePCodePart.replace(/[^a-z0-9]/g, '')) &&
-          (fullCode.endsWith(candidateNumPart) || (codePhu && codePhu.endsWith(candidateNumPart)))
-        ) {
-          baseScore = 880;
-        }
-      }
+    }
 
-      // 8. Task Name matching
-      if (!baseScore) {
-        if (name === q) {
-          baseScore = 820;
-        } else if (name.startsWith(q)) {
-          baseScore = 760;
-        } else if (name.includes(q)) {
-          baseScore = 680;
-        }
-      }
+    if (!baseScore) {
+      if (name === q) baseScore = 820;
+      else if (name.startsWith(q)) baseScore = 760;
+      else if (name.includes(q)) baseScore = 680;
+    }
 
-      // 9. Fuzzy string similarity
-      if (!baseScore && qAlphaNum.length >= 2) {
-        const simFull = stringSimilarity(qAlphaNum, fullCodeAlphaNum);
-        const simPhu = codePhuAlphaNum ? stringSimilarity(qAlphaNum, codePhuAlphaNum) : 0;
-        const maxSim = Math.max(simFull, simPhu);
-        if (maxSim >= 0.5) {
-          baseScore = 500 + Math.round(maxSim * 250);
-        } else if (q.length >= 4) {
-          const simName = stringSimilarity(q, name);
-          if (simName >= 0.6) {
-            baseScore = 450 + Math.round(simName * 200);
-          }
+    if (!baseScore && !options?.skipFuzzy && qAlphaNum.length >= 2) {
+      const simFull = stringSimilarity(qAlphaNum, fullCodeAlphaNum, 0.5);
+      const simPhu = codePhuAlphaNum ? stringSimilarity(qAlphaNum, codePhuAlphaNum, 0.5) : 0;
+      const maxSim = Math.max(simFull, simPhu);
+      if (maxSim >= 0.5) {
+        baseScore = 500 + Math.round(maxSim * 250);
+      } else if (q.length >= 4) {
+        const simName = stringSimilarity(q, name, 0.6);
+        if (simName >= 0.6) {
+          baseScore = 450 + Math.round(simName * 200);
         }
       }
     }
@@ -291,7 +264,7 @@ export interface RankedPredecessorMatch {
 
 /**
  * Ranks all candidate tasks according to their match score for a given query.
- * Pre-indexes ProjectLookupIndex, computeAllTaskCodes, and resolveProjectContext once before loop (O(1) per candidate).
+ * Pre-indexes ProjectLookupIndex, computeAllTaskCodes, and precomputedQuery once before loop (O(1) per candidate).
  */
 export function rankCandidateTasks(
   query: string,
@@ -323,11 +296,28 @@ export function rankCandidateTasks(
     });
   }
 
+  const precomputedQuery =
+    options?.precomputedQuery || buildPrecomputedQuery(query, currentProjectCode, effectiveContext);
   const results: RankedPredecessorMatch[] = [];
+  let strongMatchCount = 0;
+
+  // Two-pass evaluation: score same-project tasks first so we can skip expensive fuzzy bigram checks on external tasks once we have >= 20 strong matches
+  const ctxProjId = resolvedContext.projectId;
+  const ctxCodeLower = resolvedContext.code.toLowerCase();
+  const sameProjCandidates: Task[] = [];
+  const externalCandidates: Task[] = [];
 
   for (let i = 0; i < candidateTasks.length; i++) {
     const t = candidateTasks[i];
     if (!t) continue;
+    const isLikelySame =
+      (ctxProjId && t.projectId === ctxProjId) ||
+      (ctxCodeLower && t.projectCode && t.projectCode.trim().toLowerCase() === ctxCodeLower);
+    if (isLikelySame) sameProjCandidates.push(t);
+    else externalCandidates.push(t);
+  }
+
+  const evaluateCandidate = (t: Task, skipFuzzy: boolean) => {
     const precomputedCode = allCodesMap.get(t.id) || computeTaskCode(projects, allTasks, t);
     const tInfo = resolveTaskProjectContext(t, projects, projectIndex);
     const score = scoreTaskPredecessorMatch(t, query, projects, allTasks, currentProjectCode, effectiveContext, {
@@ -336,8 +326,11 @@ export function rankCandidateTasks(
       resolvedTaskInfo: tInfo,
       projectIndex,
       allTaskCodesMap: allCodesMap,
+      precomputedQuery,
+      skipFuzzy,
     });
     if (score > 0) {
+      if (score >= 750) strongMatchCount++;
       const exactCode = precomputedCode || t.taskCodePhu || t.id;
       const diff = getTaskProjectDiffDetailsWithResolved(resolvedContext, t, projects, projectIndex, tInfo);
       results.push({
@@ -348,6 +341,13 @@ export function rankCandidateTasks(
         diffDetails: diff,
       });
     }
+  };
+
+  for (let i = 0; i < sameProjCandidates.length; i++) {
+    evaluateCandidate(sameProjCandidates[i], false);
+  }
+  for (let i = 0; i < externalCandidates.length; i++) {
+    evaluateCandidate(externalCandidates[i], strongMatchCount >= 20);
   }
 
   results.sort((a, b) => b.score - a.score);

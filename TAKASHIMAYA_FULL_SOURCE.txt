@@ -143506,7 +143506,7 @@ export {
 
 
 === FILE: src/components/DetailTabParts/useDetailProjectInfo.ts ===
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Project, Task } from '../../types';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
@@ -143541,11 +143541,48 @@ function hasValidTaskContent(t: Partial<Task> | any): boolean {
   );
 }
 
-function computeSingleProjectInfo(
+function collectCandidateTasksForProject(
   p: Project,
   tasksByProjectId: Map<string, Task[]>,
   tasksByProjectKey: Map<string, Task[]>,
-  tasksByCodeMap: Map<string, Task[]>,
+  tasksByCodeMap: Map<string, Task[]>
+): Task[] {
+  const candidates: Task[] = [];
+  const pIdStr = p.id ? String(p.id).trim() : '';
+  if (pIdStr && tasksByProjectId.has(pIdStr)) {
+    const byId = tasksByProjectId.get(pIdStr)!;
+    for (let i = 0; i < byId.length; i++) candidates.push(byId[i]);
+  }
+  const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
+  const foundByKey = tasksByProjectKey.get(key);
+  if (foundByKey) {
+    for (let i = 0; i < foundByKey.length; i++) candidates.push(foundByKey[i]);
+  }
+  const pCodeLower = String(p.code || '').trim().toLowerCase();
+  if (pCodeLower) {
+    const byCode = tasksByCodeMap.get(pCodeLower);
+    if (byCode) {
+      for (let i = 0; i < byCode.length; i++) candidates.push(byCode[i]);
+    }
+  }
+  if (p.linkCodes) {
+    const linkParts = String(p.linkCodes).toLowerCase().split(/[,;/]+/);
+    for (let i = 0; i < linkParts.length; i++) {
+      const lc = linkParts[i].trim();
+      if (lc && lc !== pCodeLower) {
+        const byLink = tasksByCodeMap.get(lc);
+        if (byLink) {
+          for (let j = 0; j < byLink.length; j++) candidates.push(byLink[j]);
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
+function computeSingleProjectInfo(
+  p: Project,
+  candidates: Task[],
   taskById: Map<string, Task>
 ): ProjectInfo {
   const realTasksMap = new Map<string, Task>();
@@ -143554,7 +143591,6 @@ function computeSingleProjectInfo(
   const pIdStr = p.id ? String(p.id).trim() : '';
   const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
   const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-  const pCodeLower = String(p.code || '').trim().toLowerCase();
 
   const tryAddTask = (t: Task) => {
     if (!t || (!t.id && !t.name) || t.isDeleted) return;
@@ -143585,25 +143621,9 @@ function computeSingleProjectInfo(
     }
   };
 
-  if (pIdStr && tasksByProjectId.has(pIdStr)) {
-    tasksByProjectId.get(pIdStr)!.forEach(tryAddTask);
+  for (let i = 0; i < candidates.length; i++) {
+    tryAddTask(candidates[i]);
   }
-
-  const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-  const foundByKey = tasksByProjectKey.get(key);
-  if (foundByKey && foundByKey.length > 0) {
-    foundByKey.forEach(tryAddTask);
-  }
-
-  const allCodes = new Set<string>();
-  if (pCodeLower) allCodes.add(pCodeLower);
-  if (p.linkCodes) {
-    String(p.linkCodes).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean).forEach(c => allCodes.add(c));
-  }
-  allCodes.forEach(code => {
-    const candidateTasks = tasksByCodeMap.get(code) || [];
-    candidateTasks.forEach(tryAddTask);
-  });
 
   // Fallback or merge p.taskSummaries when no real tasks are loaded OR when project is not fully hydrated and only partial tasks are in RAM
   const hasSummaries = p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0;
@@ -143735,7 +143755,24 @@ function computeSingleProjectInfo(
   };
 }
 
+interface CachedProjectInfoEntry {
+  project: Project;
+  candidates: Task[];
+  hydrated: boolean;
+  info: ProjectInfo;
+}
+
+function areTaskArraysShallowEqual(a: Task[], b: Task[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoParams) {
+  const cacheRef = useRef<Map<string, CachedProjectInfoEntry>>(new Map());
+
   const { tasksByProjectId, tasksByProjectKey, tasksByCodeMap } = useMemo(() => {
     const idMap = new Map<string, Task[]>();
     const keyMap = new Map<string, Task[]>();
@@ -143781,13 +143818,33 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
 
   const projectInfoMap = useMemo(() => {
     const map = new Map<string, ProjectInfo>();
+    const prevCache = cacheRef.current;
+    const nextCache = new Map<string, CachedProjectInfoEntry>();
+
     projects.forEach(p => {
       const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
-      map.set(
-        pUniqueKey,
-        computeSingleProjectInfo(p, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById)
-      );
+      const pIdStr = p.id ? String(p.id).trim() : '';
+      const hydrated = isProjectTasksHydrated(pIdStr);
+      const candidates = collectCandidateTasksForProject(p, tasksByProjectId, tasksByProjectKey, tasksByCodeMap);
+      const cached = prevCache.get(pUniqueKey);
+
+      if (
+        cached &&
+        cached.project === p &&
+        cached.hydrated === hydrated &&
+        areTaskArraysShallowEqual(cached.candidates, candidates)
+      ) {
+        map.set(pUniqueKey, cached.info);
+        nextCache.set(pUniqueKey, cached);
+        return;
+      }
+
+      const info = computeSingleProjectInfo(p, candidates, taskById);
+      map.set(pUniqueKey, info);
+      nextCache.set(pUniqueKey, { project: p, candidates, hydrated, info });
     });
+
+    cacheRef.current = nextCache;
     return map;
   }, [projects, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById]);
 
@@ -143795,7 +143852,8 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
     const cached = projectInfoMap.get(pUniqueKey);
     if (cached) return cached;
-    return computeSingleProjectInfo(p, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById);
+    const candidates = collectCandidateTasksForProject(p, tasksByProjectId, tasksByProjectKey, tasksByCodeMap);
+    return computeSingleProjectInfo(p, candidates, taskById);
   }, [projectInfoMap, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById]);
 
   return {
@@ -143805,7 +143863,6 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     getProjectInfo,
   };
 }
-
 
 
 === FILE: src/hooks/useFirebaseDataParts/tasksHydrationHelpers.ts ===
@@ -147167,17 +147224,16 @@ import { Task, Project } from '../../types';
 import { isTaskBelongsToProject, normalizeDashes } from '../utils';
 import { sortGroupTasks } from './taskSortingAndCodes';
 
-let _lastProjectsForNoMapRef: Project[] | null = null;
-let _lastTasksForNoMapRef: Task[] | null = null;
-let _cachedTaskNoMap: Map<string, Task[]> | null = null;
+const _taskNoMapWeakCache = new WeakMap<Task[], WeakMap<Project[], Map<string, Task[]>>>();
+const EMPTY_PROJECTS_REF: Project[] = [];
+const EMPTY_TASKS_REF: Task[] = [];
 
 export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, Task[]> {
-  if (
-    _lastProjectsForNoMapRef === projects &&
-    _lastTasksForNoMapRef === tasks &&
-    _cachedTaskNoMap !== null
-  ) {
-    return _cachedTaskNoMap;
+  const tasksKey = Array.isArray(tasks) && tasks.length > 0 ? tasks : EMPTY_TASKS_REF;
+  const projectsKey = Array.isArray(projects) && projects.length > 0 ? projects : EMPTY_PROJECTS_REF;
+  const cachedByProj = _taskNoMapWeakCache.get(tasksKey)?.get(projectsKey);
+  if (cachedByProj) {
+    return cachedByProj;
   }
 
   const map = new Map<string, Task[]>();
@@ -147281,7 +147337,221 @@ export function buildTaskNoMap(projects: Project[], tasks: Task[]): Map<string, 
       if (computed) {
         addKey(t, computed);
         if (computed.includes('#')) addKey(t, computed.replace('#', '-'));
-        if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#=== FILE: src/lib/ganttUtilsParts/taskCodeIndexers.ts ===
+        if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#$1'));
+      }
+
+      if (t.taskCodePhu) {
+        addKey(t, t.taskCodePhu);
+        if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
+        if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
+      }
+
+      addKey(t, `${pCode}#${i + 1}`);
+      addKey(t, `${pCode}-${i + 1}`);
+      addKey(t, `#${i + 1}`);
+
+      const explicitSubMatch = String(t.taskCodePhu || '').trim().match(/[#-](\d+)$/);
+      const explicitSubNum = explicitSubMatch ? parseInt(explicitSubMatch[1], 10) : null;
+
+      if (explicitSubNum !== null && !isNaN(explicitSubNum) && explicitSubNum !== i + 1) {
+        addKey(t, `${pCode}#${explicitSubNum}`);
+        addKey(t, `${pCode}-${explicitSubNum}`);
+        addKey(t, `#${explicitSubNum}`);
+      } else if (t.orderIndex !== undefined && t.orderIndex !== null && Number(t.orderIndex) !== i) {
+        addKey(t, `${pCode}#${Number(t.orderIndex) + 1}`);
+        addKey(t, `${pCode}-${Number(t.orderIndex) + 1}`);
+        addKey(t, `#${Number(t.orderIndex) + 1}`);
+      }
+
+      if (t.id) addKey(t, t.id);
+    });
+  });
+
+  safeTasks.forEach(t => {
+    if (!t || t.isDeleted) return;
+    const computed = taskCodeMap.get(t.id) || t.taskCodePhu || '';
+    if (computed) {
+      addKey(t, computed);
+      if (computed.includes('#')) addKey(t, computed.replace('#', '-'));
+      if (computed.includes('-')) addKey(t, computed.replace(/-(\d+)$/, '#$1'));
+    }
+    if (t.taskCodePhu) {
+      addKey(t, t.taskCodePhu);
+      if (t.taskCodePhu.includes('#')) addKey(t, t.taskCodePhu.replace('#', '-'));
+      if (t.taskCodePhu.includes('-')) addKey(t, t.taskCodePhu.replace(/-(\d+)$/, '#$1'));
+    }
+    const explicitSubMatch = String(t.taskCodePhu || '').trim().match(/[#-](\d+)$/);
+    if (!explicitSubMatch && t.orderIndex !== undefined && t.orderIndex !== null && t.projectCode) {
+      addKey(t, `${t.projectCode}#${Number(t.orderIndex) + 1}`);
+      addKey(t, `${t.projectCode}-${Number(t.orderIndex) + 1}`);
+    }
+    if (t.id) addKey(t, t.id);
+  });
+
+  let projCache = _taskNoMapWeakCache.get(tasksKey);
+  if (!projCache) {
+    projCache = new WeakMap<Project[], Map<string, Task[]>>();
+    _taskNoMapWeakCache.set(tasksKey, projCache);
+  }
+  projCache.set(projectsKey, map);
+  return map;
+}
+
+export function computeTaskCode(projects: Project[], tasks: Task[], task: Task): string {
+  if (!task || task.isDeleted) return '';
+
+  const allCodes = computeAllTaskCodes(projects || [], tasks || []);
+  const fastCode = allCodes.get(task.id);
+  if (fastCode) return fastCode;
+
+  const taskPCode = String(task.projectCode || '').trim();
+  const taskYear = task.projectYear !== undefined && task.projectYear !== null ? String(task.projectYear).trim() : '';
+  const taskStore = task.projectStore ? String(task.projectStore).trim().toUpperCase() : '';
+
+  const p =
+    (task.projectId ? (projects || []).find(proj => proj && !proj.isDeleted && String(proj.id) === String(task.projectId)) : undefined) ||
+    (projects || []).find(proj => proj && !proj.isDeleted && isTaskBelongsToProject(task, proj));
+
+  const currentPCode = p ? String(p.code).trim() : taskPCode;
+  
+  if (!currentPCode) return '';
+
+  const pTasks = p
+    ? (tasks || []).filter(t => isTaskBelongsToProject(t, p))
+    : (tasks || []).filter(t => {
+        if (!t || t.isDeleted) return false;
+        if (!t.projectCode || String(t.projectCode).trim().toLowerCase() !== currentPCode.toLowerCase()) return false;
+        const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+        const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+        if (taskYear && tYear && taskYear !== tYear) return false;
+        if (taskStore && tStore && taskStore !== tStore) return false;
+        return true;
+      });
+  
+  const sorted = sortGroupTasks(pTasks);
+  const idx = sorted.findIndex(t => t.id === task.id);
+  
+  const orderNum = idx !== -1 ? idx + 1 : (task.orderIndex !== undefined ? Number(task.orderIndex) + 1 : 1);
+
+  return `${currentPCode}#${orderNum}`;
+}
+
+const _taskCodesWeakCache = new WeakMap<Task[], WeakMap<Project[], Map<string, string>>>();
+
+/**
+ * Pre-indexes all task codes in O(N log K) single pass instead of O(N^2 log N).
+ * Uses WeakMap reference caching across multiple task/project array views (storeTasks, pool, filteredTasks).
+ */
+export function computeAllTaskCodes(projects: Project[], tasks: Task[]): Map<string, string> {
+  const tasksKey = Array.isArray(tasks) && tasks.length > 0 ? tasks : EMPTY_TASKS_REF;
+  const projectsKey = Array.isArray(projects) && projects.length > 0 ? projects : EMPTY_PROJECTS_REF;
+  const cachedByProj = _taskCodesWeakCache.get(tasksKey)?.get(projectsKey);
+  if (cachedByProj) {
+    return cachedByProj;
+  }
+
+  const map = new Map<string, string>();
+  if (!tasks || !Array.isArray(tasks)) return map;
+
+  const projectMapByScopedCode = new Map<string, Project>();
+  const projectMapById = new Map<string, Project>();
+  const projectsByCodePart = new Map<string, Project[]>();
+
+  (projects || []).forEach(p => {
+    if (!p || p.isDeleted) return;
+    if (p.id) projectMapById.set(String(p.id).trim(), p);
+    if (p.code) {
+      const pCodeClean = String(p.code).trim();
+      const key = `${pCodeClean}-${p.year || ''}-${p.store || ''}`.toLowerCase();
+      projectMapByScopedCode.set(key, p);
+
+      const rawCombined = (p.linkCodes && p.linkCodes.trim())
+        ? `${pCodeClean.toLowerCase()}, ${p.linkCodes.toLowerCase()}`
+        : pCodeClean.toLowerCase();
+      const parts = rawCombined.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+      for (let i = 0; i < parts.length; i++) {
+        const c = parts[i];
+        let list = projectsByCodePart.get(c);
+        if (!list) {
+          list = [];
+          projectsByCodePart.set(c, list);
+        }
+        list.push(p);
+      }
+    }
+  });
+
+  const resolveTaskProject = (t: Task): Project | undefined => {
+    if (t.projectId) {
+      const byId = projectMapById.get(String(t.projectId).trim());
+      if (byId && isTaskBelongsToProject(t, byId, projects)) return byId;
+    }
+    if (t.projectCode) {
+      const tCodeClean = String(t.projectCode).trim();
+      const scopedKey = `${tCodeClean}-${t.projectYear || ''}-${t.projectStore || ''}`.toLowerCase();
+      const byScoped = projectMapByScopedCode.get(scopedKey);
+      if (byScoped && isTaskBelongsToProject(t, byScoped, projects)) return byScoped;
+
+      const tCodeParts = tCodeClean.toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+      for (let i = 0; i < tCodeParts.length; i++) {
+        const candidates = projectsByCodePart.get(tCodeParts[i]);
+        if (candidates) {
+          for (let j = 0; j < candidates.length; j++) {
+            if (isTaskBelongsToProject(t, candidates[j], projects)) {
+              return candidates[j];
+            }
+          }
+        }
+      }
+    }
+    return undefined;
+  };
+
+  const tasksByGroupKey = new Map<string, { pCode: string; tasks: Task[] }>();
+  for (let idx = 0; idx < tasks.length; idx++) {
+    const t = tasks[idx];
+    if (!t || t.isDeleted) continue;
+    const p = resolveTaskProject(t);
+    const pCode = p ? String(p.code || '').trim() : String(t.projectCode || '').trim();
+
+    if (!pCode) {
+      if (t.taskCodePhu && t.taskCodePhu.trim()) {
+        map.set(t.id, t.taskCodePhu.trim());
+      }
+      continue;
+    }
+
+    const groupKey = p?.id
+      ? `pid:${p.id}`
+      : `${pCode}-${p?.year ?? t.projectYear ?? ''}-${p?.store ?? t.projectStore ?? ''}`.toLowerCase();
+    
+    let entry = tasksByGroupKey.get(groupKey);
+    if (!entry) {
+      entry = { pCode, tasks: [] };
+      tasksByGroupKey.set(groupKey, entry);
+    }
+    entry.tasks.push(t);
+  }
+
+  tasksByGroupKey.forEach(({ pCode, tasks: groupTasks }) => {
+    const sorted = sortGroupTasks(groupTasks);
+    sorted.forEach((t, i) => {
+      const orderNum = i + 1;
+      const code = pCode ? `${pCode}#${orderNum}` : (t.taskCodePhu || '');
+      map.set(t.id, code);
+    });
+  });
+
+  let projCache = _taskCodesWeakCache.get(tasksKey);
+  if (!projCache) {
+    projCache = new WeakMap<Project[], Map<string, string>>();
+    _taskCodesWeakCache.set(tasksKey, projCache);
+  }
+  projCache.set(projectsKey, map);
+  return map;
+}
+
+=== FILE: src/lib/ganttUtilsParts/taskCodeIndexers.ts ===
 '));
       }
 
@@ -148214,6 +148484,7 @@ export function useGanttDependencies({
     if (!startDate || visibleGanttRows.length === 0) return [];
 
     const taskPosMap = new Map<string, { xStart: number; xEnd: number; yCenter: number; t: Task }>();
+    const visibleTasks: Task[] = [];
     let currentY = paddingTop;
     const timelineLeft = sideWidth + (showStart ? startColWidth : 0) + (showFinish ? finishColWidth : 0) + (showParty ? partyColWidth : 0) + (showDuration ? durationColWidth : 0) + (showPredecessor ? predecessorColWidth : 0);
 
@@ -148238,13 +148509,28 @@ export function useGanttDependencies({
           const xEnd = timelineLeft + barLeft + barWidth;
 
           const posObj = { xStart, xEnd, yCenter, t };
+          visibleTasks.push(t);
           taskPosMap.set(t.id, posObj);
+          const pIdScope = t.projectId ? `PID:${String(t.projectId).trim().toUpperCase()}__` : '';
+          const pCodeScope = t.projectCode ? `PCODE:${String(t.projectCode).trim().toUpperCase()}__` : '';
           if (t.taskCodePhu) {
-            taskPosMap.set(t.taskCodePhu.trim().toUpperCase(), posObj);
+            const phuUpper = t.taskCodePhu.trim().toUpperCase();
+            if (pIdScope) taskPosMap.set(`${pIdScope}${phuUpper}`, posObj);
+            if (pCodeScope) taskPosMap.set(`${pCodeScope}${phuUpper}`, posObj);
+            if (!taskPosMap.has(phuUpper)) taskPosMap.set(phuUpper, posObj);
           }
           const computedCode = allCodesMap.get(t.id);
           if (computedCode) {
-            taskPosMap.set(computedCode.trim().toUpperCase(), posObj);
+            const compUpper = computedCode.trim().toUpperCase();
+            if (pIdScope) taskPosMap.set(`${pIdScope}${compUpper}`, posObj);
+            if (pCodeScope) taskPosMap.set(`${pCodeScope}${compUpper}`, posObj);
+            if (!taskPosMap.has(compUpper)) taskPosMap.set(compUpper, posObj);
+            const hashIdx = compUpper.lastIndexOf('#');
+            if (hashIdx !== -1) {
+              const shortHash = compUpper.slice(hashIdx); // "#N"
+              if (pIdScope) taskPosMap.set(`${pIdScope}${shortHash}`, posObj);
+              if (pCodeScope) taskPosMap.set(`${pCodeScope}${shortHash}`, posObj);
+            }
           }
         }
       }
@@ -148261,6 +148547,9 @@ export function useGanttDependencies({
       const succPos = taskPosMap.get(succTask.id);
       if (!succPos) return;
 
+      const pIdScope = succTask.projectId ? `PID:${String(succTask.projectId).trim().toUpperCase()}__` : '';
+      const pCodeScope = succTask.projectCode ? `PCODE:${String(succTask.projectCode).trim().toUpperCase()}__` : '';
+
       const predCodes = String(succTask.predecessor)
         .split(/[,;]/)
         .map((s) => s.trim())
@@ -148270,21 +148559,35 @@ export function useGanttDependencies({
         const typeMatch = token.match(/^(.*?)(FS|SS|FF|SF)(\s*[+-]\s*\d+(?:\.\d+)?)?$/i);
         const cleanQuery = typeMatch ? typeMatch[1].trim() : token.replace(/(\s*[+-]\s*\d+(?:\.\d+)?)?$/, '').trim();
         const relType = typeMatch ? typeMatch[2].toUpperCase() : 'FS';
+        const cleanUpper = cleanQuery.toUpperCase();
+        const tokenUpper = token.toUpperCase();
 
         const linkedTaskId = succTask.predecessorTaskIds?.[idx] || succTask.predecessors?.[idx]?.taskId;
         let predPos = linkedTaskId ? taskPosMap.get(String(linkedTaskId)) : undefined;
-        if (!predPos) {
-          predPos = taskPosMap.get(cleanQuery.toUpperCase()) || taskPosMap.get(token.toUpperCase());
+        if (!predPos && pIdScope) {
+          predPos = taskPosMap.get(`${pIdScope}${cleanUpper}`) || taskPosMap.get(`${pIdScope}${tokenUpper}`);
+        }
+        if (!predPos && pCodeScope) {
+          predPos = taskPosMap.get(`${pCodeScope}${cleanUpper}`) || taskPosMap.get(`${pCodeScope}${tokenUpper}`);
         }
         if (!predPos) {
+          predPos = taskPosMap.get(cleanUpper) || taskPosMap.get(tokenUpper);
+        }
+        if (!predPos && visibleTasks.length > 0) {
+          // Only search visibleTasks because off-screen tasks are not in taskPosMap and cannot be drawn
           const match = findClosestTaskMatch(
             cleanQuery,
-            tasks,
+            visibleTasks,
             projects,
             tasks,
             succTask.projectCode,
             650,
-            { projectCode: succTask.projectCode, projectYear: succTask.projectYear, projectStore: succTask.projectStore },
+            {
+              projectId: succTask.projectId,
+              projectCode: succTask.projectCode,
+              projectYear: succTask.projectYear,
+              projectStore: succTask.projectStore,
+            },
             undefined,
             { projectIndex, allTaskCodesMap: allCodesMap }
           );
@@ -148359,7 +148662,6 @@ export function useGanttDependencies({
     delegationGroupByTaskId,
   };
 }
-
 
 === FILE: src/lib/firestoreSanitizer.ts ===
 const TRANSIENT_FIRESTORE_KEYS = new Set([
@@ -149829,24 +150131,16 @@ export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: 
   const taskCodeMap = new Map<string, Task>();
   const summaryTaskIds = new Set<string>();
 
-  projects.forEach((p) => {
-    if (!p || p.isDeleted || !Array.isArray(p.taskSummaries)) return;
-    p.taskSummaries.forEach((s: any) => {
-      if (s?.id && !String(s.id).startsWith('ts_')) {
-        summaryTaskIds.add(String(s.id).trim().toLowerCase());
-      }
-      if (s?.taskCodePhu) {
-        summaryTaskIds.add(String(s.taskCodePhu).trim().toLowerCase());
-      }
-    });
-  });
-
+  const targetProjIds = new Set<string>();
+  const targetProjCodes = new Set<string>();
   // Group tasks by project scope to index canonical ${projectCode}#${idx + 1} codes
   const scopedBuckets = new Map<string, Task[]>();
   tasks.forEach((t) => {
     if (!t) return;
     if (t.id) taskMap.set(String(t.id).trim().toLowerCase(), t);
     if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+    if (t.projectId) targetProjIds.add(String(t.projectId).trim());
+    if (t.projectCode) targetProjCodes.add(String(t.projectCode).trim().toLowerCase());
     const scopeKey = t.projectId
       ? `pid:${String(t.projectId).trim()}`
       : `code:${String(t.projectCode || '').trim().toLowerCase()}|${String(t.projectStore || '').trim().toLowerCase()}|${String(t.projectYear || '').trim()}`;
@@ -149856,6 +150150,21 @@ export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: 
       scopedBuckets.set(scopeKey, list);
     }
     list.push(t);
+  });
+
+  projects.forEach((p) => {
+    if (!p || p.isDeleted || !Array.isArray(p.taskSummaries)) return;
+    const pIdMatch = p.id && targetProjIds.has(String(p.id).trim());
+    const pCodeMatch = p.code && targetProjCodes.has(String(p.code).trim().toLowerCase());
+    if (!pIdMatch && !pCodeMatch) return;
+    p.taskSummaries.forEach((s: any) => {
+      if (s?.id && !String(s.id).startsWith('ts_')) {
+        summaryTaskIds.add(String(s.id).trim().toLowerCase());
+      }
+      if (s?.taskCodePhu) {
+        summaryTaskIds.add(String(s.taskCodePhu).trim().toLowerCase());
+      }
+    });
   });
 
   scopedBuckets.forEach((bucket, scopeKey) => {
@@ -149938,7 +150247,6 @@ export async function reorderTasksStateUnified(
 
   await syncAffectedProjects(targetProjects, allUpdatedTasks);
 }
-
 
 === FILE: src/lib/ganttUtilsParts/taskSortingAndCodes.ts ===
 import { Task, Project } from '../../types';
@@ -151659,4 +151967,3083 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
   return deltas.length;
 }
+
+
+=== FILE: src/lib/predecessorMatchParts/predecessorContextUtils.ts ===
+import { Task, Project } from '../../types';
+import { normalizeDashes } from '../utils';
+
+/**
+ * Extracts a trailing task number from a code or query string.
+ * Examples:
+ * - "B2-B208-2" -> 2
+ * - "CP-01-05" -> 5
+ * - "2" -> 2
+ * - "-2" -> 2
+ * - "#2" -> 2
+ * - "smz2-85" -> 85
+ * - "Handover" -> null
+ */
+export function extractTrailingTaskNumber(str: string): number | null {
+  if (!str) return null;
+  const m = normalizeDashes(str).trim().match(/(?:^|[-_#\s])0*(\d+)\s*$/);
+  if (m) {
+    return parseInt(m[1], 10);
+  }
+  return null;
+}
+
+/**
+ * Bigram / Sorensen-Dice string similarity calculation (0 to 1).
+ * Highly efficient O(N + M) implementation resilient to typos, transposed chars, and omitted characters.
+ */
+export function stringSimilarity(str1: string, str2: string, minScore: number = 0): number {
+  if (!str1 || !str2) return 0;
+  const s1 = str1.trim().toLowerCase();
+  const s2 = str2.trim().toLowerCase();
+  if (s1 === s2) return 1;
+
+  if (s1.length < 2 || s2.length < 2) {
+    return s1.includes(s2) || s2.includes(s1) ? 0.75 : 0;
+  }
+
+  const b1 = s1.length - 1;
+  const b2 = s2.length - 1;
+  if (minScore > 0 && (2 * Math.min(b1, b2)) / (b1 + b2) < minScore) {
+    return 0;
+  }
+
+  const bigrams1 = new Map<string, number>();
+  for (let i = 0; i < s1.length - 1; i++) {
+    const bg = s1.substring(i, i + 2);
+    bigrams1.set(bg, (bigrams1.get(bg) || 0) + 1);
+  }
+
+  let intersection = 0;
+  for (let i = 0; i < s2.length - 1; i++) {
+    const bg = s2.substring(i, i + 2);
+    const count = bigrams1.get(bg) || 0;
+    if (count > 0) {
+      bigrams1.set(bg, count - 1);
+      intersection++;
+    }
+  }
+
+  const totalBigrams = s1.length - 1 + (s2.length - 1);
+  return (2 * intersection) / totalBigrams;
+}
+
+/**
+ * Regex for predecessor relationship and lag suffix:
+ * Matches trailing combinations like:
+ * - FF, SS, SF, FS (e.g. "SS", "FF+2", "SF-1")
+ * - Explicit plus lag: +1, +0.5, +2d
+ * - Explicit space-separated minus lag: " - 2", " - 1d" (distinguishes from code hyphens like "SMZ2-85")
+ */
+const REL_LAG_REGEX =
+  /(?:\s*(FS|SS|FF|SF)\s*(?:[+-]\s*\d+(?:\.\d+)?)?|\s*\+\s*\d+(?:\.\d+)?(?:d)?|\s+-\s*\d+(?:\.\d+)?(?:d)?)$/i;
+
+/**
+ * Parses a single predecessor token into query (the task code/name search part)
+ * and suffix (the relationship and lag part, e.g. "SS", "FF", "+1", "FF+2").
+ */
+export function parsePredecessorToken(token: string): { query: string; suffix: string } {
+  if (!token) return { query: '', suffix: '' };
+  const trimmed = normalizeDashes(token).trim();
+  if (!trimmed) return { query: '', suffix: '' };
+
+  const match = trimmed.match(REL_LAG_REGEX);
+  if (match && match.index !== undefined && match.index > 0) {
+    const query = trimmed.substring(0, match.index).trim();
+    const suffix = match[0].trim().toUpperCase().replace(/\s+/g, '');
+    return { query, suffix };
+  }
+
+  return { query: trimmed, suffix: '' };
+}
+
+export interface PredecessorContext {
+  projectId?: string;
+  projectCode?: string;
+  projectYear?: number | string;
+  projectStore?: string;
+  projectLocation?: string;
+  location?: string;
+}
+
+export interface ResolvedProjectContext {
+  projectId: string;
+  code: string;
+  year: string;
+  store: string;
+  location: string;
+}
+
+export interface ProjectDiffDetails {
+  isDifferent: boolean;
+  diffFactors: ('year' | 'store' | 'location' | 'code' | 'id')[];
+  reasons: string[];
+  contextInfo: {
+    projectId?: string;
+    code?: string;
+    year?: string;
+    store?: string;
+    location?: string;
+  };
+  taskInfo: {
+    projectId?: string;
+    code?: string;
+    year?: string;
+    store?: string;
+    location?: string;
+  };
+}
+
+export interface ProjectLookupIndex {
+  byId: Map<string, Project>;
+  byCodeLower: Map<string, Project[]>;
+  taskContextCache?: WeakMap<Task, ResolvedProjectContext>;
+}
+
+let _lastProjectsForIndexRef: Project[] | null = null;
+let _cachedProjectLookupIndex: ProjectLookupIndex | null = null;
+
+/**
+ * Builds an O(1) lookup index for projects by ID and lowercase code (with reference memoization).
+ */
+export function buildProjectLookupIndex(projects: Project[]): ProjectLookupIndex {
+  if (_lastProjectsForIndexRef === projects && _cachedProjectLookupIndex !== null) {
+    return _cachedProjectLookupIndex;
+  }
+
+  const byId = new Map<string, Project>();
+  const byCodeLower = new Map<string, Project[]>();
+
+  if (Array.isArray(projects)) {
+    for (let i = 0; i < projects.length; i++) {
+      const p = projects[i];
+      if (!p) continue;
+      if (p.id !== undefined && p.id !== null) {
+        const idKey = String(p.id).trim();
+        if (idKey) byId.set(idKey, p);
+      }
+      if (p.code) {
+        const codeKey = String(p.code).trim().toLowerCase();
+        if (codeKey) {
+          let list = byCodeLower.get(codeKey);
+          if (!list) {
+            list = [];
+            byCodeLower.set(codeKey, list);
+          }
+          list.push(p);
+        }
+      }
+    }
+  }
+
+  const index: ProjectLookupIndex = {
+    byId,
+    byCodeLower,
+    taskContextCache: new WeakMap<Task, ResolvedProjectContext>(),
+  };
+  _lastProjectsForIndexRef = projects;
+  _cachedProjectLookupIndex = index;
+  return index;
+}
+
+function findParentProjectFromIndex(
+  projId: string,
+  code: string,
+  year: string,
+  store: string,
+  index: ProjectLookupIndex
+): Project | undefined {
+  if (projId) {
+    const byIdMatch = index.byId.get(projId);
+    if (byIdMatch) return byIdMatch;
+  }
+  if (code) {
+    const candidates = index.byCodeLower.get(code.toLowerCase());
+    if (candidates && candidates.length > 0) {
+      const storeUpper = store ? store.toUpperCase() : '';
+      for (let i = 0; i < candidates.length; i++) {
+        const p = candidates[i];
+        if (year && p.year && String(p.year).trim() !== year) continue;
+        if (storeUpper && p.store && String(p.store).trim().toUpperCase() !== storeUpper) continue;
+        return p;
+      }
+    }
+  }
+  return undefined;
+}
+
+export function resolveProjectContext(
+  context: PredecessorContext | undefined,
+  projects: Project[],
+  projectIndex?: ProjectLookupIndex
+): ResolvedProjectContext {
+  const ctxProjId = (context?.projectId || '').trim();
+  let ctxCode = (context?.projectCode || '').trim();
+  let ctxYear =
+    context?.projectYear !== undefined && context?.projectYear !== null
+      ? String(context.projectYear).trim()
+      : '';
+  let ctxStore = (context?.projectStore || '').trim();
+  let ctxLoc = (context?.projectLocation || context?.location || '').trim();
+
+  if ((!ctxYear || !ctxStore || !ctxLoc || !ctxCode) && (ctxProjId || ctxCode)) {
+    const idx = projectIndex || buildProjectLookupIndex(projects);
+    const parent = findParentProjectFromIndex(ctxProjId, ctxCode, ctxYear, ctxStore, idx);
+    if (parent) {
+      if (!ctxCode && parent.code) ctxCode = parent.code;
+      if (!ctxYear && parent.year) ctxYear = String(parent.year);
+      if (!ctxStore && parent.store) ctxStore = parent.store;
+      if (!ctxLoc && parent.location) ctxLoc = parent.location;
+    }
+  }
+
+  return {
+    projectId: ctxProjId,
+    code: ctxCode,
+    year: ctxYear,
+    store: ctxStore,
+    location: ctxLoc,
+  };
+}
+
+export function resolveTaskProjectContext(
+  task: Task,
+  projects: Project[],
+  projectIndex?: ProjectLookupIndex
+): ResolvedProjectContext {
+  const idx = projectIndex || buildProjectLookupIndex(projects);
+  const cached = idx.taskContextCache?.get(task);
+  if (cached) return cached;
+
+  const taskProjId = (task.projectId || '').trim();
+  let taskCode = (task.projectCode || '').trim();
+  let taskYear =
+    task.projectYear !== undefined && task.projectYear !== null
+      ? String(task.projectYear).trim()
+      : '';
+  let taskStore = (task.projectStore || '').trim();
+  let taskLoc = (task.location || (task as any).projectLocation || '').trim();
+
+  if ((!taskYear || !taskStore || !taskLoc || !taskCode) && (taskProjId || taskCode)) {
+    const parent = findParentProjectFromIndex(taskProjId, taskCode, taskYear, taskStore, idx);
+    if (parent) {
+      if (!taskCode && parent.code) taskCode = parent.code;
+      if (!taskYear && parent.year) taskYear = String(parent.year);
+      if (!taskStore && parent.store) taskStore = parent.store;
+      if (!taskLoc && parent.location) taskLoc = parent.location;
+    }
+  }
+
+  const resolved: ResolvedProjectContext = {
+    projectId: taskProjId,
+    code: taskCode,
+    year: taskYear,
+    store: taskStore,
+    location: taskLoc,
+  };
+  idx.taskContextCache?.set(task, resolved);
+  return resolved;
+}
+
+/**
+ * Computes diff details using pre-resolved context and optional pre-resolved task context (O(1)).
+ */
+export function getTaskProjectDiffDetailsWithResolved(
+  ctx: ResolvedProjectContext,
+  task: Task | undefined,
+  projects: Project[],
+  projectIndex?: ProjectLookupIndex,
+  resolvedTaskInfo?: ResolvedProjectContext
+): ProjectDiffDetails {
+  if (!task) {
+    return {
+      isDifferent: false,
+      diffFactors: [],
+      reasons: [],
+      contextInfo: {},
+      taskInfo: {},
+    };
+  }
+
+  const tInfo = resolvedTaskInfo || resolveTaskProjectContext(task, projects, projectIndex);
+  const diffFactors: ('year' | 'store' | 'location' | 'code' | 'id')[] = [];
+  const reasons: string[] = [];
+
+  if (ctx.year && tInfo.year && ctx.year.toLowerCase() !== tInfo.year.toLowerCase()) {
+    diffFactors.push('year');
+    reasons.push(`Năm: ${tInfo.year} (hiện tại: ${ctx.year})`);
+  }
+
+  if (ctx.store && tInfo.store && ctx.store.toLowerCase() !== tInfo.store.toLowerCase()) {
+    diffFactors.push('store');
+    reasons.push(`Chi nhánh: ${tInfo.store} (hiện tại: ${ctx.store})`);
+  }
+
+  if (ctx.location && tInfo.location && ctx.location.toLowerCase() !== tInfo.location.toLowerCase()) {
+    diffFactors.push('location');
+    reasons.push(`Vị trí/Tầng: ${tInfo.location} (hiện tại: ${ctx.location})`);
+  }
+
+  if (ctx.code && tInfo.code && ctx.code.toLowerCase() !== tInfo.code.toLowerCase()) {
+    diffFactors.push('code');
+    reasons.push(`Mã dự án: ${tInfo.code} (hiện tại: ${ctx.code})`);
+  }
+
+  if (ctx.projectId && tInfo.projectId && ctx.projectId !== tInfo.projectId) {
+    if (!diffFactors.includes('code')) {
+      diffFactors.push('id');
+    }
+  }
+
+  return {
+    isDifferent: diffFactors.length > 0,
+    diffFactors,
+    reasons,
+    contextInfo: ctx,
+    taskInfo: tInfo,
+  };
+}
+
+export function getTaskProjectDiffDetails(
+  context: PredecessorContext | undefined,
+  task: Task | undefined,
+  projects: Project[],
+  projectIndex?: ProjectLookupIndex
+): ProjectDiffDetails {
+  if (!task) {
+    return {
+      isDifferent: false,
+      diffFactors: [],
+      reasons: [],
+      contextInfo: {},
+      taskInfo: {},
+    };
+  }
+  const idx = projectIndex || buildProjectLookupIndex(projects);
+  const ctx = resolveProjectContext(context, projects, idx);
+  return getTaskProjectDiffDetailsWithResolved(ctx, task, projects, idx);
+}
+
+export function isTaskDifferentProject(
+  context: PredecessorContext | undefined,
+  task: Task | undefined,
+  projects: Project[]
+): boolean {
+  return getTaskProjectDiffDetails(context, task, projects).isDifferent;
+}
+
+
+=== FILE: src/lib/predecessorMatchUtils.ts ===
+import { Task, Project } from '../types';
+import { normalizeDashes } from './utils';
+import { computeTaskCode, computeAllTaskCodes, splitPredecessors } from './ganttUtils';
+import { useAppStore } from '../store/useAppStore';
+import {
+  extractTrailingTaskNumber, stringSimilarity, parsePredecessorToken,
+  PredecessorContext, ResolvedProjectContext, ProjectDiffDetails, ProjectLookupIndex,
+  buildProjectLookupIndex, resolveProjectContext, resolveTaskProjectContext,
+  getTaskProjectDiffDetailsWithResolved, getTaskProjectDiffDetails, isTaskDifferentProject,
+} from './predecessorMatchParts/predecessorContextUtils';
+
+export {
+  extractTrailingTaskNumber, stringSimilarity, parsePredecessorToken,
+  buildProjectLookupIndex, resolveProjectContext, resolveTaskProjectContext,
+  getTaskProjectDiffDetailsWithResolved, getTaskProjectDiffDetails, isTaskDifferentProject,
+};
+export type { PredecessorContext, ResolvedProjectContext, ProjectDiffDetails, ProjectLookupIndex };
+
+export interface PrecomputedQueryInfo {
+  q: string;
+  qAlphaNum: string;
+  qTaskNum: number | null;
+  digitNum: number | null;
+  qParts: string[];
+  currentPCode: string;
+}
+
+export interface PrecomputedMatchOptions {
+  precomputedTaskCode?: string;
+  resolvedContext?: ResolvedProjectContext;
+  resolvedTaskInfo?: ResolvedProjectContext;
+  projectIndex?: ProjectLookupIndex;
+  allTaskCodesMap?: Map<string, string>;
+  precomputedQuery?: PrecomputedQueryInfo;
+  skipFuzzy?: boolean;
+}
+
+function buildPrecomputedQuery(rawQuery: string, currentProjectCode?: string, context?: PredecessorContext): PrecomputedQueryInfo {
+  const q = normalizeDashes(rawQuery || '').trim().toLowerCase();
+  const qAlphaNum = q.replace(/[^a-z0-9]/g, '');
+  const qTaskNum = extractTrailingTaskNumber(q);
+  const digitMatch = q.match(/^[-#\s]*(\d+)$/);
+  const digitNum = digitMatch ? parseInt(digitMatch[1], 10) : null;
+  const qParts = q.split(/[-_#\s]+/).filter(Boolean);
+  const currentPCode = normalizeDashes(context?.projectCode || currentProjectCode || '').trim().toLowerCase();
+  return { q, qAlphaNum, qTaskNum, digitNum, qParts, currentPCode };
+}
+
+/**
+ * Finds a task by full code, secondary code, id or closest match query.
+ * Pre-computes ProjectLookupIndex and computeAllTaskCodes once in O(P + T).
+ */
+export function findTaskByQueryOrCode(
+  tokenOrCode: string,
+  tasks: Task[],
+  projects: Project[],
+  context?: PredecessorContext
+): Task | null {
+  if (!tokenOrCode) return null;
+  const { query } = parsePredecessorToken(tokenOrCode);
+  if (!query) return null;
+
+  const qLower = normalizeDashes(query).toLowerCase();
+  const rawLower = query.toLowerCase();
+  const projectIndex = buildProjectLookupIndex(projects);
+  const allCodesMap = computeAllTaskCodes(projects, tasks);
+
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (!t) continue;
+    if (t.id && (t.id.toLowerCase() === qLower || t.id.toLowerCase() === rawLower)) return t;
+    const phu = t.taskCodePhu ? normalizeDashes(t.taskCodePhu).trim().toLowerCase() : '';
+    if (phu && (phu === qLower || phu === rawLower)) return t;
+    const code = allCodesMap.get(t.id) || computeTaskCode(projects, tasks, t);
+    const codeNorm = code ? normalizeDashes(code).trim().toLowerCase() : '';
+    if (codeNorm && (codeNorm === qLower || codeNorm === rawLower)) return t;
+  }
+
+  const resolvedContext = resolveProjectContext(context, projects, projectIndex);
+  const match = findClosestTaskMatch(
+    query,
+    tasks,
+    projects,
+    tasks,
+    context?.projectCode,
+    650,
+    context,
+    tokenOrCode,
+    { projectIndex, allTaskCodesMap: allCodesMap, resolvedContext }
+  );
+  return match?.task || null;
+}
+
+/**
+ * Calculates a match score for a task against a search query.
+ * Higher score = closer match.
+ * Strongly prioritizes tasks belonging to the exact same parent project (same year, location, store, project code).
+ */
+export function scoreTaskPredecessorMatch(
+  task: Task,
+  rawQuery: string,
+  projects: Project[],
+  allTasks: Task[],
+  currentProjectCode?: string,
+  context?: PredecessorContext,
+  options?: PrecomputedMatchOptions
+): number {
+  if (!rawQuery || !task) return 0;
+  const pq = options?.precomputedQuery || buildPrecomputedQuery(rawQuery, currentProjectCode, context);
+  const { q, qAlphaNum, qTaskNum, digitNum, qParts, currentPCode } = pq;
+  if (!q) return 0;
+
+  const computedCode =
+    options?.precomputedTaskCode ??
+    options?.allTaskCodesMap?.get(task.id) ??
+    computeTaskCode(projects, allTasks, task);
+
+  const fullCode = normalizeDashes(computedCode || task.taskCodePhu || task.id || '').trim().toLowerCase();
+  const codePhu = normalizeDashes(task.taskCodePhu || '').trim().toLowerCase();
+  const name = (task.name || '').trim().toLowerCase();
+  const taskPCode = normalizeDashes(task.projectCode || '').trim().toLowerCase();
+
+  const projectIndex = options?.projectIndex || buildProjectLookupIndex(projects);
+  const ctx = options?.resolvedContext || resolveProjectContext(context, projects, projectIndex);
+  const tInfo = options?.resolvedTaskInfo || resolveTaskProjectContext(task, projects, projectIndex);
+
+  const contextYear = ctx.year.toLowerCase();
+  const contextStore = ctx.store.toLowerCase();
+  const contextLocation = ctx.location.toLowerCase();
+  const contextProjectId = ctx.projectId;
+
+  const taskYear = tInfo.year.toLowerCase();
+  const taskStore = tInfo.store.toLowerCase();
+  const taskLocation = tInfo.location.toLowerCase();
+  const taskProjectId = tInfo.projectId;
+
+  const isSameCode = Boolean(taskPCode && currentPCode && taskPCode === currentPCode);
+  const isSameProjectId = Boolean(contextProjectId && taskProjectId && contextProjectId === taskProjectId);
+  const isSameYear = Boolean(contextYear && taskYear && contextYear === taskYear);
+  const isDiffYear = Boolean(contextYear && taskYear && contextYear !== taskYear);
+  const isSameStore = Boolean(contextStore && taskStore && contextStore === taskStore);
+  const isDiffStore = Boolean(contextStore && taskStore && contextStore !== taskStore);
+  const isSameLocation = Boolean(contextLocation && taskLocation && contextLocation === taskLocation);
+  const isDiffLocation = Boolean(contextLocation && taskLocation && contextLocation !== taskLocation);
+
+  const isExactSameParentProject =
+    isSameProjectId || (isSameCode && !isDiffYear && !isDiffStore && !isDiffLocation);
+
+  const fullCodeAlphaNum = fullCode.replace(/[^a-z0-9]/g, '');
+  const codePhuAlphaNum = codePhu ? codePhu.replace(/[^a-z0-9]/g, '') : '';
+  const pCodeAlphaNum = taskPCode ? taskPCode.replace(/[^a-z0-9]/g, '') : '';
+
+  // Numerical Conflict Guard:
+  const fullCodeNum = extractTrailingTaskNumber(fullCode);
+  const codePhuNum = codePhu ? extractTrailingTaskNumber(codePhu) : null;
+  const orderNum = task.orderIndex !== undefined ? task.orderIndex + 1 : null;
+  const hasAnyCandidateNum = fullCodeNum !== null || codePhuNum !== null || orderNum !== null;
+  const matchesAnyCandidateNum =
+    qTaskNum !== null &&
+    (qTaskNum === fullCodeNum || qTaskNum === codePhuNum || qTaskNum === orderNum);
+  if (qTaskNum !== null && hasAnyCandidateNum && !matchesAnyCandidateNum) {
+    return 0;
+  }
+
+  let baseScore = 0;
+
+  if (fullCode === q || codePhu === q) {
+    baseScore = 1000;
+  } else if (qAlphaNum && (fullCodeAlphaNum === qAlphaNum || codePhuAlphaNum === qAlphaNum)) {
+    baseScore = 950;
+  } else if (digitNum !== null) {
+    const isNumMatch = fullCodeNum === digitNum || codePhuNum === digitNum || orderNum === digitNum;
+    if (isNumMatch) {
+      if (isExactSameParentProject) baseScore = 920;
+      else if (isSameCode) baseScore = 860;
+      else baseScore = 760;
+    }
+  } else if (fullCode.endsWith(q) || (codePhu && codePhu.endsWith(q))) {
+    baseScore = 850;
+  } else if (
+    qAlphaNum.length >= 2 &&
+    (fullCodeAlphaNum.endsWith(qAlphaNum) || (codePhuAlphaNum && codePhuAlphaNum.endsWith(qAlphaNum)))
+  ) {
+    baseScore = 820;
+  } else if (fullCode.startsWith(q) || (codePhu && codePhu.startsWith(q))) {
+    baseScore = 800;
+  } else if (
+    qAlphaNum.length >= 2 &&
+    (fullCodeAlphaNum.startsWith(qAlphaNum) || (codePhuAlphaNum && codePhuAlphaNum.startsWith(qAlphaNum)))
+  ) {
+    baseScore = 780;
+  } else if (fullCode.includes(q) || (codePhu && codePhu.includes(q))) {
+    baseScore = 750;
+  } else if (
+    qAlphaNum.length >= 2 &&
+    (fullCodeAlphaNum.includes(qAlphaNum) || (codePhuAlphaNum && codePhuAlphaNum.includes(qAlphaNum)))
+  ) {
+    baseScore = 720;
+  } else {
+    if (qParts.length >= 2) {
+      const candidatePCodePart = qParts.slice(0, -1).join('');
+      const candidateNumPart = qParts[qParts.length - 1];
+      if (
+        pCodeAlphaNum.includes(candidatePCodePart.replace(/[^a-z0-9]/g, '')) &&
+        (fullCode.endsWith(candidateNumPart) || (codePhu && codePhu.endsWith(candidateNumPart)))
+      ) {
+        baseScore = 880;
+      }
+    }
+
+    if (!baseScore) {
+      if (name === q) baseScore = 820;
+      else if (name.startsWith(q)) baseScore = 760;
+      else if (name.includes(q)) baseScore = 680;
+    }
+
+    if (!baseScore && !options?.skipFuzzy && qAlphaNum.length >= 2) {
+      const simFull = stringSimilarity(qAlphaNum, fullCodeAlphaNum, 0.5);
+      const simPhu = codePhuAlphaNum ? stringSimilarity(qAlphaNum, codePhuAlphaNum, 0.5) : 0;
+      const maxSim = Math.max(simFull, simPhu);
+      if (maxSim >= 0.5) {
+        baseScore = 500 + Math.round(maxSim * 250);
+      } else if (q.length >= 4) {
+        const simName = stringSimilarity(q, name, 0.6);
+        if (simName >= 0.6) {
+          baseScore = 450 + Math.round(simName * 200);
+        }
+      }
+    }
+  }
+
+  if (baseScore === 0) return 0;
+
+  let score = baseScore;
+
+  if (isExactSameParentProject) {
+    score += 600;
+    if (isSameLocation) score += 50;
+  } else if (isSameCode) {
+    if (isDiffYear) score -= 400;
+    if (isDiffStore) score -= 200;
+    if (isDiffLocation) score -= 100;
+    if (isSameYear) score += 150;
+    if (isSameStore) score += 80;
+    if (isSameLocation) score += 40;
+  } else {
+    if (isSameYear) score += 150;
+    if (isDiffYear) score -= 300;
+    if (isSameStore) score += 80;
+    if (isDiffStore) score -= 150;
+    if (isSameLocation) score += 40;
+  }
+
+  return Math.max(1, score);
+}
+
+export interface RankedPredecessorMatch {
+  task: Task;
+  score: number;
+  exactTaskCode: string;
+  isExternal: boolean;
+  diffDetails?: ProjectDiffDetails;
+}
+
+/**
+ * Ranks all candidate tasks according to their match score for a given query.
+ * Pre-indexes ProjectLookupIndex, computeAllTaskCodes, and precomputedQuery once before loop (O(1) per candidate).
+ */
+export function rankCandidateTasks(
+  query: string,
+  candidateTasks: Task[],
+  projects: Project[],
+  allTasks: Task[],
+  currentProjectCode?: string,
+  context?: PredecessorContext,
+  options?: PrecomputedMatchOptions
+): RankedPredecessorMatch[] {
+  const effectiveContext: PredecessorContext = context || { projectCode: currentProjectCode };
+  const projectIndex = options?.projectIndex || buildProjectLookupIndex(projects);
+  const allCodesMap = options?.allTaskCodesMap || computeAllTaskCodes(projects, allTasks);
+  const resolvedContext =
+    options?.resolvedContext || resolveProjectContext(effectiveContext, projects, projectIndex);
+
+  if (!query || !query.trim()) {
+    return candidateTasks.map((t) => {
+      const tInfo = resolveTaskProjectContext(t, projects, projectIndex);
+      const diff = getTaskProjectDiffDetailsWithResolved(resolvedContext, t, projects, projectIndex, tInfo);
+      const precomputedCode = allCodesMap.get(t.id) || computeTaskCode(projects, allTasks, t);
+      return {
+        task: t,
+        score: 0,
+        exactTaskCode: precomputedCode || t.taskCodePhu || t.id,
+        isExternal: diff.isDifferent,
+        diffDetails: diff,
+      };
+    });
+  }
+
+  const precomputedQuery =
+    options?.precomputedQuery || buildPrecomputedQuery(query, currentProjectCode, effectiveContext);
+  const results: RankedPredecessorMatch[] = [];
+  let strongMatchCount = 0;
+
+  // Two-pass evaluation: score same-project tasks first so we can skip expensive fuzzy bigram checks on external tasks once we have >= 20 strong matches
+  const ctxProjId = resolvedContext.projectId;
+  const ctxCodeLower = resolvedContext.code.toLowerCase();
+  const sameProjCandidates: Task[] = [];
+  const externalCandidates: Task[] = [];
+
+  for (let i = 0; i < candidateTasks.length; i++) {
+    const t = candidateTasks[i];
+    if (!t) continue;
+    const isLikelySame =
+      (ctxProjId && t.projectId === ctxProjId) ||
+      (ctxCodeLower && t.projectCode && t.projectCode.trim().toLowerCase() === ctxCodeLower);
+    if (isLikelySame) sameProjCandidates.push(t);
+    else externalCandidates.push(t);
+  }
+
+  const evaluateCandidate = (t: Task, skipFuzzy: boolean) => {
+    const precomputedCode = allCodesMap.get(t.id) || computeTaskCode(projects, allTasks, t);
+    const tInfo = resolveTaskProjectContext(t, projects, projectIndex);
+    const score = scoreTaskPredecessorMatch(t, query, projects, allTasks, currentProjectCode, effectiveContext, {
+      precomputedTaskCode: precomputedCode,
+      resolvedContext,
+      resolvedTaskInfo: tInfo,
+      projectIndex,
+      allTaskCodesMap: allCodesMap,
+      precomputedQuery,
+      skipFuzzy,
+    });
+    if (score > 0) {
+      if (score >= 750) strongMatchCount++;
+      const exactCode = precomputedCode || t.taskCodePhu || t.id;
+      const diff = getTaskProjectDiffDetailsWithResolved(resolvedContext, t, projects, projectIndex, tInfo);
+      results.push({
+        task: t,
+        score,
+        exactTaskCode: exactCode,
+        isExternal: diff.isDifferent,
+        diffDetails: diff,
+      });
+    }
+  };
+
+  for (let i = 0; i < sameProjCandidates.length; i++) {
+    evaluateCandidate(sameProjCandidates[i], false);
+  }
+  for (let i = 0; i < externalCandidates.length; i++) {
+    evaluateCandidate(externalCandidates[i], strongMatchCount >= 20);
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  return results;
+}
+
+/**
+ * Finds the single closest matching task for a given query string.
+ * Returns null if no candidate reaches the threshold score.
+ */
+export function findClosestTaskMatch(
+  query: string,
+  candidateTasks: Task[],
+  projects: Project[],
+  allTasks: Task[],
+  currentProjectCode?: string,
+  minThreshold: number = 750,
+  context?: PredecessorContext,
+  predecessorTaskId?: string,
+  options?: PrecomputedMatchOptions
+): RankedPredecessorMatch | null {
+  const projectIndex = options?.projectIndex || buildProjectLookupIndex(projects);
+  const allCodesMap = options?.allTaskCodesMap || computeAllTaskCodes(projects, allTasks);
+  const effectiveContext: PredecessorContext = context || { projectCode: currentProjectCode };
+  const resolvedContext =
+    options?.resolvedContext || resolveProjectContext(effectiveContext, projects, projectIndex);
+
+  if (predecessorTaskId) {
+    const exact = candidateTasks.find((t) => t.id === predecessorTaskId);
+    if (exact && !exact.isDeleted) {
+      const tInfo = resolveTaskProjectContext(exact, projects, projectIndex);
+      const diff = getTaskProjectDiffDetailsWithResolved(resolvedContext, exact, projects, projectIndex, tInfo);
+      const precomputedCode = allCodesMap.get(exact.id) || computeTaskCode(projects, allTasks, exact);
+      return {
+        task: exact,
+        score: 1000000,
+        exactTaskCode: precomputedCode || exact.taskCodePhu || exact.id,
+        isExternal: diff.isDifferent,
+        diffDetails: diff,
+      };
+    }
+  }
+
+  const ranked = rankCandidateTasks(query, candidateTasks, projects, allTasks, currentProjectCode, context, {
+    projectIndex,
+    allTaskCodesMap: allCodesMap,
+    resolvedContext,
+  });
+  if (ranked.length > 0 && ranked[0].score >= minThreshold) {
+    return ranked[0];
+  }
+  return null;
+}
+
+/**
+ * Automatically resolves a raw predecessor string (e.g. "smz2-85, 2FF" or "85")
+ * by finding the closest matching task codes and replacing the query part with
+ * the exact task codes, preserving all relationships and lags.
+ */
+export function resolvePredecessorString(
+  rawValue: string,
+  tasks: Task[],
+  projects: Project[],
+  currentProjectCode?: string,
+  context?: PredecessorContext,
+  predecessorTaskIds?: string[]
+): string {
+  if (!rawValue || typeof rawValue !== 'string') return '';
+  const trimmed = rawValue.trim();
+  if (!trimmed) return '';
+
+  const storeTasks = typeof window !== 'undefined' ? useAppStore.getState?.()?.tasks || [] : [];
+  const taskMap = new Map<string, Task>();
+  for (let i = 0; i < storeTasks.length; i++) {
+    const t = storeTasks[i];
+    if (t && t.id) taskMap.set(t.id, t);
+  }
+  for (let i = 0; i < (tasks || []).length; i++) {
+    const t = tasks[i];
+    if (t && t.id) taskMap.set(t.id, t);
+  }
+  const poolTasks = taskMap.size > 0 ? Array.from(taskMap.values()) : tasks;
+
+  // Pre-compute ProjectLookupIndex, computeAllTaskCodes, and resolveProjectContext once
+  const projectIndex = buildProjectLookupIndex(projects);
+  const allCodesMap = computeAllTaskCodes(projects, poolTasks);
+  const effectiveContext: PredecessorContext = context || { projectCode: currentProjectCode };
+  const resolvedContext = resolveProjectContext(effectiveContext, projects, projectIndex);
+
+  const knownCodes = new Set<string>();
+  for (let i = 0; i < poolTasks.length; i++) {
+    const t = poolTasks[i];
+    if (!t) continue;
+    if (t.taskCodePhu) knownCodes.add(t.taskCodePhu.trim().toLowerCase());
+    const c = allCodesMap.get(t.id) || computeTaskCode(projects, poolTasks, t);
+    if (c) knownCodes.add(c.trim().toLowerCase());
+  }
+
+  const parts = splitPredecessors(trimmed, knownCodes);
+  if (parts.length === 0) return trimmed;
+
+  const resolvedParts = parts.slice(0, 2).map((part, index) => {
+    const { query, suffix } = parsePredecessorToken(part);
+    if (!query) return part;
+
+    const qLower = normalizeDashes(query).toLowerCase();
+    const isAlreadyExact = knownCodes.has(qLower) || knownCodes.has(query.toLowerCase());
+    if (isAlreadyExact) {
+      return query + suffix;
+    }
+
+    const match = findClosestTaskMatch(
+      query,
+      poolTasks,
+      projects,
+      poolTasks,
+      currentProjectCode,
+      650,
+      context,
+      predecessorTaskIds && predecessorTaskIds[index] ? predecessorTaskIds[index] : undefined,
+      { projectIndex, allTaskCodesMap: allCodesMap, resolvedContext }
+    );
+    if (match) {
+      let finalSuffix = suffix;
+      if (index === 1 && !/FF|SF/i.test(finalSuffix)) {
+        if (/SS|FS/i.test(finalSuffix)) {
+          finalSuffix = finalSuffix.replace(/SS|FS/gi, 'FF');
+        } else {
+          finalSuffix = 'FF' + finalSuffix;
+        }
+      }
+      return match.exactTaskCode + finalSuffix;
+    }
+
+    return part;
+  });
+
+  return resolvedParts.join(', ');
+}
+
+
+=== FILE: src/components/TaskModalParts/PredecessorSearchSuggest.tsx ===
+import React, { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Task, Project, PredecessorType } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { cn } from '../../lib/utils';
+import { buildTaskNoMap, computeAllTaskCodes, parsePredecessors, splitPredecessors } from '../../lib/ganttUtils';
+import {
+  rankCandidateTasks,
+  buildProjectLookupIndex,
+  resolveProjectContext,
+  getTaskProjectDiffDetailsWithResolved,
+  parsePredecessorToken,
+  PredecessorContext,
+  RankedPredecessorMatch,
+} from '../../lib/predecessorMatchUtils';
+import { Search, X, AlertTriangle, ExternalLink, Sparkles, Loader2 } from 'lucide-react';
+import {
+  PredecessorChange,
+  LinkItem,
+  externalLabel,
+  shortDate,
+  tokenOf,
+  normalize,
+  persistDefault,
+} from './PredecessorSearchSuggestParts/predecessorSuggestUtils';
+import { PredecessorLinkCardList } from './PredecessorSearchSuggestParts/PredecessorLinkCardList';
+
+export type { PredecessorChange };
+
+interface PredecessorSearchSuggestProps {
+  /** Task đang sửa (hoặc bản nháp của task mới – id có thể rỗng) */
+  task: Task;
+  canWrite: boolean;
+  /**
+   * Nếu truyền vào: component KHÔNG tự lưu, mà trả kết quả cho nơi gọi xử lý
+   * (dùng cho Task Modal – lưu khi bấm Save, và cho bảng Detail – đi qua onUpdateTask).
+   * Nếu không truyền: tự tính lại ngày, kéo theo task phụ thuộc và lưu Firestore.
+   */
+  onChange?: (change: PredecessorChange) => void | Promise<void>;
+}
+
+export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> = memo(
+  ({ task, canWrite, onChange }) => {
+    const storeTasks = useAppStore((s: any) => s.tasks) as Task[];
+    const projects = (useAppStore((s: any) => s.projects) || []) as Project[];
+    const liveTask = useAppStore((s: any) =>
+      task?.id ? (s.tasks as Task[]).find((t) => t.id === task.id) : undefined
+    ) as Task | undefined;
+
+    const source: Task = onChange ? task : liveTask || task;
+
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const listRef = useRef<HTMLUListElement>(null);
+
+    const [query, setQuery] = useState('');
+    const deferredQuery = useDeferredValue(query);
+    const [open, setOpen] = useState(false);
+    const [hi, setHi] = useState(0);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [pendingExternal, setPendingExternal] = useState<RankedPredecessorMatch | null>(null);
+
+    useEffect(() => {
+      if (open && listRef.current && listRef.current.children[hi]) {
+        const activeEl = listRef.current.children[hi] as HTMLElement;
+        if (activeEl) activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }, [hi, open]);
+
+    const ctx: PredecessorContext = useMemo(
+      () => ({
+        projectId: source?.projectId,
+        projectCode: source?.projectCode,
+        projectYear: source?.projectYear,
+        projectStore: source?.projectStore,
+        projectLocation: source?.location,
+      }),
+      [source?.projectId, source?.projectCode, source?.projectYear, source?.projectStore, source?.location]
+    );
+
+    const pool = useMemo(() => {
+      const list = storeTasks || [];
+      return list.some((t) => !t || t.isDeleted) ? list.filter((t) => t && !t.isDeleted) : list;
+    }, [storeTasks]);
+
+    const projectIndex = useMemo(() => buildProjectLookupIndex(projects), [projects]);
+    const allCodesMap = useMemo(() => computeAllTaskCodes(projects, pool), [projects, pool]);
+    const resolvedContext = useMemo(
+      () => resolveProjectContext(ctx, projects, projectIndex),
+      [ctx, projects, projectIndex]
+    );
+    const taskNoMap = useMemo(() => buildTaskNoMap(projects, pool), [projects, pool]);
+
+    const items = useMemo<LinkItem[]>(() => {
+      const str = String(source?.predecessor || '').trim();
+      if (!str) return [];
+      const ids = source?.predecessorTaskIds || [];
+      const tokens = splitPredecessors(str, taskNoMap).slice(0, 2);
+
+      return tokens.map((tok, i) => {
+        let p: any;
+        try {
+          p = parsePredecessors(tok, taskNoMap, { ...source, predecessorTaskIds: [ids[i] || ''] } as Task)[0];
+        } catch {
+          p = undefined;
+        }
+        if (p && p.task) {
+          const diff = getTaskProjectDiffDetailsWithResolved(resolvedContext, p.task, projects, projectIndex);
+          const code = allCodesMap.get(p.task.id) || p.task.taskCodePhu || p.no || tok;
+          return {
+            key: `${p.task.id}-${i}`,
+            resolved: true,
+            taskId: p.task.id,
+            task: p.task as Task,
+            code,
+            type: (p.type || 'FS') as PredecessorType,
+            lagSign: (p.lagSign === '-' ? '-' : '+') as '+' | '-',
+            lagValue: Number(p.lagValue) || 0,
+            raw: tok,
+            isExternal: !!diff.isDifferent,
+            externalLabel: externalLabel(diff, p.task.projectCode),
+          };
+        }
+        const { query: q } = parsePredecessorToken(tok);
+        return {
+          key: `raw-${i}-${tok}`,
+          resolved: false,
+          taskId: '',
+          code: q || tok,
+          type: 'FS' as PredecessorType,
+          lagSign: '+' as const,
+          lagValue: 0,
+          raw: tok,
+          isExternal: false,
+          externalLabel: '',
+        };
+      });
+    }, [source, taskNoMap, resolvedContext, projects, projectIndex, allCodesMap]);
+
+    useEffect(() => {
+      const handler = (e: MouseEvent | TouchEvent) => {
+        if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+          setOpen(false);
+        }
+      };
+      document.addEventListener('mousedown', handler);
+      document.addEventListener('touchstart', handler, { passive: true });
+      return () => {
+        document.removeEventListener('mousedown', handler);
+        document.removeEventListener('touchstart', handler);
+      };
+    }, []);
+
+    useEffect(() => setHi(0), [deferredQuery]);
+
+    const excluded = useMemo(() => {
+      const s = new Set<string>();
+      if (source?.id) s.add(source.id);
+      items.forEach((i) => i.taskId && s.add(i.taskId));
+      return s;
+    }, [source?.id, items]);
+
+    const candidates = useMemo<RankedPredecessorMatch[]>(() => {
+      if (!open) return [];
+      const q = deferredQuery.trim();
+
+      if (q) {
+        return rankCandidateTasks(q, pool, projects, pool, source?.projectCode, ctx, {
+          projectIndex,
+          allTaskCodesMap: allCodesMap,
+          resolvedContext,
+        })
+          .filter((m) => !excluded.has(m.task.id))
+          .slice(0, 20);
+      }
+
+      let base = pool.filter((t) => !excluded.has(t.id));
+      const sameCode = base.filter((t) => t.projectCode === source?.projectCode);
+      if (sameCode.length > 0) base = sameCode;
+      base = base
+        .filter((t) => !getTaskProjectDiffDetailsWithResolved(resolvedContext, t, projects, projectIndex).isDifferent)
+        .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0))
+        .slice(0, 25);
+
+      return base.map((t) => {
+        const diff = getTaskProjectDiffDetailsWithResolved(resolvedContext, t, projects, projectIndex);
+        return {
+          task: t,
+          score: 0,
+          exactTaskCode: allCodesMap.get(t.id) || t.taskCodePhu || t.id,
+          isExternal: !!diff.isDifferent,
+          diffDetails: diff,
+        } as RankedPredecessorMatch;
+      });
+    }, [open, deferredQuery, pool, projects, excluded, source?.projectCode, ctx, projectIndex, allCodesMap, resolvedContext]);
+
+    const commit = useCallback(
+      async (list: LinkItem[]) => {
+        const finalList = normalize(list);
+        const change: PredecessorChange = {
+          predecessor: finalList.map(tokenOf).filter(Boolean).join(', '),
+          predecessorTaskIds: finalList.map((i) => i.taskId || ''),
+          predecessors: finalList.filter((i) => i.resolved).map((i) => ({ taskId: i.taskId, type: i.type })),
+        };
+        setSaving(true);
+        setError(null);
+        try {
+          if (onChange) await onChange(change);
+          else await persistDefault(source, change, projects);
+        } catch (e: any) {
+          setError(e?.message || 'Could not save predecessor link');
+        } finally {
+          setSaving(false);
+        }
+      },
+      [onChange, source, projects]
+    );
+
+    const wouldCreateCycle = (candidate: Task): boolean => {
+      if (!source?.id) return false;
+      const visited = new Set<string>();
+      const stack: Task[] = [candidate];
+      while (stack.length > 0 && visited.size < 500) {
+        const cur = stack.pop() as Task;
+        if (cur.id === source.id) return true;
+        if (visited.has(cur.id)) continue;
+        visited.add(cur.id);
+        if (!cur.predecessor) continue;
+        try {
+          parsePredecessors(cur.predecessor, taskNoMap, cur).forEach((p: any) => {
+            if (p?.task) stack.push(p.task as Task);
+          });
+        } catch {}
+      }
+      return false;
+    };
+
+    const addTask = (m: RankedPredecessorMatch, confirmed = false) => {
+      const t = m.task;
+      if (items.length >= 2) return;
+      if (wouldCreateCycle(t)) {
+        setError(
+          `Cannot link: «${t.name}» depends on this task (directly or indirectly), causing a circular dependency.`
+        );
+        setPendingExternal(null);
+        return;
+      }
+      if (m.isExternal && !confirmed) {
+        setPendingExternal(m);
+        setOpen(false);
+        return;
+      }
+      const idx = items.length;
+      const next: LinkItem = {
+        key: `${t.id}-${idx}`,
+        resolved: true,
+        taskId: t.id,
+        task: t,
+        code: m.exactTaskCode || allCodesMap.get(t.id) || t.taskCodePhu || t.id,
+        type: idx === 0 ? 'FS' : 'FF',
+        lagSign: '+',
+        lagValue: 0,
+        raw: '',
+        isExternal: !!m.isExternal,
+        externalLabel: externalLabel(m.diffDetails, t.projectCode),
+      };
+      setPendingExternal(null);
+      setQuery('');
+      setOpen(false);
+      inputRef.current?.blur();
+      commit([...items, next]);
+    };
+
+    const patchItem = useCallback(
+      (idx: number, patch: Partial<LinkItem>) => {
+        commit(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+      },
+      [commit, items]
+    );
+
+    const removeItem = useCallback(
+      (idx: number) => {
+        commit(items.filter((_, i) => i !== idx));
+      },
+      [commit, items]
+    );
+
+    const stepLag = useCallback(
+      (idx: number, delta: number) => {
+        const it = items[idx];
+        const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+        const n = Math.round((signed + delta) * 100) / 100;
+        patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) });
+      },
+      [items, patchItem]
+    );
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (!open) setOpen(true);
+        else setHi((h) => Math.min(h + 1, Math.max(candidates.length - 1, 0)));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHi((h) => Math.max(h - 1, 0));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        const m = candidates[hi] || candidates[0];
+        if (m) addTask(m);
+      } else if (e.key === 'Escape') {
+        if (open) {
+          e.stopPropagation();
+          setOpen(false);
+        }
+      }
+    };
+
+    const canAdd = canWrite && items.length < 2;
+    const hasQuery = deferredQuery.trim().length > 0;
+
+    return (
+      <div className="flex flex-col gap-2.5 w-full" ref={wrapperRef} onClick={(e) => e.stopPropagation()}>
+        {saving && (
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Updating...
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-[12px] font-medium text-red-700 dark:text-red-300">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="flex-1">{error}</span>
+            <button type="button" onClick={() => setError(null)} className="shrink-0 p-0.5 rounded hover:bg-red-100 dark:hover:bg-red-900/50">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        <PredecessorLinkCardList
+          items={items}
+          canWrite={canWrite}
+          saving={saving}
+          onPatchItem={patchItem}
+          onRemoveItem={removeItem}
+          onStepLag={stepLag}
+        />
+
+        {/* Confirm cross project link */}
+        {pendingExternal && (
+          <div className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs dark:border-amber-700 dark:bg-amber-950/60">
+            <div className="flex items-start gap-1.5 font-medium text-amber-800 dark:text-amber-200">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <p>
+                «<b>{pendingExternal.task.name}</b>» belongs to another project (
+                <b>{externalLabel(pendingExternal.diffDetails, pendingExternal.task.projectCode)}</b>). Confirm cross-project link?
+              </p>
+            </div>
+            <div className="flex justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPendingExternal(null)}
+                className="rounded-lg px-3 py-1 text-xs font-bold text-slate-600 hover:bg-amber-100 dark:text-slate-300 dark:hover:bg-amber-900/50 touch-manipulation cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => addTask(pendingExternal, true)}
+                className="rounded-lg bg-amber-600 px-3 py-1 text-xs font-bold text-white shadow-2xs hover:bg-amber-700 active:scale-95 touch-manipulation cursor-pointer"
+              >
+                Link
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Search input */}
+        {canAdd && !pendingExternal && (
+          <div className="relative w-full">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                disabled={saving}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setOpen(true);
+                }}
+                onFocus={() => setOpen(true)}
+                onKeyDown={handleKeyDown}
+                placeholder="Type task name or code..."
+                autoComplete="off"
+                className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-8 pr-7 text-xs font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white dark:border-[#38383a] dark:bg-[#1a1a1c] dark:text-white dark:focus:bg-[#202023] transition-all shadow-2xs"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery('');
+                    inputRef.current?.focus();
+                  }}
+                  className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 touch-manipulation cursor-pointer"
+                  tabIndex={-1}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {open && (
+              <ul
+                ref={listRef}
+                role="listbox"
+                className="mt-2 w-full max-h-48 sm:max-h-56 md:max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-slate-200/90 bg-slate-50/90 dark:border-[#444446] dark:bg-[#252528] p-1.5 shadow-inner backdrop-blur-md transition-all custom-scrollbar"
+              >
+                {!hasQuery && candidates.length > 0 && (
+                  <li className="px-2.5 pb-1 pt-1 text-[9px] font-black uppercase tracking-wider text-slate-400">
+                    Suggestions (Same Project)
+                  </li>
+                )}
+                {candidates.length === 0 ? (
+                  <li className="px-3 py-2.5 text-center text-xs italic text-slate-400">
+                    {hasQuery ? 'No tasks found' : 'No matching tasks'}
+                  </li>
+                ) : (
+                  candidates.map((m, i) => {
+                    const t = m.task;
+                    const best = hasQuery && i === 0 && m.score >= 450;
+                    return (
+                      <li
+                        key={t.id}
+                        role="option"
+                        aria-selected={i === hi}
+                        onMouseEnter={() => setHi(i)}
+                        onClick={() => addTask(m)}
+                        className={cn(
+                          'flex min-h-[38px] cursor-pointer flex-col gap-0.5 rounded-lg border-b border-slate-100/60 dark:border-slate-800/60 px-2.5 py-1.5 last:border-0 transition-colors',
+                          i === hi ? 'bg-blue-50 dark:bg-blue-950/40' : 'hover:bg-slate-50 dark:hover:bg-[#2e2e32]'
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-1.5 min-w-0">
+                          <span className="truncate text-xs font-bold text-slate-800 dark:text-[#f3f3f3]">{t.name}</span>
+                          <span className="flex shrink-0 items-center gap-1">
+                            {best && (
+                              <span className="inline-flex items-center gap-0.5 rounded bg-emerald-100 px-1 py-0.2 text-[9px] font-extrabold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                                <Sparkles className="h-2.5 w-2.5" /> Best Match
+                              </span>
+                            )}
+                            {m.isExternal && (
+                              <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1 py-0.2 text-[9px] font-extrabold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                <ExternalLink className="h-2.5 w-2.5" /> {externalLabel(m.diffDetails, t.projectCode)}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="font-mono font-black text-blue-600 dark:text-[#8ab4f8]">{m.exactTaskCode}</span>
+                          <span className="font-mono text-slate-400 dark:text-slate-500">
+                            {shortDate(t.start)} → {shortDate(t.finish)}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })
+                )}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+);
+
+PredecessorSearchSuggest.displayName = 'PredecessorSearchSuggest';
+
+
+=== FILE: src/components/PredecessorMultiInput.tsx ===
+import React, { Component, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Task, Project } from '../types';
+import { Search, X, Check, ExternalLink, Sparkles, ArrowRight, Link2, AlertTriangle, Loader2, Plus, Minus } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { computeAllTaskCodes, splitPredecessors, buildTaskNoMap, parsePredecessors } from '../lib/ganttUtils';
+import { useAppStore } from '../store/useAppStore';
+import { 
+  parsePredecessorToken, 
+  rankCandidateTasks, 
+  RankedPredecessorMatch, 
+  PredecessorContext, 
+  buildProjectLookupIndex,
+  resolveProjectContext,
+  getTaskProjectDiffDetailsWithResolved
+} from '../lib/predecessorMatchUtils';
+import {
+  PredecessorType,
+  PredecessorChange,
+  LinkItem,
+  REL_INFO,
+  SLOT_STYLE,
+  shortDate,
+  externalLabel,
+  tokenOf,
+  normalize,
+  milestoneDate,
+  describe,
+  persistDefault,
+  LagInput,
+} from './PredecessorMultiInputParts/predecessorInputHelpers';
+
+export type { PredecessorChange };
+
+interface PredecessorMultiInputProps {
+  task?: Task;
+  value?: string;
+  canWrite?: boolean;
+  disabled?: boolean;
+  onChange?: ((change: PredecessorChange) => void | Promise<void>) | ((val: string) => void);
+  onCommit?: (val: string) => void;
+  storeTasks?: Task[];
+  tasks?: Task[];
+  projects?: Project[];
+  currentProjectId?: string;
+  currentProjectCode?: string;
+  currentProjectYear?: number | string;
+  currentProjectStore?: string;
+  currentProjectLocation?: string;
+  predecessorTaskIds?: string[];
+  onPredecessorTaskIdsChange?: (ids: string[]) => void;
+}
+export function PredecessorMultiInput({
+  task,
+  value,
+  canWrite: canWriteProp,
+  disabled,
+  onChange,
+  onCommit,
+  storeTasks,
+  tasks: tasksProp,
+  projects: projectsProp,
+  currentProjectId,
+  currentProjectCode,
+  currentProjectYear,
+  currentProjectStore,
+  currentProjectLocation,
+  predecessorTaskIds: legacyIds,
+  onPredecessorTaskIdsChange
+}: PredecessorMultiInputProps) {
+  const canWrite = canWriteProp !== undefined ? canWriteProp : !disabled;
+  const liveTask = useAppStore((s) => s.tasks.find((t) => t.id === task?.id));
+  
+  const source: Task = useMemo(() => {
+    if (task) return liveTask || task;
+    return {
+      id: '',
+      name: '',
+      predecessor: value || '',
+      predecessorTaskIds: legacyIds || [],
+      projectId: currentProjectId,
+      projectCode: currentProjectCode,
+      projectYear: currentProjectYear ? String(currentProjectYear) : undefined,
+      projectStore: currentProjectStore,
+      location: currentProjectLocation,
+    } as Task;
+  }, [task, liveTask, value, legacyIds, currentProjectId, currentProjectCode, currentProjectYear, currentProjectStore, currentProjectLocation]);
+  
+  const stateProjects = useAppStore(s => s.projects);
+  const activeProjects = projectsProp || stateProjects;
+
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const [query, setQuery] = useState('');
+  const deferredQuery = useDeferredValue(query);
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingExternal, setPendingExternal] = useState<RankedPredecessorMatch | null>(null);
+
+  const ctx: PredecessorContext = useMemo(() => ({
+    projectId: source?.projectId || currentProjectId,
+    projectCode: source?.projectCode || currentProjectCode,
+    projectYear: source?.projectYear || currentProjectYear,
+    projectStore: source?.projectStore || currentProjectStore,
+    projectLocation: source?.location || currentProjectLocation,
+  }), [source, currentProjectId, currentProjectCode, currentProjectYear, currentProjectStore, currentProjectLocation]);
+
+  const pool = useMemo(() => {
+    const raw = storeTasks || tasksProp || useAppStore.getState().tasks || [];
+    return raw.some((t) => !t || t.isDeleted) ? raw.filter((t) => t && !t.isDeleted) : raw;
+  }, [storeTasks, tasksProp]);
+  const projectIndex = useMemo(() => buildProjectLookupIndex(activeProjects), [activeProjects]);
+  const allCodesMap = useMemo(() => computeAllTaskCodes(activeProjects, pool), [activeProjects, pool]);
+  const resolvedContext = useMemo(() => resolveProjectContext(ctx, activeProjects, projectIndex), [ctx, activeProjects, projectIndex]);
+  const taskNoMap = useMemo(() => buildTaskNoMap(activeProjects, pool), [activeProjects, pool]);
+
+  const items = useMemo<LinkItem[]>(() => {
+    const str = String(source?.predecessor || '').trim();
+    if (!str) return [];
+    const ids = source?.predecessorTaskIds || [];
+    const tokens = splitPredecessors(str, taskNoMap).slice(0, 2);
+
+    return tokens.map((tok, i) => {
+      let p: any;
+      try { p = parsePredecessors(tok, taskNoMap, { ...source, predecessorTaskIds: [ids[i] || ''] } as Task)[0]; } catch {}
+      if (p && p.task) {
+        const diff = getTaskProjectDiffDetailsWithResolved(resolvedContext, p.task, activeProjects, projectIndex);
+        const code = allCodesMap.get(p.task.id) || p.task.taskCodePhu || p.no || tok;
+        return {
+          key: `${p.task.id}-${i}`,
+          resolved: true,
+          taskId: p.task.id,
+          task: p.task as Task,
+          code,
+          type: (p.type || 'FS') as PredecessorType,
+          lagSign: (p.lagSign === '-' ? '-' : '+') as '+' | '-',
+          lagValue: Number(p.lagValue) || 0,
+          raw: tok,
+          isExternal: !!diff.isDifferent,
+          externalLabel: externalLabel(diff, p.task.projectCode),
+        };
+      }
+      const { query: q } = parsePredecessorToken(tok);
+      return {
+        key: `raw-${i}-${tok}`, resolved: false, taskId: '', code: q || tok, type: 'FS', lagSign: '+', lagValue: 0, raw: tok, isExternal: false, externalLabel: '',
+      };
+    });
+  }, [source, taskNoMap, resolvedContext, activeProjects, projectIndex, allCodesMap]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent | TouchEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler, { passive: true });
+    return () => { document.removeEventListener('mousedown', handler); document.removeEventListener('touchstart', handler); };
+  }, []);
+
+  useEffect(() => setHi(0), [deferredQuery]);
+
+  const excluded = useMemo(() => {
+    const s = new Set<string>();
+    if (source?.id) s.add(source.id);
+    items.forEach((i) => i.taskId && s.add(i.taskId));
+    return s;
+  }, [source?.id, items]);
+
+  const candidates = useMemo<RankedPredecessorMatch[]>(() => {
+    if (!open) return [];
+    const q = deferredQuery.trim();
+    if (q) {
+      return rankCandidateTasks(q, pool, activeProjects, pool, source?.projectCode, ctx, {
+        projectIndex,
+        allTaskCodesMap: allCodesMap,
+      }).filter((m) => !excluded.has(m.task.id)).slice(0, 20);
+    }
+    let base = pool.filter((t) => !excluded.has(t.id));
+    if (source?.projectId) {
+      const sameId = base.filter((t) => t.projectId === source.projectId);
+      if (sameId.length > 0) base = sameId;
+    } else if (source?.projectCode) {
+      const sameCode = base.filter((t) => t.projectCode === source.projectCode);
+      if (sameCode.length > 0) base = sameCode;
+    }
+    const withDiff = base.map((t) => ({
+      task: t,
+      diff: getTaskProjectDiffDetailsWithResolved(resolvedContext, t, activeProjects, projectIndex),
+    }));
+    const internalOnly = withDiff.filter((item) => !item.diff.isDifferent);
+    const chosen = (internalOnly.length > 0 ? internalOnly : withDiff)
+      .sort((a, b) => (a.task.orderIndex ?? 0) - (b.task.orderIndex ?? 0))
+      .slice(0, 25);
+    return chosen.map(({ task: t, diff }) => ({
+      task: t,
+      score: 0,
+      exactTaskCode: allCodesMap.get(t.id) || t.taskCodePhu || t.id,
+      isExternal: !!diff.isDifferent,
+      diffDetails: diff,
+    } as RankedPredecessorMatch));
+  }, [open, deferredQuery, pool, activeProjects, excluded, source?.projectId, source?.projectCode, ctx, projectIndex, allCodesMap, resolvedContext]);
+
+  const commit = async (list: LinkItem[]) => {
+    const finalList = normalize(list);
+    const change: PredecessorChange = {
+      predecessor: finalList.map(tokenOf).filter(Boolean).join(', '),
+      predecessorTaskIds: finalList.map((i) => i.taskId || ''),
+      predecessors: finalList.filter((i) => i.resolved).map((i) => ({ taskId: i.taskId, type: i.type })),
+    };
+    setSaving(true); setError(null);
+    try {
+      if (onChange) {
+        await (onChange as any)(change);
+        if (typeof onChange === 'function') (onChange as any)(change.predecessor);
+      }
+      if (onCommit) onCommit(change.predecessor);
+      if (onPredecessorTaskIdsChange) onPredecessorTaskIdsChange(change.predecessorTaskIds);
+      if (!onChange && !onCommit && source.id) {
+        await persistDefault(source, change, activeProjects);
+      }
+    } catch (e: any) { setError(e?.message || 'Không thể lưu liên kết'); } 
+    finally { setSaving(false); }
+  };
+
+  const wouldCreateCycle = (candidate: Task): boolean => {
+    if (!source?.id) return false;
+    const visited = new Set<string>();
+    const stack: Task[] = [candidate];
+    while (stack.length > 0 && visited.size < 500) {
+      const cur = stack.pop() as Task;
+      if (cur.id === source.id) return true;
+      if (visited.has(cur.id)) continue;
+      visited.add(cur.id);
+      if (!cur.predecessor) continue;
+      try { parsePredecessors(cur.predecessor, taskNoMap, cur).forEach((p: any) => { if (p?.task) stack.push(p.task as Task); }); } catch {}
+    }
+    return false;
+  };
+
+  const addTask = (m: RankedPredecessorMatch, confirmed = false) => {
+    const t = m.task;
+    if (items.length >= 2) return;
+    if (wouldCreateCycle(t)) { setError(`Lỗi: «${t.name}» sẽ tạo vòng lặp phụ thuộc.`); setPendingExternal(null); return; }
+    if (m.isExternal && !confirmed) { setPendingExternal(m); setOpen(false); return; }
+    const idx = items.length;
+    const next: LinkItem = {
+      key: `${t.id}-${idx}`, resolved: true, taskId: t.id, task: t, code: m.exactTaskCode || allCodesMap.get(t.id) || t.taskCodePhu || t.id,
+      type: idx === 0 ? 'FS' : 'FF', lagSign: '+', lagValue: 0, raw: '', isExternal: !!m.isExternal, externalLabel: externalLabel(m.diffDetails, t.projectCode),
+    };
+    setPendingExternal(null); setQuery(''); setOpen(false); inputRef.current?.blur();
+    commit([...items, next]);
+  };
+
+  const patchItem = (idx: number, patch: Partial<LinkItem>) => commit(items.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  const removeItem = (idx: number) => commit(items.filter((_, i) => i !== idx));
+
+  const stepLag = (idx: number, delta: number) => {
+    const it = items[idx];
+    const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+    const n = Math.round((signed + delta) * 100) / 100;
+    patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (!open) setOpen(true); else setHi((h) => Math.min(h + 1, Math.max(candidates.length - 1, 0))); } 
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); } 
+    else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); const m = candidates[hi] || candidates[0]; if (m) addTask(m); } 
+    else if (e.key === 'Escape') { if (open) { e.stopPropagation(); setOpen(false); } }
+  };
+
+  const canAdd = canWrite && items.length < 2;
+  const hasQuery = deferredQuery.trim().length > 0;
+
+  return (
+    <div className="flex flex-col gap-2 w-full" ref={wrapperRef}>
+      {/* Cảnh báo lỗi */}
+      {error && (
+        <div className="flex items-center gap-1.5 rounded-md border border-red-200 bg-red-50 p-2 text-[11px] text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          <span className="flex-1 font-semibold">{error}</span>
+          <button type="button" onClick={() => setError(null)} className="p-0.5 hover:bg-red-100 rounded dark:hover:bg-red-900/50"><X className="w-3.5 h-3.5" /></button>
+        </div>
+      )}
+
+      {/* Danh sách thẻ đã chọn */}
+      <div className="flex flex-col gap-1.5">
+        {items.map((it, idx) => {
+          const style = SLOT_STYLE[idx] || SLOT_STYLE[1];
+          const allowed: PredecessorType[] = idx === 0 ? ['FS', 'SS', 'FF', 'SF'] : ['FF', 'SF'];
+          const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+
+          return (
+            <div key={it.key} className={cn("flex flex-col p-1.5 rounded-lg border bg-white dark:bg-[#1a1a1c] shadow-xs", style.border, it.resolved ? 'border-slate-200 dark:border-[#333]' : 'border-amber-300 dark:border-amber-700/60')}>
+              <div className="flex items-center justify-between gap-2 pl-1">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-black shrink-0", style.badge)}>#{style.tag}</span>
+                  {it.resolved && it.task ? (
+                    <div className="flex items-center gap-1.5 min-w-0 truncate text-xs">
+                      <span className="font-mono font-bold text-blue-600 dark:text-[#8ab4f8] shrink-0">{it.code}</span>
+                      <span className="text-slate-800 dark:text-[#f3f3f3] font-semibold truncate" title={it.task.name}>{it.task.name}</span>
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-amber-600 italic">Not found: {it.raw}</span>
+                  )}
+                </div>
+                {canWrite && (
+                  <button type="button" onClick={() => removeItem(idx)} disabled={saving} className="text-slate-400 hover:text-red-500 p-1 shrink-0"><X className="w-3.5 h-3.5" /></button>
+                )}
+              </div>
+
+              {/* Link Options (TYPE & LAG placed on the SAME ROW) */}
+              {it.resolved && canWrite && (
+                <div className="flex items-center justify-between gap-1.5 mt-1.5 pt-1.5 border-t border-slate-100 dark:border-[#2e2e32] pl-1 text-xs flex-nowrap overflow-x-auto">
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">TYPE:</span>
+                    <div className="inline-flex rounded bg-slate-100 dark:bg-[#252528] p-0.5 border border-slate-200/60 dark:border-[#38383a]">
+                      {allowed.map((rel) => {
+                        const active = it.type === rel;
+                        return (
+                          <button
+                            key={rel}
+                            type="button"
+                            disabled={saving}
+                            onClick={() => !active && patchItem(idx, { type: rel })}
+                            title={REL_INFO[rel].hint}
+                            className={cn(
+                              "px-2 py-0.5 rounded text-[10px] font-extrabold transition-colors cursor-pointer active:scale-95",
+                              active ? style.active : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-[#e3e3e3]"
+                            )}
+                          >
+                            {rel}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">LAG:</span>
+                    <div className="inline-flex items-center gap-0.5 rounded bg-slate-100 dark:bg-[#252528] px-1 py-0.5 border border-slate-200/60 dark:border-[#38383a]">
+                      <button type="button" disabled={saving} onClick={() => stepLag(idx, -1)} className="p-0.5 rounded bg-white dark:bg-[#1a1a1c] text-slate-500 hover:text-slate-800 dark:text-slate-400 active:scale-95 transition-all"><Minus className="w-3 h-3" /></button>
+                      <LagInput value={signed} disabled={saving} onCommit={(n) => patchItem(idx, { lagSign: n < 0 ? '-' : '+', lagValue: Math.abs(n) })} />
+                      <span className="text-[10px] font-bold text-slate-400 px-0.5">days</span>
+                      <button type="button" disabled={saving} onClick={() => stepLag(idx, 1)} className="p-0.5 rounded bg-white dark:bg-[#1a1a1c] text-slate-500 hover:text-slate-800 dark:text-slate-400 active:scale-95 transition-all"><Plus className="w-3 h-3" /></button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Cross-Project Confirm Dialog */}
+      {pendingExternal && (
+        <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] dark:border-amber-700/60 dark:bg-amber-950/40">
+          <div className="flex items-start gap-1.5 text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span className="font-medium leading-tight">
+              «{pendingExternal.task.name}» belongs to another project. This may adjust current task dates. Confirm link?
+            </span>
+          </div>
+          <div className="flex justify-end gap-1.5 mt-1">
+            <button type="button" onClick={() => setPendingExternal(null)} className="px-3 py-1 rounded text-slate-600 hover:bg-amber-100 dark:text-slate-300 font-bold">Cancel</button>
+            <button type="button" onClick={() => addTask(pendingExternal, true)} className="px-3 py-1 rounded bg-amber-600 text-white font-bold hover:bg-amber-700 shadow-sm">Link</button>
+          </div>
+        </div>
+      )}
+
+      {/* Search Input & Suggestions */}
+      {canAdd && !pendingExternal && (
+        <div className="relative mt-0.5">
+          <div className="relative">
+            <Link2 className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-blue-500" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              disabled={saving}
+              onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+              onFocus={() => setOpen(true)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type task name or code..."
+              autoComplete="off"
+              className="h-8 w-full rounded-lg border border-blue-200 bg-blue-50/50 pl-8 pr-7 text-xs font-semibold text-slate-800 outline-none placeholder:text-slate-400 placeholder:font-normal focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-500/20 dark:border-blue-900/40 dark:bg-[#1a1c23] dark:text-white dark:focus:bg-[#1e1e20]"
+            />
+            {query && (
+              <button type="button" onClick={() => { setQuery(''); inputRef.current?.focus(); }} className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700" tabIndex={-1}>
+                <X className="w-3 h-3" />
+              </button>
+            )}
+            {saving && <Loader2 className="absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-blue-500" />}
+          </div>
+
+          {open && (
+            <ul className="absolute left-0 right-0 top-full z-[300000] mt-1 max-h-80 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-xl dark:border-[#444446] dark:bg-[#252528] overscroll-contain">
+              {!hasQuery && candidates.length > 0 && <li className="px-2.5 pb-1 pt-1.5 text-[9px] font-extrabold uppercase text-slate-400">Suggestions (Same Project)</li>}
+              {candidates.length === 0 ? (
+                <li className="px-3 py-3 text-center text-[11px] italic text-slate-500">No tasks found</li>
+              ) : (
+                candidates.map((m, i) => {
+                  const t = m.task;
+                  return (
+                    <li
+                      key={t.id}
+                      onMouseEnter={() => setHi(i)}
+                      onClick={() => addTask(m)}
+                      className={cn("flex cursor-pointer flex-col gap-0.5 px-2.5 py-1.5 border-b border-slate-100 dark:border-[#333] last:border-0", i === hi ? 'bg-blue-50 dark:bg-blue-900/30' : 'hover:bg-slate-50 dark:hover:bg-[#2a2a2e]')}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-[11px] font-bold text-slate-800 dark:text-[#f3f3f3] line-clamp-1">{t.name}</span>
+                        {m.isExternal && <span className="shrink-0 rounded bg-amber-100 dark:bg-amber-900/40 px-1 py-0.5 text-[8px] font-bold text-amber-800 dark:text-amber-300">Cross-Project</span>}
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px]">
+                        <span className="font-mono font-bold text-blue-600 dark:text-[#8ab4f8]">{m.exactTaskCode}</span>
+                        <span className="text-slate-400 dark:text-slate-500">{shortDate(t.start)} → {shortDate(t.finish)}</span>
+                      </div>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+=== FILE: src/lib/ganttUtilsParts/scheduleAndReorderEngine.ts ===
+import { Task, Project } from '../../types';
+import { parseDateTime, formatToDatetimeLocal } from '../utils';
+import { sortGroupTasks, buildTaskNoMap } from './taskSortingAndCodes';
+import {
+  parsePredecessors,
+  getPredecessorCodeUpdates,
+  updatePredecessorsStrings,
+} from './predecessorParsingAndCascades';
+
+export function addDays(dateStr: string, days: number): string {
+  const s = parseDateTime(dateStr);
+  if (!s || isNaN(s.getTime())) return dateStr;
+  const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+  return formatToDatetimeLocal(f);
+}
+
+export interface PredecessorCalculationResult {
+  start: string;
+  finish: string;
+  duration: string;
+  durationManual: boolean;
+}
+
+export function calculateTaskDatesFromPredecessors(
+  currentTask: {
+    id?: string;
+    start?: string;
+    finish?: string;
+    duration?: string;
+    durationManual?: boolean;
+  },
+  parsedPreds: Array<{
+    type: string;
+    lagSign: string;
+    lagValue: number;
+    task?: { id?: string; start?: string; finish?: string } | null;
+  }>,
+  getTaskById?: (id: string) => { start?: string; finish?: string } | undefined
+): PredecessorCalculationResult | null {
+  if (!parsedPreds || parsedPreds.length === 0) return null;
+
+  let maxStartConstraintMs = -1;
+  let maxStartConstraintStr = "";
+
+  let maxFinishConstraintMs = -1;
+  let maxFinishConstraintStr = "";
+
+  let hasValidPred = false;
+
+  for (const pred of parsedPreds) {
+    if (!pred || !pred.task) continue;
+    const ptId = pred.task.id || "";
+    const pt = (getTaskById && ptId ? getTaskById(ptId) : null) || pred.task;
+    if (!pt || !pt.start || !pt.finish) continue;
+
+    hasValidPred = true;
+    const lagDays = pred.lagValue * (pred.lagSign === '-' ? -1 : 1);
+
+    if (pred.type === 'FS') {
+      const s = addDays(pt.finish, lagDays);
+      const ms = parseDateTime(s)?.getTime() || -1;
+      if (ms > maxStartConstraintMs) {
+        maxStartConstraintMs = ms;
+        maxStartConstraintStr = s;
+      }
+    } else if (pred.type === 'SS') {
+      const s = addDays(pt.start, lagDays);
+      const ms = parseDateTime(s)?.getTime() || -1;
+      if (ms > maxStartConstraintMs) {
+        maxStartConstraintMs = ms;
+        maxStartConstraintStr = s;
+      }
+    } else if (pred.type === 'FF') {
+      const f = addDays(pt.finish, lagDays);
+      const ms = parseDateTime(f)?.getTime() || -1;
+      if (ms > maxFinishConstraintMs) {
+        maxFinishConstraintMs = ms;
+        maxFinishConstraintStr = f;
+      }
+    } else if (pred.type === 'SF') {
+      const f = addDays(pt.start, lagDays);
+      const ms = parseDateTime(f)?.getTime() || -1;
+      if (ms > maxFinishConstraintMs) {
+        maxFinishConstraintMs = ms;
+        maxFinishConstraintStr = f;
+      }
+    }
+  }
+
+  if (!hasValidPred) return null;
+
+  const hasStartConstraint = maxStartConstraintMs !== -1;
+  const hasFinishConstraint = maxFinishConstraintMs !== -1;
+
+  if (!hasStartConstraint && !hasFinishConstraint) return null;
+
+  const currentDurationNum = parseFloat(String(currentTask.duration || "0"));
+  const safeDuration = isNaN(currentDurationNum) || currentDurationNum < 0 ? 0 : currentDurationNum;
+
+  if (hasStartConstraint && hasFinishConstraint) {
+    const newStart = maxStartConstraintStr;
+    let newFinish = maxFinishConstraintStr;
+    const startMs = maxStartConstraintMs;
+    const finishMs = maxFinishConstraintMs;
+    const diffDays = (finishMs - startMs) / (1000 * 60 * 60 * 24);
+    let newDuration = "0";
+
+    if (diffDays >= 0) {
+      const rounded = Math.round(diffDays);
+      newDuration = Math.abs(diffDays - rounded) < 0.45 ? String(rounded) : String(Number(diffDays.toFixed(2)));
+    } else {
+      newFinish = newStart;
+      newDuration = "0";
+    }
+
+    return {
+      start: newStart,
+      finish: newFinish,
+      duration: newDuration,
+      durationManual: false
+    };
+  }
+
+  if (hasStartConstraint && !hasFinishConstraint) {
+    const newStart = maxStartConstraintStr;
+    const newFinish = addDays(newStart, safeDuration);
+    return {
+      start: newStart,
+      finish: newFinish,
+      duration: String(safeDuration),
+      durationManual: currentTask.durationManual ?? true
+    };
+  }
+
+  if (!hasStartConstraint && hasFinishConstraint) {
+    const newFinish = maxFinishConstraintStr;
+    let newStart = "";
+    let newDuration = String(safeDuration);
+    const durationManual = currentTask.durationManual ?? false;
+
+    if (currentTask.durationManual) {
+      newStart = addDays(newFinish, -safeDuration);
+    } else if (currentTask.start) {
+      newStart = currentTask.start;
+      const startMs = parseDateTime(newStart)?.getTime() || -1;
+      const finishMs = maxFinishConstraintMs;
+      if (startMs !== -1) {
+        const diffDays = (finishMs - startMs) / (1000 * 60 * 60 * 24);
+        newDuration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+      } else {
+        newStart = addDays(newFinish, -safeDuration);
+      }
+    } else {
+      newStart = addDays(newFinish, -safeDuration);
+    }
+
+    return {
+      start: newStart,
+      finish: newFinish,
+      duration: newDuration,
+      durationManual
+    };
+  }
+
+  return null;
+}
+
+export function scheduleDependentTasks(updatedTask: Task, allTasks: Task[], projects: Project[]): Task[] {
+  // Reuse WeakMap-cached taskNoMap for allTasks instead of cloning allTasks into a new array reference
+  const taskNoMap = buildTaskNoMap(projects, allTasks);
+  const taskParsedPreds = new Map<string, any[]>();
+  const dependencyGraph = new Map<string, string[]>();
+  const currentStates = new Map<string, Task>();
+
+  const tasksWithPredByProjectKey = new Map<string, Task[]>();
+  const crossProjectPredTasks: Task[] = [];
+
+  const getProjScopeKey = (t: Partial<Task>) => {
+    if (t.projectId) return `id:${String(t.projectId).trim()}`;
+    return `code:${String(t.projectCode || '').trim().toLowerCase()}|${String(t.projectStore || '').trim().toLowerCase()}|${String(t.projectYear || '').trim()}`;
+  };
+
+  for (let i = 0; i < allTasks.length; i++) {
+    const raw = allTasks[i];
+    if (!raw || raw.isDeleted) continue;
+    const tsk = raw.id === updatedTask.id ? updatedTask : raw;
+    currentStates.set(tsk.id, tsk);
+    if (tsk.predecessor && tsk.predecessor.trim()) {
+      const pKey = getProjScopeKey(tsk);
+      let list = tasksWithPredByProjectKey.get(pKey);
+      if (!list) {
+        list = [];
+        tasksWithPredByProjectKey.set(pKey, list);
+      }
+      list.push(tsk);
+
+      const pCodeLower = String(tsk.projectCode || '').trim().toLowerCase();
+      const predLower = tsk.predecessor.toLowerCase();
+      // If predecessor string contains '#' and is not strictly a local '#N' or same-project 'CODE#N', mark as potential cross-project dependent
+      if (
+        (tsk.predecessorTaskIds && tsk.predecessorTaskIds.length > 0) ||
+        (predLower.includes('#') && (!pCodeLower || !predLower.startsWith(pCodeLower + '#')))
+      ) {
+        crossProjectPredTasks.push(tsk);
+      }
+    }
+  }
+  if (!currentStates.has(updatedTask.id)) {
+    currentStates.set(updatedTask.id, updatedTask);
+    if (updatedTask.predecessor && updatedTask.predecessor.trim()) {
+      const pKey = getProjScopeKey(updatedTask);
+      let list = tasksWithPredByProjectKey.get(pKey);
+      if (!list) {
+        list = [];
+        tasksWithPredByProjectKey.set(pKey, list);
+      }
+      list.push(updatedTask);
+    }
+  }
+
+  const parsedScopes = new Set<string>();
+  const parsedTaskIds = new Set<string>();
+
+  const parseTaskPred = (tsk: Task) => {
+    if (parsedTaskIds.has(tsk.id)) return;
+    parsedTaskIds.add(tsk.id);
+    if (!tsk.predecessor) return;
+    const parsed = parsePredecessors(tsk.predecessor, taskNoMap, tsk);
+    if (parsed.length > 0) {
+      taskParsedPreds.set(tsk.id, parsed);
+      for (let i = 0; i < parsed.length; i++) {
+        const predTask = parsed[i]?.task;
+        if (predTask && predTask.id) {
+          let deps = dependencyGraph.get(predTask.id);
+          if (!deps) {
+            deps = [];
+            dependencyGraph.set(predTask.id, deps);
+          }
+          deps.push(tsk.id);
+        }
+      }
+    }
+  };
+
+  const ensureScopeParsed = (tsk: Task) => {
+    const scopeKey = getProjScopeKey(tsk);
+    if (!parsedScopes.has(scopeKey)) {
+      parsedScopes.add(scopeKey);
+      const scopeTasks = tasksWithPredByProjectKey.get(scopeKey);
+      if (scopeTasks) {
+        for (let i = 0; i < scopeTasks.length; i++) {
+          parseTaskPred(scopeTasks[i]);
+        }
+      }
+    }
+    const pCodeLower = String(tsk.projectCode || '').trim().toLowerCase();
+    for (let i = 0; i < crossProjectPredTasks.length; i++) {
+      const cpTask = crossProjectPredTasks[i];
+      if (parsedTaskIds.has(cpTask.id)) continue;
+      const hasHardLink = cpTask.predecessorTaskIds?.includes(tsk.id);
+      const mentionsCode = pCodeLower && cpTask.predecessor?.toLowerCase().includes(pCodeLower);
+      if (hasHardLink || mentionsCode) {
+        parseTaskPred(cpTask);
+      }
+    }
+  };
+
+  parseTaskPred(updatedTask);
+  ensureScopeParsed(updatedTask);
+
+  const queue: string[] = [];
+  const processed = new Set<string>();
+  const updatesToApply = new Map<string, Task>();
+
+  const updatedTaskPreds = taskParsedPreds.get(updatedTask.id) || [];
+  updatedTaskPreds.forEach(pred => {
+    if (pred?.task?.id) {
+      ensureScopeParsed(pred.task);
+      queue.push(pred.task.id);
+    }
+  });
+  queue.push(updatedTask.id);
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()!;
+    if (processed.has(currentId)) continue;
+    processed.add(currentId);
+
+    const currentTaskObj = currentStates.get(currentId);
+    if (currentTaskObj) {
+      ensureScopeParsed(currentTaskObj);
+    }
+
+    const dependents = dependencyGraph.get(currentId) || [];
+    
+    dependents.forEach(depId => {
+      const depTask = currentStates.get(depId);
+      if (!depTask) return;
+      const preds = taskParsedPreds.get(depId) || [];
+      
+      const isFlexible = Boolean(depTask.predecessor?.trim());
+
+      if (depTask.approval === "Approved" || (depTask as any)._isAutoActualized || !isFlexible) {
+        return;
+      }
+
+      const calcResult = calculateTaskDatesFromPredecessors(
+        depTask,
+        preds,
+        (id) => currentStates.get(id)
+      );
+
+      if (calcResult) {
+        const { start: newStart, finish: newFinish, duration: newDuration, durationManual: newDurationManual } = calcResult;
+        if (newStart !== depTask.start || newFinish !== depTask.finish || newDuration !== depTask.duration || newDurationManual !== depTask.durationManual) {
+           const updatedDepTask = { 
+             ...depTask, 
+             start: newStart, 
+             finish: newFinish,
+             duration: newDuration,
+             durationManual: newDurationManual,
+             ...(depTask.realtimeUpdate === undefined && Boolean(depTask.predecessor?.trim()) ? { realtimeUpdate: true } : {})
+           };
+           currentStates.set(depId, updatedDepTask);
+           updatesToApply.set(depId, updatedDepTask);
+           queue.push(depId);
+        }
+      }
+    });
+  }
+
+  return Array.from(updatesToApply.values());
+}
+
+export interface ReorderCalculationResult {
+  groupTasks: Task[];
+  allUpdatedTasks: Task[];
+  taskUpdates: { id: string; updates: Partial<Task> }[];
+  predecessorUpdates: { id: string; predecessor: string; updatedAt: string }[];
+}
+
+export function reorderAndCalculateTasks(
+  allTasks: Task[],
+  projects: Project[],
+  targetProject: Project,
+  tasksToMoveIds: string[],
+  targetTaskId: string,
+  position: 'before' | 'after'
+): ReorderCalculationResult | null {
+  if (!tasksToMoveIds.length) return null;
+  if (tasksToMoveIds.length === 1 && tasksToMoveIds[0] === targetTaskId) return null;
+
+  const targetPrjCode = targetProject.code;
+  const targetPrjYear = targetProject.year || "";
+  const targetPrjStore = targetProject.store || "";
+
+  const currentProjectTasks = sortGroupTasks(
+    allTasks.filter(t =>
+      String(t.projectCode || "").trim().toLowerCase() === String(targetPrjCode).trim().toLowerCase() &&
+      (targetPrjYear ? String(t.projectYear || "").trim().toLowerCase() === String(targetPrjYear).trim().toLowerCase() : true) &&
+      (targetPrjStore ? String(t.projectStore || "").trim().toLowerCase() === String(targetPrjStore).trim().toLowerCase() : true)
+    )
+  );
+
+  const remaining = currentProjectTasks.filter(t => !tasksToMoveIds.includes(t.id));
+
+  let targetIndex = remaining.findIndex(t => t.id === targetTaskId);
+  if (targetIndex === -1) {
+    targetIndex = remaining.length;
+  } else if (position === 'after') {
+    targetIndex += 1;
+  }
+
+  const movedTasks = allTasks.filter(t => tasksToMoveIds.includes(t.id));
+  movedTasks.sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+
+  remaining.splice(targetIndex, 0, ...movedTasks);
+  const reorderedGroupTasks = remaining;
+
+  const taskUpdates: { id: string; updates: Partial<Task> }[] = [];
+  const now = new Date().toISOString();
+
+  const newTasksMap = new Map<string, Task>();
+  allTasks.forEach(t => newTasksMap.set(t.id, { ...t }));
+
+  reorderedGroupTasks.forEach((t, idx) => {
+    const newOrderIndex = idx;
+    const newTaskCodePhu = `${targetPrjCode}#${idx + 1}`;
+    const isMoved = tasksToMoveIds.includes(t.id);
+    const hasOrderChanged = t.orderIndex !== newOrderIndex || t.taskCodePhu !== newTaskCodePhu;
+
+    if (hasOrderChanged || isMoved) {
+      const updates: Partial<Task> = {
+        orderIndex: newOrderIndex,
+        taskCodePhu: newTaskCodePhu,
+        updatedAt: now,
+      };
+      if (isMoved) {
+        updates.projectCode = targetPrjCode;
+        updates.projectYear = targetPrjYear;
+        updates.projectStore = targetPrjStore;
+      }
+      taskUpdates.push({ id: t.id, updates });
+
+      const existing = newTasksMap.get(t.id);
+      if (existing) {
+        newTasksMap.set(t.id, { ...existing, ...updates });
+      }
+    }
+  });
+
+  const updatedAllTasks = Array.from(newTasksMap.values());
+
+  const oldTaskNoMap = buildTaskNoMap(projects, allTasks);
+  const newTaskNoMap = buildTaskNoMap(projects, updatedAllTasks);
+  const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, updatedAllTasks);
+  const predecessorUpdates = updatePredecessorsStrings(oldCodeToNewCode, updatedAllTasks, projects);
+
+  predecessorUpdates.forEach(pu => {
+    const existing = taskUpdates.find(tu => tu.id === pu.id);
+    if (existing) {
+      existing.updates.predecessor = pu.predecessor;
+    }
+    const memTask = updatedAllTasks.find(t => t.id === pu.id);
+    if (memTask) {
+      memTask.predecessor = pu.predecessor;
+      memTask.updatedAt = pu.updatedAt;
+    }
+  });
+
+  return {
+    groupTasks: reorderedGroupTasks,
+    allUpdatedTasks: updatedAllTasks,
+    taskUpdates,
+    predecessorUpdates,
+  };
+}
+
+
+=== FILE: src/components/TaskModalParts/PredecessorSearchSuggestParts/predecessorSuggestUtils.ts ===
+import { Task, Project, PredecessorType } from '../../../types';
+import { useAppStore } from '../../../store/useAppStore';
+import {
+  buildTaskNoMap,
+  parsePredecessors,
+  splitPredecessors,
+  calculateTaskDatesFromPredecessors,
+  scheduleDependentTasks,
+  addDays,
+} from '../../../lib/ganttUtils';
+import { ProjectDiffDetails } from '../../../lib/predecessorMatchUtils';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../../lib/firestoreWrites';
+import { db, APP_ID } from '../../../lib/firebase';
+
+export interface PredecessorChange {
+  /** Chuỗi predecessor chuẩn của hệ thống, ví dụ: "A01#2SS+1, A01#3FF" */
+  predecessor: string;
+  /** ID task tương ứng theo đúng thứ tự trong chuỗi (hard-link, tránh nhầm task trùng mã) */
+  predecessorTaskIds: string[];
+  /** Mảng object (giữ tương thích với dữ liệu cũ) */
+  predecessors: { taskId: string; type: PredecessorType }[];
+}
+
+export interface LinkItem {
+  key: string;
+  resolved: boolean;
+  taskId: string;
+  task?: Task;
+  code: string;
+  type: PredecessorType;
+  lagSign: '+' | '-';
+  lagValue: number;
+  raw: string;
+  isExternal: boolean;
+  externalLabel: string;
+}
+
+export const REL_INFO: Record<PredecessorType, { hint: string }> = {
+  FS: { hint: 'Finish → Start' },
+  SS: { hint: 'Start → Start' },
+  FF: { hint: 'Finish → Finish' },
+  SF: { hint: 'Start → Finish' },
+};
+
+export const SLOT_STYLE = [
+  {
+    tag: '①',
+    title: 'Primary Predecessor',
+    border: 'border-l-blue-500',
+    badge: 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300',
+    active: 'bg-blue-600 text-white border-blue-600 shadow-sm',
+    caption: 'text-blue-700 dark:text-blue-300',
+  },
+  {
+    tag: '②',
+    title: 'Secondary Predecessor · FF / SF only',
+    border: 'border-l-rose-500',
+    badge: 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300',
+    active: 'bg-rose-600 text-white border-rose-600 shadow-sm',
+    caption: 'text-rose-700 dark:text-rose-300',
+  },
+];
+
+const FACTOR_LABEL: Record<string, string> = {
+  year: 'Different year',
+  store: 'Different store',
+  location: 'Different floor/location',
+  code: 'Different project',
+};
+
+export function externalLabel(diff?: ProjectDiffDetails, fallbackCode?: string): string {
+  const factors = (diff as any)?.diffFactors as string[] | undefined;
+  if (factors && factors.length > 0) {
+    return factors.map((f) => FACTOR_LABEL[f] || f).join(' · ');
+  }
+  return fallbackCode ? `Project ${fallbackCode}` : 'Cross-Project';
+}
+
+export function shortDate(s?: string): string {
+  if (!s) return '—';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : String(s);
+}
+
+export function lagToText(sign: string, v: number): string {
+  return v ? `${sign}${v}` : '';
+}
+
+export function tokenOf(it: LinkItem): string {
+  if (!it.resolved) return it.raw;
+  const lag = lagToText(it.lagSign, it.lagValue);
+  const rel = it.type === 'FS' && !lag ? '' : it.type;
+  return `${it.code}${rel}${lag}`;
+}
+
+/** Secondary predecessor must be FF or SF */
+export function normalize(list: LinkItem[]): LinkItem[] {
+  return list.slice(0, 2).map((it, i) =>
+    i === 1 && it.resolved && it.type !== 'FF' && it.type !== 'SF' ? { ...it, type: 'FF' as PredecessorType } : it
+  );
+}
+
+export function describe(it: LinkItem): string {
+  if (!it.task) return '';
+  const name = `«${it.task.name}»`;
+  const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+  const lag = signed === 0 ? '' : signed > 0 ? `, +${signed} days` : `, -${Math.abs(signed)} days`;
+  switch (it.type) {
+    case 'FS':
+      return `Start after ${name} finishes${lag}`;
+    case 'SS':
+      return `Start when ${name} starts${lag}`;
+    case 'FF':
+      return `Finish when ${name} finishes${lag}`;
+    case 'SF':
+      return `Finish when ${name} starts${lag}`;
+  }
+  return '';
+}
+
+export function milestoneDate(it: LinkItem): string {
+  if (!it.task) return '';
+  const ref = it.type === 'FS' || it.type === 'FF' ? it.task.finish : it.task.start;
+  if (!ref) return '';
+  const signed = (it.lagSign === '-' ? -1 : 1) * it.lagValue;
+  try {
+    return shortDate(addDays(ref, signed));
+  } catch {
+    return shortDate(ref);
+  }
+}
+
+export async function persistDefault(
+  source: Task,
+  change: PredecessorChange,
+  projects: Project[]
+): Promise<void> {
+  if (!source?.id) {
+    throw new Error('Please save the task before linking a predecessor.');
+  }
+  const store = useAppStore.getState() as any;
+  let currentTasks: Task[] = store.tasks || [];
+  const now = new Date().toISOString();
+
+  let updatedTask: Task = {
+    ...source,
+    predecessor: change.predecessor,
+    predecessorTaskIds: change.predecessorTaskIds,
+    predecessors: change.predecessors,
+    realtimeUpdate: Boolean(change.predecessor.trim()),
+    updatedAt: now,
+  } as Task;
+
+  let taskNoMap = buildTaskNoMap(projects, currentTasks);
+  let parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
+
+  if (change.predecessor.trim() && (!parsed.length || parsed.some((p) => !p.task))) {
+    const parts = splitPredecessors(change.predecessor, taskNoMap);
+    const { normalizeDashes } = await import('../../../lib/utils');
+    const { ensureProjectTasksLoaded } = await import('../../../lib/taskStateService');
+    for (const token of parts) {
+      const cleanToken = normalizeDashes(token).replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+      const matchedProj = projects.find(
+        (p) =>
+          p.code &&
+          cleanToken.toLowerCase().startsWith(normalizeDashes(p.code).toLowerCase())
+      );
+      if (matchedProj && (matchedProj.id !== source.projectId || matchedProj.code !== source.projectCode)) {
+        const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
+          projectId: matchedProj.id,
+          store: matchedProj.store,
+          year: matchedProj.year,
+        });
+        if (loaded.length > 0) {
+          currentTasks = (useAppStore.getState() as any).tasks || currentTasks;
+          taskNoMap = buildTaskNoMap(projects, currentTasks);
+          parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
+        }
+      }
+    }
+  }
+
+  if (parsed.length >= 2) updatedTask.durationManual = false;
+
+  const calc = calculateTaskDatesFromPredecessors(updatedTask, parsed as any);
+  if (calc) {
+    updatedTask.start = calc.start;
+    updatedTask.finish = calc.finish;
+    updatedTask.duration = calc.duration;
+    updatedTask.durationManual = calc.durationManual;
+  }
+
+  const dependents = scheduleDependentTasks(updatedTask, currentTasks, projects);
+  const selfScheduled = dependents.find((d) => d.id === updatedTask.id);
+  if (selfScheduled) {
+    updatedTask = { ...updatedTask, ...selfScheduled, updatedAt: now };
+  }
+  const depUpdates = dependents
+    .filter((d) => d.id !== updatedTask.id)
+    .map((d) => ({ ...d, updatedAt: now }));
+
+  const allUpdates = [updatedTask, ...depUpdates];
+  store.optimisticUpdateTasks(allUpdates);
+
+  const editing = store.editingTask;
+  if (editing && editing.id === updatedTask.id && typeof store.setEditingTask === 'function') {
+    store.setEditingTask({ ...editing, ...updatedTask });
+  }
+
+  store.setToast?.({
+    title: 'Predecessor Updated',
+    message: change.predecessor ? `Link: ${change.predecessor}` : 'Predecessor removed',
+    type: 'success',
+  });
+
+  // Offload Firestore write & project date rollup to background microtask (0ms UI block)
+  setTimeout(async () => {
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', updatedTask.id), updatedTask as any, { merge: true });
+      depUpdates.forEach((u: any) => {
+        batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id), u, { merge: true });
+      });
+      await batch.commit();
+      const { findAffectedProjects, syncAffectedProjects } = await import('../../../lib/taskStateService');
+      const affectedProjects = findAffectedProjects(allUpdates, projects);
+      await syncAffectedProjects(affectedProjects);
+    } catch (err: any) {
+      console.error('Failed to persist predecessor update:', err);
+      store.setToast?.({ title: 'Save failed', message: err?.message || 'Could not save predecessor', type: 'error' });
+    }
+  }, 0);
+}
+
+
+=== FILE: src/components/DetailTabParts/useDetailTaskMutations.ts ===
+import React, { Dispatch, SetStateAction } from 'react';
+import { Project, Task, DelegationGroup, AppUser, TaskNote } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { doc } from 'firebase/firestore';
+import { writeBatch } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import { undoManager } from '../../lib/undoManager';
+import { extractStorageUrls, deleteStorageFiles } from '../../lib/storageUtils';
+import { 
+  buildTaskNoMap, 
+  splitPredecessors, 
+  parsePredecessors, 
+  computeTaskCode, 
+  updatePredecessorsStrings, 
+  calculateTaskDatesFromPredecessors, 
+  scheduleDependentTasks 
+} from '../../lib/ganttUtils';
+import { parseDateTime, formatToDatetimeLocal, generateId, isTaskBelongsToProject } from '../../lib/utils';
+import { cleanDurationString, rollupParentTaskDates } from '../../lib/taskImportService';
+import { normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
+import { ensureProjectTasksLoaded, saveTaskStateUnified, deleteTaskStateUnified } from '../../lib/taskStateService';
+import { recordBatchDeltas } from '../../lib/deltaSyncService';
+import { createPatchDeltaItem } from '../../lib/deltaPatchService';
+import { TakaDeltaItem } from '../../types';
+
+interface UseDetailTaskMutationsParams {
+  tasks: Task[];
+  projects: Project[];
+  delegationGroups: DelegationGroup[];
+  currentUser: AppUser;
+  setConfirmModal: React.Dispatch<React.SetStateAction<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => Promise<void>;
+  }>>;
+}
+
+export function useDetailTaskMutations({
+  tasks,
+  projects,
+  delegationGroups,
+  currentUser,
+  setConfirmModal,
+}: UseDetailTaskMutationsParams) {
+  const handleDeleteTask = async (t: Task) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Task',
+      message: 'Delete this Task?',
+      onConfirm: async () => {
+        try {
+          // 1. Xóa tức thì khỏi Zustand store & đồng bộ nguyên tử Batch Firestore + Delta Sync
+          await deleteTaskStateUnified([t]);
+
+          undoManager.push({
+            description: `Delete Task: ${t.name}`,
+            revert: async () => {
+              const { doc } = await import('firebase/firestore');
+              const { writeBatch } = await import('../../lib/firestoreWrites');
+              const { db, APP_ID } = await import('../../lib/firebase');
+              const revertBatch = writeBatch(db);
+              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
+              
+              // Restore related delegations if any
+              const storeDelegations = useAppStore.getState().delegationGroups || [];
+              const relatedDelGroups = storeDelegations.filter(d => d.parentTaskId === t.id || d.id === `del_${t.id}`);
+              relatedDelGroups.forEach(d => {
+                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id), d);
+              });
+
+              revertBatch.commit().catch(console.error);
+            }
+          });
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    });
+  };
+
+  const handleUpdateTask = async (
+    t: Task, 
+    updates: Partial<Task>, 
+    _options?: { skipPredecessorRecalc?: boolean; skipProjectRollup?: boolean }
+  ) => {
+    try {
+      if (updates.name && updates.name !== t.name) {
+        const currentProject = projects.find(p => 
+          (t.projectId && p.id === t.projectId) ||
+          (p.code === t.projectCode &&
+          (String(p.year || '') === String(t.projectYear || '') || (!p.year && !t.projectYear)) &&
+          (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore)))
+        );
+        if (currentProject) {
+          const normUpdateName = normalizeTaskNameForComparison(updates.name);
+          const isDuplicate = tasks.some(tsk => {
+            if (tsk.id === t.id || tsk.isDeleted) return false;
+            const sameProject = isTaskBelongsToProject(tsk, currentProject, projects);
+            if (!sameProject) return false;
+
+            if (tsk.name && (tsk.name || '').trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
+            const tNorm = normalizeTaskNameForComparison(tsk.name);
+            return !!(normUpdateName && tNorm && normUpdateName === tNorm);
+          });
+          if (isDuplicate) {
+            useAppStore.getState().setToast({ title: "Notice", message: `Task name "${updates.name}" already exists in project ${currentProject.code} (${currentProject.year} - ${currentProject.store}). Please enter a different name.` });
+            return;
+          }
+        }
+      }
+
+      if (updates.predecessor !== undefined && updates.predecessor !== t.predecessor) {
+        let val = updates.predecessor;
+        const taskNoMap = buildTaskNoMap(projects, tasks);
+        let parts = splitPredecessors(val, taskNoMap);
+        if (parts.length > 2) parts = parts.slice(0, 2);
+        
+        if (parts.length >= 2) {
+          updates.durationManual = false;
+          if (!/FF|SF/i.test(parts[1])) {
+            if (!/SS|FS/i.test(parts[1])) parts[1] += "FF";
+            else parts[1] = parts[1].replace(/SS|FS/ig, "FF");
+          }
+          updates.predecessor = parts.join(', ');
+        }
+        parsePredecessors(updates.predecessor, taskNoMap, t);
+      }
+
+      let predecessorUpdates: { id: string; predecessor: string; updatedAt: string }[] = [];
+      if (updates.taskCodePhu !== undefined && updates.taskCodePhu !== t.taskCodePhu) {
+        const oldCode = (t.taskCodePhu || computeTaskCode(projects, tasks, t)).trim();
+        const newCode = (updates.taskCodePhu || computeTaskCode(projects, tasks.map(item => item.id === t.id ? { ...item, ...updates } : item), { ...t, ...updates })).trim();
+        if (oldCode && newCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
+          const map = new Map<string, string>();
+          map.set(oldCode.toLowerCase(), newCode);
+          predecessorUpdates = updatePredecessorsStrings(map, tasks, projects);
+        }
+      }
+
+      let targetTaskId = t.id;
+      if (targetTaskId && targetTaskId.startsWith('ts_')) {
+        // Cùng mã dự án chưa đủ: phải cùng store và year (mã phụ ảo `<mã>#<số>` trùng giữa các store/năm)
+        const sameProjectIdentity = (x: any) =>
+          String(x.projectStore || '').trim().toLowerCase() === String(t.projectStore || '').trim().toLowerCase() &&
+          String(x.projectYear ?? '').trim() === String(t.projectYear ?? '').trim();
+        let realTask = tasks.find(tsk => 
+          !tsk.id.startsWith('ts_') &&
+          tsk.projectCode === t.projectCode &&
+          sameProjectIdentity(tsk) &&
+          ((t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
+           (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase()))
+        );
+        if (!realTask && t.projectCode) {
+          try {
+            const loaded = await ensureProjectTasksLoaded(t.projectCode, {
+              projectId: t.projectId,
+              store: t.projectStore,
+              year: t.projectYear,
+            });
+            const loadedSame = loaded.filter(sameProjectIdentity);
+            if (loadedSame.length > 0) {
+              realTask = loadedSame.find(tsk =>
+                (t.taskCodePhu && tsk.taskCodePhu === t.taskCodePhu) ||
+                (t.name && tsk.name && tsk.name.trim().toLowerCase() === t.name.trim().toLowerCase())
+              );
+            }
+          } catch (err) {
+            console.warn("Failed to resolve ts_ task from local/cache:", err);
+          }
+        }
+        if (realTask) {
+          targetTaskId = realTask.id;
+        } else {
+          targetTaskId = `t_${Date.now()}_${generateId().substring(0, 8)}`;
+        }
+      }
+      const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', targetTaskId);
+      
+      let newT = { ...t, id: targetTaskId, ...updates, updatedAt: new Date().toISOString() };
+      if (updates.predecessor !== undefined) {
+        let currentTasks = useAppStore.getState().tasks || tasks;
+        let taskNoMap = buildTaskNoMap(projects, currentTasks);
+        let parts = splitPredecessors(updates.predecessor, taskNoMap);
+        if (parts.length >= 2) {
+          newT.durationManual = false;
+        }
+        newT.realtimeUpdate = Boolean(updates.predecessor.trim());
+        let parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
+        
+        if (updates.predecessor.trim() && (!parsed.length || parsed.some(p => !p.task))) {
+          for (const token of parts) {
+            const cleanToken = token.replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+            const matchedProj = projects.find(
+              p =>
+                p.code &&
+                cleanToken.toLowerCase().startsWith(p.code.toLowerCase()) &&
+                (!t.projectStore || !p.store || p.store.trim().toLowerCase() === t.projectStore.trim().toLowerCase()) &&
+                (!t.projectYear || !p.year || String(p.year).trim() === String(t.projectYear).trim())
+            ) || projects.find(p => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
+            if (matchedProj && (matchedProj.id !== t.projectId || matchedProj.code !== t.projectCode)) {
+              const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
+                projectId: matchedProj.id,
+                store: matchedProj.store,
+                year: matchedProj.year,
+              });
+              if (loaded.length > 0) {
+                currentTasks = useAppStore.getState().tasks || currentTasks;
+                taskNoMap = buildTaskNoMap(projects, currentTasks);
+                parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
+              }
+            }
+          }
+        }
+        const calcResult = calculateTaskDatesFromPredecessors(newT, parsed);
+        if (calcResult) {
+          newT.start = calcResult.start;
+          newT.finish = calcResult.finish;
+          newT.duration = calcResult.duration;
+          newT.durationManual = calcResult.durationManual;
+        }
+      } else if (newT.predecessor) {
+        newT.realtimeUpdate = Boolean(newT.predecessor.trim());
+      }
+      
+      if (updates.finish !== undefined) {
+        if (newT.start && newT.finish) {
+          const s = parseDateTime(newT.start);
+          const f = parseDateTime(newT.finish);
+          if (s && f && !isNaN(s.getTime()) && !isNaN(f.getTime())) {
+            const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+            newT.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+          }
+        }
+      } else if (updates.start !== undefined) {
+        if (newT.durationManual) {
+          if (newT.start && newT.duration !== undefined && newT.duration !== '') {
+            const s = parseDateTime(newT.start);
+            if (s && !isNaN(s.getTime())) {
+              const days = parseFloat(String(newT.duration));
+              if (!isNaN(days) && days >= 0) {
+                const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+                newT.finish = formatToDatetimeLocal(f);
+              }
+            }
+          }
+        } else {
+          if (newT.start && newT.finish) {
+            const s = parseDateTime(newT.start);
+            const f = parseDateTime(newT.finish);
+            if (s && f && !isNaN(s.getTime()) && !isNaN(f.getTime())) {
+              const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+              newT.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+            }
+          }
+        }
+      } else if (updates.duration !== undefined) {
+        newT.duration = cleanDurationString(updates.duration);
+        newT.durationManual = true;
+        if (newT.start && newT.duration !== '') {
+          const s = parseDateTime(newT.start);
+          if (s && !isNaN(s.getTime())) {
+            const days = parseFloat(newT.duration);
+            if (!isNaN(days) && days >= 0) {
+              const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+              newT.finish = formatToDatetimeLocal(f);
+            }
+          }
+        }
+      } else if (updates.predecessor === undefined) {
+        if (newT.durationManual) {
+          if (newT.start && newT.duration !== undefined && newT.duration !== '') {
+            const s = parseDateTime(newT.start);
+            if (s && !isNaN(s.getTime())) {
+              const days = parseFloat(String(newT.duration));
+              if (!isNaN(days) && days >= 0) {
+                const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+                newT.finish = formatToDatetimeLocal(f);
+              }
+            }
+          }
+        } else {
+          if (newT.start && newT.finish) {
+            const s = parseDateTime(newT.start);
+            const f = parseDateTime(newT.finish);
+            if (s && f && !isNaN(s.getTime()) && !isNaN(f.getTime())) {
+              const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+              newT.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+            }
+          }
+        }
+      }
+
+      const updatesToDependents = scheduleDependentTasks(newT, tasks, projects);
+      const batch = writeBatch(db);
+
+      const scheduledUpdatedTask = updatesToDependents.find(d => d.id === newT.id);
+      if (scheduledUpdatedTask) {
+        newT = scheduledUpdatedTask as any;
+      }
+
+      const depUpdateMap = new Map<string, Task>();
+      updatesToDependents.forEach(d => depUpdateMap.set(d.id, d));
+
+      const affectedProjIds = new Set<string>();
+      const affectedProjCodes = new Set<string>();
+      const registerScope = (item: Partial<Task>) => {
+        if (item.projectId) affectedProjIds.add(String(item.projectId).trim());
+        if (item.projectCode) affectedProjCodes.add(String(item.projectCode).trim().toLowerCase());
+      };
+      registerScope(newT);
+      updatesToDependents.forEach(registerScope);
+
+      const scopedTasksForRollup: Task[] = [];
+      let foundNewT = false;
+      for (let i = 0; i < tasks.length; i++) {
+        const tsk = tasks[i];
+        if (!tsk || tsk.isDeleted) continue;
+        const matchesScope =
+          (tsk.projectId && affectedProjIds.has(String(tsk.projectId).trim())) ||
+          (tsk.projectCode && affectedProjCodes.has(String(tsk.projectCode).trim().toLowerCase()));
+        if (!matchesScope) continue;
+        if (tsk.id === newT.id) {
+          scopedTasksForRollup.push(newT);
+          foundNewT = true;
+        } else {
+          scopedTasksForRollup.push(depUpdateMap.get(tsk.id) || tsk);
+        }
+      }
+      if (!foundNewT) {
+        scopedTasksForRollup.push(newT);
+      }
+      const { updatedParents } = rollupParentTaskDates(scopedTasksForRollup);
+
+      batch.set(tRef, newT, { merge: true });
+
+      // Rule 9 Mandate: Parent task rollups are computed 100% in-memory on client.
+      // We keep updatedParents in memory via saveTaskStateUnified below, but do NOT issue Firestore writeBatch for parent tasks.
+
+      if (updates.delegation === true) {
+         const deterministicGroupId = `del_${t.id}`;
+         const existingGroup = delegationGroups.find(g => g.parentTaskId === t.id || g.id === deterministicGroupId);
+         if (!existingGroup) {
+            const dateStr = new Date().toISOString().substring(0, 10);
+            const rawParty = (t.party && t.party.trim()) ? t.party.trim() : (currentUser.username || '');
+            const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
+            const newGroup: DelegationGroup = {
+              id: deterministicGroupId,
+              parentTaskId: t.id,
+              name: t.name || 'Delegated Task',
+              projectCode: t.projectCode,
+              projectStore: t.projectStore,
+              projectYear: (t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))) ? Number(t.projectYear) : (Number(projects.find(p => p.code === t.projectCode)?.year) || new Date().getFullYear()),
+              subTasks: [{ 
+                 id: generateId(), 
+                 name: '', 
+                 comments: '', 
+                 status: 'Assigned', 
+                 delegationStatus: 'Assigned', 
+                 priority: 'Mid', 
+                 party: parsedParty, 
+                 startAct: dateStr, 
+                 finishAct: dateStr, 
+                 updatedAt: new Date().toISOString() 
+              }],
+              updatedAt: new Date().toISOString(),
+              createdBy: currentUser.id
+            };
+            const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
+            batch.set(delRef, newGroup, { merge: true });
+         }
+      }
+
+      const depUpdates = updatesToDependents.filter(d => d.id !== newT.id);
+      depUpdates.forEach(depTask => {
+        const depRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id);
+        batch.set(depRef, { ...depTask, updatedAt: new Date().toISOString() }, { merge: true });
+      });
+
+      predecessorUpdates.forEach(pu => {
+        if (pu.id !== t.id && !depUpdateMap.has(pu.id)) {
+          const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id);
+          batch.update(pRef, { predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+        }
+      });
+      
+      const allUpdatesToSave = [
+        newT,
+        ...depUpdates,
+        ...updatedParents.filter(pt => pt.id !== newT.id && !depUpdateMap.has(pt.id)),
+        ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdateMap.has(pu.id))
+      ];
+
+      // 1. Update Zustand immediately in 0ms so UI responds instantaneously
+      useAppStore.getState().optimisticUpdateTasks(allUpdatesToSave);
+
+      // 2. Offload Firestore commit, Delta broadcast, and Project Date sync to background microtask
+      setTimeout(async () => {
+        try {
+          const prevTaskById = new Map<string, Task>();
+          for (let i = 0; i < tasks.length; i++) {
+            const item = tasks[i];
+            if (item?.id) prevTaskById.set(item.id, item);
+          }
+
+          const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
+            const prev = prevTaskById.get(item.id);
+            return createPatchDeltaItem({
+              docId: item.id,
+              collectionName: 'taka_tasks',
+              previous: prev,
+              updated: item,
+              action: 'update',
+              year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
+            });
+          });
+
+          deltaItems.forEach(di => {
+            if (di.action === 'update' && di.data) {
+              if (!di.data.projectId && t.projectId) di.data.projectId = t.projectId;
+              if (!di.data.projectCode && t.projectCode) di.data.projectCode = t.projectCode;
+              if (!di.data.projectStore && t.projectStore) di.data.projectStore = t.projectStore;
+              if (!di.data.projectYear && t.projectYear) di.data.projectYear = t.projectYear;
+            }
+          });
+
+          const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+          markExplicitDelta(deltaItems);
+          await batch.commit();
+          recordBatchDeltas(deltaItems, currentUser.username || currentUser.id).catch(() => {});
+          await saveTaskStateUnified(allUpdatesToSave, { syncProjects: true });
+        } catch (error: any) {
+          console.error("Batch commit failed", error);
+          useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+          saveTaskStateUnified([t, ...depUpdates.map(d => tasks.find(tsk => tsk.id === d.id) || d)]);
+        }
+      }, 0);
+      
+      undoManager.push({
+        description: `Update Task Schedule: ${t.name}`,
+        revert: async () => {
+          const revertBatch = writeBatch(db);
+          revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
+          updatesToDependents.forEach(depTask => {
+            const originalDep = tasks.find(tsk => tsk.id === depTask.id);
+            if (originalDep) {
+              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), originalDep);
+            }
+          });
+          revertBatch.commit().catch(console.error);
+        }
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveNotes = async (taskId: string, notes: TaskNote[]) => {
+    const t = tasks.find(item => item.id === taskId);
+    if (t) {
+      await handleUpdateTask(t, { notes });
+    }
+  };
+
+  return {
+    handleDeleteTask,
+    handleUpdateTask,
+    handleSaveNotes,
+  };
+}
+
+
+=== FILE: src/store/slices/createOptimisticSlice.ts ===
+import { StateCreator } from "zustand";
+import { Task, Cost, Project } from "../../types";
+import { AppState, OptimisticSlice } from "../storeTypes";
+import { deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
+
+export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSlice> = (set) => ({
+  optimisticUpdateTasks: (updatedTasks) => set((state) => {
+    if (!updatedTasks || updatedTasks.length === 0) return state;
+    const updatedMap = new Map(updatedTasks.map(t => [t.id, t]));
+    const existingIds = new Set(state.tasks.map(t => t.id));
+    let hasIdentityOrNameChange = false;
+    
+    const mapped = state.tasks
+      .map(t => {
+        const update = updatedMap.get(t.id);
+        if (update) {
+          if ((update as any).isDeleted) return null;
+          if (
+            (update.name !== undefined && update.name !== t.name) ||
+            (update.taskCodePhu !== undefined && update.taskCodePhu !== t.taskCodePhu) ||
+            (update.projectCode !== undefined && update.projectCode !== t.projectCode)
+          ) {
+            hasIdentityOrNameChange = true;
+          }
+          return { ...t, ...update } as Task;
+        }
+        return t;
+      })
+      .filter((t): t is Task => t !== null);
+
+    const newTasks = updatedTasks.filter(
+      t => t.id && !existingIds.has(t.id) && !(t as any).isDeleted
+    ) as Task[];
+
+    if (newTasks.length === 0 && !hasIdentityOrNameChange) {
+      return { tasks: mapped };
+    }
+
+    const combined = newTasks.length > 0 ? [...mapped, ...newTasks] : mapped;
+    const { dedupedTasks } = deduplicateTasksInMemory(combined, state.projects);
+
+    return {
+      tasks: dedupedTasks
+    };
+  }),
+
+  optimisticDeleteTasks: (taskIds) => set((state) => {
+    if (!taskIds || taskIds.length === 0) return state;
+    const idSet = new Set(taskIds.map(String));
+    return {
+      tasks: state.tasks.filter(t => !idSet.has(String(t.id)))
+    };
+  }),
+
+  optimisticUpdateCosts: (updatedCosts) => set((state) => {
+    if (!updatedCosts || updatedCosts.length === 0) return state;
+    const updatedMap = new Map(updatedCosts.map(c => [c.id, c]));
+    const existingIds = new Set(state.costs.map(c => c.id));
+
+    const mapped = state.costs
+      .map(c => {
+        const update = updatedMap.get(c.id);
+        if (update) {
+          if ((update as any).isDeleted) return null;
+          return { ...c, ...update } as Cost;
+        }
+        return c;
+      })
+      .filter((c): c is Cost => c !== null);
+
+    const newCosts = updatedCosts.filter(
+      c => c.id && !existingIds.has(c.id) && !(c as any).isDeleted
+    ) as Cost[];
+
+    return {
+      costs: newCosts.length > 0 ? [...mapped, ...newCosts] : mapped
+    };
+  }),
+
+  optimisticDeleteCosts: (costIds) => set((state) => {
+    if (!costIds || costIds.length === 0) return state;
+    const idSet = new Set(costIds);
+    return {
+      costs: state.costs.filter(c => !idSet.has(c.id))
+    };
+  }),
+
+  optimisticUpdateProjects: (updatedProjects) => set((state) => {
+    if (!updatedProjects || updatedProjects.length === 0) return state;
+    const updatedMap = new Map(updatedProjects.map(p => [p.id, p]));
+    const existingIds = new Set(state.projects.map(p => p.id));
+
+    const mapped = state.projects
+      .map(p => {
+        const update = updatedMap.get(p.id);
+        if (update) {
+          if ((update as any).isDeleted) return null;
+          return { ...p, ...update } as Project;
+        }
+        return p;
+      })
+      .filter((p): p is Project => p !== null);
+
+    const newProjects = updatedProjects.filter(
+      p => p.id && !existingIds.has(p.id) && !(p as any).isDeleted
+    ) as Project[];
+
+    return {
+      projects: newProjects.length > 0 ? [...mapped, ...newProjects] : mapped
+    };
+  }),
+
+  optimisticDeleteProjects: (projectIds) => set((state) => {
+    if (!projectIds || projectIds.length === 0) return state;
+    const idSet = new Set(projectIds);
+    return {
+      projects: state.projects.filter(p => !idSet.has(p.id))
+    };
+  }),
+
+  optimisticUpdateProjectFinancial: (projectId, updates) => set((state) => {
+    return {
+      projects: state.projects.map(p => {
+        if (p.id === projectId) {
+          const newFin = JSON.parse(JSON.stringify(p.financial || {}));
+          
+          for (const [key, value] of Object.entries(updates)) {
+            if (key.startsWith('financial.')) {
+              const parts = key.split('.');
+              parts.shift(); // remove 'financial'
+              let current = newFin;
+              for (let i = 0; i < parts.length - 1; i++) {
+                if (!current[parts[i]]) current[parts[i]] = {};
+                current = current[parts[i]];
+              }
+              const lastPart = parts[parts.length - 1];
+              current[lastPart] = (current[lastPart] || 0) + (value as number);
+            }
+          }
+          return { ...p, financial: newFin };
+        }
+        return p;
+      })
+    };
+  }),
+
+  rollbackProjectFinancial: (projectId, oldFinancial) => set((state) => ({
+    projects: state.projects.map(p => 
+      p.id === projectId ? { ...p, financial: oldFinancial } : p
+    )
+  })),
+});
 

@@ -143,7 +143,7 @@ export async function persistDefault(
   let currentTasks: Task[] = store.tasks || [];
   const now = new Date().toISOString();
 
-  const updatedTask: Task = {
+  let updatedTask: Task = {
     ...source,
     predecessor: change.predecessor,
     predecessorTaskIds: change.predecessorTaskIds,
@@ -156,7 +156,7 @@ export async function persistDefault(
   let parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
 
   if (change.predecessor.trim() && (!parsed.length || parsed.some((p) => !p.task))) {
-    const parts = splitPredecessors(change.predecessor, Array.from(taskNoMap.keys()));
+    const parts = splitPredecessors(change.predecessor, taskNoMap);
     const { normalizeDashes } = await import('../../../lib/utils');
     const { ensureProjectTasksLoaded } = await import('../../../lib/taskStateService');
     for (const token of parts) {
@@ -192,35 +192,43 @@ export async function persistDefault(
   }
 
   const dependents = scheduleDependentTasks(updatedTask, currentTasks, projects);
+  const selfScheduled = dependents.find((d) => d.id === updatedTask.id);
+  if (selfScheduled) {
+    updatedTask = { ...updatedTask, ...selfScheduled, updatedAt: now };
+  }
+  const depUpdates = dependents
+    .filter((d) => d.id !== updatedTask.id)
+    .map((d) => ({ ...d, updatedAt: now }));
 
-  const map = new Map<string, Task>(currentTasks.map((t) => [t.id, t]));
-  map.set(updatedTask.id, updatedTask);
-  dependents.forEach((u: any) => {
-    const t = map.get(u.id);
-    if (t) {
-      map.set(u.id, { ...t, start: u.start, finish: u.finish, duration: u.duration, updatedAt: u.updatedAt });
-    }
-  });
-  store.setTasks(Array.from(map.values()));
+  const allUpdates = [updatedTask, ...depUpdates];
+  store.optimisticUpdateTasks(allUpdates);
 
   const editing = store.editingTask;
   if (editing && editing.id === updatedTask.id && typeof store.setEditingTask === 'function') {
     store.setEditingTask({ ...editing, ...updatedTask });
   }
 
-  const batch = writeBatch(db);
-  batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', updatedTask.id), updatedTask as any, { merge: true });
-  dependents.forEach((u: any) => {
-    batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id), u, { merge: true });
-  });
-  batch.commit().catch((err: any) => {
-    console.error('Failed to persist predecessor update:', err);
-    store.setToast?.({ title: 'Save failed', message: err?.message || 'Could not save predecessor', type: 'error' });
-  });
-
   store.setToast?.({
     title: 'Predecessor Updated',
     message: change.predecessor ? `Link: ${change.predecessor}` : 'Predecessor removed',
     type: 'success',
   });
+
+  // Offload Firestore write & project date rollup to background microtask (0ms UI block)
+  setTimeout(async () => {
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', updatedTask.id), updatedTask as any, { merge: true });
+      depUpdates.forEach((u: any) => {
+        batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id), u, { merge: true });
+      });
+      await batch.commit();
+      const { findAffectedProjects, syncAffectedProjects } = await import('../../../lib/taskStateService');
+      const affectedProjects = findAffectedProjects(allUpdates, projects);
+      await syncAffectedProjects(affectedProjects);
+    } catch (err: any) {
+      console.error('Failed to persist predecessor update:', err);
+      store.setToast?.({ title: 'Save failed', message: err?.message || 'Could not save predecessor', type: 'error' });
+    }
+  }, 0);
 }

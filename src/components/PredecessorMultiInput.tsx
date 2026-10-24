@@ -2,14 +2,16 @@ import React, { Component, useDeferredValue, useEffect, useMemo, useRef, useStat
 import { Task, Project } from '../types';
 import { Search, X, Check, ExternalLink, Sparkles, ArrowRight, Link2, AlertTriangle, Loader2, Plus, Minus } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { computeTaskCode, splitPredecessors, buildTaskNoMap, parsePredecessors } from '../lib/ganttUtils';
+import { computeAllTaskCodes, splitPredecessors, buildTaskNoMap, parsePredecessors } from '../lib/ganttUtils';
 import { useAppStore } from '../store/useAppStore';
 import { 
   parsePredecessorToken, 
   rankCandidateTasks, 
   RankedPredecessorMatch, 
   PredecessorContext, 
-  getTaskProjectDiffDetails 
+  buildProjectLookupIndex,
+  resolveProjectContext,
+  getTaskProjectDiffDetailsWithResolved
 } from '../lib/predecessorMatchUtils';
 import {
   PredecessorType,
@@ -105,7 +107,13 @@ export function PredecessorMultiInput({
     projectLocation: source?.location || currentProjectLocation,
   }), [source, currentProjectId, currentProjectCode, currentProjectYear, currentProjectStore, currentProjectLocation]);
 
-  const pool = useMemo(() => (storeTasks || tasksProp || useAppStore.getState().tasks || []).filter((t) => t && !t.isDeleted), [storeTasks, tasksProp]);
+  const pool = useMemo(() => {
+    const raw = storeTasks || tasksProp || useAppStore.getState().tasks || [];
+    return raw.some((t) => !t || t.isDeleted) ? raw.filter((t) => t && !t.isDeleted) : raw;
+  }, [storeTasks, tasksProp]);
+  const projectIndex = useMemo(() => buildProjectLookupIndex(activeProjects), [activeProjects]);
+  const allCodesMap = useMemo(() => computeAllTaskCodes(activeProjects, pool), [activeProjects, pool]);
+  const resolvedContext = useMemo(() => resolveProjectContext(ctx, activeProjects, projectIndex), [ctx, activeProjects, projectIndex]);
   const taskNoMap = useMemo(() => buildTaskNoMap(activeProjects, pool), [activeProjects, pool]);
 
   const items = useMemo<LinkItem[]>(() => {
@@ -118,8 +126,8 @@ export function PredecessorMultiInput({
       let p: any;
       try { p = parsePredecessors(tok, taskNoMap, { ...source, predecessorTaskIds: [ids[i] || ''] } as Task)[0]; } catch {}
       if (p && p.task) {
-        const diff = getTaskProjectDiffDetails(ctx, p.task, activeProjects);
-        const code = computeTaskCode(activeProjects, pool, p.task) || p.task.taskCodePhu || p.no || tok;
+        const diff = getTaskProjectDiffDetailsWithResolved(resolvedContext, p.task, activeProjects, projectIndex);
+        const code = allCodesMap.get(p.task.id) || p.task.taskCodePhu || p.no || tok;
         return {
           key: `${p.task.id}-${i}`,
           resolved: true,
@@ -139,7 +147,7 @@ export function PredecessorMultiInput({
         key: `raw-${i}-${tok}`, resolved: false, taskId: '', code: q || tok, type: 'FS', lagSign: '+', lagValue: 0, raw: tok, isExternal: false, externalLabel: '',
       };
     });
-  }, [source, taskNoMap, ctx, activeProjects, pool]);
+  }, [source, taskNoMap, resolvedContext, activeProjects, projectIndex, allCodesMap]);
 
   useEffect(() => {
     const handler = (e: MouseEvent | TouchEvent) => {
@@ -163,16 +171,35 @@ export function PredecessorMultiInput({
     if (!open) return [];
     const q = deferredQuery.trim();
     if (q) {
-      return rankCandidateTasks(q, pool, activeProjects, pool, source?.projectCode, ctx).filter((m) => !excluded.has(m.task.id)).slice(0, 20);
+      return rankCandidateTasks(q, pool, activeProjects, pool, source?.projectCode, ctx, {
+        projectIndex,
+        allTaskCodesMap: allCodesMap,
+      }).filter((m) => !excluded.has(m.task.id)).slice(0, 20);
     }
     let base = pool.filter((t) => !excluded.has(t.id));
-    const sameCode = base.filter((t) => t.projectCode === source?.projectCode);
-    if (sameCode.length > 0) base = sameCode;
-    base = base.filter((t) => !getTaskProjectDiffDetails(ctx, t, activeProjects).isDifferent).sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)).slice(0, 25);
-    return base.map((t) => ({
-      task: t, score: 0, exactTaskCode: computeTaskCode(activeProjects, pool, t) || t.taskCodePhu || t.id, isExternal: !!getTaskProjectDiffDetails(ctx, t, activeProjects).isDifferent, diffDetails: getTaskProjectDiffDetails(ctx, t, activeProjects),
+    if (source?.projectId) {
+      const sameId = base.filter((t) => t.projectId === source.projectId);
+      if (sameId.length > 0) base = sameId;
+    } else if (source?.projectCode) {
+      const sameCode = base.filter((t) => t.projectCode === source.projectCode);
+      if (sameCode.length > 0) base = sameCode;
+    }
+    const withDiff = base.map((t) => ({
+      task: t,
+      diff: getTaskProjectDiffDetailsWithResolved(resolvedContext, t, activeProjects, projectIndex),
+    }));
+    const internalOnly = withDiff.filter((item) => !item.diff.isDifferent);
+    const chosen = (internalOnly.length > 0 ? internalOnly : withDiff)
+      .sort((a, b) => (a.task.orderIndex ?? 0) - (b.task.orderIndex ?? 0))
+      .slice(0, 25);
+    return chosen.map(({ task: t, diff }) => ({
+      task: t,
+      score: 0,
+      exactTaskCode: allCodesMap.get(t.id) || t.taskCodePhu || t.id,
+      isExternal: !!diff.isDifferent,
+      diffDetails: diff,
     } as RankedPredecessorMatch));
-  }, [open, deferredQuery, pool, activeProjects, excluded, source?.projectCode, ctx]);
+  }, [open, deferredQuery, pool, activeProjects, excluded, source?.projectId, source?.projectCode, ctx, projectIndex, allCodesMap, resolvedContext]);
 
   const commit = async (list: LinkItem[]) => {
     const finalList = normalize(list);
@@ -218,7 +245,7 @@ export function PredecessorMultiInput({
     if (m.isExternal && !confirmed) { setPendingExternal(m); setOpen(false); return; }
     const idx = items.length;
     const next: LinkItem = {
-      key: `${t.id}-${idx}`, resolved: true, taskId: t.id, task: t, code: m.exactTaskCode || computeTaskCode(activeProjects, pool, t) || t.taskCodePhu || t.id,
+      key: `${t.id}-${idx}`, resolved: true, taskId: t.id, task: t, code: m.exactTaskCode || allCodesMap.get(t.id) || t.taskCodePhu || t.id,
       type: idx === 0 ? 'FS' : 'FF', lagSign: '+', lagValue: 0, raw: '', isExternal: !!m.isExternal, externalLabel: externalLabel(m.diffDetails, t.projectCode),
     };
     setPendingExternal(null); setQuery(''); setOpen(false); inputRef.current?.blur();

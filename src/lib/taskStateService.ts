@@ -309,24 +309,16 @@ export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: 
   const taskCodeMap = new Map<string, Task>();
   const summaryTaskIds = new Set<string>();
 
-  projects.forEach((p) => {
-    if (!p || p.isDeleted || !Array.isArray(p.taskSummaries)) return;
-    p.taskSummaries.forEach((s: any) => {
-      if (s?.id && !String(s.id).startsWith('ts_')) {
-        summaryTaskIds.add(String(s.id).trim().toLowerCase());
-      }
-      if (s?.taskCodePhu) {
-        summaryTaskIds.add(String(s.taskCodePhu).trim().toLowerCase());
-      }
-    });
-  });
-
+  const targetProjIds = new Set<string>();
+  const targetProjCodes = new Set<string>();
   // Group tasks by project scope to index canonical ${projectCode}#${idx + 1} codes
   const scopedBuckets = new Map<string, Task[]>();
   tasks.forEach((t) => {
     if (!t) return;
     if (t.id) taskMap.set(String(t.id).trim().toLowerCase(), t);
     if (t.taskCodePhu) taskCodeMap.set(String(t.taskCodePhu).trim().toLowerCase(), t);
+    if (t.projectId) targetProjIds.add(String(t.projectId).trim());
+    if (t.projectCode) targetProjCodes.add(String(t.projectCode).trim().toLowerCase());
     const scopeKey = t.projectId
       ? `pid:${String(t.projectId).trim()}`
       : `code:${String(t.projectCode || '').trim().toLowerCase()}|${String(t.projectStore || '').trim().toLowerCase()}|${String(t.projectYear || '').trim()}`;
@@ -336,6 +328,21 @@ export function cleanOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: 
       scopedBuckets.set(scopeKey, list);
     }
     list.push(t);
+  });
+
+  projects.forEach((p) => {
+    if (!p || p.isDeleted || !Array.isArray(p.taskSummaries)) return;
+    const pIdMatch = p.id && targetProjIds.has(String(p.id).trim());
+    const pCodeMatch = p.code && targetProjCodes.has(String(p.code).trim().toLowerCase());
+    if (!pIdMatch && !pCodeMatch) return;
+    p.taskSummaries.forEach((s: any) => {
+      if (s?.id && !String(s.id).startsWith('ts_')) {
+        summaryTaskIds.add(String(s.id).trim().toLowerCase());
+      }
+      if (s?.taskCodePhu) {
+        summaryTaskIds.add(String(s.taskCodePhu).trim().toLowerCase());
+      }
+    });
   });
 
   scopedBuckets.forEach((bucket, scopeKey) => {

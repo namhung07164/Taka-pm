@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Project, Task } from '../../types';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
@@ -33,11 +33,48 @@ function hasValidTaskContent(t: Partial<Task> | any): boolean {
   );
 }
 
-function computeSingleProjectInfo(
+function collectCandidateTasksForProject(
   p: Project,
   tasksByProjectId: Map<string, Task[]>,
   tasksByProjectKey: Map<string, Task[]>,
-  tasksByCodeMap: Map<string, Task[]>,
+  tasksByCodeMap: Map<string, Task[]>
+): Task[] {
+  const candidates: Task[] = [];
+  const pIdStr = p.id ? String(p.id).trim() : '';
+  if (pIdStr && tasksByProjectId.has(pIdStr)) {
+    const byId = tasksByProjectId.get(pIdStr)!;
+    for (let i = 0; i < byId.length; i++) candidates.push(byId[i]);
+  }
+  const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
+  const foundByKey = tasksByProjectKey.get(key);
+  if (foundByKey) {
+    for (let i = 0; i < foundByKey.length; i++) candidates.push(foundByKey[i]);
+  }
+  const pCodeLower = String(p.code || '').trim().toLowerCase();
+  if (pCodeLower) {
+    const byCode = tasksByCodeMap.get(pCodeLower);
+    if (byCode) {
+      for (let i = 0; i < byCode.length; i++) candidates.push(byCode[i]);
+    }
+  }
+  if (p.linkCodes) {
+    const linkParts = String(p.linkCodes).toLowerCase().split(/[,;/]+/);
+    for (let i = 0; i < linkParts.length; i++) {
+      const lc = linkParts[i].trim();
+      if (lc && lc !== pCodeLower) {
+        const byLink = tasksByCodeMap.get(lc);
+        if (byLink) {
+          for (let j = 0; j < byLink.length; j++) candidates.push(byLink[j]);
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
+function computeSingleProjectInfo(
+  p: Project,
+  candidates: Task[],
   taskById: Map<string, Task>
 ): ProjectInfo {
   const realTasksMap = new Map<string, Task>();
@@ -46,7 +83,6 @@ function computeSingleProjectInfo(
   const pIdStr = p.id ? String(p.id).trim() : '';
   const pStore = p.store ? String(p.store).trim().toLowerCase() : '';
   const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-  const pCodeLower = String(p.code || '').trim().toLowerCase();
 
   const tryAddTask = (t: Task) => {
     if (!t || (!t.id && !t.name) || t.isDeleted) return;
@@ -77,25 +113,9 @@ function computeSingleProjectInfo(
     }
   };
 
-  if (pIdStr && tasksByProjectId.has(pIdStr)) {
-    tasksByProjectId.get(pIdStr)!.forEach(tryAddTask);
+  for (let i = 0; i < candidates.length; i++) {
+    tryAddTask(candidates[i]);
   }
-
-  const key = `${p.code || ''}-${p.year || ''}-${p.store || ''}`;
-  const foundByKey = tasksByProjectKey.get(key);
-  if (foundByKey && foundByKey.length > 0) {
-    foundByKey.forEach(tryAddTask);
-  }
-
-  const allCodes = new Set<string>();
-  if (pCodeLower) allCodes.add(pCodeLower);
-  if (p.linkCodes) {
-    String(p.linkCodes).toLowerCase().split(/[,;/]+/).map(s => s.trim()).filter(Boolean).forEach(c => allCodes.add(c));
-  }
-  allCodes.forEach(code => {
-    const candidateTasks = tasksByCodeMap.get(code) || [];
-    candidateTasks.forEach(tryAddTask);
-  });
 
   // Fallback or merge p.taskSummaries when no real tasks are loaded OR when project is not fully hydrated and only partial tasks are in RAM
   const hasSummaries = p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0;
@@ -227,7 +247,24 @@ function computeSingleProjectInfo(
   };
 }
 
+interface CachedProjectInfoEntry {
+  project: Project;
+  candidates: Task[];
+  hydrated: boolean;
+  info: ProjectInfo;
+}
+
+function areTaskArraysShallowEqual(a: Task[], b: Task[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoParams) {
+  const cacheRef = useRef<Map<string, CachedProjectInfoEntry>>(new Map());
+
   const { tasksByProjectId, tasksByProjectKey, tasksByCodeMap } = useMemo(() => {
     const idMap = new Map<string, Task[]>();
     const keyMap = new Map<string, Task[]>();
@@ -273,13 +310,33 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
 
   const projectInfoMap = useMemo(() => {
     const map = new Map<string, ProjectInfo>();
+    const prevCache = cacheRef.current;
+    const nextCache = new Map<string, CachedProjectInfoEntry>();
+
     projects.forEach(p => {
       const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
-      map.set(
-        pUniqueKey,
-        computeSingleProjectInfo(p, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById)
-      );
+      const pIdStr = p.id ? String(p.id).trim() : '';
+      const hydrated = isProjectTasksHydrated(pIdStr);
+      const candidates = collectCandidateTasksForProject(p, tasksByProjectId, tasksByProjectKey, tasksByCodeMap);
+      const cached = prevCache.get(pUniqueKey);
+
+      if (
+        cached &&
+        cached.project === p &&
+        cached.hydrated === hydrated &&
+        areTaskArraysShallowEqual(cached.candidates, candidates)
+      ) {
+        map.set(pUniqueKey, cached.info);
+        nextCache.set(pUniqueKey, cached);
+        return;
+      }
+
+      const info = computeSingleProjectInfo(p, candidates, taskById);
+      map.set(pUniqueKey, info);
+      nextCache.set(pUniqueKey, { project: p, candidates, hydrated, info });
     });
+
+    cacheRef.current = nextCache;
     return map;
   }, [projects, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById]);
 
@@ -287,7 +344,8 @@ export function useDetailProjectInfo({ projects, tasks }: UseDetailProjectInfoPa
     const pUniqueKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
     const cached = projectInfoMap.get(pUniqueKey);
     if (cached) return cached;
-    return computeSingleProjectInfo(p, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById);
+    const candidates = collectCandidateTasksForProject(p, tasksByProjectId, tasksByProjectKey, tasksByCodeMap);
+    return computeSingleProjectInfo(p, candidates, taskById);
   }, [projectInfoMap, tasksByProjectId, tasksByProjectKey, tasksByCodeMap, taskById]);
 
   return {

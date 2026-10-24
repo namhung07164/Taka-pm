@@ -233,6 +233,7 @@ export function useGanttDependencies({
     if (!startDate || visibleGanttRows.length === 0) return [];
 
     const taskPosMap = new Map<string, { xStart: number; xEnd: number; yCenter: number; t: Task }>();
+    const visibleTasks: Task[] = [];
     let currentY = paddingTop;
     const timelineLeft = sideWidth + (showStart ? startColWidth : 0) + (showFinish ? finishColWidth : 0) + (showParty ? partyColWidth : 0) + (showDuration ? durationColWidth : 0) + (showPredecessor ? predecessorColWidth : 0);
 
@@ -257,13 +258,28 @@ export function useGanttDependencies({
           const xEnd = timelineLeft + barLeft + barWidth;
 
           const posObj = { xStart, xEnd, yCenter, t };
+          visibleTasks.push(t);
           taskPosMap.set(t.id, posObj);
+          const pIdScope = t.projectId ? `PID:${String(t.projectId).trim().toUpperCase()}__` : '';
+          const pCodeScope = t.projectCode ? `PCODE:${String(t.projectCode).trim().toUpperCase()}__` : '';
           if (t.taskCodePhu) {
-            taskPosMap.set(t.taskCodePhu.trim().toUpperCase(), posObj);
+            const phuUpper = t.taskCodePhu.trim().toUpperCase();
+            if (pIdScope) taskPosMap.set(`${pIdScope}${phuUpper}`, posObj);
+            if (pCodeScope) taskPosMap.set(`${pCodeScope}${phuUpper}`, posObj);
+            if (!taskPosMap.has(phuUpper)) taskPosMap.set(phuUpper, posObj);
           }
           const computedCode = allCodesMap.get(t.id);
           if (computedCode) {
-            taskPosMap.set(computedCode.trim().toUpperCase(), posObj);
+            const compUpper = computedCode.trim().toUpperCase();
+            if (pIdScope) taskPosMap.set(`${pIdScope}${compUpper}`, posObj);
+            if (pCodeScope) taskPosMap.set(`${pCodeScope}${compUpper}`, posObj);
+            if (!taskPosMap.has(compUpper)) taskPosMap.set(compUpper, posObj);
+            const hashIdx = compUpper.lastIndexOf('#');
+            if (hashIdx !== -1) {
+              const shortHash = compUpper.slice(hashIdx); // "#N"
+              if (pIdScope) taskPosMap.set(`${pIdScope}${shortHash}`, posObj);
+              if (pCodeScope) taskPosMap.set(`${pCodeScope}${shortHash}`, posObj);
+            }
           }
         }
       }
@@ -280,6 +296,9 @@ export function useGanttDependencies({
       const succPos = taskPosMap.get(succTask.id);
       if (!succPos) return;
 
+      const pIdScope = succTask.projectId ? `PID:${String(succTask.projectId).trim().toUpperCase()}__` : '';
+      const pCodeScope = succTask.projectCode ? `PCODE:${String(succTask.projectCode).trim().toUpperCase()}__` : '';
+
       const predCodes = String(succTask.predecessor)
         .split(/[,;]/)
         .map((s) => s.trim())
@@ -289,21 +308,35 @@ export function useGanttDependencies({
         const typeMatch = token.match(/^(.*?)(FS|SS|FF|SF)(\s*[+-]\s*\d+(?:\.\d+)?)?$/i);
         const cleanQuery = typeMatch ? typeMatch[1].trim() : token.replace(/(\s*[+-]\s*\d+(?:\.\d+)?)?$/, '').trim();
         const relType = typeMatch ? typeMatch[2].toUpperCase() : 'FS';
+        const cleanUpper = cleanQuery.toUpperCase();
+        const tokenUpper = token.toUpperCase();
 
         const linkedTaskId = succTask.predecessorTaskIds?.[idx] || succTask.predecessors?.[idx]?.taskId;
         let predPos = linkedTaskId ? taskPosMap.get(String(linkedTaskId)) : undefined;
-        if (!predPos) {
-          predPos = taskPosMap.get(cleanQuery.toUpperCase()) || taskPosMap.get(token.toUpperCase());
+        if (!predPos && pIdScope) {
+          predPos = taskPosMap.get(`${pIdScope}${cleanUpper}`) || taskPosMap.get(`${pIdScope}${tokenUpper}`);
+        }
+        if (!predPos && pCodeScope) {
+          predPos = taskPosMap.get(`${pCodeScope}${cleanUpper}`) || taskPosMap.get(`${pCodeScope}${tokenUpper}`);
         }
         if (!predPos) {
+          predPos = taskPosMap.get(cleanUpper) || taskPosMap.get(tokenUpper);
+        }
+        if (!predPos && visibleTasks.length > 0) {
+          // Only search visibleTasks because off-screen tasks are not in taskPosMap and cannot be drawn
           const match = findClosestTaskMatch(
             cleanQuery,
-            tasks,
+            visibleTasks,
             projects,
             tasks,
             succTask.projectCode,
             650,
-            { projectCode: succTask.projectCode, projectYear: succTask.projectYear, projectStore: succTask.projectStore },
+            {
+              projectId: succTask.projectId,
+              projectCode: succTask.projectCode,
+              projectYear: succTask.projectYear,
+              projectStore: succTask.projectStore,
+            },
             undefined,
             { projectIndex, allTaskCodesMap: allCodesMap }
           );
