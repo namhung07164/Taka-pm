@@ -55,11 +55,15 @@ export function useGanttProjectsFilter({
 
   const [filterProjectStatus, setFilterProjectStatus] = useState<string>(() => {
     if ((safeGetItemSession("taka_gantt_search") || "").trim()) return 'all';
-    return safeGetItemSession("taka_gantt_status_filter") || 'On process + Upcoming 3 days';
+    const saved = safeGetItemSession("taka_gantt_status_filter");
+    return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
   });
 
   const lastSelectedStatusFilterRef = useRef<string>(
-    safeGetItemSession("taka_gantt_status_filter") || 'On process + Upcoming 3 days'
+    (() => {
+      const saved = safeGetItemSession("taka_gantt_status_filter");
+      return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
+    })()
   );
   const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
   const wasSearchingRef = useRef<boolean>(!!(safeGetItemSession("taka_gantt_search") || "").trim());
@@ -102,11 +106,38 @@ export function useGanttProjectsFilter({
       wasSearchingRef.current = true;
     } else if (wasSearchingRef.current && !isSearching) {
       const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_gantt_status_filter") || 'On process + Upcoming 3 days';
-      setFilterProjectStatus(restored);
+      const finalStatus = restored && restored !== 'all' ? restored : 'On process + Upcoming 3 days';
+      setFilterProjectStatus(finalStatus);
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
   }, [deferredSearchTerm]);
+
+  // Reset to default 'On process + Upcoming 3 days' when switching Year or Store
+  const prevGanttScopeRef = useRef(`${globalYearFilter}_${effectiveStore}`);
+  useEffect(() => {
+    const currentScope = `${globalYearFilter}_${effectiveStore}`;
+    if (prevGanttScopeRef.current !== currentScope) {
+      prevGanttScopeRef.current = currentScope;
+      if (!searchTerm.trim()) {
+        setFilterProjectStatus('On process + Upcoming 3 days');
+        lastSelectedStatusFilterRef.current = 'On process + Upcoming 3 days';
+        safeSetItemSession("taka_gantt_status_filter", 'On process + Upcoming 3 days');
+      }
+      if (globalLocationFilter.length > 0) {
+        const hasMatchingLoc = projects.some(p => {
+          if (p.isDeleted) return false;
+          const pYear = p.year ? String(p.year) : null;
+          if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
+          if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
+          return p.location && globalLocationFilter.includes(p.location);
+        });
+        if (!hasMatchingLoc) {
+          setGlobalLocationFilter([]);
+        }
+      }
+    }
+  }, [globalYearFilter, effectiveStore, searchTerm, projects, globalLocationFilter, setGlobalLocationFilter]);
 
   const uniqueYears = useMemo(() => {
     const yearsSet = new Set<string>();

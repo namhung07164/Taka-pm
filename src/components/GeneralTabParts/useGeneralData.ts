@@ -48,8 +48,16 @@ export function useGeneralData({
 
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
-  const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
-  const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const saved = safeGetItemSession("taka_general_status_filter");
+    return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
+  });
+  const lastSelectedStatusFilterRef = useRef<string>(
+    (() => {
+      const saved = safeGetItemSession("taka_general_status_filter");
+      return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
+    })()
+  );
   const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
   const wasSearchingRef = useRef<boolean>(false);
 
@@ -70,11 +78,38 @@ export function useGeneralData({
       wasSearchingRef.current = true;
     } else if (wasSearchingRef.current && !isSearching) {
       const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days';
-      setStatusFilter(restored);
+      const finalStatus = restored && restored !== 'all' ? restored : 'On process + Upcoming 3 days';
+      setStatusFilter(finalStatus);
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
   }, [deferredSearchTerm]);
+
+  // Reset to default 'On process + Upcoming 3 days' when switching Year or Store
+  const prevGeneralScopeRef = useRef(`${globalYearFilter}_${effectiveStore}`);
+  useEffect(() => {
+    const currentScope = `${globalYearFilter}_${effectiveStore}`;
+    if (prevGeneralScopeRef.current !== currentScope) {
+      prevGeneralScopeRef.current = currentScope;
+      if (!searchTerm.trim()) {
+        setStatusFilter('On process + Upcoming 3 days');
+        lastSelectedStatusFilterRef.current = 'On process + Upcoming 3 days';
+        safeSetItemSession("taka_general_status_filter", 'On process + Upcoming 3 days');
+      }
+      if (globalLocationFilter.length > 0) {
+        const hasMatchingLoc = projects.some(p => {
+          if (p.isDeleted) return false;
+          const pYear = p.year ? String(p.year) : null;
+          if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
+          if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
+          return p.location && globalLocationFilter.includes(p.location);
+        });
+        if (!hasMatchingLoc) {
+          setGlobalLocationFilter([]);
+        }
+      }
+    }
+  }, [globalYearFilter, effectiveStore, searchTerm, projects, globalLocationFilter, setGlobalLocationFilter]);
 
   // Auto-jump to matched project location(s) when searching (Debounced)
   useEffect(() => {

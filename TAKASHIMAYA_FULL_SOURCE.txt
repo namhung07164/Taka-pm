@@ -24182,7 +24182,6 @@ export function useDetailColumns({ currentUser, canWrite }: UseDetailColumnsPara
 
 ================================================================================
 FILE: src/components/DetailTabParts/useDetailData.ts
-================================================================================
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Project, Task, DelegationGroup, AppUser } from '../../types';
 import { 
@@ -24248,8 +24247,10 @@ export function useDetailData({
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const [visibleCount, setVisibleCount] = useState(30);
-  const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
-  const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
+  const initialStatus = safeGetItemSession("taka_detail_status_filter");
+  const defaultStatus = initialStatus && initialStatus !== 'all' ? initialStatus : 'On process + Upcoming 3 days';
+  const [statusFilter, setStatusFilter] = useState(defaultStatus);
+  const lastSelectedStatusFilterRef = useRef<string>(defaultStatus);
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const lastCheckedTaskIdRef = useRef<string | null>(null);
@@ -24675,9 +24676,7 @@ export function useDetailData({
   };
 }
 
-================================================================================
 FILE: src/components/DetailTabParts/useDetailFilterSync.ts
-================================================================================
 import React, { useEffect, useRef } from 'react';
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
@@ -24796,7 +24795,8 @@ export function useDetailFilterSync({
         lastSelectedStatusFilterRef.current ||
         safeGetItemSession('taka_detail_status_filter') ||
         'On process + Upcoming 3 days';
-      setStatusFilter(restored);
+      const finalStatus = restored && restored !== 'all' ? restored : 'On process + Upcoming 3 days';
+      setStatusFilter(finalStatus);
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
@@ -24852,16 +24852,25 @@ export function useDetailFilterSync({
     setGlobalLocationFilter,
   ]);
 
-  // Auto-clear stale filters when user changes Year / Store in Task Detail
+  // Auto-clear stale filters when user manually changes Year / Store in Task Detail
   const prevYearStoreRef = useRef(`${globalYearFilter}_${effectiveStore}`);
+  const prevTargetNavRef = useRef(
+    `${useAppStore.getState().detailTabFilterCode || ''}_${useAppStore.getState().detailTabFocusTaskId || ''}`
+  );
 
   useEffect(() => {
+    const storeState = useAppStore.getState();
     const currentKey = `${globalYearFilter}_${effectiveStore}`;
+    const currentTargetNav = `${storeState.detailTabFilterCode || ''}_${storeState.detailTabFocusTaskId || ''}`;
+    const didTargetNavJustChange = prevTargetNavRef.current !== currentTargetNav && currentTargetNav !== '_';
+    prevTargetNavRef.current = currentTargetNav;
+
     if (prevYearStoreRef.current !== currentKey) {
       prevYearStoreRef.current = currentKey;
 
-      const storeState = useAppStore.getState();
-      if (storeState.detailTabFilterCode || storeState.detailTabFocusTaskId) {
+      // Only clear deep-link filter code / focus task if the user manually switched store/year
+      // without a simultaneous deep-link target change
+      if (!didTargetNavJustChange && (storeState.detailTabFilterCode || storeState.detailTabFocusTaskId)) {
         storeState.setDetailTabFilterCode('');
         storeState.setDetailTabFocusTaskId('');
         if (searchTerm && searchTerm === storeState.detailTabFilterCode) {
@@ -24888,32 +24897,13 @@ export function useDetailFilterSync({
             setGlobalLocationFilter([]);
           }
         }
+      }
 
-        if (statusFilter !== 'all') {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const todayTime = today.getTime();
-          const hasMatchingStatus = projectsInNewScope.some(p => {
-            const info = getProjectInfo(p);
-            if (statusFilter === 'On process + Upcoming 3 days') {
-              if (info.status === 'On process') return true;
-              if (info.status === 'Upcoming') {
-                const dStart = parseDateTime(info.start);
-                if (dStart) {
-                  dStart.setHours(0, 0, 0, 0);
-                  const diffDays = Math.ceil((dStart.getTime() - todayTime) / (1000 * 60 * 60 * 24));
-                  return diffDays <= 3 && diffDays >= 0;
-                }
-              }
-              return false;
-            }
-            return info.status === statusFilter;
-          });
-          if (!hasMatchingStatus) {
-            setStatusFilter('all');
-            safeSetItemSession('taka_detail_status_filter', 'all');
-          }
-        }
+      // Always reset to 'On process + Upcoming 3 days' when switching Year or Store, unless actively searching
+      if (!searchTerm.trim()) {
+        setStatusFilter('On process + Upcoming 3 days');
+        lastSelectedStatusFilterRef.current = 'On process + Upcoming 3 days';
+        safeSetItemSession('taka_detail_status_filter', 'On process + Upcoming 3 days');
       }
     }
   }, [
@@ -25009,8 +24999,6 @@ export function useDetailFilterSync({
   }, []);
 }
 
-
-================================================================================
 FILE: src/components/DetailTabParts/useDetailFlatRows.ts
 ================================================================================
 import React, { useMemo } from 'react';
@@ -35479,7 +35467,6 @@ export function useGanttLayoutState(currentUserId?: string) {
 
 ================================================================================
 FILE: src/components/Gantt/useGanttProjectsFilter.ts
-================================================================================
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Project, Task, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
@@ -35537,11 +35524,15 @@ export function useGanttProjectsFilter({
 
   const [filterProjectStatus, setFilterProjectStatus] = useState<string>(() => {
     if ((safeGetItemSession("taka_gantt_search") || "").trim()) return 'all';
-    return safeGetItemSession("taka_gantt_status_filter") || 'On process + Upcoming 3 days';
+    const saved = safeGetItemSession("taka_gantt_status_filter");
+    return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
   });
 
   const lastSelectedStatusFilterRef = useRef<string>(
-    safeGetItemSession("taka_gantt_status_filter") || 'On process + Upcoming 3 days'
+    (() => {
+      const saved = safeGetItemSession("taka_gantt_status_filter");
+      return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
+    })()
   );
   const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
   const wasSearchingRef = useRef<boolean>(!!(safeGetItemSession("taka_gantt_search") || "").trim());
@@ -35584,11 +35575,38 @@ export function useGanttProjectsFilter({
       wasSearchingRef.current = true;
     } else if (wasSearchingRef.current && !isSearching) {
       const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_gantt_status_filter") || 'On process + Upcoming 3 days';
-      setFilterProjectStatus(restored);
+      const finalStatus = restored && restored !== 'all' ? restored : 'On process + Upcoming 3 days';
+      setFilterProjectStatus(finalStatus);
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
   }, [deferredSearchTerm]);
+
+  // Reset to default 'On process + Upcoming 3 days' when switching Year or Store
+  const prevGanttScopeRef = useRef(`${globalYearFilter}_${effectiveStore}`);
+  useEffect(() => {
+    const currentScope = `${globalYearFilter}_${effectiveStore}`;
+    if (prevGanttScopeRef.current !== currentScope) {
+      prevGanttScopeRef.current = currentScope;
+      if (!searchTerm.trim()) {
+        setFilterProjectStatus('On process + Upcoming 3 days');
+        lastSelectedStatusFilterRef.current = 'On process + Upcoming 3 days';
+        safeSetItemSession("taka_gantt_status_filter", 'On process + Upcoming 3 days');
+      }
+      if (globalLocationFilter.length > 0) {
+        const hasMatchingLoc = projects.some(p => {
+          if (p.isDeleted) return false;
+          const pYear = p.year ? String(p.year) : null;
+          if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
+          if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
+          return p.location && globalLocationFilter.includes(p.location);
+        });
+        if (!hasMatchingLoc) {
+          setGlobalLocationFilter([]);
+        }
+      }
+    }
+  }, [globalYearFilter, effectiveStore, searchTerm, projects, globalLocationFilter, setGlobalLocationFilter]);
 
   const uniqueYears = useMemo(() => {
     const yearsSet = new Set<string>();
@@ -35845,7 +35863,6 @@ export function useGanttProjectsFilter({
   };
 }
 
-================================================================================
 FILE: src/components/Gantt/useGanttTimeline.ts
 ================================================================================
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -38679,7 +38696,6 @@ export interface CanvasColDef {
 
 ================================================================================
 FILE: src/components/GeneralTabParts/useGeneralData.ts
-================================================================================
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Project, Task, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
@@ -38730,8 +38746,16 @@ export function useGeneralData({
 
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
-  const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
-  const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days');
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const saved = safeGetItemSession("taka_general_status_filter");
+    return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
+  });
+  const lastSelectedStatusFilterRef = useRef<string>(
+    (() => {
+      const saved = safeGetItemSession("taka_general_status_filter");
+      return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
+    })()
+  );
   const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
   const wasSearchingRef = useRef<boolean>(false);
 
@@ -38752,11 +38776,38 @@ export function useGeneralData({
       wasSearchingRef.current = true;
     } else if (wasSearchingRef.current && !isSearching) {
       const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_general_status_filter") || 'On process + Upcoming 3 days';
-      setStatusFilter(restored);
+      const finalStatus = restored && restored !== 'all' ? restored : 'On process + Upcoming 3 days';
+      setStatusFilter(finalStatus);
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
   }, [deferredSearchTerm]);
+
+  // Reset to default 'On process + Upcoming 3 days' when switching Year or Store
+  const prevGeneralScopeRef = useRef(`${globalYearFilter}_${effectiveStore}`);
+  useEffect(() => {
+    const currentScope = `${globalYearFilter}_${effectiveStore}`;
+    if (prevGeneralScopeRef.current !== currentScope) {
+      prevGeneralScopeRef.current = currentScope;
+      if (!searchTerm.trim()) {
+        setStatusFilter('On process + Upcoming 3 days');
+        lastSelectedStatusFilterRef.current = 'On process + Upcoming 3 days';
+        safeSetItemSession("taka_general_status_filter", 'On process + Upcoming 3 days');
+      }
+      if (globalLocationFilter.length > 0) {
+        const hasMatchingLoc = projects.some(p => {
+          if (p.isDeleted) return false;
+          const pYear = p.year ? String(p.year) : null;
+          if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
+          if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
+          return p.location && globalLocationFilter.includes(p.location);
+        });
+        if (!hasMatchingLoc) {
+          setGlobalLocationFilter([]);
+        }
+      }
+    }
+  }, [globalYearFilter, effectiveStore, searchTerm, projects, globalLocationFilter, setGlobalLocationFilter]);
 
   // Auto-jump to matched project location(s) when searching (Debounced)
   useEffect(() => {
@@ -38992,7 +39043,6 @@ export function useGeneralData({
   };
 }
 
-================================================================================
 FILE: src/components/GeneralTabParts/useGeneralDragDrop.ts
 ================================================================================
 import React, { useRef, useState } from 'react';

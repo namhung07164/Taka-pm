@@ -116,7 +116,8 @@ export function useDetailFilterSync({
         lastSelectedStatusFilterRef.current ||
         safeGetItemSession('taka_detail_status_filter') ||
         'On process + Upcoming 3 days';
-      setStatusFilter(restored);
+      const finalStatus = restored && restored !== 'all' ? restored : 'On process + Upcoming 3 days';
+      setStatusFilter(finalStatus);
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
@@ -217,32 +218,13 @@ export function useDetailFilterSync({
             setGlobalLocationFilter([]);
           }
         }
+      }
 
-        if (statusFilter !== 'all') {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const todayTime = today.getTime();
-          const hasMatchingStatus = projectsInNewScope.some(p => {
-            const info = getProjectInfo(p);
-            if (statusFilter === 'On process + Upcoming 3 days') {
-              if (info.status === 'On process') return true;
-              if (info.status === 'Upcoming') {
-                const dStart = parseDateTime(info.start);
-                if (dStart) {
-                  dStart.setHours(0, 0, 0, 0);
-                  const diffDays = Math.ceil((dStart.getTime() - todayTime) / (1000 * 60 * 60 * 24));
-                  return diffDays <= 3 && diffDays >= 0;
-                }
-              }
-              return false;
-            }
-            return info.status === statusFilter;
-          });
-          if (!hasMatchingStatus) {
-            setStatusFilter('all');
-            safeSetItemSession('taka_detail_status_filter', 'all');
-          }
-        }
+      // Always reset to 'On process + Upcoming 3 days' when switching Year or Store, unless actively searching
+      if (!searchTerm.trim()) {
+        setStatusFilter('On process + Upcoming 3 days');
+        lastSelectedStatusFilterRef.current = 'On process + Upcoming 3 days';
+        safeSetItemSession('taka_detail_status_filter', 'On process + Upcoming 3 days');
       }
     }
   }, [

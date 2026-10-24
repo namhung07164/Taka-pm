@@ -63,8 +63,10 @@ export function useDetailData({
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const [visibleCount, setVisibleCount] = useState(30);
-  const [statusFilter, setStatusFilter] = useState(() => safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
-  const lastSelectedStatusFilterRef = useRef<string>(safeGetItemSession("taka_detail_status_filter") || 'On process + Upcoming 3 days');
+  const initialStatus = safeGetItemSession("taka_detail_status_filter");
+  const defaultStatus = initialStatus && initialStatus !== 'all' ? initialStatus : 'On process + Upcoming 3 days';
+  const [statusFilter, setStatusFilter] = useState(defaultStatus);
+  const lastSelectedStatusFilterRef = useRef<string>(defaultStatus);
 
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const lastCheckedTaskIdRef = useRef<string | null>(null);
