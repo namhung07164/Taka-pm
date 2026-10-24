@@ -38,6 +38,48 @@ interface UseDetailDataParams {
   canWrite: boolean;
 }
 
+function collectTaskAliases(
+  pId: string,
+  tasks: Task[],
+  projectInfoMap: Map<string, any>
+): { targetTask?: Task; aliases: Set<string> } {
+  const pIdStr = String(pId).trim();
+  const pIdLower = pIdStr.toLowerCase();
+  let targetTask = tasks.find(
+    (t) => String(t.id) === pIdStr || (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pIdLower)
+  );
+  if (!targetTask) {
+    for (const info of projectInfoMap.values()) {
+      const found = info.sortedTasks?.find(
+        (t: Task) => String(t.id) === pIdStr || (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pIdLower)
+      );
+      if (found) {
+        targetTask = found;
+        break;
+      }
+    }
+  }
+  const aliases = new Set<string>([pIdStr, pIdLower]);
+  if (targetTask) {
+    if (targetTask.id) {
+      aliases.add(String(targetTask.id).trim());
+      aliases.add(String(targetTask.id).trim().toLowerCase());
+    }
+    if (targetTask.taskCodePhu) {
+      aliases.add(String(targetTask.taskCodePhu).trim());
+      aliases.add(String(targetTask.taskCodePhu).trim().toLowerCase());
+    }
+    if (targetTask.orderIndex !== undefined && targetTask.orderIndex !== null) {
+      const ord = Number(targetTask.orderIndex);
+      if (!isNaN(ord)) {
+        aliases.add(String(ord + 1));
+        aliases.add(`#${ord + 1}`);
+      }
+    }
+  }
+  return { targetTask, aliases };
+}
+
 export function useDetailData({
   projects,
   tasks,
@@ -277,25 +319,9 @@ export function useDetailData({
   }, [expandedModularTasks]);
 
   const handleToggleModularParent = useCallback((parentTaskId: string) => {
+    const { targetTask, aliases } = collectTaskAliases(parentTaskId, tasks, projectInfoMap);
     const pId = String(parentTaskId).trim();
     if (!pId) return;
-
-    // Find the task object to get all identifier aliases (id, taskCodePhu)
-    const targetTask = tasks.find(
-      t => String(t.id) === pId ||
-           (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pId.toLowerCase())
-    );
-    const aliases = new Set<string>([pId, pId.toLowerCase()]);
-    if (targetTask) {
-      if (targetTask.id) {
-        aliases.add(String(targetTask.id).trim());
-        aliases.add(String(targetTask.id).trim().toLowerCase());
-      }
-      if (targetTask.taskCodePhu) {
-        aliases.add(String(targetTask.taskCodePhu).trim());
-        aliases.add(String(targetTask.taskCodePhu).trim().toLowerCase());
-      }
-    }
 
     setExpandedModularTasks(prev => {
       const isCurrentlyExpanded = prev.some(id => aliases.has(id) || aliases.has(String(id).trim().toLowerCase()));
@@ -306,44 +332,27 @@ export function useDetailData({
         const canonicalId = targetTask?.id ? String(targetTask.id).trim() : pId;
         const cleaned = prev.filter(id => !aliases.has(id) && !aliases.has(String(id).trim().toLowerCase()));
         cleaned.push(canonicalId);
-        if (targetTask?.taskCodePhu) {
-          cleaned.push(String(targetTask.taskCodePhu).trim());
-        }
+        if (targetTask?.taskCodePhu) cleaned.push(String(targetTask.taskCodePhu).trim());
         next = cleaned;
       }
       safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(next));
       return next;
     });
-  }, [tasks]);
+  }, [tasks, projectInfoMap]);
 
   const handleToggleProjectModularTasks = useCallback((parentTaskIds: string[], expand: boolean) => {
     setExpandedModularTasks(prev => {
       const prevSet = new Set(prev);
-      const toUpdateIds: string[] = [];
       parentTaskIds.forEach(pId => {
-        const idStr = String(pId).trim();
-        const targetTask = tasks.find(
-          t => String(t.id) === idStr ||
-               (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === idStr.toLowerCase())
-        );
-        if (targetTask?.id) toUpdateIds.push(String(targetTask.id).trim());
-        if (targetTask?.taskCodePhu) toUpdateIds.push(String(targetTask.taskCodePhu).trim());
-        toUpdateIds.push(idStr);
+        const { targetTask, aliases } = collectTaskAliases(pId, tasks, projectInfoMap);
+        aliases.forEach(a => expand ? prevSet.add(a) : prevSet.delete(a));
+        if (targetTask?.id) expand ? prevSet.add(String(targetTask.id).trim()) : prevSet.delete(String(targetTask.id).trim());
       });
-
-      if (expand) {
-        toUpdateIds.forEach(id => prevSet.add(id));
-      } else {
-        toUpdateIds.forEach(id => {
-          prevSet.delete(id);
-          prevSet.delete(id.toLowerCase());
-        });
-      }
       const next = Array.from(prevSet);
       safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(next));
       return next;
     });
-  }, [tasks]);
+  }, [tasks, projectInfoMap]);
 
   const { currentModularParentIds, totalChildTasksCount } = useMemo(() => {
     const parentIdSet = new Set<string>();

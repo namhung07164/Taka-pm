@@ -177,31 +177,38 @@ export function useDetailFlatRows({
           if (t.id && seenRenderTaskIds.has(t.id)) return;
 
           // If t is a valid child task (and not itself a parent task), check if its parent task is expanded
-          if (t.parentTaskId && !parentTaskIdsInProject.has(String(t.id))) {
-            const rawParentId = String(t.parentTaskId).trim();
-            const matchedParent =
-              parentTaskMap.get(rawParentId) ||
-              parentTaskMap.get(rawParentId.toLowerCase());
+          const rawParentId = t.parentTaskId
+            ? String(t.parentTaskId).trim()
+            : ((t as any).parentId ? String((t as any).parentId).trim() : '');
+          const matchedParent =
+            parentTaskMap.get(String(t.id)) ||
+            parentTaskMap.get(String(t.id).toLowerCase()) ||
+            (t.taskCodePhu ? parentTaskMap.get(String(t.taskCodePhu).trim().toLowerCase()) : undefined) ||
+            (rawParentId ? (parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase())) : undefined);
 
-            if (matchedParent && String(matchedParent.id) !== String(t.id)) {
-              // Only bypass collapse if user explicitly searched for a term that directly matches this child task and does not match the project as a whole
-              const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
-              if (!isDirectChildSearchHit) {
-                const candidateIds: string[] = [
-                  rawParentId,
-                  rawParentId.toLowerCase(),
-                  String(matchedParent.id).trim(),
-                  String(matchedParent.id).trim().toLowerCase(),
-                ];
-                if (matchedParent.taskCodePhu) {
-                  candidateIds.push(String(matchedParent.taskCodePhu).trim());
-                  candidateIds.push(String(matchedParent.taskCodePhu).trim().toLowerCase());
-                }
+          if (matchedParent && !parentTaskIdsInProject.has(String(t.id)) && String(matchedParent.id) !== String(t.id)) {
+            // Only bypass collapse if user explicitly searched for a term that directly matches this child task and does not match the project as a whole
+            const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
+            if (!isDirectChildSearchHit) {
+              const candidateIds: string[] = [
+                String(matchedParent.id).trim(),
+                String(matchedParent.id).trim().toLowerCase(),
+              ];
+              if (rawParentId) {
+                candidateIds.push(rawParentId, rawParentId.toLowerCase());
+              }
+              if (matchedParent.taskCodePhu) {
+                candidateIds.push(String(matchedParent.taskCodePhu).trim());
+                candidateIds.push(String(matchedParent.taskCodePhu).trim().toLowerCase());
+              }
+              if (matchedParent.orderIndex !== undefined && matchedParent.orderIndex !== null) {
+                const ordNum = Number(matchedParent.orderIndex);
+                candidateIds.push(String(ordNum + 1), `#${ordNum + 1}`, String(ordNum));
+              }
 
-                const isParentExpanded = candidateIds.some(cid => expandedModularTasks.has(cid));
-                if (!isParentExpanded) {
-                  return; // Parent task is collapsed -> hide child task
-                }
+              const isParentExpanded = candidateIds.some(cid => expandedModularTasks.has(cid));
+              if (!isParentExpanded) {
+                return; // Parent task is collapsed -> hide child task
               }
             }
           }

@@ -192,16 +192,29 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
   );
 
   const visibleTasksToRender = tasksToRender.filter((t, tIdx) => {
-    if (t.parentTaskId && !parentTaskIdsInProject.has(String(t.id))) {
-      const rawParentId = String(t.parentTaskId).trim();
-      const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-      if (matchedParent && String(matchedParent.id) !== String(t.id)) {
-        const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
-        if (!isDirectChildSearchHit) {
-          const candidateIds: string[] = [rawParentId, rawParentId.toLowerCase(), String(matchedParent.id).trim(), String(matchedParent.id).trim().toLowerCase()];
-          if (matchedParent.taskCodePhu) { candidateIds.push(String(matchedParent.taskCodePhu).trim(), String(matchedParent.taskCodePhu).trim().toLowerCase()); }
-          if (!candidateIds.some(cid => expandedModularTasks?.has(cid))) return false;
+    const rawParentId = t.parentTaskId
+      ? String(t.parentTaskId).trim()
+      : ((t as any).parentId ? String((t as any).parentId).trim() : '');
+    const matchedParent =
+      parentTaskMap.get(String(t.id)) ||
+      parentTaskMap.get(String(t.id).toLowerCase()) ||
+      (t.taskCodePhu ? parentTaskMap.get(String(t.taskCodePhu).trim().toLowerCase()) : undefined) ||
+      (rawParentId ? (parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase())) : undefined);
+
+    if (matchedParent && !parentTaskIdsInProject.has(String(t.id)) && String(matchedParent.id) !== String(t.id)) {
+      const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
+      if (!isDirectChildSearchHit) {
+        const candidateIds: string[] = [
+          String(matchedParent.id).trim(),
+          String(matchedParent.id).trim().toLowerCase(),
+        ];
+        if (rawParentId) candidateIds.push(rawParentId, rawParentId.toLowerCase());
+        if (matchedParent.taskCodePhu) candidateIds.push(String(matchedParent.taskCodePhu).trim(), String(matchedParent.taskCodePhu).trim().toLowerCase());
+        if (matchedParent.orderIndex !== undefined && matchedParent.orderIndex !== null) {
+          const ord = Number(matchedParent.orderIndex);
+          candidateIds.push(String(ord + 1), `#${ord + 1}`, String(ord));
         }
+        if (!candidateIds.some(cid => expandedModularTasks?.has(cid))) return false;
       }
     }
     return true;

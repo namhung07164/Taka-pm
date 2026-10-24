@@ -156,6 +156,10 @@ export function buildProjectParentHierarchyIndex(groupTasks: Task[]): ProjectPar
     const matchedParent = findParent(rawParentId);
     if (matchedParent && isTaskBelongToSameParentScope(t, matchedParent)) {
       parentTaskIdsInProject.add(String(matchedParent.id));
+      if (matchedParent.taskCodePhu) {
+        parentTaskIdsInProject.add(String(matchedParent.taskCodePhu).trim());
+        parentTaskIdsInProject.add(String(matchedParent.taskCodePhu).trim().toLowerCase());
+      }
     }
   });
 
@@ -170,6 +174,11 @@ export function buildProjectParentHierarchyIndex(groupTasks: Task[]): ProjectPar
       parentTaskMap.set(String(t.id).toLowerCase(), matchedParent);
       if (t.taskCodePhu) {
         parentTaskMap.set(String(t.taskCodePhu).trim().toLowerCase(), matchedParent);
+      }
+      const rawTrim = String(rawParentId).trim();
+      if (rawTrim) {
+        parentTaskMap.set(rawTrim, matchedParent);
+        parentTaskMap.set(rawTrim.toLowerCase(), matchedParent);
       }
 
       const pCanonicalId = String(matchedParent.id);
