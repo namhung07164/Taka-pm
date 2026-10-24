@@ -12,6 +12,7 @@ import { doc } from 'firebase/firestore';
 import { db, APP_ID, writeBatch } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { recordBatchDeltas } from './deltaSyncService';
+import { markExplicitDelta } from './autoDeltaQueue';
 import { rollupParentTaskDatesAndStatus } from './taskRollupService';
 import { applyParentPredecessorsToTaskTree } from './parentTaskPredecessorService';
 
@@ -262,21 +263,27 @@ export async function batchSaveTasksToFirestore(
       slice.map(async (chunk) => {
         const batch = writeBatch(db);
         const deltaItems: any[] = [];
+        const explicitMarksList: Array<{ docId: string; collectionName: string }> = [];
 
         chunk.forEach((t) => {
-          const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-          batch.set(tRef, t, { merge: true });
+          const freshTask: Task = { ...t, updatedAt: now };
+          const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', freshTask.id);
+          explicitMarksList.push({ docId: freshTask.id, collectionName: 'taka_tasks' });
+          batch.set(tRef, freshTask, { merge: true });
 
           deltaItems.push({
-            docId: t.id,
+            docId: freshTask.id,
             collectionName: 'taka_tasks' as const,
             action: 'create' as const,
             isPatch: false,
-            data: t,
-            year: t.projectYear ? String(t.projectYear) : undefined,
+            data: freshTask,
+            year: freshTask.projectYear ? String(freshTask.projectYear) : undefined,
+            projectId: freshTask.projectId ? String(freshTask.projectId) : undefined,
+            projectCode: freshTask.projectCode ? String(freshTask.projectCode) : undefined,
+            projectStore: freshTask.projectStore ? String(freshTask.projectStore) : undefined,
           });
 
-          const delGroup = taskDelegationMap.get(t.id);
+          const delGroup = taskDelegationMap.get(freshTask.id);
           if (delGroup) {
             const delRef = doc(
               db,
@@ -287,6 +294,7 @@ export async function batchSaveTasksToFirestore(
               'taka_delegation_groups',
               delGroup.id
             );
+            explicitMarksList.push({ docId: delGroup.id, collectionName: 'taka_delegations' });
             batch.set(delRef, delGroup, { merge: true });
             deltaItems.push({
               docId: delGroup.id,
@@ -295,9 +303,14 @@ export async function batchSaveTasksToFirestore(
               isPatch: false,
               data: delGroup,
               year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
+              projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
+              projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
+              projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
             });
           }
         });
+
+        markExplicitDelta(explicitMarksList);
 
         try {
           await batch.commit();

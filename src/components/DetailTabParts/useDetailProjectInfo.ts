@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { Project, Task } from '../../types';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
-import { getStatus } from '../../lib/utils';
+import { getStatus, isProjectTasksHydrated } from '../../lib/utils';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import { buildTaskByIdMap, isForeignSummaryEntry } from '../../lib/summaryGhostFilter';
 import { deduplicateTasksInMemory } from '../../lib/taskDeduplicationService';
@@ -97,9 +97,13 @@ function computeSingleProjectInfo(
     candidateTasks.forEach(tryAddTask);
   });
 
-  // Fallback to p.taskSummaries ONLY when no real tasks for this project are loaded in memory
-  if (realTasksMap.size === 0 && p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0) {
-    p.taskSummaries.forEach((ts, idx) => {
+  // Fallback or merge p.taskSummaries when no real tasks are loaded OR when project is not fully hydrated and only partial tasks are in RAM
+  const hasSummaries = p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0;
+  if (
+    hasSummaries &&
+    (realTasksMap.size === 0 || (!isProjectTasksHydrated(pIdStr) && realTasksMap.size < p.taskSummaries!.length))
+  ) {
+    p.taskSummaries!.forEach((ts, idx) => {
       if (isTaskDeletedInTracker(ts.id, pIdStr || undefined)) return;
       if (isForeignSummaryEntry(ts.id, p, taskById)) return;
       if (!hasValidTaskContent(ts)) return;
@@ -132,10 +136,21 @@ function computeSingleProjectInfo(
   }
 
   const rawGroupTasks: Task[] = Array.from(realTasksMap.values());
+  const realCodeSet = new Set<string>();
+  const realNameSet = new Set<string>();
+  rawGroupTasks.forEach(rt => {
+    if (rt.taskCodePhu) realCodeSet.add(String(rt.taskCodePhu).trim().toLowerCase());
+    if (rt.name) realNameSet.add(String(rt.name).trim().toLowerCase());
+  });
   virtualTasksMap.forEach((vt, key) => {
-    if (!realTasksMap.has(key)) {
-      rawGroupTasks.push(vt);
+    if (realTasksMap.has(key)) return;
+    const vtCode = vt.taskCodePhu ? String(vt.taskCodePhu).trim().toLowerCase() : '';
+    if (vtCode && realCodeSet.has(vtCode)) return;
+    const vtName = vt.name ? String(vt.name).trim().toLowerCase() : '';
+    if (!vt.id || String(vt.id).startsWith('ts_')) {
+      if (vtName && realNameSet.has(vtName)) return;
     }
+    rawGroupTasks.push(vt);
   });
 
   if (rawGroupTasks.length === 0) {

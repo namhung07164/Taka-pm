@@ -144,16 +144,60 @@ export function calculateProjectComputedDates(
   const existingSummaries = (project.taskSummaries && Array.isArray(project.taskSummaries)) ? project.taskSummaries : [];
   const existingCount = project.taskCount !== undefined ? project.taskCount : existingSummaries.length;
 
+  const activeExistingSummaries = existingSummaries.filter((es: any) =>
+    !isTaskDeletedInTracker(es.id, pIdStr) &&
+    Boolean((es.name && String(es.name).trim()) || (es.start && String(es.start).trim()) || (es.finish && String(es.finish).trim()) || es.taskCodePhu)
+  );
+
   const rawTasks = (projectTasks || []).filter(t =>
     t &&
     !t.isDeleted &&
     !isTaskDeletedInTracker(t.id, pIdStr) &&
     Boolean((t.name && String(t.name).trim()) || (t.start && String(t.start).trim()) || (t.finish && String(t.finish).trim()) || t.taskCodePhu)
   );
-  const hasRealTasks = rawTasks.some(t => !(t as any)._isVirtualSummary);
-  const filteredInputTasks = hasRealTasks
-    ? rawTasks.filter(t => !(t as any)._isVirtualSummary)
-    : rawTasks;
+  const realOnlyTasks = rawTasks.filter(t => !(t as any)._isVirtualSummary);
+  let filteredInputTasks: Task[];
+
+  if (realOnlyTasks.length === 0) {
+    filteredInputTasks = rawTasks;
+  } else if (isProjectTasksHydrated(pIdStr) || realOnlyTasks.length >= activeExistingSummaries.length) {
+    filteredInputTasks = realOnlyTasks;
+  } else {
+    // Partial real tasks in memory: merge with remaining activeExistingSummaries so unhydrated tasks are never dropped
+    const mergedList: Task[] = [...realOnlyTasks];
+    const realIdSet = new Set(realOnlyTasks.map(t => String(t.id || '').trim().toLowerCase()).filter(Boolean));
+    const realCodeSet = new Set(realOnlyTasks.map(t => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean));
+    const realNameSet = new Set(realOnlyTasks.map(t => String(t.name || '').trim().toLowerCase()).filter(Boolean));
+
+    activeExistingSummaries.forEach((ts: any, idx: number) => {
+      const tsId = String(ts?.id || '').trim().toLowerCase();
+      const tsCode = String(ts?.taskCodePhu || '').trim().toLowerCase();
+      const tsName = String(ts?.name || '').trim().toLowerCase();
+      if (tsId && !tsId.startsWith('ts_') && realIdSet.has(tsId)) return;
+      if (tsCode && realCodeSet.has(tsCode)) return;
+      if (!tsId && !tsCode && tsName && realNameSet.has(tsName)) return;
+
+      mergedList.push({
+        id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
+        name: (ts.name && String(ts.name).trim()) ? ts.name : (ts.taskCodePhu || `Task ${idx + 1}`),
+        start: ts.start || project.computedTakStart || project.start || '',
+        finish: ts.finish || project.computedTakCompl || project.handover || '',
+        projectCode: project.code || '',
+        projectStore: project.store || 'HCM',
+        projectYear: project.year ? String(project.year) : '',
+        party: ts.party || project.party || '',
+        runningStatus: ts.runningStatus || 'On process',
+        duration: ts.duration || '',
+        parentTaskId: ts.parentTaskId,
+        taskCodePhu: ts.taskCodePhu || (project.code ? `${project.code}#${idx + 1}` : undefined),
+        orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+        projectId: project.id,
+        ...ts,
+        _isVirtualSummary: true,
+      } as unknown as Task);
+    });
+    filteredInputTasks = mergedList;
+  }
 
   const { dedupedTasks } = deduplicateTasksInMemory(filteredInputTasks, project.code || project.id ? [project as Project] : []);
   const { cleaned: nonOrphanTasks } = filterNonOrphanTasks(dedupedTasks);
@@ -179,7 +223,6 @@ export function calculateProjectComputedDates(
         orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
       };
       if (t.id) summary.id = t.id;
-      else if (t.id) summary.id = t.id;
       if (t.duration !== undefined && t.duration !== null) summary.duration = t.duration;
       if (t.parentTaskId) summary.parentTaskId = t.parentTaskId;
       if (t.taskCodePhu) summary.taskCodePhu = t.taskCodePhu;
@@ -191,11 +234,6 @@ export function calculateProjectComputedDates(
     });
 
   const taskSummaries = rollupTaskSummaries(taskSummariesRaw);
-
-  const activeExistingSummaries = existingSummaries.filter((es: any) =>
-    !isTaskDeletedInTracker(es.id, pIdStr) &&
-    Boolean((es.name && String(es.name).trim()) || (es.start && String(es.start).trim()) || (es.finish && String(es.finish).trim()) || es.taskCodePhu)
-  );
 
   const finalSummaries: any[] = sortedProjTasks.length > 0
     ? taskSummaries
@@ -247,14 +285,14 @@ export function calculateProjectComputedDates(
     computedOpening = project.computedOpening || project.opening || "";
   }
 
-  const planProgressPercent = projectTasks && projectTasks.length > 0
-    ? computePlanProgressPercent(projectTasks)
+  const planProgressPercent = sortedProjTasks.length > 0
+    ? computePlanProgressPercent(sortedProjTasks)
     : (finalSummaries.length > 0 
         ? computePlanProgressFromSummaries(finalSummaries) 
         : (project.computedPlanProgress ?? 0));
   
-  const actProgressPercent = projectTasks && projectTasks.length > 0
-    ? computeActProgressPercent(projectTasks, delegationGroups)
+  const actProgressPercent = sortedProjTasks.length > 0
+    ? computeActProgressPercent(sortedProjTasks, delegationGroups)
     : (finalSummaries.length > 0 
         ? computeActProgressFromSummaries(finalSummaries) 
         : (project.computedActProgress ?? 0));

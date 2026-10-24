@@ -9,7 +9,7 @@ import { cleanOrphanTasks } from '../../lib/taskStateService';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { deleteLocalRecord } from '../../lib/localDb';
 import { pullAndApplyDeltas } from '../../lib/deltaSyncService';
-import { getLoadedMarkers, hasFreshMarker } from '../../lib/loadedMarkers';
+import { getLoadedMarkers, hasFreshMarker, markLoaded } from '../../lib/loadedMarkers';
 import { markTasksDeleted, unmarkTaskDeleted, clearDeletedTasksTracker } from '../../lib/taskDeletedTracker';
 import { isStaleCacheDoc, extractKeysToHydrate, groupActiveProjectsByYear, healProjectsAfterTasksBatch } from './tasksHydrationHelpers';
 import { buildProjectTasksLookupIndex, getLocalProjectTasksFromIndex } from './projectsHydrationHelpers';
@@ -325,11 +325,24 @@ export function useTasksHydration({
             hasFreshMarker(markers, 'tasks_proj', p.code) ||
             isYearFresh;
 
+          const localIdsLower = new Set(
+            localProjTasks.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean)
+          );
+          const coversAllSummaries =
+            expectedSummaryCount > 0 &&
+            localProjTasks.length >= expectedSummaryCount &&
+            (!Array.isArray(p.taskSummaries) ||
+              p.taskSummaries.every((s: any) => {
+                const sId = String(s?.id || '').trim().toLowerCase();
+                return !sId || sId.startsWith('ts_') || localIdsLower.has(sId);
+              }));
+
           // Trust local Dexie tasks only when local task count covers expectedSummaryCount (so newly added remote tasks are never missed)
           const hasLocalProjTasks =
-            knownHydratedProjectCodes.current.has(String(p.id)) ||
-            (isProjMarkerFresh && localProjTasks.length >= expectedSummaryCount) ||
-            (localProjTasks.length > 0 && localProjTasks.length >= expectedSummaryCount);
+            coversAllSummaries ||
+            (knownHydratedProjectCodes.current.has(String(p.id)) &&
+              localProjTasks.length >= expectedSummaryCount) ||
+            (isProjMarkerFresh && localProjTasks.length >= expectedSummaryCount);
 
           const isZeroTaskProject =
             (p.taskCount || 0) === 0 &&
@@ -340,10 +353,13 @@ export function useTasksHydration({
           const deltaManaged =
             isZeroTaskProject ||
             (hasLocalProjTasks && isArchivedPastYear) ||
-            (DELTA_FIRST.tasks && hasLocalProjTasks && isProjMarkerFresh);
+            (DELTA_FIRST.tasks && (coversAllSummaries || (hasLocalProjTasks && isProjMarkerFresh)));
 
           if (deltaManaged) {
             knownHydratedProjectCodes.current.add(String(p.id));
+            if (coversAllSummaries && !isProjMarkerFresh && p.id) {
+              markLoaded('tasks_proj', p.id).catch(() => {});
+            }
             const noop = () => {};
             if (isZeroTaskProject) (noop as any).__isZeroTaskNoop = true;
             tasksPool.current.set(projKey, noop);
@@ -384,9 +400,9 @@ export function useTasksHydration({
           return;
         }
 
-        // Only attach a year-wide listener when >8 projects genuinely lack local Dexie cache;
-        // otherwise lazily fetch only the specific missing projects (1-8 projects).
-        if (unhydratedProjs.length > 8) {
+        // Only attach a year-wide listener when >50 projects in a specific year genuinely lack local Dexie cache;
+        // otherwise lazily fetch only the specific missing projects to prevent multi-thousand-read spikes.
+        if (unhydratedProjs.length > 50 && String(year).toLowerCase() !== 'all') {
           neededKeys.add(yearKey);
           unhydratedProjs.forEach((p) => {
             const pKey = `proj_${p.id}`;

@@ -119,7 +119,7 @@ export function isZombieTaskAgainstProjects(
   if ((t as any)._isVirtualSummary) return false;
 
   const updatedMs = tsOf(t.updatedAt);
-  if (updatedMs > 0 && Date.now() - updatedMs <= 30000) return false;
+  if (updatedMs > 0 && Date.now() - updatedMs <= 60000) return false;
 
   if (!projects || projects.length === 0) return false;
 
@@ -152,6 +152,8 @@ export function isZombieTaskAgainstProjects(
   }
 
   if (!matchedEntry) return false;
+  const projUpdatedMs = tsOf(matchedEntry.project.updatedAt);
+  if (updatedMs > 0 && projUpdatedMs > 0 && updatedMs > projUpdatedMs) return false;
   if (matchedEntry.isZeroTaskProject) return true;
   if (!matchedEntry.allSummariesHaveIds || matchedEntry.summaryIds.size === 0) return false;
 

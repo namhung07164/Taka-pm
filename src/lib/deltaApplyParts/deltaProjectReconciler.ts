@@ -131,7 +131,9 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
     }
     const tIdLower = String(t.id).trim().toLowerCase();
     const updatedMs = tsOf(t.updatedAt);
-    const isRecentLocal = Boolean(updatedMs && nowMs - updatedMs <= 15000);
+    const projUpdatedMs = tsOf(nextProj.updatedAt);
+    const isNewerThanProj = Boolean(updatedMs > 0 && projUpdatedMs > 0 && updatedMs > projUpdatedMs);
+    const isRecentLocal = Boolean((updatedMs && nowMs - updatedMs <= 60000) || isNewerThanProj);
 
     if (validIdsLower.has(tIdLower)) {
       const s = summaryByIdLower.get(tIdLower);
@@ -370,13 +372,28 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
 
     if (!isTouched) return p;
 
-    const pTasks = getTasksForProject(p, updatedTasks);
+    const realProjTasks = getTasksForProject(p, updatedTasks, { realTasksOnly: true });
     const existingSummaries = Array.isArray(p.taskSummaries) ? p.taskSummaries : [];
 
-    const useInMemoryTasks = pTasks.length > 0 && pTasks.length >= existingSummaries.length;
-    const sourceTasksForCalc: Task[] = useInMemoryTasks
-      ? pTasks
-      : existingSummaries.map(
+    let sourceTasksForCalc: Task[];
+    if (realProjTasks.length > 0 && realProjTasks.length >= existingSummaries.length) {
+      sourceTasksForCalc = realProjTasks;
+    } else {
+      const realIdSet = new Set(
+        realProjTasks.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean)
+      );
+      const realCodeSet = new Set(
+        realProjTasks.map((t) => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean)
+      );
+      const summaryTasks = existingSummaries
+        .filter((s: any) => {
+          const sId = String(s?.id || '').trim().toLowerCase();
+          const sCode = String(s?.taskCodePhu || '').trim().toLowerCase();
+          if (sId && !sId.startsWith('ts_') && realIdSet.has(sId)) return false;
+          if (sCode && realCodeSet.has(sCode)) return false;
+          return true;
+        })
+        .map(
           (s: any, idx: number) =>
             ({
               id: s.id || `ts_${p.id}_${idx}`,
@@ -399,6 +416,8 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
               delegation: s.delegation,
             }) as Task
         );
+      sourceTasksForCalc = [...realProjTasks, ...summaryTasks];
+    }
 
     const computedDates = calculateProjectComputedDates(p, sourceTasksForCalc, delegationGroups);
     const nextProj: Project = {

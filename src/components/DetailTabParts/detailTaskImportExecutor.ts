@@ -306,11 +306,12 @@ export async function executeImportTasks({
           };
 
       // Tự động phân giải và gán projectId từ danh sách projects theo bộ 3 mã (code + store + year)
-      if (!finalTask.projectId && projects && projects.length > 0) {
+      if ((!finalTask.projectId || !finalTask.projectStore || finalTask.projectYear === undefined) && projects && projects.length > 0) {
         const pCode = String(finalTask.projectCode || '').trim().toLowerCase();
         const pStore = String(finalTask.projectStore || '').trim().toLowerCase();
         const pYear = String(finalTask.projectYear ?? '').trim();
         const matched = projects.find(p => {
+          if (finalTask.projectId && String(p.id) === String(finalTask.projectId)) return true;
           const matchCode = String(p.code || '').trim().toLowerCase() === pCode || String(p.no || '').trim().toLowerCase() === pCode;
           const matchStore = !pStore || !p.store || String(p.store).trim().toLowerCase() === pStore;
           const matchYear = !pYear || p.year === undefined || p.year === null || String(p.year).trim() === pYear;
@@ -318,6 +319,7 @@ export async function executeImportTasks({
         });
         if (matched) {
           finalTask.projectId = matched.id;
+          if (matched.code) finalTask.projectCode = matched.code;
           if (!finalTask.projectStore && matched.store) finalTask.projectStore = matched.store;
           if (finalTask.projectYear === undefined && matched.year !== undefined) finalTask.projectYear = matched.year;
         }
@@ -389,9 +391,11 @@ export async function executeImportTasks({
   updatedParents.forEach(p => tasksToSaveMap.set(p.id, p));
   const rawTasksToSave = Array.from(tasksToSaveMap.values());
 
-  // Auto-heal predecessor string codes on imported CSV/Excel tasks
+  // Auto-heal predecessor string codes on imported CSV/Excel tasks and stamp fresh updatedAt
   const healed = healAllTasksPredecessors(rawTasksToSave, projects);
-  const finalTasksToSave = healed.updatedTasks;
+  const commitNowIso = new Date().toISOString();
+  const finalTasksToSave = healed.updatedTasks.map(t => ({ ...t, updatedAt: commitNowIso }));
+  finalTasksToSave.forEach(t => allTasksMap.set(t.id, t));
 
   // Optimistic update (0ms UI)
   useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
@@ -414,30 +418,36 @@ export async function executeImportTasks({
   const updatedProjects = currentProjects.map(proj => {
     const isAffected = affectedProjects.some(ap => ap.id === proj.id);
     if (!isAffected) return proj;
-    const pTasks = getTasksForProject(proj, finalFullTasksList);
+    const pTasks = getTasksForProject(proj, finalFullTasksList, { realTasksOnly: true });
     const computed = calculateProjectComputedDates(proj, pTasks, delegationGroups);
     computedByProjectId.set(proj.id, computed);
-    const nextProj = { ...proj, ...computed };
+    const nextProj = { ...proj, ...computed, updatedAt: commitNowIso };
     touchedProjectsForPersistence.push(nextProj);
     return nextProj;
   });
   useAppStore.getState().setProjects(updatedProjects);
 
-  // Persist affected projects to LocalDB (Dexie) immediately
+  // Persist affected projects to LocalDB (Dexie) immediately and mark tasks_proj as loaded
   if (touchedProjectsForPersistence.length > 0) {
     import('../../lib/localDb')
       .then(({ bulkPersistProjects }) => bulkPersistProjects(touchedProjectsForPersistence))
       .catch(() => {});
+    import('../../lib/loadedMarkers')
+      .then(({ markLoaded }) => {
+        touchedProjectsForPersistence.forEach(proj => {
+          if (proj.id) markLoaded('tasks_proj', proj.id).catch(() => {});
+        });
+      })
+      .catch(() => {});
   }
 
-  // Save tasks & project summaries to Firestore + Delta bus in parallel chunks
+  // Save tasks FIRST, then project summaries to Firestore + Delta bus sequentially so other devices
+  // always receive the complete task set before the authoritative project summary seals the state.
   const activeUser = useAppStore.getState().currentUser || currentUser;
-  const syncProjectsBatchPromise = syncAffectedProjectsSummaries(affectedProjects, computedByProjectId, activeUser);
-
-  const cloudSyncPromise = Promise.all([
-    batchSaveTasksToFirestore(finalTasksToSave, activeUser),
-    syncProjectsBatchPromise,
-  ]);
+  const cloudSyncPromise = (async () => {
+    await batchSaveTasksToFirestore(finalTasksToSave, activeUser);
+    await syncAffectedProjectsSummaries(affectedProjects, computedByProjectId, activeUser);
+  })();
 
   // Wait up to 2.5s for fast cloud commit; if mass import is very large, let remaining chunks finish in background without blocking the UI notification
   await Promise.race([

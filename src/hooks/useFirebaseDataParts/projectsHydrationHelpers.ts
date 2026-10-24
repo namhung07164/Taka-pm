@@ -196,7 +196,7 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     if (allSummariesHaveIds && !serverSummaryIds.has(tIdLower)) {
       const updatedMs = tsOf(t.updatedAt);
       const isOlderOrEqualToProj = !projUpdatedMs || !updatedMs || projUpdatedMs >= updatedMs;
-      if (isOlderOrEqualToProj && (!updatedMs || nowMs - updatedMs > 30000)) {
+      if (isOlderOrEqualToProj && (!updatedMs || nowMs - updatedMs > 60000)) {
         markTasksDeleted([t.id], id);
         pendingDeletedTaskIds.add(t.id);
       }
@@ -204,23 +204,9 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
   });
 
   // 3. Patch summary fields in-place for already-loaded local tasks without firing N getDocFromServer calls.
-  // Unexpanded projects with partial tasks (e.g. from deadline notifications) already render missing tasks from project.taskSummaries (0 Read).
-  const isActivelyExpanded =
-    expandedSet.has(String(id)) ||
-    (resolvedData.code && expandedSet.has(String(resolvedData.code)));
-
-  const prevSummaryIdSet =
-    existing && Array.isArray(existing.taskSummaries)
-      ? new Set(
-          existing.taskSummaries
-            .map((s: any) => String(s?.id || '').trim().toLowerCase())
-            .filter(Boolean)
-        )
-      : null;
-  const wasFullyHydratedInRam =
-    prevSummaryIdSet !== null &&
-    prevSummaryIdSet.size > 0 &&
-    localProjTasksById.size >= prevSummaryIdSet.size;
+  // Unexpanded projects already render from project.taskSummaries (0 Read) and receive full tasks via taka_deltas.
+  void expandedSet;
+  void pendingInvalidatedTaskIds;
 
   if (localProjTasksById.size > 0 && serverSummaryIds.size > 0) {
     data.taskSummaries.forEach((s: any) => {
@@ -228,20 +214,9 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
       if (!sId || sId.startsWith('ts_')) return;
       const sIdLower = sId.toLowerCase();
       const localT = localProjTasksById.get(sIdLower);
-      if (!localT) {
-        // Only invalidate if this project was already 100% hydrated in RAM, is not covered by an active expanded listener,
-        // and this summary ID is a genuinely brand-new task added on the server (not just an unexpanded project with 1 notification task in RAM).
-        if (
-          !isActivelyExpanded &&
-          wasFullyHydratedInRam &&
-          prevSummaryIdSet &&
-          !prevSummaryIdSet.has(sIdLower)
-        ) {
-          pendingInvalidatedTaskIds.set(sId, String(resolvedData.year || ''));
-        }
-      } else {
+      if (localT) {
         const localUpdatedMs = tsOf(localT.updatedAt);
-        const isRecentlyEditedLocally = localUpdatedMs > 0 && nowMs - localUpdatedMs <= 30000;
+        const isRecentlyEditedLocally = localUpdatedMs > 0 && nowMs - localUpdatedMs <= 60000;
         if (!isRecentlyEditedLocally) {
           const sParent = s.parentTaskId || undefined;
           const localParent = localT.parentTaskId || undefined;
@@ -285,6 +260,7 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
         );
         const isZeroTask = p.taskSummaries.length === 0 && (p.taskCount ?? 0) === 0;
         if (summaryIds.size === 0 && !isZeroTask) continue;
+        const projUpdatedMs = tsOf(p.updatedAt);
 
         const summaryById = new Map<string, any>();
         p.taskSummaries.forEach((s: any) => {
@@ -323,7 +299,8 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
         for (const [tid, t] of candidateMap.entries()) {
           const tidLower = String(tid).trim().toLowerCase();
           const tUpdatedMs = tsOf(t.updatedAt);
-          if (tUpdatedMs > 0 && nowBg - tUpdatedMs <= 30000) continue;
+          if (tUpdatedMs > 0 && nowBg - tUpdatedMs <= 60000) continue;
+          if (tUpdatedMs > 0 && projUpdatedMs > 0 && tUpdatedMs > projUpdatedMs) continue;
 
           if (!summaryIds.has(tidLower)) {
             markTasksDeleted([tid], p.id);

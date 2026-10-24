@@ -1,34 +1,19 @@
 import { Task, Project, DelegationGroup } from '../../types';
 import { isTaskBelongsToProject, matchProjectCode } from '../../lib/utils';
-import {
-  getAppBootAgeMs,
-  BOOT_SYNC_GUARD_MS,
-  calculateProjectComputedDates,
-} from '../../lib/projectDatesService';
+import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS, calculateProjectComputedDates } from '../../lib/projectDatesService';
 import { bulkPersistProjects } from '../../lib/localDb';
 
 export { matchProjectCode };
 
 export const tsOf = (v: any): number => {
   if (!v) return 0;
-  if (typeof v === 'string') {
-    const n = Date.parse(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.toMillis === 'function') {
-    const n = v.toMillis();
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.seconds === 'number') {
-    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
-  }
+  if (typeof v === 'string') { const n = Date.parse(v); return Number.isFinite(n) ? n : 0; }
+  if (typeof v?.toMillis === 'function') { const n = v.toMillis(); return Number.isFinite(n) ? n : 0; }
+  if (typeof v?.seconds === 'number') return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
-/**
- * Checks if incoming doc from Firestore/cache is staler than existing local doc in memory.
- */
 export function isStaleCacheDoc(existingDoc: Task | undefined, newDoc: Task): boolean {
   if (!existingDoc) return false;
   const existingTime = tsOf(existingDoc.updatedAt);
@@ -37,9 +22,6 @@ export function isStaleCacheDoc(existingDoc: Task | undefined, newDoc: Task): bo
   return existingTime > newTime;
 }
 
-/**
- * Extracts set of project keys/codes to hydrate from active project IDs.
- */
 export function extractKeysToHydrate(
   activeProjectIds: string[],
   projects: Project[],
@@ -104,7 +86,14 @@ export function groupActiveProjectsByYear(
         String(p.year).trim() === String(globalYearFilter).trim());
 
     if (matchesById || matchesByCode) {
-      const year = p.year ? String(p.year).trim() : globalYearFilter || '2026';
+      const fallbackYear =
+        globalYearFilter && String(globalYearFilter).toLowerCase() !== 'all'
+          ? String(globalYearFilter).trim()
+          : String(new Date().getFullYear());
+      const year =
+        p.year && String(p.year).toLowerCase() !== 'all'
+          ? String(p.year).trim()
+          : fallbackYear;
       const list = map.get(year) || [];
       list.push(p);
       map.set(year, list);
@@ -392,9 +381,10 @@ export function healProjectsAfterTasksBatch(params: {
       .filter(Boolean);
     const pStoreKey = workingProj.store ? String(workingProj.store).trim().toLowerCase() : '*';
     const pYearKey = workingProj.year !== undefined && workingProj.year !== null ? String(workingProj.year).trim() : '*';
+    const isInitialHydrationPass = changedTasks.size === 0 && removedTasks.size === 0;
     const isProjectTouched =
       summaryRemoved ||
-      isFullyHydratedProject ||
+      (isInitialHydrationPass && isFullyHydratedProject) ||
       touchedIds.has(String(workingProj.id)) ||
       pCodeParts.some(
         (c) =>
@@ -437,16 +427,17 @@ export function healProjectsAfterTasksBatch(params: {
       }
     }
 
-    if (!isFullyHydratedProject) {
-      const existingMaxCount = Math.max(
-        workingProj.taskCount || 0,
-        Array.isArray(workingProj.taskSummaries) ? workingProj.taskSummaries.length : 0
-      );
-      if (pTasks.length === 0 || pTasks.length < existingMaxCount) return workingProj;
+    const existingMaxCount = Math.max(
+      workingProj.taskCount || 0,
+      Array.isArray(workingProj.taskSummaries) ? workingProj.taskSummaries.length : 0
+    );
+    // Never shrink a project's taskSummaries from partial in-memory tasks unless tasks of this project were explicitly deleted
+    if (!summaryRemoved && (pTasks.length === 0 || pTasks.length < existingMaxCount)) {
+      return workingProj;
     }
 
     const baseProjForCalc =
-      isFullyHydratedProject && pTasks.length === 0 && removedIdsLower.size > 0
+      summaryRemoved && pTasks.length === 0
         ? { ...workingProj, taskSummaries: [], taskCount: 0 }
         : workingProj;
 

@@ -196,10 +196,15 @@ export function attachProjectTasksListener(params: {
   const unsub = onSnapshot(
     qTasks,
     (snapshot) => {
-      knownHydratedProjectCodes.add(String(p.id));
       usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
       setIsTasksLoading(false);
       const fromCache = snapshot.metadata.fromCache;
+      const expectedCount = Array.isArray(p.taskSummaries)
+        ? p.taskSummaries.length
+        : p.taskCount || 0;
+      if (!fromCache || snapshot.docs.length >= expectedCount) {
+        knownHydratedProjectCodes.add(String(p.id));
+      }
 
       let compatibleChanges = filterCompatibleProjectChanges(snapshot.docChanges(), p);
 
