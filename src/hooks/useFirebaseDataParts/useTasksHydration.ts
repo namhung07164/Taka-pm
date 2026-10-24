@@ -303,23 +303,21 @@ export function useTasksHydration({
             tasksTTLTimeouts.current.delete(projKey);
           }
 
+          const localProjTasks = getLocalProjectTasksFromIndex(p, tasksLookupIndex);
+          const expectedSummaryCount = Array.isArray(p.taskSummaries)
+            ? p.taskSummaries.length
+            : p.taskCount || 0;
+
           const existingListener = tasksPool.current.get(projKey);
-          const isZeroNoop = Boolean((existingListener as any)?.__isZeroTaskNoop);
-          if (
-            isZeroNoop &&
-            ((p.taskCount || 0) > 0 || (Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0))
-          ) {
+          const isNoop = Boolean((existingListener as any)?.__isNoop);
+          if (isNoop && (expectedSummaryCount > localProjTasks.length || (localProjTasks.length === 0 && expectedSummaryCount > 0))) {
             tasksPool.current.delete(projKey);
+            knownHydratedProjectCodes.current.delete(String(p.id));
           }
 
           if (tasksPool.current.has(projKey)) {
             return;
           }
-
-          const localProjTasks = getLocalProjectTasksFromIndex(p, tasksLookupIndex);
-          const expectedSummaryCount = Array.isArray(p.taskSummaries)
-            ? p.taskSummaries.length
-            : p.taskCount || 0;
           const isProjMarkerFresh =
             hasFreshMarker(markers, 'tasks_proj', p.id) ||
             hasFreshMarker(markers, 'tasks_proj', p.code) ||
@@ -361,6 +359,7 @@ export function useTasksHydration({
               markLoaded('tasks_proj', p.id).catch(() => {});
             }
             const noop = () => {};
+            (noop as any).__isNoop = true;
             if (isZeroTaskProject) (noop as any).__isZeroTaskNoop = true;
             tasksPool.current.set(projKey, noop);
             hydratedLocalTaskCount += localProjTasks.length;
