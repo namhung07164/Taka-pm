@@ -43,11 +43,27 @@ const firebaseConfigDev = {
   appId: "1:855584353883:web:8819bcbf8c58a28fb8997e"
 };
 
-// Tự động nhận diện môi trường (Sandbox ais-dev / localhost vs Production ais-pre)
-const isDevMode = (import.meta as any).env?.DEV || (typeof window !== 'undefined' && (window.location.hostname.includes('localhost') || window.location.hostname.includes('ais-dev')));
+// Tự động nhận diện môi trường:
+// Mặc định kết nối tới Production database (taka---projec-1) để Desktop và thiết bị iOS luôn dùng CHUNG 1 nguồn dữ liệu duy nhất (Single Source of Truth).
+// Chỉ chuyển sang sandbox 'tak-project---ver1' nếu có tham số ?env=dev trên URL hoặc 'taka_firebase_env' trong localStorage.
+const searchEnv = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('env') : null;
+const storedEnv = typeof window !== 'undefined' ? window.localStorage.getItem('taka_firebase_env') : null;
+const isDevMode = searchEnv === 'dev' || storedEnv === 'dev';
 
-// Sandbox kết nối database tak-project---ver1, Production kết nối taka---projec-1
 const firebaseConfig = isDevMode ? firebaseConfigDev : firebaseConfigProd;
+
+// Khi đổi project database giữa dev và prod, xóa cache cũ để không bị lẫn lộn dữ liệu giữa 2 dự án Firestore
+if (typeof window !== 'undefined') {
+  const lastActiveProject = window.localStorage.getItem('taka_active_project_id');
+  if (lastActiveProject && lastActiveProject !== firebaseConfig.projectId) {
+    try {
+      indexedDB.deleteDatabase('TakaLocalFirstDB_v1');
+      window.localStorage.removeItem('taka_data_fingerprint_v1');
+      window.localStorage.removeItem('taka_last_delta_sync_time');
+    } catch {}
+  }
+  window.localStorage.setItem('taka_active_project_id', firebaseConfig.projectId);
+}
 
 import { checkAndCleanStorageQuota } from './storage';
 
