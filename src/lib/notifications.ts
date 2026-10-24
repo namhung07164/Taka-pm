@@ -19,17 +19,20 @@ export const testLocalNotification = async () => {
 
     const permission = await Notification.requestPermission();
     if (permission === 'granted') {
+      const iconUrl = typeof window !== 'undefined' ? `${window.location.origin}/icon-192.png` : '/icon-192.png';
       if ('serviceWorker' in navigator) {
         const registration = await navigator.serviceWorker.ready;
         await registration.showNotification('Test Notification', {
           body: 'This is a test notification from the PWA.',
-          icon: '/manifest-icon-192.maskable.png'
+          icon: iconUrl,
+          badge: iconUrl
         });
         useAppStore.getState().setToast({ title: "Notice", message: "Sent test notification request via Service Worker. Please check your notification center." });
       } else {
         new Notification('Test Notification', {
           body: 'This is a test notification from the browser.',
-          icon: '/manifest-icon-192.maskable.png'
+          icon: iconUrl,
+          badge: iconUrl
         });
         useAppStore.getState().setToast({ title: "Notice", message: "Sent test notification request via Browser. Please check your notification center." });
       }

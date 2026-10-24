@@ -18,9 +18,22 @@ export function usePushNotifications() {
               if (user.notification === false) return;
             }
 
+            function stripHtml(htmlStr: string): string {
+              if (!htmlStr) return '';
+              return htmlStr
+                .replace(/<[^>]*>/g, '')
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/&amp;/gi, '&')
+                .replace(/&lt;/gi, '<')
+                .replace(/&gt;/gi, '>')
+                .replace(/&quot;/gi, '"')
+                .replace(/\s+/g, ' ')
+                .trim();
+            }
+
             function formatPushMessage(original: string) {
               if (!original) return original;
-              let text = original;
+              let text = stripHtml(original);
 
               if (text.startsWith("You were mentioned in a comment: ")) {
                 return text.replace("You were mentioned in a comment: ", "");
@@ -43,13 +56,14 @@ export function usePushNotifications() {
             }
 
             const bodyToSpeak = formatPushMessage(payload.notification.body || "");
+            const iconUrl = typeof window !== "undefined" ? `${window.location.origin}/icon-192.png` : "/icon-192.png";
             
             // Trigger native notification if in background/minimized
             if (document.hidden) {
               new Notification(payload.notification.title || "Taka App", {
                 body: bodyToSpeak,
-                icon: "/icon-192x192.png",
-                badge: "/icon-192x192.png"
+                icon: iconUrl,
+                badge: iconUrl
               });
             } else {
                // Foreground alert handled by Toast usually, but we could add sound here.

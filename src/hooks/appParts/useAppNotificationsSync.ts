@@ -8,6 +8,20 @@ import {
 } from "../../lib/utils";
 import { Project, Task, AppRole, PermissionModule, TabId } from "../../types";
 
+function stripHtml(htmlStr: string): string {
+  if (!htmlStr) return '';
+  return htmlStr
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+
 interface UseAppNotificationsSyncParams {
   enrichedProjects: Project[];
   filteredTasks: Task[];
@@ -264,12 +278,16 @@ export function useAppNotificationsSync({
               notifiedSet.add(notif.id);
               notifiedIds.push(notif.id);
 
+              const cleanBody = stripHtml(notif.message);
+              const iconUrl = typeof window !== "undefined" ? `${window.location.origin}/icon-192.png` : "/icon-192.png";
+
               if ("serviceWorker" in navigator) {
                 navigator.serviceWorker.ready
                   .then((registration) => {
                     registration.showNotification(notif.title, {
-                      body: notif.message,
-                      icon: "/manifest-icon-192.maskable.png",
+                      body: cleanBody,
+                      icon: iconUrl,
+                      badge: iconUrl,
                       data: {
                         targetType: notif.targetType,
                         targetId: notif.targetId,
@@ -280,8 +298,9 @@ export function useAppNotificationsSync({
                   .catch(console.error);
               } else {
                 const n = new Notification(notif.title, {
-                  body: notif.message,
-                  icon: "/manifest-icon-192.maskable.png",
+                  body: cleanBody,
+                  icon: iconUrl,
+                  badge: iconUrl,
                   data: {
                     targetType: notif.targetType,
                     targetId: notif.targetId,
