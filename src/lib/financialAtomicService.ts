@@ -1,8 +1,8 @@
 import { db, APP_ID } from "./firebase";
 import { doc, increment } from 'firebase/firestore';
-import { Cost } from "../types";
+import { Cost, TakaDeltaItem } from "../types";
 import { useAppStore } from "../store/useAppStore";
-import { recordDelta } from "./deltaSyncService";
+import { recordBatchDeltas } from "./deltaSyncService";
 import { writeBatch } from "../lib/firestoreWrites";
 import { calculatePaidBreakdown } from './financialService';
 
@@ -108,8 +108,9 @@ export async function saveCostWithAtomicSummary(
   // Apply single update to project
   batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', projectId), projectUpdates);
 
-  // Optimistic Update: Cập nhật tức thì vào Zustand Store in-memory (Rule 2)
+  // Optimistic Update: Cập nhật tức thì vào Zustand Store in-memory + Dexie (Rule 2)
   const optimisticStore = useAppStore.getState();
+  optimisticStore.optimisticUpdateCosts([newCostData]);
   optimisticStore.optimisticUpdateProjectFinancial(projectId, {
     'financial.totalApproved': deltaApproved,
     'financial.totalActualPaid': deltaActual,
@@ -141,26 +142,42 @@ export async function saveCostWithAtomicSummary(
   // 5. Commit batch
   batch.commit().catch(console.error);
 
-  recordDelta({
-    docId: newCostData.id,
-    collectionName: 'taka_costs',
-    action: oldCostData ? 'update' : 'create',
-    isPatch: !!oldCostData,
-    data: newCostData,
-    year: String(newCostData.projectYear || '2026'),
-  }).catch(() => {});
+  const deltaItems: TakaDeltaItem[] = [
+    {
+      docId: newCostData.id,
+      collectionName: 'taka_costs',
+      action: oldCostData ? 'update' : 'create',
+      isPatch: !!oldCostData,
+      data: newCostData,
+      year: String(newCostData.projectYear || '2026'),
+      projectId: newCostData.projectId || projectId,
+      projectCode: newCostData.projectCode,
+      projectStore: newCostData.projectStore,
+    },
+  ];
 
   const latestProjForSave = useAppStore.getState().projects.find(p => p.id === projectId);
   if (latestProjForSave?.financial) {
-    recordDelta({
+    deltaItems.push({
       docId: projectId,
       collectionName: 'taka_projects',
       action: 'update',
       isPatch: true,
-      data: { financial: latestProjForSave.financial },
+      data: {
+        id: projectId,
+        code: latestProjForSave.code,
+        year: latestProjForSave.year,
+        store: latestProjForSave.store,
+        financial: latestProjForSave.financial,
+      },
       year: String(latestProjForSave.year || newCostData.projectYear || '2026'),
-    }).catch(() => {});
+      projectId,
+      projectCode: latestProjForSave.code,
+      projectStore: latestProjForSave.store,
+    });
   }
+
+  recordBatchDeltas(deltaItems).catch(() => {});
 }
 
 export async function deleteCostWithAtomicSummary(
@@ -230,6 +247,7 @@ export async function deleteCostWithAtomicSummary(
   batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', projectId), projectUpdates);
 
   const optimisticStore = useAppStore.getState();
+  optimisticStore.optimisticDeleteCosts([costToDelete.id]);
   optimisticStore.optimisticUpdateProjectFinancial(projectId, {
     'financial.totalApproved': deltaApproved,
     'financial.totalActualPaid': deltaActual,
@@ -248,23 +266,40 @@ export async function deleteCostWithAtomicSummary(
   // 5. Commit
   batch.commit().catch(console.error);
 
-  recordDelta({
-    docId: costToDelete.id,
-    collectionName: 'taka_costs',
-    action: 'delete',
-    data: { id: costToDelete.id, isDeleted: true },
-    year: String(costToDelete.projectYear || '2026'),
-  }).catch(() => {});
+  const deltaItems: TakaDeltaItem[] = [
+    {
+      docId: costToDelete.id,
+      collectionName: 'taka_costs',
+      action: 'delete',
+      data: { id: costToDelete.id, isDeleted: true },
+      year: String(costToDelete.projectYear || '2026'),
+      projectId: costToDelete.projectId || projectId,
+      projectCode: costToDelete.projectCode,
+      projectStore: costToDelete.projectStore,
+    },
+  ];
 
   const latestProjForDelete = useAppStore.getState().projects.find(p => p.id === projectId);
   if (latestProjForDelete?.financial) {
-    recordDelta({
+    deltaItems.push({
       docId: projectId,
       collectionName: 'taka_projects',
       action: 'update',
       isPatch: true,
-      data: { financial: latestProjForDelete.financial },
+      data: {
+        id: projectId,
+        code: latestProjForDelete.code,
+        year: latestProjForDelete.year,
+        store: latestProjForDelete.store,
+        financial: latestProjForDelete.financial,
+      },
       year: String(latestProjForDelete.year || year),
-    }).catch(() => {});
+      projectId,
+      projectCode: latestProjForDelete.code,
+      projectStore: latestProjForDelete.store,
+    });
   }
+
+  recordBatchDeltas(deltaItems).catch(() => {});
 }
+

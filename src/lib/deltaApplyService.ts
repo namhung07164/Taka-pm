@@ -303,13 +303,12 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             const matchingProj =
               matchingIdx !== undefined ? updatedProjects[matchingIdx] : undefined;
             const isProjExpandedOrEmpty =
-              (store.isTasksRequested && matchesActiveYear) ||
               projInMemory ||
               (tProjId && expandedSet.has(tProjId)) ||
               (matchingProj?.id && expandedSet.has(String(matchingProj.id))) ||
               (!tProjId && tCode && expandedSet.has(tCode)) ||
-              !matchingProj ||
-              (matchingProj.taskSummaries?.length || 0) <= 1;
+              (store.isTasksRequested &&
+                (matchesActiveYear || !matchingProj || (matchingProj.taskSummaries?.length || 0) <= 1));
 
             if (isProjExpandedOrEmpty) {
               tasksChanged = true;

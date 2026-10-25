@@ -445,8 +445,8 @@ export function healProjectsAfterTasksBatch(params: {
     const toSig = (list: any[]) =>
       (list || [])
         .map(
-          (s: any) =>
-            `${s.id || ''}:${s.name || ''}:${s.start || ''}:${s.finish || ''}:${s.duration ?? ''}:${s.parentTaskId || ''}:${s.isModularParent ? '1' : '0'}:${s.runningStatus || ''}:${s.approval || ''}:${s.party || ''}:${s.predecessor || ''}:${s.orderIndex ?? ''}`
+          (s: any, idx: number) =>
+            `${s.id || ''}:${s.name || ''}:${s.start || ''}:${s.finish || ''}:${s.duration ?? ''}:${s.parentTaskId || ''}:${s.isModularParent ? '1' : '0'}:${s.taskCodePhu || ''}:${s.runningStatus || ''}:${s.approval || ''}:${s.party || ''}:${s.delegation ? '1' : ''}:${s.predecessor || ''}:${s.orderIndex ?? idx}`
         )
         .join('|');
     const existingSig = toSig(workingProj.taskSummaries || []);

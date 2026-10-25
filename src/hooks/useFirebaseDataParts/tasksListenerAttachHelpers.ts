@@ -76,16 +76,25 @@ export function evaluateProjectTaskHydrationState(params: {
   const expectedSummaryCount = Array.isArray(p.taskSummaries)
     ? p.taskSummaries.length
     : p.taskCount || 0;
-  const localIdsLower = new Set(
-    localProjTasks.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean)
-  );
+  const localTaskByIdLower = new Map<string, Task>();
+  localProjTasks.forEach((t) => {
+    const idL = String(t.id || '').trim().toLowerCase();
+    if (idL) localTaskByIdLower.set(idL, t);
+  });
   const coversAllSummaries =
     expectedSummaryCount > 0 &&
     localProjTasks.length >= expectedSummaryCount &&
     (!Array.isArray(p.taskSummaries) ||
       p.taskSummaries.every((s: any) => {
         const sId = String(s?.id || '').trim().toLowerCase();
-        return !sId || sId.startsWith('ts_') || localIdsLower.has(sId);
+        if (!sId || sId.startsWith('ts_')) return true;
+        const localT = localTaskByIdLower.get(sId);
+        if (!localT) return false;
+        return (
+          (s.start === undefined || (localT.start || '') === (s.start || '')) &&
+          (s.finish === undefined || (localT.finish || '') === (s.finish || '')) &&
+          (s.runningStatus === undefined || (localT.runningStatus || '') === (s.runningStatus || ''))
+        );
       }));
 
   const isVerifiedInSession = knownHydratedProjectCodes.has(String(p.id));
@@ -122,11 +131,12 @@ export function evaluateProjectTaskHydrationState(params: {
     localProjTasks.length === 0;
 
   const deltaManaged =
-    (isZeroTaskProject && (!isTargetedExpansion || isVerifiedInSession)) ||
+    (isZeroTaskProject && (!isTargetedExpansion || isVerifiedInSession || isProjMarkerFresh)) ||
     (hasLocalProjTasks && isArchivedPastYear) ||
     (deltaFirstTasks &&
-      (!isTargetedExpansion || isVerifiedInSession) &&
-      (coversAllSummaries || (hasLocalProjTasks && isProjMarkerFresh)));
+      ((coversAllSummaries && isProjMarkerFresh) ||
+        ((!isTargetedExpansion || isVerifiedInSession) &&
+          (coversAllSummaries || (hasLocalProjTasks && isProjMarkerFresh)))));
 
   return { alreadyActiveInPool: false, deltaManaged, isZeroTaskProject, coversAllSummaries };
 }

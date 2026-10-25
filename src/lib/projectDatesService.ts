@@ -217,14 +217,14 @@ export function calculateProjectComputedDates(
       orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
     };
     if (t.id) summary.id = t.id;
-    if (t.duration !== undefined && t.duration !== null) summary.duration = t.duration;
+    if (t.duration !== undefined && t.duration !== null && String(t.duration) !== '') summary.duration = t.duration;
     if (t.parentTaskId) summary.parentTaskId = t.parentTaskId;
     if (t.isModularParent) summary.isModularParent = true;
     if (t.taskCodePhu) summary.taskCodePhu = t.taskCodePhu;
     if (t.runningStatus) summary.runningStatus = t.runningStatus;
     if (t.approval) summary.approval = t.approval;
     if (t.party) summary.party = t.party;
-    if (t.delegation !== undefined) summary.delegation = t.delegation;
+    if (t.delegation) summary.delegation = true;
     if (t.predecessor) summary.predecessor = t.predecessor;
     if (Array.isArray(t.predecessorTaskIds) && t.predecessorTaskIds.length > 0) summary.predecessorTaskIds = t.predecessorTaskIds;
     if (t.baselineStart) summary.baselineStart = t.baselineStart;
@@ -334,8 +334,8 @@ export async function syncProjectDatesToFirestore(
     const toSummariesSig = (list: any[]) =>
       (list || [])
         .map(
-          (s: any) =>
-            `${s?.id || ""}:${s?.name || ""}:${s?.start || ""}:${s?.finish || ""}:${s?.duration ?? ""}:${s?.parentTaskId || ""}:${s?.isModularParent ? "1" : "0"}:${s?.taskCodePhu || ""}:${s?.runningStatus || ""}:${s?.approval || ""}:${s?.party || ""}:${s?.delegation ?? ""}:${s?.predecessor || ""}:${s?.orderIndex ?? ""}`
+          (s: any, idx: number) =>
+            `${s?.id || ""}:${s?.name || ""}:${s?.start || ""}:${s?.finish || ""}:${s?.duration ?? ""}:${s?.parentTaskId || ""}:${s?.isModularParent ? "1" : "0"}:${s?.taskCodePhu || ""}:${s?.runningStatus || ""}:${s?.approval || ""}:${s?.party || ""}:${s?.delegation ? "1" : ""}:${s?.predecessor || ""}:${s?.orderIndex ?? idx}`
         )
         .join("|");
 

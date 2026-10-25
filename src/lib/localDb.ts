@@ -146,7 +146,21 @@ export async function upsertLocalRecord(
     const incomingTs = tsOf(item.updatedAt);
     if (existing && existingTs > 0 && incomingTs > 0 && existingTs > incomingTs) return;
 
-    await table.put(cleanItemForLocalDb(item));
+    const clean = cleanItemForLocalDb(item);
+    if (existing) {
+      const merged: any = { ...existing, ...clean, id: item.id };
+      if (collectionName === 'taka_projects') {
+        if (clean.taskSummaries === undefined && existing.taskSummaries !== undefined) {
+          merged.taskSummaries = existing.taskSummaries;
+        }
+        if (clean.taskCount === undefined && existing.taskCount !== undefined) {
+          merged.taskCount = existing.taskCount;
+        }
+      }
+      await table.put(merged);
+    } else {
+      await table.put(clean);
+    }
   } catch (err) {
     console.warn(`[localDb] upsertLocalRecord error on ${collectionName}:`, err);
   }
@@ -172,7 +186,17 @@ export async function patchLocalRecord(
     const incomingTs = tsOf(patch.updatedAt);
     if (existingTs > 0 && incomingTs > 0 && existingTs > incomingTs) return;
 
-    await table.update(id, cleanItemForLocalDb(patch));
+    const cleanPatch = cleanItemForLocalDb(patch);
+    const merged: any = { ...existing };
+    for (const [k, v] of Object.entries(cleanPatch)) {
+      if (v === null) {
+        delete merged[k];
+      } else if (v !== undefined) {
+        merged[k] = v;
+      }
+    }
+    merged.id = id;
+    await table.put(merged);
   } catch (err) {
     console.warn(`[localDb] patchLocalRecord error on ${collectionName}:`, err);
   }
@@ -333,9 +357,6 @@ export async function getLocalCosts(year?: string): Promise<Cost[]> {
   }
 }
 
-/**
- * Đọc toàn bộ Delegations từ Local Database (hỗ trợ lọc theo năm)
- */
 export async function getLocalDelegations(year?: string): Promise<DelegationGroup[]> {
   try {
     if (!year || year === 'all' || year === 'ALL') {
@@ -343,23 +364,14 @@ export async function getLocalDelegations(year?: string): Promise<DelegationGrou
       return all.filter((d) => !d.isDeleted);
     }
     const strYear = String(year);
-    const numYear = Number(year);
-    const queries = [
-      localDb.delegations.where('year').equals(strYear).toArray().catch(() => []),
-      localDb.delegations.where('projectYear').equals(strYear).toArray().catch(() => []),
-    ];
-    if (!isNaN(numYear)) {
-      queries.push(
-        localDb.delegations.where('projectYear').equals(numYear).toArray().catch(() => [])
-      );
-    }
-    const results = await Promise.all(queries);
+    const keys = Number.isFinite(Number(strYear)) ? [strYear, Number(strYear)] : [strYear];
+    const [byYear, byProjYear] = await Promise.all([
+      localDb.delegations.where('year').anyOf(keys).toArray().catch(() => []),
+      localDb.delegations.where('projectYear').anyOf(keys).toArray().catch(() => []),
+    ]);
     const merged = new Map<string, DelegationGroup>();
-    for (const list of results) {
-      for (const d of list) {
-        if (d && d.id && !d.isDeleted) merged.set(d.id, d);
-      }
-    }
+    for (const d of byYear) if (d && d.id && !d.isDeleted) merged.set(d.id, d);
+    for (const d of byProjYear) if (d && d.id && !d.isDeleted) merged.set(d.id, d);
     return Array.from(merged.values());
   } catch (err) {
     console.warn('[localDb] getLocalDelegations error:', err);

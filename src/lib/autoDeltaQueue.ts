@@ -28,11 +28,26 @@ export const LOGICAL_TO_FS: Record<Logical, string> = {
 
 const FLUSH_DELAY_MS = 1200;
 const MAX_ITEMS_PER_DELTA = 300;
-const EXPLICIT_BEFORE_MS = 5000;
-const EXPLICIT_AFTER_MS = 15000;
+const EXPLICIT_BEFORE_MS = 30000;
+const EXPLICIT_AFTER_MS = 30000;
+const MAX_SAFE_INLINE_BYTES = 25000;
+
+export interface SafeAutoDeltaPayload {
+  data: Record<string, any>;
+  isPatch: boolean;
+}
 
 const explicitMarks = new Map<string, number>();
-const pending = new Map<string, { docId: string; collectionName: Logical; action: 'invalidate' | 'delete'; queuedAt: number }>();
+const pending = new Map<
+  string,
+  {
+    docId: string;
+    collectionName: Logical;
+    action: 'invalidate' | 'delete';
+    queuedAt: number;
+    safePayload?: SafeAutoDeltaPayload;
+  }
+>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 const keyOf = (c: string, id: string) => `${c}:${id}`;
@@ -49,7 +64,10 @@ export function resolveLogicalCollection(docPath: string): Logical | null {
 export function markExplicitDelta(items: Array<{ docId?: string; collectionName?: string }>): void {
   const now = Date.now();
   for (const it of items) {
-    if (it.docId && it.collectionName) explicitMarks.set(keyOf(it.collectionName, it.docId), now);
+    if (it.docId && it.collectionName) {
+      const col = it.collectionName === 'taka_delegation_groups' ? 'taka_delegations' : it.collectionName;
+      explicitMarks.set(keyOf(col, it.docId), now);
+    }
   }
   if (explicitMarks.size > 5000) {
     const cutoff = now - 60000;
@@ -59,18 +77,48 @@ export function markExplicitDelta(items: Array<{ docId?: string; collectionName?
 
 export function unmarkExplicitDelta(items: Array<{ docId?: string; collectionName?: string }>): void {
   for (const it of items) {
-    if (it.docId && it.collectionName) explicitMarks.delete(keyOf(it.collectionName, it.docId));
+    if (it.docId && it.collectionName) {
+      const col = it.collectionName === 'taka_delegation_groups' ? 'taka_delegations' : it.collectionName;
+      explicitMarks.delete(keyOf(col, it.docId));
+    }
   }
 }
 
-export function queueAutoDelta(docPath: string, docId: string, kind: 'write' | 'delete'): void {
+export function queueAutoDelta(
+  docPath: string,
+  docId: string,
+  kind: 'write' | 'delete',
+  safePayload?: SafeAutoDeltaPayload
+): void {
   const collectionName = resolveLogicalCollection(docPath);
   if (!collectionName || !docId) return;
-  pending.set(keyOf(collectionName, docId), {
+
+  let effectiveSafePayload: SafeAutoDeltaPayload | undefined;
+  if (kind === 'write' && safePayload?.data && typeof safePayload.data === 'object') {
+    try {
+      const serialized = JSON.stringify(safePayload.data);
+      if (serialized.length > 2 && serialized.length <= MAX_SAFE_INLINE_BYTES) {
+        effectiveSafePayload = safePayload;
+      }
+    } catch {}
+  }
+
+  const k = keyOf(collectionName, docId);
+  const prev = pending.get(k);
+  let mergedPayload = effectiveSafePayload;
+  if (prev?.safePayload && effectiveSafePayload) {
+    mergedPayload = {
+      data: { ...prev.safePayload.data, ...effectiveSafePayload.data },
+      isPatch: prev.safePayload.isPatch && effectiveSafePayload.isPatch,
+    };
+  }
+
+  pending.set(k, {
     docId,
     collectionName,
     action: kind === 'delete' ? 'delete' : 'invalidate',
     queuedAt: Date.now(),
+    safePayload: kind === 'delete' ? undefined : mergedPayload,
   });
   if (timer) clearTimeout(timer);
   timer = setTimeout(flushAutoDeltas, FLUSH_DELAY_MS);
@@ -83,16 +131,43 @@ async function flushAutoDeltas(): Promise<void> {
 
   const items: TakaDeltaItem[] = [];
   for (const e of entries) {
-    const mark = explicitMarks.get(keyOf(e.collectionName, e.docId));
-    // Delete deltas are cheap and authoritative: always emit. Writes covered by an explicit delta are skipped.
-    if (e.action === 'invalidate' && mark && mark >= e.queuedAt - EXPLICIT_BEFORE_MS && mark <= e.queuedAt + EXPLICIT_AFTER_MS) {
+    const k = keyOf(e.collectionName, e.docId);
+    const mark = explicitMarks.get(k);
+    // Both write and delete deltas covered by an explicit recordDelta/recordBatchDeltas are skipped.
+    if (mark && mark >= e.queuedAt - EXPLICIT_BEFORE_MS && mark <= e.queuedAt + EXPLICIT_AFTER_MS) {
+      explicitMarks.delete(k);
       continue;
     }
-    items.push(
-      e.action === 'delete'
-        ? { docId: e.docId, collectionName: e.collectionName, action: 'delete', data: {} }
-        : { docId: e.docId, collectionName: e.collectionName, action: 'update', data: {}, isPatch: true, invalidate: true }
-    );
+    if (e.action === 'delete') {
+      items.push({ docId: e.docId, collectionName: e.collectionName, action: 'delete', data: {} });
+    } else if (e.safePayload) {
+      const d = e.safePayload.data;
+      const yr = d.year ?? d.projectYear;
+      const pId = d.projectId;
+      const pCode = d.projectCode ?? d.code;
+      const pStore = d.projectStore ?? d.store;
+      items.push({
+        docId: e.docId,
+        collectionName: e.collectionName,
+        action: e.safePayload.isPatch ? 'update' : 'create',
+        isPatch: e.safePayload.isPatch,
+        invalidate: false,
+        data: d,
+        ...(yr !== undefined && yr !== null && String(yr).trim() !== '' ? { year: String(yr).trim() } : {}),
+        ...(pId ? { projectId: String(pId) } : {}),
+        ...(pCode ? { projectCode: String(pCode) } : {}),
+        ...(pStore ? { projectStore: String(pStore) } : {}),
+      });
+    } else {
+      items.push({
+        docId: e.docId,
+        collectionName: e.collectionName,
+        action: 'update',
+        data: {},
+        isPatch: true,
+        invalidate: true,
+      });
+    }
   }
   if (items.length === 0) return;
 

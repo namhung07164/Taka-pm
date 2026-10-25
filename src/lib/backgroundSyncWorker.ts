@@ -386,7 +386,7 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
               if (collectionName === 'taka_delegation_groups') collectionName = 'taka_delegations';
               if (action === 'delete' || data?.isDeleted === true) {
                 await deleteLocalRecord(collectionName, docId);
-              } else if (isPatch === true || (action === 'update' && isPatch !== false && !data?.name && !data?.projectCode && !data?.code)) {
+              } else if (isPatch === true || (action === 'update' && isPatch !== false)) {
                 await patchLocalRecord(collectionName, docId, data || {});
               } else {
                 await upsertLocalRecord(collectionName, { id: docId, ...data });
@@ -454,7 +454,7 @@ let syncCoordinatorTimer: any = null;
  * Khởi chạy Background Sync Coordinator
  * Điều phối đồng bộ hai chiều giữa Dexie Local Engine và Firestore Delta Bus
  */
-export function startBackgroundSyncCoordinator(intervalMs: number = 30000): () => void {
+export function startBackgroundSyncCoordinator(intervalMs: number = 5 * 60 * 1000): () => void {
   if (typeof window === 'undefined') return () => {};
 
   bootstrapLocalStore().catch(() => {});

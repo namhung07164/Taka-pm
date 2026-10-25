@@ -222,16 +222,19 @@ export function useProjectsHydration({
 
   // Sleep/Wake & Network Recovery Listener
   useEffect(() => {
-    const handleSleepWakeRecovery = () => {
-      serverVerifiedProjectYearsInSession.clear();
-      projectsPool.current.forEach((u, key) => {
-        if ((u as any)?.__isDeltaNoop) {
-          projectsPool.current.delete(key);
-        }
-      });
+    const handleSleepWakeRecovery = (e?: Event) => {
+      const elapsedSleepMs = Number((e as CustomEvent)?.detail?.elapsedSleepMs || 0);
+      if (elapsedSleepMs === 0 || elapsedSleepMs > 30 * 60 * 1000) {
+        serverVerifiedProjectYearsInSession.clear();
+        projectsPool.current.forEach((u, key) => {
+          if ((u as any)?.__isDeltaNoop) {
+            projectsPool.current.delete(key);
+          }
+        });
+        setRecoveryTick((prev) => prev + 1);
+      }
       hydrateProjectsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
       pullAndApplyDeltas(undefined, true).catch(() => {});
-      setRecoveryTick((prev) => prev + 1);
     };
 
     window.addEventListener('taka_sleep_wake_recovery', handleSleepWakeRecovery);

@@ -409,8 +409,9 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           }
         }
 
-        // If localDb had partial tasks for this project (e.g. 2 instead of 10) or tasks are requested, fetch missing summary task IDs
-        if (candidateLowerSet.size > 0 || useAppStore.getState().isTasksRequested) {
+        // Only fetch missing summary task IDs when localDb has a PARTIAL task cache for this project (e.g. 2 instead of 10).
+        // Completely uncached projects are handled on-demand when expanded via useTasksHydration.
+        if (candidateLowerSet.size > 0 && candidateLowerSet.size < summaryIds.size) {
           p.taskSummaries.forEach((s: any) => {
             const sId = String(s?.id || '').trim();
             if (!sId || sId.startsWith('ts_')) return;
@@ -425,6 +426,9 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
                 isPatch: true,
                 invalidate: true,
                 year: pYearStr,
+                projectId: p.id ? String(p.id) : undefined,
+                projectCode: p.code ? String(p.code) : undefined,
+                projectStore: p.store ? String(p.store) : undefined,
               });
             }
           });

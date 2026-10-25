@@ -149,9 +149,9 @@ export function startDeltaRealtimeListener(): () => void {
       if (detachTimer) { clearTimeout(detachTimer); detachTimer = null; }
       const hiddenMs = hiddenAt > 0 ? Date.now() - hiddenAt : 0;
       hiddenAt = 0;
-      // On iOS Safari / PWA, backgrounding >= 2s silently freezes WebChannel sockets without firing onError.
+      // On iOS Safari / PWA, backgrounding >= 60s can freeze WebChannel sockets without firing onError.
       // Re-attaching with since = lastSyncTime - OVERLAP_MS only reads new deltas (0 extra reads if none).
-      if (unsub && hiddenMs < 2000) return;
+      if (unsub && hiddenMs < 60000) return;
       scheduleReconnect();
     }
   };

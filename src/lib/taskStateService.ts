@@ -449,6 +449,19 @@ export async function reorderTasksStateUnified(
 
   useAppStore.getState().setTasks(allUpdatedTasks);
 
+  setTimeout(() => {
+    import('./localDb')
+      .then(({ bulkPersistTasks }) => {
+        if (options?.affectedProjectIds && options.affectedProjectIds.length > 0) {
+          const idSet = new Set(options.affectedProjectIds.map(String));
+          const subset = allUpdatedTasks.filter((t) => t.projectId && idSet.has(String(t.projectId)));
+          return bulkPersistTasks(subset.length > 0 ? subset : allUpdatedTasks);
+        }
+        return bulkPersistTasks(allUpdatedTasks);
+      })
+      .catch(() => {});
+  }, 0);
+
   if (options?.syncProjects === false) return;
 
   const allProjects = useAppStore.getState().projects;

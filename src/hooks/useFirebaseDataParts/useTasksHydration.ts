@@ -352,7 +352,7 @@ export function useTasksHydration({
             delegationGroups: useAppStore.getState().delegationGroups || [],
             changedTasks: new Map(),
             removedTasks: new Map(),
-            fromCache: false,
+            fromCache: true,
             knownHydratedProjectCodes: knownHydratedProjectCodes.current,
             tasksPool: tasksPool.current,
           });
@@ -437,18 +437,23 @@ export function useTasksHydration({
       console.warn('[useTasksHydration] runTasksSync error:', err);
     });
 
-    const handleSleepWakeRecovery = () => {
-      knownHydratedProjectCodes.current.clear();
-      tasksPool.current.forEach((u, key) => {
-        if ((u as any)?.__isNoop) {
-          tasksPool.current.delete(key);
+    const handleSleepWakeRecovery = (e?: Event) => {
+      const elapsedSleepMs = Number((e as CustomEvent)?.detail?.elapsedSleepMs || 0);
+      if (elapsedSleepMs === 0 || elapsedSleepMs > 30 * 60 * 1000) {
+        knownHydratedProjectCodes.current.clear();
+        tasksPool.current.forEach((u, key) => {
+          if ((u as any)?.__isNoop) {
+            tasksPool.current.delete(key);
+          }
+        });
+        wakeRefreshCounter.current += 1;
+        if (useAppStore.getState().isTasksRequested) {
+          setWakeTick((prev) => prev + 1);
         }
-      });
-      wakeRefreshCounter.current += 1;
+      }
       if (useAppStore.getState().isTasksRequested) {
         hydrateTasksFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
         pullAndApplyDeltas(undefined, true).catch(() => {});
-        setWakeTick((prev) => prev + 1);
       }
     };
 

@@ -6,10 +6,27 @@ import {
   serverTimestamp,
   type WriteBatch,
 } from 'firebase/firestore';
-import { queueAutoDelta, resolveLogicalCollection } from './autoDeltaQueue';
+import { queueAutoDelta, type SafeAutoDeltaPayload } from './autoDeltaQueue';
 import { removeUndefinedDeep } from './firestoreSanitizer';
-import { deleteLocalRecord } from './localDb';
 import { recordAuditLog } from './auditLogService';
+import { mirrorLocalWrite, buildCleanLocalPayload } from './localMutationMirror';
+
+function extractAutoDeltaPayload(
+  rawData: any,
+  docId: string,
+  isPatch: boolean
+): SafeAutoDeltaPayload | undefined {
+  if (!rawData || typeof rawData !== 'object' || !docId) return undefined;
+  const { cleanCopy, isCompletePlainObject } = buildCleanLocalPayload(rawData, docId);
+  if (!isCompletePlainObject) return undefined;
+  const hasFullIdentity = Boolean(
+    cleanCopy.name || cleanCopy.code || cleanCopy.projectCode || cleanCopy.subTasks
+  );
+  return {
+    data: cleanCopy,
+    isPatch: isPatch && !hasFullIdentity,
+  };
+}
 
 /**
  * Thin drop-in replacements for Firestore write functions that ALSO emit an auto delta
@@ -23,35 +40,42 @@ import { recordAuditLog } from './auditLogService';
 export const setDoc = ((ref: any, data: any, ...rest: any[]) => {
   const cleanData = removeUndefinedDeep(data);
   const isDel = Boolean(cleanData?.isDeleted);
+  const isMerge = Boolean(rest[0]?.merge);
+  const safePayload = !isDel ? extractAutoDeltaPayload(cleanData, ref?.id, isMerge) : undefined;
+
+  mirrorLocalWrite(ref?.path, ref?.id, isDel ? 'delete' : 'set', cleanData, isMerge);
+
   // Inject serverTimestamp for consistency (Rule 15)
   if (cleanData && typeof cleanData === 'object' && !isDel) {
     (cleanData as any).updatedAt = serverTimestamp();
   }
-  
+
   // Audit log for financial/core changes (Rule 4)
   if (ref?.path && (ref.path.includes('taka_projects') || ref.path.includes('taka_costs'))) {
     recordAuditLog({
       action: 'UPDATE',
       docPath: ref.path,
       docId: ref.id,
-      data: cleanData
+      data: cleanData,
     }).catch(() => {});
   }
 
-  if (isDel) {
-    const logical = resolveLogicalCollection(ref?.path);
-    if (logical && ref?.id) deleteLocalRecord(logical, ref.id).catch(() => {});
-  }
   const p = (rawSetDoc as any)(ref, cleanData, ...rest);
-  Promise.resolve(p).then(() => {
-    queueAutoDelta(ref?.path, ref?.id, isDel ? 'delete' : 'write');
-  }).catch(() => {});
+  Promise.resolve(p)
+    .then(() => {
+      queueAutoDelta(ref?.path, ref?.id, isDel ? 'delete' : 'write', safePayload);
+    })
+    .catch(() => {});
   return p;
 }) as typeof rawSetDoc;
 
 export const updateDoc = ((ref: any, data: any, ...rest: any[]) => {
   const cleanData = removeUndefinedDeep(data);
   const isDel = Boolean(cleanData?.isDeleted);
+  const safePayload = !isDel ? extractAutoDeltaPayload(cleanData, ref?.id, true) : undefined;
+
+  mirrorLocalWrite(ref?.path, ref?.id, isDel ? 'delete' : 'update', cleanData, true);
+
   // Inject serverTimestamp for consistency (Rule 15)
   if (cleanData && typeof cleanData === 'object' && !isDel) {
     (cleanData as any).updatedAt = serverTimestamp();
@@ -63,45 +87,50 @@ export const updateDoc = ((ref: any, data: any, ...rest: any[]) => {
       action: 'UPDATE',
       docPath: ref.path,
       docId: ref.id,
-      data: cleanData
+      data: cleanData,
     }).catch(() => {});
   }
 
-  if (isDel) {
-    const logical = resolveLogicalCollection(ref?.path);
-    if (logical && ref?.id) deleteLocalRecord(logical, ref.id).catch(() => {});
-  }
   const p = (rawUpdateDoc as any)(ref, cleanData, ...rest);
-  Promise.resolve(p).then(() => {
-    queueAutoDelta(ref?.path, ref?.id, isDel ? 'delete' : 'write');
-  }).catch(() => {});
+  Promise.resolve(p)
+    .then(() => {
+      queueAutoDelta(ref?.path, ref?.id, isDel ? 'delete' : 'write', safePayload);
+    })
+    .catch(() => {});
   return p;
 }) as typeof rawUpdateDoc;
 
 export const deleteDoc = ((ref: any) => {
-  const logical = resolveLogicalCollection(ref?.path);
-
   // Audit log for financial/core changes (Rule 4)
   if (ref?.path && (ref.path.includes('taka_projects') || ref.path.includes('taka_costs'))) {
     recordAuditLog({
       action: 'DELETE',
       docPath: ref.path,
       docId: ref.id,
-      data: { isDeleted: true }
+      data: { isDeleted: true },
     }).catch(() => {});
   }
 
-  if (logical && ref?.id) deleteLocalRecord(logical, ref.id).catch(() => {});
+  mirrorLocalWrite(ref?.path, ref?.id, 'delete');
   const p = rawDeleteDoc(ref);
-  Promise.resolve(p).then(() => {
-    queueAutoDelta(ref?.path, ref?.id, 'delete');
-  }).catch(() => {});
+  Promise.resolve(p)
+    .then(() => {
+      queueAutoDelta(ref?.path, ref?.id, 'delete');
+    })
+    .catch(() => {});
   return p;
 }) as typeof rawDeleteDoc;
 
 export function writeBatch(dbInstance: any): WriteBatch {
   const batch: any = rawWriteBatch(dbInstance);
-  const ops: Array<{ ref: any; kind: 'write' | 'delete'; isDeleted?: boolean }> = [];
+  const ops: Array<{
+    ref: any;
+    kind: 'set' | 'update' | 'delete';
+    isDeleted?: boolean;
+    rawData?: any;
+    isMerge?: boolean;
+    safePayload?: SafeAutoDeltaPayload;
+  }> = [];
   const origSet = batch.set.bind(batch);
   const origUpdate = batch.update.bind(batch);
   const origDelete = batch.delete.bind(batch);
@@ -109,35 +138,55 @@ export function writeBatch(dbInstance: any): WriteBatch {
 
   batch.set = (ref: any, data: any, ...rest: any[]) => {
     const cleanData = removeUndefinedDeep(data);
-    if (cleanData && typeof cleanData === 'object' && !cleanData.isDeleted) {
+    const isDel = Boolean(cleanData?.isDeleted);
+    const isMerge = Boolean(rest[0]?.merge);
+    const rawSnapshot = cleanData && typeof cleanData === 'object' ? { ...cleanData } : cleanData;
+    const safePayload = !isDel ? extractAutoDeltaPayload(rawSnapshot, ref?.id, isMerge) : undefined;
+    if (cleanData && typeof cleanData === 'object' && !isDel) {
       (cleanData as any).updatedAt = serverTimestamp();
     }
-    ops.push({ ref, kind: 'write', isDeleted: !!cleanData?.isDeleted });
+    ops.push({ ref, kind: 'set', isDeleted: isDel, rawData: rawSnapshot, isMerge, safePayload });
     return origSet(ref, cleanData, ...rest);
   };
   batch.update = (ref: any, data: any, ...rest: any[]) => {
     const cleanData = removeUndefinedDeep(data);
-    if (cleanData && typeof cleanData === 'object' && !cleanData.isDeleted) {
+    const isDel = Boolean(cleanData?.isDeleted);
+    const rawSnapshot = cleanData && typeof cleanData === 'object' ? { ...cleanData } : cleanData;
+    const safePayload = !isDel ? extractAutoDeltaPayload(rawSnapshot, ref?.id, true) : undefined;
+    if (cleanData && typeof cleanData === 'object' && !isDel) {
       (cleanData as any).updatedAt = serverTimestamp();
     }
-    ops.push({ ref, kind: 'write', isDeleted: !!cleanData?.isDeleted });
+    ops.push({ ref, kind: 'update', isDeleted: isDel, rawData: rawSnapshot, isMerge: true, safePayload });
     return origUpdate(ref, cleanData, ...rest);
   };
-  batch.delete = (ref: any) => { ops.push({ ref, kind: 'delete' }); return origDelete(ref); };
+  batch.delete = (ref: any) => {
+    ops.push({ ref, kind: 'delete', isDeleted: true });
+    return origDelete(ref);
+  };
   batch.commit = () => {
     ops.forEach((o) => {
-      if (o.kind === 'delete' || o.isDeleted) {
-        const logical = resolveLogicalCollection(o.ref?.path);
-        if (logical && o.ref?.id) deleteLocalRecord(logical, o.ref.id).catch(() => {});
-      }
+      mirrorLocalWrite(
+        o.ref?.path,
+        o.ref?.id,
+        o.kind === 'delete' || o.isDeleted ? 'delete' : o.kind,
+        o.rawData,
+        o.isMerge
+      );
     });
     const p = origCommit();
     // Queue auto-delta after server commit resolves so explicit recordBatchDeltas right after await batch.commit() cancels it
-    Promise.resolve(p).then(() => {
-      ops.forEach((o) => {
-        queueAutoDelta(o.ref?.path, o.ref?.id, (o.kind === 'delete' || o.isDeleted) ? 'delete' : 'write');
-      });
-    }).catch(() => {});
+    Promise.resolve(p)
+      .then(() => {
+        ops.forEach((o) => {
+          queueAutoDelta(
+            o.ref?.path,
+            o.ref?.id,
+            o.kind === 'delete' || o.isDeleted ? 'delete' : 'write',
+            o.safePayload
+          );
+        });
+      })
+      .catch(() => {});
     return p;
   };
   return batch as WriteBatch;

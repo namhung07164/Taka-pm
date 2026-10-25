@@ -61,25 +61,25 @@ function isRelevant(item: TakaDeltaItem, nowMs: number): boolean {
   const RECENT_SNAPSHOT_WINDOW_MS = 1500;
 
   if (item.collectionName === 'taka_costs') {
-    if (!store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
+    const existing = store.costs?.find((c) => c.id === item.docId);
+    if (!store.isCostsRequested && !existing) {
       queueDeferredInvalidation(item);
       return false;
     }
-    const existing = store.costs?.find((c) => c.id === item.docId);
     if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_delegations') {
-    if (!store.isDelegationsRequested && (!store.delegationGroups || store.delegationGroups.length === 0)) {
+    const existing = store.delegationGroups?.find((d) => d.id === item.docId);
+    if (!store.isDelegationsRequested && !existing) {
       queueDeferredInvalidation(item);
       return false;
     }
-    const existing = store.delegationGroups?.find((d) => d.id === item.docId);
     if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_tasks') {
-    if (!store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
+    const existing = store.tasks?.find((t) => t.id === item.docId);
+    if (!store.isTasksRequested && !existing) {
       queueDeferredInvalidation(item);
       return false;
     }
-    const existing = store.tasks?.find((t) => t.id === item.docId);
     if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_projects') {
     const existing = store.projects?.find((p) => p.id === item.docId);
@@ -154,10 +154,26 @@ export async function resolveInvalidations(items: TakaDeltaItem[]): Promise<Taka
               collectionName: it.collectionName,
               action: 'delete',
               isPatch: false,
-              data: { id: it.docId, isDeleted: true },
+              data: {
+                id: it.docId,
+                isDeleted: true,
+                ...(it.projectId ? { projectId: it.projectId } : {}),
+                ...(it.projectCode ? { projectCode: it.projectCode } : {}),
+                ...(it.projectStore ? { projectStore: it.projectStore } : {}),
+                ...(it.year ? { projectYear: it.year } : {}),
+              },
+              year: it.year,
+              projectId: it.projectId,
+              projectCode: it.projectCode,
+              projectStore: it.projectStore,
             };
           }
           const data = snap.data() as Record<string, any>;
+          const resolvedYear = String(data.year || data.projectYear || it.year || '');
+          const resolvedProjectId = data.projectId ? String(data.projectId) : it.projectId;
+          const resolvedProjectCode = data.projectCode ? String(data.projectCode) : (data.code ? String(data.code) : it.projectCode);
+          const resolvedProjectStore = data.projectStore ? String(data.projectStore) : (data.store ? String(data.store) : it.projectStore);
+
           if (data?.isDeleted) {
             return {
               docId: it.docId,
@@ -165,6 +181,10 @@ export async function resolveInvalidations(items: TakaDeltaItem[]): Promise<Taka
               action: 'delete',
               isPatch: false,
               data: { id: it.docId, isDeleted: true, ...data },
+              year: resolvedYear || undefined,
+              projectId: resolvedProjectId,
+              projectCode: resolvedProjectCode,
+              projectStore: resolvedProjectStore,
             };
           }
           return {
@@ -173,7 +193,10 @@ export async function resolveInvalidations(items: TakaDeltaItem[]): Promise<Taka
             action: 'create',
             isPatch: false,
             data: { id: it.docId, ...data },
-            year: String(data.year || data.projectYear || it.year || ''),
+            year: resolvedYear,
+            projectId: resolvedProjectId,
+            projectCode: resolvedProjectCode,
+            projectStore: resolvedProjectStore,
           };
         } catch (err) {
           console.warn('[deltaSync] Failed to re-read invalidated doc:', it.collectionName, it.docId, err);
