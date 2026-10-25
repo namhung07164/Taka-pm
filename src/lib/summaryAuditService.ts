@@ -176,17 +176,41 @@ export async function runSummaryAudit(onProgress?: (msg: string) => void): Promi
 
     const summaries: any[] = Array.isArray(p.taskSummaries) ? (p.taskSummaries as any[]) : [];
     const summaryIds = new Set<string>();
+    const summaryById = new Map<string, any>();
     let noIdEntries = 0;
     summaries.forEach((s) => {
-      if (s && s.id) summaryIds.add(String(s.id));
-      else noIdEntries++;
+      if (s && s.id) {
+        const sid = String(s.id);
+        summaryIds.add(sid);
+        summaryById.set(sid, s);
+      } else {
+        noIdEntries++;
+      }
+    });
+
+    const computedForAudit = owned.length > 0 ? calculateProjectComputedDates(p, owned, st.delegationGroups || []) : null;
+    const expectedSummaries = computedForAudit?.taskSummaries || [];
+    const hasParentOrRollupDrift = expectedSummaries.some((es: any) => {
+      if (!es?.id) return false;
+      const cur = summaryById.get(String(es.id));
+      if (!cur) return true;
+      return (
+        (cur.parentTaskId || '') !== (es.parentTaskId || '') ||
+        Boolean(cur.isModularParent) !== Boolean(es.isModularParent) ||
+        (cur.start || '') !== (es.start || '') ||
+        (cur.finish || '') !== (es.finish || '')
+      );
     });
 
     const missingInSummary = [...expectedSummaryIds].filter((id) => !summaryIds.has(id));
     const ghostInSummary = [...summaryIds].filter((id) => !ownedIds.has(id));
     const countMismatch = Number(p.taskCount ?? 0) !== owned.length;
     const summaryIssue =
-      missingInSummary.length > 0 || ghostInSummary.length > 0 || noIdEntries > 0 || countMismatch;
+      missingInSummary.length > 0 ||
+      ghostInSummary.length > 0 ||
+      noIdEntries > 0 ||
+      countMismatch ||
+      hasParentOrRollupDrift;
 
     const localOwned = localOwner.get(pid) || [];
     const localIds = new Set(localOwned.map((t) => t.id));

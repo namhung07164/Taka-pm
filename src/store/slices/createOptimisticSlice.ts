@@ -2,6 +2,7 @@ import { StateCreator } from "zustand";
 import { Task, Cost, Project } from "../../types";
 import { AppState, OptimisticSlice } from "../storeTypes";
 import { deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
+import { rollupParentTaskDatesAndStatus } from "../../lib/taskRollupService";
 
 export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSlice> = (set) => ({
   optimisticUpdateTasks: (updatedTasks) => set((state) => {
@@ -33,22 +34,23 @@ export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSli
     ) as Task[];
 
     if (newTasks.length === 0 && !hasIdentityOrNameChange) {
-      return { tasks: mapped };
+      return { tasks: rollupParentTaskDatesAndStatus(mapped, state.delegationGroups) };
     }
 
     const combined = newTasks.length > 0 ? [...mapped, ...newTasks] : mapped;
     const { dedupedTasks } = deduplicateTasksInMemory(combined, state.projects);
 
     return {
-      tasks: dedupedTasks
+      tasks: rollupParentTaskDatesAndStatus(dedupedTasks, state.delegationGroups)
     };
   }),
 
   optimisticDeleteTasks: (taskIds) => set((state) => {
     if (!taskIds || taskIds.length === 0) return state;
     const idSet = new Set(taskIds.map(String));
+    const remaining = state.tasks.filter(t => !idSet.has(String(t.id)));
     return {
-      tasks: state.tasks.filter(t => !idSet.has(String(t.id)))
+      tasks: rollupParentTaskDatesAndStatus(remaining, state.delegationGroups)
     };
   }),
 

@@ -442,18 +442,15 @@ export function healProjectsAfterTasksBatch(params: {
         : workingProj;
 
     const computed = calculateProjectComputedDates(baseProjForCalc, pTasks, delegationGroups);
-    const existingSig = (workingProj.taskSummaries || [])
-      .map(
-        (s: any) =>
-          `${s.id || ''}:${s.name || ''}:${s.start || ''}:${s.finish || ''}:${s.parentTaskId || ''}`
-      )
-      .join('|');
-    const computedSig = (computed.taskSummaries || [])
-      .map(
-        (s: any) =>
-          `${s.id || ''}:${s.name || ''}:${s.start || ''}:${s.finish || ''}:${s.parentTaskId || ''}`
-      )
-      .join('|');
+    const toSig = (list: any[]) =>
+      (list || [])
+        .map(
+          (s: any) =>
+            `${s.id || ''}:${s.name || ''}:${s.start || ''}:${s.finish || ''}:${s.duration ?? ''}:${s.parentTaskId || ''}:${s.isModularParent ? '1' : '0'}:${s.runningStatus || ''}:${s.approval || ''}:${s.party || ''}:${s.predecessor || ''}:${s.orderIndex ?? ''}`
+        )
+        .join('|');
+    const existingSig = toSig(workingProj.taskSummaries || []);
+    const computedSig = toSig(computed.taskSummaries || []);
     const hasStructuralChange =
       workingProj.taskCount !== computed.taskCount ||
       !workingProj.taskSummaries ||

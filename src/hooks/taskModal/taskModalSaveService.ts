@@ -386,22 +386,6 @@ export async function executeTaskSave({
       }
     });
 
-    const isNewTask = !task;
-    const oldAny = (task || {}) as any;
-    const newAny = dataToSave as any;
-    const datesOrStatusChanged =
-      isNewTask ||
-      task?.start !== dataToSave.start ||
-      task?.finish !== dataToSave.finish ||
-      task?.runningStatus !== dataToSave.runningStatus ||
-      task?.approval !== dataToSave.approval ||
-      Boolean(oldAny.isCompleted) !== Boolean(newAny.isCompleted) ||
-      (oldAny.status || '') !== (newAny.status || '') ||
-      task?.projectCode !== dataToSave.projectCode ||
-      task?.projectStore !== dataToSave.projectStore ||
-      task?.projectYear !== dataToSave.projectYear ||
-      depUpdates.length > 0;
-
     // 1. Optimistic in-memory update into Zustand Store (0ms instant UI reaction)
     useAppStore.getState().optimisticUpdateTasks(optimisticList);
 
@@ -428,17 +412,20 @@ export async function executeTaskSave({
         await batch.commit();
         recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
 
-        // Background Dexie persistence & project summarization
-        saveTaskStateUnified(optimisticList, { syncProjects: true }).catch(() => {});
+        // Background Dexie persistence & project summarization (syncs target project & parent rollups)
+        await saveTaskStateUnified(optimisticList, { syncProjects: true }).catch(() => {});
 
-        if (datesOrStatusChanged) {
+        // If task moved from an older project/store/year, also resync the previous project's taskSummaries
+        if (
+          task &&
+          (task.projectId !== dataToSave.projectId ||
+            task.projectCode !== dataToSave.projectCode ||
+            task.projectStore !== dataToSave.projectStore ||
+            task.projectYear !== dataToSave.projectYear)
+        ) {
           const allTasksCurrent = useAppStore.getState().tasks;
-          const targetProjId = dataToSave.projectId ? String(dataToSave.projectId) : (currentProject?.id ? String(currentProject.id) : undefined);
-          syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear, allTasksCurrent, targetProjId);
-          if (task && (task.projectCode !== dataToSave.projectCode || task.projectStore !== dataToSave.projectStore || task.projectYear !== dataToSave.projectYear)) {
-            const oldProjId = task.projectId ? String(task.projectId) : targetProjId;
-            syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent, oldProjId);
-          }
+          const oldProjId = task.projectId ? String(task.projectId) : undefined;
+          syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent, oldProjId);
         }
       } catch (error: any) {
         console.error("Background task save failed:", error);

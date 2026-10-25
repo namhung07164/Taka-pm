@@ -209,29 +209,28 @@ export function calculateProjectComputedDates(
   const rolledUpProjTasks = rollupParentTaskDatesAndStatus(normalizedTasks, delegationGroups);
   const sortedProjTasks = sortGroupTasks(rolledUpProjTasks);
 
-  const taskSummariesRaw = sortedProjTasks
-    .map((t, idx) => {
-      const summary: {
-        name: string;
-        start: string;
-        finish: string;
-        [key: string]: any;
-      } = {
-        name: (t.name && String(t.name).trim()) ? t.name : (t.taskCodePhu || 'Task'),
-        start: t.start || '',
-        finish: t.finish || '',
-        orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
-      };
-      if (t.id) summary.id = t.id;
-      if (t.duration !== undefined && t.duration !== null) summary.duration = t.duration;
-      if (t.parentTaskId) summary.parentTaskId = t.parentTaskId;
-      if (t.taskCodePhu) summary.taskCodePhu = t.taskCodePhu;
-      if (t.runningStatus) summary.runningStatus = t.runningStatus;
-      if (t.approval) summary.approval = t.approval;
-      if (t.party) summary.party = t.party;
-      if (t.delegation !== undefined) summary.delegation = t.delegation;
-      return summary;
-    });
+  const taskSummariesRaw = sortedProjTasks.map((t, idx) => {
+    const summary: Record<string, any> = {
+      name: (t.name && String(t.name).trim()) ? t.name : (t.taskCodePhu || 'Task'),
+      start: t.start || '',
+      finish: t.finish || '',
+      orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
+    };
+    if (t.id) summary.id = t.id;
+    if (t.duration !== undefined && t.duration !== null) summary.duration = t.duration;
+    if (t.parentTaskId) summary.parentTaskId = t.parentTaskId;
+    if (t.isModularParent) summary.isModularParent = true;
+    if (t.taskCodePhu) summary.taskCodePhu = t.taskCodePhu;
+    if (t.runningStatus) summary.runningStatus = t.runningStatus;
+    if (t.approval) summary.approval = t.approval;
+    if (t.party) summary.party = t.party;
+    if (t.delegation !== undefined) summary.delegation = t.delegation;
+    if (t.predecessor) summary.predecessor = t.predecessor;
+    if (Array.isArray(t.predecessorTaskIds) && t.predecessorTaskIds.length > 0) summary.predecessorTaskIds = t.predecessorTaskIds;
+    if (t.baselineStart) summary.baselineStart = t.baselineStart;
+    if (t.baselineFinish) summary.baselineFinish = t.baselineFinish;
+    return summary;
+  });
 
   const taskSummaries = rollupTaskSummaries(taskSummariesRaw);
 
@@ -336,7 +335,7 @@ export async function syncProjectDatesToFirestore(
       (list || [])
         .map(
           (s: any) =>
-            `${s?.id || ""}:${s?.name || ""}:${s?.start || ""}:${s?.finish || ""}:${s?.duration ?? ""}:${s?.parentTaskId || ""}:${s?.taskCodePhu || ""}:${s?.runningStatus || ""}:${s?.approval || ""}:${s?.party || ""}:${s?.delegation ?? ""}:${s?.orderIndex ?? ""}`
+            `${s?.id || ""}:${s?.name || ""}:${s?.start || ""}:${s?.finish || ""}:${s?.duration ?? ""}:${s?.parentTaskId || ""}:${s?.isModularParent ? "1" : "0"}:${s?.taskCodePhu || ""}:${s?.runningStatus || ""}:${s?.approval || ""}:${s?.party || ""}:${s?.delegation ?? ""}:${s?.predecessor || ""}:${s?.orderIndex ?? ""}`
         )
         .join("|");
 

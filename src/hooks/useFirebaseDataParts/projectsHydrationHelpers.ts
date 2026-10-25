@@ -231,12 +231,19 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
         if (!isRecentlyEditedLocally) {
           const localParent = localT.parentTaskId || undefined;
           const localParentLower = localParent ? String(localParent).trim().toLowerCase() : '';
+          const isModernSummary =
+            s.orderIndex !== undefined ||
+            s.runningStatus !== undefined ||
+            s.isModularParent !== undefined ||
+            'parentTaskId' in s;
           const sParent =
             s.parentTaskId !== undefined && s.parentTaskId !== null && String(s.parentTaskId).trim() !== ''
               ? s.parentTaskId
-              : localParentLower && serverSummaryIds.has(localParentLower)
-                ? localParent
-                : undefined;
+              : isModernSummary
+                ? undefined
+                : localParentLower && serverSummaryIds.has(localParentLower)
+                  ? localParent
+                  : undefined;
           const summaryDiffers =
             (s.name !== undefined && s.name !== localT.name) ||
             (s.start !== undefined && s.start !== localT.start) ||
@@ -244,6 +251,8 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
             (s.runningStatus !== undefined && s.runningStatus !== localT.runningStatus) ||
             (s.approval !== undefined && s.approval !== localT.approval) ||
             (s.party !== undefined && s.party !== localT.party) ||
+            (s.isModularParent !== undefined && Boolean(s.isModularParent) !== Boolean(localT.isModularParent)) ||
+            (s.predecessor !== undefined && s.predecessor !== localT.predecessor) ||
             sParent !== localParent;
           if (summaryDiffers) {
             if (s.name !== undefined) localT.name = s.name;
@@ -252,6 +261,10 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
             if (s.runningStatus !== undefined) localT.runningStatus = s.runningStatus;
             if (s.approval !== undefined) localT.approval = s.approval;
             if (s.party !== undefined) localT.party = s.party;
+            if (s.duration !== undefined) localT.duration = String(s.duration);
+            if (s.isModularParent !== undefined) localT.isModularParent = Boolean(s.isModularParent);
+            if (s.predecessor !== undefined) localT.predecessor = s.predecessor;
+            if (s.predecessorTaskIds !== undefined) localT.predecessorTaskIds = s.predecessorTaskIds;
             localT.parentTaskId = sParent;
             if (!sParent) delete (localT as any).parentId;
           }
@@ -356,17 +369,26 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
             if (s) {
               const tParent = t.parentTaskId || undefined;
               const tParentLower = tParent ? String(tParent).trim().toLowerCase() : '';
+              const isModernSummary =
+                s.orderIndex !== undefined ||
+                s.runningStatus !== undefined ||
+                s.isModularParent !== undefined ||
+                'parentTaskId' in s;
               const sParent =
                 s.parentTaskId !== undefined && s.parentTaskId !== null && String(s.parentTaskId).trim() !== ''
                   ? s.parentTaskId
-                  : tParentLower && summaryIds.has(tParentLower)
-                    ? tParent
-                    : undefined;
+                  : isModernSummary
+                    ? undefined
+                    : tParentLower && summaryIds.has(tParentLower)
+                      ? tParent
+                      : undefined;
               const needsPatch =
                 (s.name !== undefined && s.name !== t.name) ||
                 (s.start !== undefined && s.start !== t.start) ||
                 (s.finish !== undefined && s.finish !== t.finish) ||
                 (s.runningStatus !== undefined && s.runningStatus !== t.runningStatus) ||
+                (s.isModularParent !== undefined && Boolean(s.isModularParent) !== Boolean(t.isModularParent)) ||
+                (s.predecessor !== undefined && s.predecessor !== t.predecessor) ||
                 sParent !== tParent;
               if (needsPatch) {
                 await patchLocalRecord('taka_tasks', tid, {
@@ -376,6 +398,9 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
                   ...(s.runningStatus !== undefined ? { runningStatus: s.runningStatus } : {}),
                   ...(s.duration !== undefined ? { duration: s.duration } : {}),
                   ...(s.orderIndex !== undefined ? { orderIndex: s.orderIndex } : {}),
+                  ...(s.isModularParent !== undefined ? { isModularParent: Boolean(s.isModularParent) } : {}),
+                  ...(s.predecessor !== undefined ? { predecessor: s.predecessor } : {}),
+                  ...(s.predecessorTaskIds !== undefined ? { predecessorTaskIds: s.predecessorTaskIds } : {}),
                   parentTaskId: sParent ?? null,
                   parentId: sParent ?? null,
                 });

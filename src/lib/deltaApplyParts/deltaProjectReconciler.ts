@@ -1,6 +1,7 @@
 import { Project, Task, DelegationGroup } from '../../types';
 import { localDb } from '../localDb';
 import { getTasksForProject, calculateProjectComputedDates } from '../projectDatesService';
+import { rollupTaskSummaries } from '../taskRollupHelpers';
 import { markTasksDeleted } from '../taskDeletedTracker';
 import { runBackgroundDexieProjectTaskReconciliation } from '../../hooks/useFirebaseDataParts/projectsHydrationHelpers';
 
@@ -140,13 +141,19 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
       if (s && !isRecentLocal) {
         const tParent = t.parentTaskId || undefined;
         const tParentLower = tParent ? String(tParent).trim().toLowerCase() : '';
-        // Only overwrite local parentTaskId if summary explicitly has a parentTaskId or if local parentTaskId no longer exists in validIdsLower
+        const isModernSummary =
+          s.orderIndex !== undefined ||
+          s.runningStatus !== undefined ||
+          s.isModularParent !== undefined ||
+          'parentTaskId' in s;
         const sParent =
           s.parentTaskId !== undefined && s.parentTaskId !== null && String(s.parentTaskId).trim() !== ''
             ? s.parentTaskId
-            : tParentLower && validIdsLower.has(tParentLower)
-              ? tParent
-              : undefined;
+            : isModernSummary
+              ? undefined
+              : tParentLower && validIdsLower.has(tParentLower)
+                ? tParent
+                : undefined;
         const summaryDiffers =
           (s.name !== undefined && s.name !== t.name) ||
           (s.start !== undefined && s.start !== t.start) ||
@@ -155,6 +162,8 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
           (s.approval !== undefined && s.approval !== t.approval) ||
           (s.party !== undefined && s.party !== t.party) ||
           (s.duration !== undefined && s.duration !== t.duration) ||
+          (s.isModularParent !== undefined && Boolean(s.isModularParent) !== Boolean(t.isModularParent)) ||
+          (s.predecessor !== undefined && s.predecessor !== t.predecessor) ||
           sParent !== tParent;
         if (summaryDiffers) {
           const patched: Task = {
@@ -167,6 +176,9 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
             ...(s.party !== undefined ? { party: s.party } : {}),
             ...(s.duration !== undefined ? { duration: s.duration } : {}),
             ...(s.orderIndex !== undefined ? { orderIndex: s.orderIndex } : {}),
+            ...(s.isModularParent !== undefined ? { isModularParent: Boolean(s.isModularParent) } : {}),
+            ...(s.predecessor !== undefined ? { predecessor: s.predecessor } : {}),
+            ...(s.predecessorTaskIds !== undefined ? { predecessorTaskIds: s.predecessorTaskIds } : {}),
             parentTaskId: sParent,
           };
           if (!sParent) delete (patched as any).parentId;
@@ -307,6 +319,9 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
       ...(mergedTask.duration !== undefined ? { duration: mergedTask.duration } : {}),
       ...(mergedTask.runningStatus !== undefined ? { runningStatus: mergedTask.runningStatus } : {}),
       ...(mergedTask.delegation !== undefined ? { delegation: mergedTask.delegation } : {}),
+      ...(mergedTask.isModularParent !== undefined ? { isModularParent: mergedTask.isModularParent } : {}),
+      ...(mergedTask.predecessor !== undefined ? { predecessor: mergedTask.predecessor } : {}),
+      ...(mergedTask.predecessorTaskIds !== undefined ? { predecessorTaskIds: mergedTask.predecessorTaskIds } : {}),
     };
     const explicitParentUnset =
       (mergedTask as any).parentTaskId === null ||
@@ -325,21 +340,23 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
 
     if (sIdx !== -1) {
       currentSummaries[sIdx] = summaryItem;
+      const rolledSummaries = rollupTaskSummaries(currentSummaries);
       anyProjectChanged = true;
       if (p.id && touchedProjectIds) touchedProjectIds.add(String(p.id));
       updatedProjects[pIdx] = {
         ...p,
-        taskSummaries: currentSummaries,
-        taskCount: currentSummaries.length,
+        taskSummaries: rolledSummaries,
+        taskCount: rolledSummaries.length,
       };
     } else if (action === 'create' || action === 'update') {
       currentSummaries.push(summaryItem);
+      const rolledSummaries = rollupTaskSummaries(currentSummaries);
       anyProjectChanged = true;
       if (p.id && touchedProjectIds) touchedProjectIds.add(String(p.id));
       updatedProjects[pIdx] = {
         ...p,
-        taskSummaries: currentSummaries,
-        taskCount: currentSummaries.length,
+        taskSummaries: rolledSummaries,
+        taskCount: rolledSummaries.length,
       };
     }
   });
@@ -426,6 +443,9 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
               party: s.party,
               taskCodePhu: s.taskCodePhu,
               parentTaskId: s.parentTaskId,
+              isModularParent: s.isModularParent,
+              predecessor: s.predecessor,
+              predecessorTaskIds: s.predecessorTaskIds,
               duration: s.duration ?? 0,
               runningStatus: s.runningStatus,
               delegation: s.delegation,

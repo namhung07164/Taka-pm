@@ -11,6 +11,7 @@ import {
   computeProjectActStatus,
 } from "./progressAndStatusUtils";
 import { resolveMatchedUnitSizeM2 } from "../unitSizeResolver";
+import { rollupTaskSummaries } from "../taskRollupHelpers";
 import { useDataStore } from "../../components/PictureMapping/DataContext";
 
 // Module-level cache for zero-cost multi-component calls to enrichProjects
@@ -210,47 +211,61 @@ export function enrichProjects(
 
     let taskSummaries: any[];
     if (isAuthoritativeRealTasks) {
-      taskSummaries = sortedProjTasks.filter(t => Boolean(t.name)).map((t, idx) => ({
-        id: t.id,
-        name: t.name!,
-        start: t.start || '',
-        finish: t.finish || '',
-        orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
-        duration: t.duration,
-        parentTaskId: t.parentTaskId,
-        taskCodePhu: t.taskCodePhu,
-        runningStatus: t.runningStatus,
-        approval: t.approval,
-        party: t.party
-      }));
+      taskSummaries = rollupTaskSummaries(
+        sortedProjTasks.filter(t => Boolean(t.name)).map((t, idx) => ({
+          id: t.id,
+          name: t.name!,
+          start: t.start || '',
+          finish: t.finish || '',
+          orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
+          duration: t.duration,
+          parentTaskId: t.parentTaskId,
+          isModularParent: t.isModularParent,
+          taskCodePhu: t.taskCodePhu,
+          runningStatus: t.runningStatus,
+          approval: t.approval,
+          party: t.party,
+          delegation: t.delegation,
+          predecessor: t.predecessor,
+          predecessorTaskIds: t.predecessorTaskIds,
+          baselineStart: t.baselineStart,
+          baselineFinish: t.baselineFinish,
+        }))
+      );
     } else if (sortedProjTasks.length > 0 && filteredExistingSummaries.length > sortedProjTasks.length) {
       const realById = new Map<string, Task>();
       sortedProjTasks.forEach(t => {
         if (t.id) realById.set(String(t.id).trim().toLowerCase(), t);
       });
-      taskSummaries = filteredExistingSummaries.map((es: any, idx: number) => {
-        const esId = es?.id ? String(es.id).trim().toLowerCase() : '';
-        const matchedReal = esId ? realById.get(esId) : undefined;
-        if (matchedReal) {
-          return {
-            ...es,
-            id: matchedReal.id,
-            name: matchedReal.name || es.name,
-            start: matchedReal.start || es.start || '',
-            finish: matchedReal.finish || es.finish || '',
-            orderIndex: matchedReal.orderIndex !== undefined ? matchedReal.orderIndex : (es.orderIndex ?? idx),
-            duration: matchedReal.duration ?? es.duration,
-            parentTaskId: matchedReal.parentTaskId ?? es.parentTaskId,
-            taskCodePhu: matchedReal.taskCodePhu ?? es.taskCodePhu,
-            runningStatus: matchedReal.runningStatus ?? es.runningStatus,
-            approval: matchedReal.approval ?? es.approval,
-            party: matchedReal.party ?? es.party,
-          };
-        }
-        return es;
-      });
+      taskSummaries = rollupTaskSummaries(
+        filteredExistingSummaries.map((es: any, idx: number) => {
+          const esId = es?.id ? String(es.id).trim().toLowerCase() : '';
+          const matchedReal = esId ? realById.get(esId) : undefined;
+          if (matchedReal) {
+            return {
+              ...es,
+              id: matchedReal.id,
+              name: matchedReal.name || es.name,
+              start: matchedReal.start || es.start || '',
+              finish: matchedReal.finish || es.finish || '',
+              orderIndex: matchedReal.orderIndex !== undefined ? matchedReal.orderIndex : (es.orderIndex ?? idx),
+              duration: matchedReal.duration ?? es.duration,
+              parentTaskId: matchedReal.parentTaskId,
+              isModularParent: matchedReal.isModularParent ?? es.isModularParent,
+              taskCodePhu: matchedReal.taskCodePhu ?? es.taskCodePhu,
+              runningStatus: matchedReal.runningStatus ?? es.runningStatus,
+              approval: matchedReal.approval ?? es.approval,
+              party: matchedReal.party ?? es.party,
+              delegation: matchedReal.delegation ?? es.delegation,
+              predecessor: matchedReal.predecessor ?? es.predecessor,
+              predecessorTaskIds: matchedReal.predecessorTaskIds ?? es.predecessorTaskIds,
+            };
+          }
+          return es;
+        })
+      );
     } else {
-      taskSummaries = filteredExistingSummaries;
+      taskSummaries = rollupTaskSummaries(filteredExistingSummaries);
     }
 
     let computedTakStart = p.computedTakStart || p.start;
