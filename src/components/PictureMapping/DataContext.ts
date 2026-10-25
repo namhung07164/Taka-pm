@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { UnitShape, MapVersion } from './components/DataMapping/types';
 import { useAppStore } from '../../store/useAppStore';
+import { saveLayoutConfigToDisk, getCachedLayoutConfigFromDisk } from '../../lib/layoutConfigCache';
 
 export interface StoreLocationRecord {
   mapUnits: UnitShape[];
@@ -37,15 +38,18 @@ export function autoBackupStoreLocationData(data: Record<string, StoreLocationRe
   if (typeof window === 'undefined') return;
   if (backupTimeout) clearTimeout(backupTimeout);
   backupTimeout = setTimeout(() => {
+    const backupObj = {
+      storeLocationData: data,
+      store,
+      location,
+      activeMapVersionId,
+      updatedAt: Date.now(),
+      timestamp: Date.now(),
+    };
+    // Always persist to unlimited Disk Cache (IndexedDB + CacheStorage API)
+    saveLayoutConfigToDisk(backupObj).catch(() => {});
     try {
-      const payload = JSON.stringify({
-        storeLocationData: data,
-        store,
-        location,
-        activeMapVersionId,
-        updatedAt: Date.now(),
-      });
-      // Safety guard: Chrome localStorage limit is ~5MB. Cap single backup at 1MB to prevent QuotaExceededError
+      const payload = JSON.stringify(backupObj);
       if (payload.length < 1000000) {
         localStorage.setItem('taka_mapping_config_backup', payload);
       } else {
@@ -54,7 +58,7 @@ export function autoBackupStoreLocationData(data: Record<string, StoreLocationRe
     } catch (e) {
       try { localStorage.removeItem('taka_mapping_config_backup'); } catch (_) {}
     }
-  }, 1500);
+  }, 800);
 }
 
 interface DataStoreState {
@@ -679,6 +683,29 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       ...(payload.basePlan ? { basePlan: payload.basePlan } : {}),
       ...(payload.units ? { units: payload.units } : {}),
     });
+
+    saveLayoutConfigToDisk({
+      ...payload,
+      storeLocationData,
+      store: activeStore,
+      location: activeLoc,
+      activeMapVersionId: targetActiveVerId,
+    }).catch(() => {});
   },
 }));
+
+// Hydrate useDataStore from Persistent Disk Cache (CacheStorage / IndexedDB) immediately on startup
+if (typeof window !== 'undefined') {
+  setTimeout(async () => {
+    try {
+      const state = useDataStore.getState();
+      if (!state.storeLocationData || Object.keys(state.storeLocationData).length === 0) {
+        const diskConfig = await getCachedLayoutConfigFromDisk();
+        if (diskConfig && diskConfig.storeLocationData && Object.keys(diskConfig.storeLocationData).length > 0) {
+          useDataStore.getState().setLoadedCloudData(diskConfig);
+        }
+      }
+    } catch (_e) {}
+  }, 0);
+}
 

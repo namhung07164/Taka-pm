@@ -53,7 +53,7 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400">
         <RefreshCw className="w-6 h-6 animate-spin mb-2" />
-        <p className="text-sm font-medium">Đang tải cấu hình Bản đồ Chuyên đề (Thematic Map)...</p>
+        <p className="text-sm font-medium">Loading Thematic Floor Map Configuration...</p>
       </div>
     );
   }
@@ -65,17 +65,17 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
         <p className="text-sm font-medium px-4 text-center max-w-md">{error}</p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           <button 
-            onClick={() => loadConfig()} 
+            onClick={() => loadConfig(true)} 
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5"
           >
-            <RefreshCw className="w-3.5 h-3.5" /> Thử lại
+            <RefreshCw className="w-3.5 h-3.5" /> Retry
           </button>
           {canWrite && (
             <button 
               onClick={() => { initFormFromStorage(); setShowConfigModal(true); }} 
               className="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition"
             >
-              Cấu hình R2 Manual
+              Configure R2 Manually
             </button>
           )}
         </div>
@@ -92,7 +92,7 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
       targetUnitSearch={targetUnitSearch}
       onUnitSelected={onUnitSelected}
       onClearFocus={onClearFocus}
-      onRefreshConfig={loadConfig} 
+      onRefreshConfig={() => loadConfig(true)} 
       onOpenR2Config={() => { initFormFromStorage(); setShowConfigModal(true); }} 
       canWrite={canWrite}
     />

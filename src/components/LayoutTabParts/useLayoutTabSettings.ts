@@ -12,14 +12,29 @@ interface UseLayoutTabSettingsProps {
   canWrite?: boolean;
 }
 
+const LAYOUT_SETTINGS_CACHE_KEY = 'taka_cache_layout_settings_v1';
+const LAYOUT_EXPORT_TS_KEY = 'taka_layout_export_ts_v1';
+
 export function useLayoutTabSettings({ activeStore, locFilterStr, canWrite = false }: UseLayoutTabSettingsProps) {
-  const [layoutSettings, setLayoutSettings] = useState<Record<string, any>>({});
+  const [layoutSettings, setLayoutSettings] = useState<Record<string, any>>(() => {
+    try {
+      const raw = localStorage.getItem(LAYOUT_SETTINGS_CACHE_KEY);
+      if (raw) return JSON.parse(raw) || {};
+    } catch {}
+    return {};
+  });
   const [url, setUrl] = useState<string>('https://drive.google.com/file/d/1hxzPKKhQWhQ-tAThmgan8eNqqy5GN-Ds/preview');
   const [isEditing, setIsEditing] = useState(false);
   const [editUrl, setEditUrl] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatusMessage, setExportStatusMessage] = useState<string>('');
-  const [cacheBuster, setCacheBuster] = useState<number>(Date.now());
+  const [cacheBuster, setCacheBuster] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(LAYOUT_EXPORT_TS_KEY));
+      if (saved > 0) return saved;
+    } catch {}
+    return 1;
+  });
 
   const docKey = `url_${activeStore}_${locFilterStr}`;
 
@@ -31,7 +46,11 @@ export function useLayoutTabSettings({ activeStore, locFilterStr, canWrite = fal
     const unsubLayout = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout'), (docSnap) => {
       usePerformanceStore.getState().trackSnapshot('taka_settings/layout', docSnap);
       if (docSnap.exists()) {
-        setLayoutSettings(docSnap.data());
+        const data = docSnap.data();
+        setLayoutSettings(data);
+        try {
+          localStorage.setItem(LAYOUT_SETTINGS_CACHE_KEY, JSON.stringify(data));
+        } catch {}
       }
     }, (error) => {
       console.error('Error listening to layout settings', error);
@@ -45,6 +64,9 @@ export function useLayoutTabSettings({ activeStore, locFilterStr, canWrite = fal
           setIsExporting(false);
           if (data.export_completed_at) {
             setCacheBuster(data.export_completed_at);
+            try {
+              localStorage.setItem(LAYOUT_EXPORT_TS_KEY, String(data.export_completed_at));
+            } catch {}
           }
         } else if (data.is_ready_to_export === true) {
           if (data.requested_at && Date.now() - data.requested_at < 15000) {

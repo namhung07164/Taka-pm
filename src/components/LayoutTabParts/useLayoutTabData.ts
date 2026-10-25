@@ -383,5 +383,6 @@ export function useLayoutTabData({
     showSuggestions, setShowSuggestions, searchContainerRef,
     filteredUnitSuggestions, handleSelectSearchUnit, handleClearSearchAndFocus,
     isFullscreenView, setIsFullscreenView,
+    cacheBuster, setCacheBuster,
   };
 }

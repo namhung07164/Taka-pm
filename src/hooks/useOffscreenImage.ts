@@ -1,28 +1,34 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   getMemoryCachedImage,
   setMemoryCachedImage,
   getCachedBlobFromIDB,
-  setCachedBlobToIDB,
   fetchAndCacheImageBlob,
   normalizeImageCacheKey,
+  persistHtmlImageElementToDisk,
 } from '../lib/imageDBCache';
 import { resolveR2UrlToHttp } from '../components/PictureMapping/lib/r2Upload';
 
 /**
- * Custom hook to load & decode floorplan images off the Main Thread.
+ * Custom hook to load & decode floorplan images off the Main Thread with Persistent Disk Cache.
  * Features:
  * - 0ms In-Memory LRU Cache Hit
- * - IndexedDB Persistent Storage for instant offline / cold-boot (<30ms)
- * - Automatic resolution and caching for Cloudflare R2 links (r2:// and signed URLs)
+ * - Normalized Cache Key deduplication (switching between r2:// and signed HTTP URLs causes 0 flicker/re-decode)
+ * - Browser CacheStorage API + IndexedDB Persistent Disk Storage (<10ms cold-boot)
+ * - Automatic resolution and S3 SDK binary caching for Cloudflare R2 links
  * - Worker-based createImageBitmap() off-thread decoding
- * - Fallback to Blob ObjectURL and HTMLImageElement.decode()
  */
 export function useOffscreenImage(url: string | undefined | null, crossOrigin: string = 'anonymous') {
+  const normalizedKey = normalizeImageCacheKey(url);
+  const loadedKeyRef = useRef<string>('');
+
   const [image, setImage] = useState<HTMLImageElement | ImageBitmap | null>(() => {
     if (url) {
       const cached = getMemoryCachedImage(url);
-      if (cached) return cached;
+      if (cached) {
+        loadedKeyRef.current = normalizeImageCacheKey(url);
+        return cached;
+      }
     }
     return null;
   });
@@ -33,16 +39,18 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
   });
 
   useEffect(() => {
-    if (!url || typeof url !== 'string' || !url.trim()) {
+    if (!url || typeof url !== 'string' || !url.trim() || !normalizedKey) {
+      loadedKeyRef.current = '';
       setImage(null);
       setStatus('failed');
       return;
     }
 
-    // 1. Instant In-Memory Cache Hit (0ms)
+    // 1. Instant In-Memory Cache Hit (0ms) - also prevents re-decoding when r2:// resolves to signed URL
     const memCached = getMemoryCachedImage(url);
     if (memCached) {
-      setImage(memCached);
+      loadedKeyRef.current = normalizedKey;
+      setImage((prev) => (prev === memCached ? prev : memCached));
       setStatus('loaded');
       return;
     }
@@ -51,22 +59,23 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
     let createdBlobUrl: string | null = null;
     setStatus('loading');
 
-    async function loadWithIndexedDBCache() {
+    async function loadWithPersistentDiskCache() {
       try {
-        // Step A: Check IndexedDB (works across r2://, key, and signed URL)
+        // Step A: Check Persistent Disk Cache (CacheStorage API + IndexedDB)
         let blob = await getCachedBlobFromIDB(url!);
 
-        // Step B: If missing from IDB, fetch and cache (auto-resolves r2:// to presigned HTTP)
+        // Step B: If missing from Disk Cache, fetch and persist (auto-resolves r2:// or uses S3 SDK)
         if (!blob) {
-          blob = await fetchAndCacheImageBlob(url!);
+          blob = await fetchAndCacheImageBlob(url!, { decodeToMemory: false });
         }
 
         if (blob) {
-          // Step C: Try offscreen decoding using createImageBitmap
+          // Step C: Offscreen decoding using createImageBitmap
           try {
             if (typeof createImageBitmap === 'function') {
               const bitmap = await createImageBitmap(blob);
               if (isMounted) {
+                loadedKeyRef.current = normalizedKey;
                 setMemoryCachedImage(url!, bitmap);
                 setImage(bitmap);
                 setStatus('loaded');
@@ -79,7 +88,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
               }
             }
           } catch (_bitmapErr) {
-            // Fallthrough to ObjectURL decoding if createImageBitmap is not supported or failed
+            // Fallthrough to ObjectURL decoding if createImageBitmap fails
           }
 
           // Step D: Decode via Blob ObjectURL
@@ -88,17 +97,9 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           const img = new Image();
           img.src = blobUrlToRevoke;
 
-          const revokeBlobUrlSafely = () => {
-            if (createdBlobUrl === blobUrlToRevoke) {
-              createdBlobUrl = null;
-            }
-            try {
-              URL.revokeObjectURL(blobUrlToRevoke);
-            } catch (_) {}
-          };
-
           const onBlobImgDone = () => {
             if (isMounted) {
+              loadedKeyRef.current = normalizedKey;
               setMemoryCachedImage(url!, img);
               setImage(img);
               setStatus('loaded');
@@ -116,9 +117,15 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           return;
         }
 
-        // Step E: If direct blob fetch failed (e.g. CORS limitation or expired link), fallback to HTMLImageElement
+        // Step E: Fallback to HTMLImageElement if direct blob fetch was unavailable
         let fallbackSrc = url!;
-        if (fallbackSrc.startsWith('r2://') || (!fallbackSrc.startsWith('http://') && !fallbackSrc.startsWith('https://') && !fallbackSrc.startsWith('blob:') && !fallbackSrc.startsWith('data:'))) {
+        if (
+          fallbackSrc.startsWith('r2://') ||
+          (!fallbackSrc.startsWith('http://') &&
+            !fallbackSrc.startsWith('https://') &&
+            !fallbackSrc.startsWith('blob:') &&
+            !fallbackSrc.startsWith('data:'))
+        ) {
           const resolved = await resolveR2UrlToHttp(fallbackSrc);
           if (resolved) {
             fallbackSrc = resolved;
@@ -135,7 +142,9 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
 
         const onFallbackDone = () => {
           if (isMounted) {
+            loadedKeyRef.current = normalizedKey;
             setMemoryCachedImage(url!, fallbackImg);
+            persistHtmlImageElementToDisk(url!, fallbackImg);
             setImage(fallbackImg);
             setStatus('loaded');
           }
@@ -146,6 +155,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           directImg.src = fallbackSrc;
           directImg.onload = () => {
             if (isMounted) {
+              loadedKeyRef.current = normalizedKey;
               setMemoryCachedImage(url!, directImg);
               setImage(directImg);
               setStatus('loaded');
@@ -171,7 +181,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
       }
     }
 
-    loadWithIndexedDBCache();
+    loadWithPersistentDiskCache();
 
     return () => {
       isMounted = false;
@@ -182,7 +192,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
         createdBlobUrl = null;
       }
     };
-  }, [url, crossOrigin]);
+  }, [normalizedKey, url, crossOrigin]);
 
   return [image, status] as const;
 }

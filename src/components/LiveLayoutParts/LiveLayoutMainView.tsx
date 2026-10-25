@@ -1,7 +1,7 @@
 import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Konva from 'konva';
 import { Stage, Layer, FastLayer, Image as KonvaImage, Rect, Circle, Line, Text, Group, Path } from 'react-konva';
-import useImage from 'use-image';
+import { useOffscreenImage } from '../../hooks/useOffscreenImage';
 import { 
   ZoomIn, 
   ZoomOut, 
@@ -18,7 +18,6 @@ import { LiveLayoutMainViewProps } from './liveLayoutTypes';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
 import { LayoutUnitTooltip } from '../LayoutTabParts/LayoutUnitTooltip';
-import { resolveR2UrlToHttp } from '../PictureMapping/lib/r2Upload';
 import { 
   getStatus, 
   computeProjectActStatus, 
@@ -88,18 +87,7 @@ export const LiveLayoutMainView: React.FC<LiveLayoutMainViewProps> = ({
     return config.version || null;
   }, [config, storeFilter, locationFilter]);
 
-  const [bgUrl, setBgUrl] = useState<string>('');
-  useEffect(() => {
-    if (!activeVersion?.backgroundUrl) {
-      setBgUrl('');
-      return;
-    }
-    resolveR2UrlToHttp(activeVersion.backgroundUrl).then(url => {
-      setBgUrl(url || '');
-    });
-  }, [activeVersion]);
-
-  const [bgImage] = useImage(bgUrl, 'anonymous');
+  const [bgImage] = useOffscreenImage(activeVersion?.backgroundUrl || '', 'anonymous');
 
   // Candidate units
   const units = useMemo(() => {

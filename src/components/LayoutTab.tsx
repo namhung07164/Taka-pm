@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { Map } from 'lucide-react';
 import { LiveLayoutViewer } from './LiveLayoutViewer';
 import { useLayoutTabData } from './LayoutTabParts/useLayoutTabData';
@@ -21,8 +21,6 @@ export function LayoutTab({
   onClearFocus,
   onBackToGantt
 }: LayoutTabProps) {
-  const [cacheBuster, setCacheBuster] = useState<number>(Date.now());
-
   const {
     allowedStores,
     activeStore,
@@ -60,6 +58,8 @@ export function LayoutTab({
     handleClearSearchAndFocus,
     isFullscreenView,
     setIsFullscreenView,
+    cacheBuster,
+    setCacheBuster,
   } = useLayoutTabData({
     propInitialStore,
     propInitialLocation,

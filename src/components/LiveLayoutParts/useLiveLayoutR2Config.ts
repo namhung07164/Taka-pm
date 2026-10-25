@@ -1,8 +1,16 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useDataStore } from '../PictureMapping/DataContext';
 import { extractR2Key, getS3Sdk, downloadR2JsonFile } from '../PictureMapping/lib/r2Upload';
 import { preloadFloorImages } from '../../lib/imageDBCache';
+import {
+  getMemoryCachedLayoutConfig,
+  getCachedLayoutConfigFromDisk,
+  saveLayoutConfigToDisk,
+  getLastLayoutNetworkCheckAt,
+  markLayoutNetworkChecked,
+  getCachedLayoutConfigTimestamp,
+} from '../../lib/layoutConfigCache';
 import { db, APP_ID } from '../../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { setDoc } from '../../lib/firestoreWrites';
@@ -26,18 +34,82 @@ export interface LiveLayoutR2ConfigState {
   cfgSecretKey: string;
   setCfgSecretKey: (sec: string) => void;
   initFormFromStorage: () => void;
-  loadConfig: () => Promise<void>;
+  loadConfig: (forceRefresh?: boolean) => Promise<void>;
   handleSaveR2Config: () => Promise<void>;
+}
+
+function getInitialSyncConfig(): any {
+  const mem = getMemoryCachedLayoutConfig();
+  if (mem) return mem;
+
+  try {
+    const ds = useDataStore.getState();
+    if (ds.storeLocationData && Object.keys(ds.storeLocationData).length > 0) {
+      return {
+        storeLocationData: ds.storeLocationData,
+        store: ds.store,
+        location: ds.location,
+        activeMapVersionId: ds.activeMapVersionId,
+        mapUnits: ds.mapUnits,
+        versions: ds.mapVersions,
+        unitInfo: ds.unitInfo,
+        classInfo: ds.classInfo,
+        actualClassInfo: ds.actualClassInfo,
+        sales: ds.sales,
+        profits: ds.profits,
+        subFees: ds.subFees,
+        mdStatus: ds.mdStatus,
+        projectStatus: ds.projectStatus,
+        projectLink: ds.projectLink,
+        basePlan: ds.basePlan,
+        units: ds.units,
+      };
+    }
+  } catch (_e) {}
+
+  return null;
+}
+
+function collectAllBackgroundUrls(data: any): string[] {
+  const bgUrls: string[] = [];
+  if (!data) return bgUrls;
+  if (data.storeLocationData) {
+    Object.values(data.storeLocationData).forEach((part: any) => {
+      if (Array.isArray(part?.mapVersions)) {
+        part.mapVersions.forEach((v: any) => {
+          const u = v?.backgroundUrl || (v?.r2Key ? `r2://${v.r2Key}` : '');
+          if (u && !u.startsWith('data:')) {
+            bgUrls.push(u);
+          }
+        });
+      }
+    });
+  }
+  if (Array.isArray(data.versions)) {
+    data.versions.forEach((v: any) => {
+      const u = v?.backgroundUrl || (v?.r2Key ? `r2://${v.r2Key}` : '');
+      if (u && !u.startsWith('data:')) {
+        bgUrls.push(u);
+      }
+    });
+  }
+  if (data.version?.backgroundUrl && !data.version.backgroundUrl.startsWith('data:')) {
+    bgUrls.push(data.version.backgroundUrl);
+  }
+  return bgUrls;
 }
 
 export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
   const r2Config = useAppStore(state => state.r2Config);
   const setR2Config = useAppStore(state => state.setR2Config);
 
-  const [config, setConfig] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [config, setConfig] = useState<any>(() => getInitialSyncConfig());
+  const [loading, setLoading] = useState<boolean>(() => !getInitialSyncConfig());
   const [error, setError] = useState<string | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
+
+  const configRef = useRef<any>(config);
+  configRef.current = config;
 
   // Form states for in-place R2 configuration
   const [cfgAccountId, setCfgAccountId] = useState('');
@@ -45,7 +117,6 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
   const [cfgAccessKey, setCfgAccessKey] = useState('');
   const [cfgSecretKey, setCfgSecretKey] = useState('');
 
-  // Load initial form values from localStorage
   const initFormFromStorage = useCallback(() => {
     setCfgAccountId(r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim());
     setCfgBucketName(r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim());
@@ -53,17 +124,80 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
     setCfgSecretKey(r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim());
   }, [r2Config]);
 
-  // Load config from R2
-  const loadConfig = useCallback(async () => {
-    setLoading(true);
+  const applyAndCacheConfig = useCallback((data: any, persistToDisk = true) => {
+    if (!data) return;
+    let finalData = data;
+    if (!data.storeLocationData && Array.isArray(data.versions) && data.versions.length > 0) {
+      const activeVersion = data.versions.find((v: any) => v.isDynamicActive) || data.versions[0];
+      finalData = {
+        ...data,
+        version: activeVersion,
+        units: data.mapUnits || data.units || [],
+      };
+    }
+
+    configRef.current = finalData;
+    setConfig(finalData);
+    setLoading(false);
     setError(null);
+
+    try {
+      useDataStore.getState().setLoadedCloudData(finalData);
+    } catch (_e) {}
+
+    if (persistToDisk) {
+      saveLayoutConfigToDisk(finalData).catch(() => {});
+    }
+
+    try {
+      const bgUrls = collectAllBackgroundUrls(finalData);
+      if (bgUrls.length > 0) {
+        preloadFloorImages(bgUrls);
+      }
+    } catch (_preloadErr) {}
+  }, []);
+
+  // Load config with Instant Persistent Disk Cache (CacheStorage + IndexedDB) + Background Stale-While-Revalidate
+  const loadConfig = useCallback(async (forceRefresh = false) => {
+    setError(null);
+
+    // STEP 1: Instant Disk Cache hydration (<10ms) so UI never blocks on network if cached on disk
+    let activeCached = configRef.current || getInitialSyncConfig();
+    if (!activeCached) {
+      activeCached = await getCachedLayoutConfigFromDisk();
+      if (activeCached) {
+        applyAndCacheConfig(activeCached, false);
+      }
+    } else {
+      setLoading(false);
+    }
+
+    // Check if we can skip network download when disk cache is already fresh and matches server pictureMappingVersion
+    const knownPicMapVer = getLocalConfigVersions().pictureMappingVersion || 0;
+    const cachedTs = getCachedLayoutConfigTimestamp();
+    const lastCheck = getLastLayoutNetworkCheckAt();
+    const isCacheFreshEnough =
+      !forceRefresh &&
+      Boolean(activeCached) &&
+      lastCheck > 0 &&
+      Date.now() - lastCheck < 5 * 60 * 1000 &&
+      (knownPicMapVer === 0 || (cachedTs > 0 && cachedTs >= knownPicMapVer));
+
+    if (isCacheFreshEnough) {
+      return;
+    }
+
+    // Only show loading spinner if there is ZERO cached map data on disk or memory
+    if (!activeCached) {
+      setLoading(true);
+    }
+
     try {
       let accountId = r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim();
       let accessKeyId = r2Config?.accessKeyId || (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
       let secretAccessKey = r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
       let bucketName = r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim();
 
-      // If r2Config is not yet populated in store on fresh account boot, check local cache or fetch once from Firestore
       const cachedR2 =
         localStorage.getItem('taka_cache_r2_config_v1') ??
         localStorage.getItem('taka_r2_config_cache_v1');
@@ -108,8 +242,9 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       }
 
       if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+        if (activeCached) return;
         initFormFromStorage();
-        throw new Error('Chưa cấu hình R2 Cloudflare trên hệ thống. Vui lòng bấm "Cấu hình R2" bên dưới hoặc vào Tab Picture Mapping để kết nối Cloud Sync.');
+        throw new Error('Cloudflare R2 is not configured yet. Please click "Configure R2" below or open Picture Mapping to connect Cloud Sync.');
       }
 
       const { S3Client, GetObjectCommand, getSignedUrl } = await getS3Sdk();
@@ -122,8 +257,6 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', { accountId, accessKeyId, secretAccessKey, bucketName }, s3);
       let data: any = (downloadRes.success && downloadRes.data) ? downloadRes.data : null;
 
-      // Only query Firestore backup if R2 failed or if known pictureMappingVersion is strictly newer than R2 timestamp
-      const knownPicMapVer = getLocalConfigVersions().pictureMappingVersion || 0;
       const r2Timestamp = data?.timestamp || 0;
       if (!data || (knownPicMapVer > 0 && knownPicMapVer > r2Timestamp)) {
         try {
@@ -139,7 +272,7 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
                   storeLocationData: {
                     ...(data?.storeLocationData || {}),
                     ...fsData.storeLocationData,
-                  }
+                  },
                 };
               }
             }
@@ -150,128 +283,85 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       }
 
       if (!data) {
-        throw new Error(downloadRes.error || 'Không tìm thấy file cấu hình trên Cloud (mapping_config.json). Vui lòng kiểm tra lại Bucket hoặc xuất bản vẽ trước.');
+        if (activeCached) return;
+        throw new Error(downloadRes.error || 'Configuration file (mapping_config.json) not found on Cloud. Please check your Bucket or export floor plans first.');
       }
-      
-      // Resolve R2 URLs in storeLocationData if it exists (New Format)
+
+      markLayoutNetworkChecked();
+
+      // If no cached config was rendered yet, render immediately with raw r2:// URLs while signed URLs resolve in parallel
+      if (!activeCached) {
+        applyAndCacheConfig(data, false);
+      }
+
+      // Resolve R2 signed URLs in parallel
+      const resolvePromises: Promise<void>[] = [];
       if (data.storeLocationData) {
-        const resolvePromises: Promise<void>[] = [];
-        
         for (const pKey in data.storeLocationData) {
           const partition = data.storeLocationData[pKey];
-          if (!partition.mapVersions) continue;
-          
+          if (!partition?.mapVersions) continue;
           for (const v of partition.mapVersions) {
-            const imgKey = extractR2Key(v.backgroundUrl);
+            const imgKey = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
             if (imgKey) {
+              (v as any).r2Key = imgKey;
               const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
               resolvePromises.push(
-                getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
-                  v.backgroundUrl = url;
-                }).catch(err => {
-                  console.warn('Could not resolve signed URL for', imgKey, err);
-                })
+                getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
+                  .then(url => {
+                    v.backgroundUrl = url;
+                  })
+                  .catch(() => {})
               );
             }
           }
         }
+      }
 
-        // Also resolve signed URLs for legacy data.versions array and data.version at root
-        if (Array.isArray(data.versions)) {
-          for (const v of data.versions) {
-            const imgKey = extractR2Key(v.backgroundUrl);
-            if (imgKey) {
-              const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
-              resolvePromises.push(
-                getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
-                  v.backgroundUrl = url;
-                }).catch(err => {
-                  console.warn('Could not resolve signed URL for', imgKey, err);
-                })
-              );
-            }
-          }
-        }
-        if (data.version) {
-          const imgKey = extractR2Key(data.version.backgroundUrl);
+      if (Array.isArray(data.versions)) {
+        for (const v of data.versions) {
+          const imgKey = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
           if (imgKey) {
+            (v as any).r2Key = imgKey;
             const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
             resolvePromises.push(
-              getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
-                data.version.backgroundUrl = url;
-              }).catch(err => {
-                console.warn('Could not resolve signed URL for', imgKey, err);
-              })
+              getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
+                .then(url => {
+                  v.backgroundUrl = url;
+                })
+                .catch(() => {})
             );
           }
         }
+      }
 
-        await Promise.all(resolvePromises);
-        setConfig(data);
-        try {
-          useDataStore.getState().setLoadedCloudData(data);
-        } catch (e) {
-          console.warn('Could not sync loaded cloud data to store', e);
-        }
-
-        // Background Pre-cache all floor maps into IndexedDB for 0ms floor switching
-        try {
-          const bgUrlsToPreload: string[] = [];
-          if (data?.storeLocationData) {
-            Object.values(data.storeLocationData).forEach((part: any) => {
-              if (Array.isArray(part?.mapVersions)) {
-                part.mapVersions.forEach((v: any) => {
-                  if (v?.backgroundUrl && !v.backgroundUrl.startsWith('r2://')) {
-                    bgUrlsToPreload.push(v.backgroundUrl);
-                  }
-                });
-              }
-            });
-          }
-          if (Array.isArray(data?.versions)) {
-            data.versions.forEach((v: any) => {
-              if (v?.backgroundUrl && !v.backgroundUrl.startsWith('r2://')) {
-                bgUrlsToPreload.push(v.backgroundUrl);
-              }
-            });
-          }
-          if (bgUrlsToPreload.length > 0) {
-            preloadFloorImages(bgUrlsToPreload);
-          }
-        } catch (_preloadErr) {}
-      } else if (data.versions && data.versions.length > 0) {
-        // Legacy format fallback
-        const activeVersion = data.versions.find((v: any) => v.isDynamicActive) || data.versions[0];
-        const imgKey = extractR2Key(activeVersion?.backgroundUrl);
-        if (activeVersion && imgKey) {
+      if (data.version) {
+        const imgKey = extractR2Key(data.version.backgroundUrl) || (data.version as any).r2Key;
+        if (imgKey) {
+          (data.version as any).r2Key = imgKey;
           const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
-          activeVersion.backgroundUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 });
-        }
-        
-        setConfig({
-          ...data,
-          version: activeVersion,
-          units: data.mapUnits || data.units || []
-        });
-        try {
-          useDataStore.getState().setLoadedCloudData(data);
-        } catch (e) {
-          console.warn('Could not sync loaded cloud data to store', e);
-        }
-      } else {
-        setConfig(data);
-        try {
-          useDataStore.getState().setLoadedCloudData(data);
-        } catch (e) {
-          console.warn('Could not sync loaded cloud data to store', e);
+          resolvePromises.push(
+            getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
+              .then(url => {
+                data.version.backgroundUrl = url;
+              })
+              .catch(() => {})
+          );
         }
       }
+
+      if (resolvePromises.length > 0) {
+        await Promise.all(resolvePromises);
+      }
+
+      applyAndCacheConfig({ ...data }, true);
     } catch (err: any) {
-      setError(err.message || 'Lỗi tải dữ liệu');
+      if (!configRef.current) {
+        setError(err.message || 'Failed to load layout configuration');
+      }
     } finally {
       setLoading(false);
     }
-  }, [r2Config, initFormFromStorage]);
+  }, [r2Config, initFormFromStorage, applyAndCacheConfig]);
 
   const handleSaveR2Config = useCallback(async () => {
     const acc = cfgAccountId.trim();
@@ -280,7 +370,7 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
     const sec = cfgSecretKey.trim();
 
     if (!acc || !bkt || !key || !sec) {
-      alert('Vui lòng điền đủ 4 trường: Account ID, Bucket Name, Access Key và Secret Key.');
+      alert('Please fill in all 4 fields: Account ID, Bucket Name, Access Key, and Secret Key.');
       return;
     }
 
@@ -291,35 +381,34 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
     localStorage.setItem('r2_secret_key', sec);
     localStorage.setItem('r2_secret_access_key', sec);
 
-    // Save to global config & local cache
     const configData = {
       accountId: acc,
       bucketName: bkt,
       accessKeyId: key,
-      secretAccessKey: sec
+      secretAccessKey: sec,
     };
     localStorage.setItem('taka_r2_config_cache_v1', JSON.stringify(configData));
     setR2Config(configData);
 
     try {
       await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"), configData);
-      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
+      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), {
         r2Version: Date.now(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       }, { merge: true });
     } catch (e) {
-      console.error("Lỗi khi lưu cấu hình R2 lên server:", e);
+      console.error("Failed to save R2 config to server:", e);
     }
 
     setShowConfigModal(false);
-    loadConfig();
+    loadConfig(true);
   }, [cfgAccountId, cfgBucketName, cfgAccessKey, cfgSecretKey, setR2Config, loadConfig]);
 
   useEffect(() => {
-    loadConfig();
+    loadConfig(false);
 
     const handleSyncUpdate = () => {
-      loadConfig();
+      loadConfig(true);
     };
 
     if (typeof window !== 'undefined') {

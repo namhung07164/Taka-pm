@@ -41116,7 +41116,7 @@ export default HeaderUndoRedoControls;
 ================================================================================
 FILE: src/components/LayoutTab.tsx
 ================================================================================
-import React, { useState } from "react";
+import React from "react";
 import { Map } from 'lucide-react';
 import { LiveLayoutViewer } from './LiveLayoutViewer';
 import { useLayoutTabData } from './LayoutTabParts/useLayoutTabData';
@@ -41139,8 +41139,6 @@ export function LayoutTab({
   onClearFocus,
   onBackToGantt
 }: LayoutTabProps) {
-  const [cacheBuster, setCacheBuster] = useState<number>(Date.now());
-
   const {
     allowedStores,
     activeStore,
@@ -41178,6 +41176,8 @@ export function LayoutTab({
     handleClearSearchAndFocus,
     isFullscreenView,
     setIsFullscreenView,
+    cacheBuster,
+    setCacheBuster,
   } = useLayoutTabData({
     propInitialStore,
     propInitialLocation,
@@ -41276,7 +41276,6 @@ export function LayoutTab({
 }
 
 export default LayoutTab;
-
 
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutBottomActionBar.tsx
@@ -52260,18 +52259,6 @@ export function useLayoutFloorData({
     return finalVersions;
   }, [getAllStoreVersions, storeFilter, localStoreLocationData, config]);
 
-  // Pre-cache all floor maps for this store into IndexedDB
-  useEffect(() => {
-    if (availableStoreVersions.length > 0) {
-      const urls = availableStoreVersions
-        .map(v => v?.backgroundUrl)
-        .filter((u): u is string => typeof u === 'string' && u.length > 0 && !u.startsWith('r2://'));
-      if (urls.length > 0) {
-        preloadFloorImages(urls);
-      }
-    }
-  }, [availableStoreVersions]);
-
   // 2. Filter versions specific to targetLoc (e.g. L2) and year from Picture Mapping / global setting
   const prevLocationVersionsRef = useRef<any[]>([]);
   const prevLocationVersionsKeyRef = useRef<string>('');
@@ -52350,13 +52337,15 @@ export function useLayoutFloorData({
     }
 
     // Resolve backgroundUrl if empty or r2://
-    let bgUrl = v.backgroundUrl || '';
+    let bgUrl = v.backgroundUrl || ((v as any).r2Key ? `r2://${(v as any).r2Key}` : '');
     if (!bgUrl || bgUrl.startsWith('r2://')) {
       // Scan all cloud partitions and versions for resolved signed URL
       if (cloudPart?.mapVersions) {
         const matchingCloudV = cloudPart.mapVersions.find((cv: any) => cv.id === v.id || cv.name === v.name);
         if (matchingCloudV?.backgroundUrl && !matchingCloudV.backgroundUrl.startsWith('r2://')) {
           bgUrl = matchingCloudV.backgroundUrl;
+        } else if (!bgUrl && (matchingCloudV as any)?.r2Key) {
+          bgUrl = `r2://${(matchingCloudV as any).r2Key}`;
         }
       }
       if ((!bgUrl || bgUrl.startsWith('r2://')) && config?.storeLocationData) {
@@ -52365,6 +52354,8 @@ export function useLayoutFloorData({
           if (matchingCloudV?.backgroundUrl && !matchingCloudV.backgroundUrl.startsWith('r2://')) {
             bgUrl = matchingCloudV.backgroundUrl;
             break;
+          } else if (!bgUrl && (matchingCloudV as any)?.r2Key) {
+            bgUrl = `r2://${(matchingCloudV as any).r2Key}`;
           }
         }
       }
@@ -52507,6 +52498,18 @@ export function useLayoutFloorData({
 
   const activeBgUrl = version?.backgroundUrl || '';
   const [bgImage] = useOffscreenImage(activeBgUrl, 'anonymous');
+
+  // Pre-cache all floor maps for this store into Persistent Disk Cache (prioritizing active floor)
+  useEffect(() => {
+    if (availableStoreVersions.length > 0) {
+      const urls = availableStoreVersions
+        .map(v => v?.backgroundUrl || ((v as any)?.r2Key ? `r2://${(v as any).r2Key}` : ''))
+        .filter((u): u is string => typeof u === 'string' && u.length > 0 && !u.startsWith('data:'));
+      if (urls.length > 0) {
+        preloadFloorImages(urls, activeBgUrl);
+      }
+    }
+  }, [availableStoreVersions, activeBgUrl]);
 
   // Helper to accurately check if unit has user-attached images in localStorage partitioned by store
   const hasStoredUnitImages = useCallback((key: string | undefined | null, overrideStore?: string): boolean => {
@@ -53869,6 +53872,7 @@ export function useLayoutTabData({
     showSuggestions, setShowSuggestions, searchContainerRef,
     filteredUnitSuggestions, handleSelectSearchUnit, handleClearSearchAndFocus,
     isFullscreenView, setIsFullscreenView,
+    cacheBuster, setCacheBuster,
   };
 }
 
@@ -53889,14 +53893,29 @@ interface UseLayoutTabSettingsProps {
   canWrite?: boolean;
 }
 
+const LAYOUT_SETTINGS_CACHE_KEY = 'taka_cache_layout_settings_v1';
+const LAYOUT_EXPORT_TS_KEY = 'taka_layout_export_ts_v1';
+
 export function useLayoutTabSettings({ activeStore, locFilterStr, canWrite = false }: UseLayoutTabSettingsProps) {
-  const [layoutSettings, setLayoutSettings] = useState<Record<string, any>>({});
+  const [layoutSettings, setLayoutSettings] = useState<Record<string, any>>(() => {
+    try {
+      const raw = localStorage.getItem(LAYOUT_SETTINGS_CACHE_KEY);
+      if (raw) return JSON.parse(raw) || {};
+    } catch {}
+    return {};
+  });
   const [url, setUrl] = useState<string>('https://drive.google.com/file/d/1hxzPKKhQWhQ-tAThmgan8eNqqy5GN-Ds/preview');
   const [isEditing, setIsEditing] = useState(false);
   const [editUrl, setEditUrl] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatusMessage, setExportStatusMessage] = useState<string>('');
-  const [cacheBuster, setCacheBuster] = useState<number>(Date.now());
+  const [cacheBuster, setCacheBuster] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(LAYOUT_EXPORT_TS_KEY));
+      if (saved > 0) return saved;
+    } catch {}
+    return 1;
+  });
 
   const docKey = `url_${activeStore}_${locFilterStr}`;
 
@@ -53908,7 +53927,11 @@ export function useLayoutTabSettings({ activeStore, locFilterStr, canWrite = fal
     const unsubLayout = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout'), (docSnap) => {
       usePerformanceStore.getState().trackSnapshot('taka_settings/layout', docSnap);
       if (docSnap.exists()) {
-        setLayoutSettings(docSnap.data());
+        const data = docSnap.data();
+        setLayoutSettings(data);
+        try {
+          localStorage.setItem(LAYOUT_SETTINGS_CACHE_KEY, JSON.stringify(data));
+        } catch {}
       }
     }, (error) => {
       console.error('Error listening to layout settings', error);
@@ -53922,6 +53945,9 @@ export function useLayoutTabSettings({ activeStore, locFilterStr, canWrite = fal
           setIsExporting(false);
           if (data.export_completed_at) {
             setCacheBuster(data.export_completed_at);
+            try {
+              localStorage.setItem(LAYOUT_EXPORT_TS_KEY, String(data.export_completed_at));
+            } catch {}
           }
         } else if (data.is_ready_to_export === true) {
           if (data.requested_at && Date.now() - data.requested_at < 15000) {
@@ -54688,7 +54714,7 @@ FILE: src/components/LiveLayoutParts/LiveLayoutMainView.tsx
 import React, { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Konva from 'konva';
 import { Stage, Layer, FastLayer, Image as KonvaImage, Rect, Circle, Line, Text, Group, Path } from 'react-konva';
-import useImage from 'use-image';
+import { useOffscreenImage } from '../../hooks/useOffscreenImage';
 import { 
   ZoomIn, 
   ZoomOut, 
@@ -54705,7 +54731,6 @@ import { LiveLayoutMainViewProps } from './liveLayoutTypes';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
 import { LayoutUnitTooltip } from '../LayoutTabParts/LayoutUnitTooltip';
-import { resolveR2UrlToHttp } from '../PictureMapping/lib/r2Upload';
 import { 
   getStatus, 
   computeProjectActStatus, 
@@ -54775,18 +54800,7 @@ export const LiveLayoutMainView: React.FC<LiveLayoutMainViewProps> = ({
     return config.version || null;
   }, [config, storeFilter, locationFilter]);
 
-  const [bgUrl, setBgUrl] = useState<string>('');
-  useEffect(() => {
-    if (!activeVersion?.backgroundUrl) {
-      setBgUrl('');
-      return;
-    }
-    resolveR2UrlToHttp(activeVersion.backgroundUrl).then(url => {
-      setBgUrl(url || '');
-    });
-  }, [activeVersion]);
-
-  const [bgImage] = useImage(bgUrl, 'anonymous');
+  const [bgImage] = useOffscreenImage(activeVersion?.backgroundUrl || '', 'anonymous');
 
   // Candidate units
   const units = useMemo(() => {
@@ -55032,7 +55046,6 @@ export const LiveLayoutMainView: React.FC<LiveLayoutMainViewProps> = ({
 
 export default LiveLayoutMainView;
 
-
 ================================================================================
 FILE: src/components/LiveLayoutParts/LiveLayoutR2Modal.tsx
 ================================================================================
@@ -55192,11 +55205,19 @@ export interface LiveLayoutMainViewProps extends LiveLayoutViewerProps {
 ================================================================================
 FILE: src/components/LiveLayoutParts/useLiveLayoutR2Config.ts
 ================================================================================
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useDataStore } from '../PictureMapping/DataContext';
 import { extractR2Key, getS3Sdk, downloadR2JsonFile } from '../PictureMapping/lib/r2Upload';
 import { preloadFloorImages } from '../../lib/imageDBCache';
+import {
+  getMemoryCachedLayoutConfig,
+  getCachedLayoutConfigFromDisk,
+  saveLayoutConfigToDisk,
+  getLastLayoutNetworkCheckAt,
+  markLayoutNetworkChecked,
+  getCachedLayoutConfigTimestamp,
+} from '../../lib/layoutConfigCache';
 import { db, APP_ID } from '../../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { setDoc } from '../../lib/firestoreWrites';
@@ -55220,18 +55241,82 @@ export interface LiveLayoutR2ConfigState {
   cfgSecretKey: string;
   setCfgSecretKey: (sec: string) => void;
   initFormFromStorage: () => void;
-  loadConfig: () => Promise<void>;
+  loadConfig: (forceRefresh?: boolean) => Promise<void>;
   handleSaveR2Config: () => Promise<void>;
+}
+
+function getInitialSyncConfig(): any {
+  const mem = getMemoryCachedLayoutConfig();
+  if (mem) return mem;
+
+  try {
+    const ds = useDataStore.getState();
+    if (ds.storeLocationData && Object.keys(ds.storeLocationData).length > 0) {
+      return {
+        storeLocationData: ds.storeLocationData,
+        store: ds.store,
+        location: ds.location,
+        activeMapVersionId: ds.activeMapVersionId,
+        mapUnits: ds.mapUnits,
+        versions: ds.mapVersions,
+        unitInfo: ds.unitInfo,
+        classInfo: ds.classInfo,
+        actualClassInfo: ds.actualClassInfo,
+        sales: ds.sales,
+        profits: ds.profits,
+        subFees: ds.subFees,
+        mdStatus: ds.mdStatus,
+        projectStatus: ds.projectStatus,
+        projectLink: ds.projectLink,
+        basePlan: ds.basePlan,
+        units: ds.units,
+      };
+    }
+  } catch (_e) {}
+
+  return null;
+}
+
+function collectAllBackgroundUrls(data: any): string[] {
+  const bgUrls: string[] = [];
+  if (!data) return bgUrls;
+  if (data.storeLocationData) {
+    Object.values(data.storeLocationData).forEach((part: any) => {
+      if (Array.isArray(part?.mapVersions)) {
+        part.mapVersions.forEach((v: any) => {
+          const u = v?.backgroundUrl || (v?.r2Key ? `r2://${v.r2Key}` : '');
+          if (u && !u.startsWith('data:')) {
+            bgUrls.push(u);
+          }
+        });
+      }
+    });
+  }
+  if (Array.isArray(data.versions)) {
+    data.versions.forEach((v: any) => {
+      const u = v?.backgroundUrl || (v?.r2Key ? `r2://${v.r2Key}` : '');
+      if (u && !u.startsWith('data:')) {
+        bgUrls.push(u);
+      }
+    });
+  }
+  if (data.version?.backgroundUrl && !data.version.backgroundUrl.startsWith('data:')) {
+    bgUrls.push(data.version.backgroundUrl);
+  }
+  return bgUrls;
 }
 
 export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
   const r2Config = useAppStore(state => state.r2Config);
   const setR2Config = useAppStore(state => state.setR2Config);
 
-  const [config, setConfig] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [config, setConfig] = useState<any>(() => getInitialSyncConfig());
+  const [loading, setLoading] = useState<boolean>(() => !getInitialSyncConfig());
   const [error, setError] = useState<string | null>(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
+
+  const configRef = useRef<any>(config);
+  configRef.current = config;
 
   // Form states for in-place R2 configuration
   const [cfgAccountId, setCfgAccountId] = useState('');
@@ -55239,7 +55324,6 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
   const [cfgAccessKey, setCfgAccessKey] = useState('');
   const [cfgSecretKey, setCfgSecretKey] = useState('');
 
-  // Load initial form values from localStorage
   const initFormFromStorage = useCallback(() => {
     setCfgAccountId(r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim());
     setCfgBucketName(r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim());
@@ -55247,17 +55331,80 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
     setCfgSecretKey(r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim());
   }, [r2Config]);
 
-  // Load config from R2
-  const loadConfig = useCallback(async () => {
-    setLoading(true);
+  const applyAndCacheConfig = useCallback((data: any, persistToDisk = true) => {
+    if (!data) return;
+    let finalData = data;
+    if (!data.storeLocationData && Array.isArray(data.versions) && data.versions.length > 0) {
+      const activeVersion = data.versions.find((v: any) => v.isDynamicActive) || data.versions[0];
+      finalData = {
+        ...data,
+        version: activeVersion,
+        units: data.mapUnits || data.units || [],
+      };
+    }
+
+    configRef.current = finalData;
+    setConfig(finalData);
+    setLoading(false);
     setError(null);
+
+    try {
+      useDataStore.getState().setLoadedCloudData(finalData);
+    } catch (_e) {}
+
+    if (persistToDisk) {
+      saveLayoutConfigToDisk(finalData).catch(() => {});
+    }
+
+    try {
+      const bgUrls = collectAllBackgroundUrls(finalData);
+      if (bgUrls.length > 0) {
+        preloadFloorImages(bgUrls);
+      }
+    } catch (_preloadErr) {}
+  }, []);
+
+  // Load config with Instant Persistent Disk Cache (CacheStorage + IndexedDB) + Background Stale-While-Revalidate
+  const loadConfig = useCallback(async (forceRefresh = false) => {
+    setError(null);
+
+    // STEP 1: Instant Disk Cache hydration (<10ms) so UI never blocks on network if cached on disk
+    let activeCached = configRef.current || getInitialSyncConfig();
+    if (!activeCached) {
+      activeCached = await getCachedLayoutConfigFromDisk();
+      if (activeCached) {
+        applyAndCacheConfig(activeCached, false);
+      }
+    } else {
+      setLoading(false);
+    }
+
+    // Check if we can skip network download when disk cache is already fresh and matches server pictureMappingVersion
+    const knownPicMapVer = getLocalConfigVersions().pictureMappingVersion || 0;
+    const cachedTs = getCachedLayoutConfigTimestamp();
+    const lastCheck = getLastLayoutNetworkCheckAt();
+    const isCacheFreshEnough =
+      !forceRefresh &&
+      Boolean(activeCached) &&
+      lastCheck > 0 &&
+      Date.now() - lastCheck < 5 * 60 * 1000 &&
+      (knownPicMapVer === 0 || (cachedTs > 0 && cachedTs >= knownPicMapVer));
+
+    if (isCacheFreshEnough) {
+      return;
+    }
+
+    // Only show loading spinner if there is ZERO cached map data on disk or memory
+    if (!activeCached) {
+      setLoading(true);
+    }
+
     try {
       let accountId = r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim();
       let accessKeyId = r2Config?.accessKeyId || (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
       let secretAccessKey = r2Config?.secretAccessKey || (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
       let bucketName = r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim();
 
-      // If r2Config is not yet populated in store on fresh account boot, check local cache or fetch once from Firestore
       const cachedR2 =
         localStorage.getItem('taka_cache_r2_config_v1') ??
         localStorage.getItem('taka_r2_config_cache_v1');
@@ -55302,8 +55449,9 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       }
 
       if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+        if (activeCached) return;
         initFormFromStorage();
-        throw new Error('Chưa cấu hình R2 Cloudflare trên hệ thống. Vui lòng bấm "Cấu hình R2" bên dưới hoặc vào Tab Picture Mapping để kết nối Cloud Sync.');
+        throw new Error('Cloudflare R2 is not configured yet. Please click "Configure R2" below or open Picture Mapping to connect Cloud Sync.');
       }
 
       const { S3Client, GetObjectCommand, getSignedUrl } = await getS3Sdk();
@@ -55316,8 +55464,6 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', { accountId, accessKeyId, secretAccessKey, bucketName }, s3);
       let data: any = (downloadRes.success && downloadRes.data) ? downloadRes.data : null;
 
-      // Only query Firestore backup if R2 failed or if known pictureMappingVersion is strictly newer than R2 timestamp
-      const knownPicMapVer = getLocalConfigVersions().pictureMappingVersion || 0;
       const r2Timestamp = data?.timestamp || 0;
       if (!data || (knownPicMapVer > 0 && knownPicMapVer > r2Timestamp)) {
         try {
@@ -55333,7 +55479,7 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
                   storeLocationData: {
                     ...(data?.storeLocationData || {}),
                     ...fsData.storeLocationData,
-                  }
+                  },
                 };
               }
             }
@@ -55344,128 +55490,85 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
       }
 
       if (!data) {
-        throw new Error(downloadRes.error || 'Không tìm thấy file cấu hình trên Cloud (mapping_config.json). Vui lòng kiểm tra lại Bucket hoặc xuất bản vẽ trước.');
+        if (activeCached) return;
+        throw new Error(downloadRes.error || 'Configuration file (mapping_config.json) not found on Cloud. Please check your Bucket or export floor plans first.');
       }
-      
-      // Resolve R2 URLs in storeLocationData if it exists (New Format)
+
+      markLayoutNetworkChecked();
+
+      // If no cached config was rendered yet, render immediately with raw r2:// URLs while signed URLs resolve in parallel
+      if (!activeCached) {
+        applyAndCacheConfig(data, false);
+      }
+
+      // Resolve R2 signed URLs in parallel
+      const resolvePromises: Promise<void>[] = [];
       if (data.storeLocationData) {
-        const resolvePromises: Promise<void>[] = [];
-        
         for (const pKey in data.storeLocationData) {
           const partition = data.storeLocationData[pKey];
-          if (!partition.mapVersions) continue;
-          
+          if (!partition?.mapVersions) continue;
           for (const v of partition.mapVersions) {
-            const imgKey = extractR2Key(v.backgroundUrl);
+            const imgKey = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
             if (imgKey) {
+              (v as any).r2Key = imgKey;
               const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
               resolvePromises.push(
-                getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
-                  v.backgroundUrl = url;
-                }).catch(err => {
-                  console.warn('Could not resolve signed URL for', imgKey, err);
-                })
+                getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
+                  .then(url => {
+                    v.backgroundUrl = url;
+                  })
+                  .catch(() => {})
               );
             }
           }
         }
+      }
 
-        // Also resolve signed URLs for legacy data.versions array and data.version at root
-        if (Array.isArray(data.versions)) {
-          for (const v of data.versions) {
-            const imgKey = extractR2Key(v.backgroundUrl);
-            if (imgKey) {
-              const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
-              resolvePromises.push(
-                getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
-                  v.backgroundUrl = url;
-                }).catch(err => {
-                  console.warn('Could not resolve signed URL for', imgKey, err);
-                })
-              );
-            }
-          }
-        }
-        if (data.version) {
-          const imgKey = extractR2Key(data.version.backgroundUrl);
+      if (Array.isArray(data.versions)) {
+        for (const v of data.versions) {
+          const imgKey = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
           if (imgKey) {
+            (v as any).r2Key = imgKey;
             const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
             resolvePromises.push(
-              getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 }).then(url => {
-                data.version.backgroundUrl = url;
-              }).catch(err => {
-                console.warn('Could not resolve signed URL for', imgKey, err);
-              })
+              getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
+                .then(url => {
+                  v.backgroundUrl = url;
+                })
+                .catch(() => {})
             );
           }
         }
+      }
 
-        await Promise.all(resolvePromises);
-        setConfig(data);
-        try {
-          useDataStore.getState().setLoadedCloudData(data);
-        } catch (e) {
-          console.warn('Could not sync loaded cloud data to store', e);
-        }
-
-        // Background Pre-cache all floor maps into IndexedDB for 0ms floor switching
-        try {
-          const bgUrlsToPreload: string[] = [];
-          if (data?.storeLocationData) {
-            Object.values(data.storeLocationData).forEach((part: any) => {
-              if (Array.isArray(part?.mapVersions)) {
-                part.mapVersions.forEach((v: any) => {
-                  if (v?.backgroundUrl && !v.backgroundUrl.startsWith('r2://')) {
-                    bgUrlsToPreload.push(v.backgroundUrl);
-                  }
-                });
-              }
-            });
-          }
-          if (Array.isArray(data?.versions)) {
-            data.versions.forEach((v: any) => {
-              if (v?.backgroundUrl && !v.backgroundUrl.startsWith('r2://')) {
-                bgUrlsToPreload.push(v.backgroundUrl);
-              }
-            });
-          }
-          if (bgUrlsToPreload.length > 0) {
-            preloadFloorImages(bgUrlsToPreload);
-          }
-        } catch (_preloadErr) {}
-      } else if (data.versions && data.versions.length > 0) {
-        // Legacy format fallback
-        const activeVersion = data.versions.find((v: any) => v.isDynamicActive) || data.versions[0];
-        const imgKey = extractR2Key(activeVersion?.backgroundUrl);
-        if (activeVersion && imgKey) {
+      if (data.version) {
+        const imgKey = extractR2Key(data.version.backgroundUrl) || (data.version as any).r2Key;
+        if (imgKey) {
+          (data.version as any).r2Key = imgKey;
           const imgCommand = new GetObjectCommand({ Bucket: bucketName, Key: imgKey });
-          activeVersion.backgroundUrl = await getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 });
-        }
-        
-        setConfig({
-          ...data,
-          version: activeVersion,
-          units: data.mapUnits || data.units || []
-        });
-        try {
-          useDataStore.getState().setLoadedCloudData(data);
-        } catch (e) {
-          console.warn('Could not sync loaded cloud data to store', e);
-        }
-      } else {
-        setConfig(data);
-        try {
-          useDataStore.getState().setLoadedCloudData(data);
-        } catch (e) {
-          console.warn('Could not sync loaded cloud data to store', e);
+          resolvePromises.push(
+            getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
+              .then(url => {
+                data.version.backgroundUrl = url;
+              })
+              .catch(() => {})
+          );
         }
       }
+
+      if (resolvePromises.length > 0) {
+        await Promise.all(resolvePromises);
+      }
+
+      applyAndCacheConfig({ ...data }, true);
     } catch (err: any) {
-      setError(err.message || 'Lỗi tải dữ liệu');
+      if (!configRef.current) {
+        setError(err.message || 'Failed to load layout configuration');
+      }
     } finally {
       setLoading(false);
     }
-  }, [r2Config, initFormFromStorage]);
+  }, [r2Config, initFormFromStorage, applyAndCacheConfig]);
 
   const handleSaveR2Config = useCallback(async () => {
     const acc = cfgAccountId.trim();
@@ -55474,7 +55577,7 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
     const sec = cfgSecretKey.trim();
 
     if (!acc || !bkt || !key || !sec) {
-      alert('Vui lòng điền đủ 4 trường: Account ID, Bucket Name, Access Key và Secret Key.');
+      alert('Please fill in all 4 fields: Account ID, Bucket Name, Access Key, and Secret Key.');
       return;
     }
 
@@ -55485,35 +55588,34 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
     localStorage.setItem('r2_secret_key', sec);
     localStorage.setItem('r2_secret_access_key', sec);
 
-    // Save to global config & local cache
     const configData = {
       accountId: acc,
       bucketName: bkt,
       accessKeyId: key,
-      secretAccessKey: sec
+      secretAccessKey: sec,
     };
     localStorage.setItem('taka_r2_config_cache_v1', JSON.stringify(configData));
     setR2Config(configData);
 
     try {
       await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"), configData);
-      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
+      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), {
         r2Version: Date.now(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       }, { merge: true });
     } catch (e) {
-      console.error("Lỗi khi lưu cấu hình R2 lên server:", e);
+      console.error("Failed to save R2 config to server:", e);
     }
 
     setShowConfigModal(false);
-    loadConfig();
+    loadConfig(true);
   }, [cfgAccountId, cfgBucketName, cfgAccessKey, cfgSecretKey, setR2Config, loadConfig]);
 
   useEffect(() => {
-    loadConfig();
+    loadConfig(false);
 
     const handleSyncUpdate = () => {
-      loadConfig();
+      loadConfig(true);
     };
 
     if (typeof window !== 'undefined') {
@@ -55610,7 +55712,7 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
     return (
       <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400">
         <RefreshCw className="w-6 h-6 animate-spin mb-2" />
-        <p className="text-sm font-medium">Đang tải cấu hình Bản đồ Chuyên đề (Thematic Map)...</p>
+        <p className="text-sm font-medium">Loading Thematic Floor Map Configuration...</p>
       </div>
     );
   }
@@ -55622,17 +55724,17 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
         <p className="text-sm font-medium px-4 text-center max-w-md">{error}</p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           <button 
-            onClick={() => loadConfig()} 
+            onClick={() => loadConfig(true)} 
             className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5"
           >
-            <RefreshCw className="w-3.5 h-3.5" /> Thử lại
+            <RefreshCw className="w-3.5 h-3.5" /> Retry
           </button>
           {canWrite && (
             <button 
               onClick={() => { initFormFromStorage(); setShowConfigModal(true); }} 
               className="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition"
             >
-              Cấu hình R2 Manual
+              Configure R2 Manually
             </button>
           )}
         </div>
@@ -55649,7 +55751,7 @@ export const LiveLayoutViewer = React.memo(function LiveLayoutViewer({
       targetUnitSearch={targetUnitSearch}
       onUnitSelected={onUnitSelected}
       onClearFocus={onClearFocus}
-      onRefreshConfig={loadConfig} 
+      onRefreshConfig={() => loadConfig(true)} 
       onOpenR2Config={() => { initFormFromStorage(); setShowConfigModal(true); }} 
       canWrite={canWrite}
     />
@@ -58429,6 +58531,7 @@ FILE: src/components/PictureMapping/DataContext.ts
 import { create } from 'zustand';
 import { UnitShape, MapVersion } from './components/DataMapping/types';
 import { useAppStore } from '../../store/useAppStore';
+import { saveLayoutConfigToDisk, getCachedLayoutConfigFromDisk } from '../../lib/layoutConfigCache';
 
 export interface StoreLocationRecord {
   mapUnits: UnitShape[];
@@ -58465,15 +58568,18 @@ export function autoBackupStoreLocationData(data: Record<string, StoreLocationRe
   if (typeof window === 'undefined') return;
   if (backupTimeout) clearTimeout(backupTimeout);
   backupTimeout = setTimeout(() => {
+    const backupObj = {
+      storeLocationData: data,
+      store,
+      location,
+      activeMapVersionId,
+      updatedAt: Date.now(),
+      timestamp: Date.now(),
+    };
+    // Always persist to unlimited Disk Cache (IndexedDB + CacheStorage API)
+    saveLayoutConfigToDisk(backupObj).catch(() => {});
     try {
-      const payload = JSON.stringify({
-        storeLocationData: data,
-        store,
-        location,
-        activeMapVersionId,
-        updatedAt: Date.now(),
-      });
-      // Safety guard: Chrome localStorage limit is ~5MB. Cap single backup at 1MB to prevent QuotaExceededError
+      const payload = JSON.stringify(backupObj);
       if (payload.length < 1000000) {
         localStorage.setItem('taka_mapping_config_backup', payload);
       } else {
@@ -58482,7 +58588,7 @@ export function autoBackupStoreLocationData(data: Record<string, StoreLocationRe
     } catch (e) {
       try { localStorage.removeItem('taka_mapping_config_backup'); } catch (_) {}
     }
-  }, 1500);
+  }, 800);
 }
 
 interface DataStoreState {
@@ -59107,9 +59213,31 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       ...(payload.basePlan ? { basePlan: payload.basePlan } : {}),
       ...(payload.units ? { units: payload.units } : {}),
     });
+
+    saveLayoutConfigToDisk({
+      ...payload,
+      storeLocationData,
+      store: activeStore,
+      location: activeLoc,
+      activeMapVersionId: targetActiveVerId,
+    }).catch(() => {});
   },
 }));
 
+// Hydrate useDataStore from Persistent Disk Cache (CacheStorage / IndexedDB) immediately on startup
+if (typeof window !== 'undefined') {
+  setTimeout(async () => {
+    try {
+      const state = useDataStore.getState();
+      if (!state.storeLocationData || Object.keys(state.storeLocationData).length === 0) {
+        const diskConfig = await getCachedLayoutConfigFromDisk();
+        if (diskConfig && diskConfig.storeLocationData && Object.keys(diskConfig.storeLocationData).length > 0) {
+          useDataStore.getState().setLoadedCloudData(diskConfig);
+        }
+      }
+    } catch (_e) {}
+  }, 0);
+}
 
 
 ================================================================================
@@ -96393,31 +96521,37 @@ export function useNotificationActions() {
 ================================================================================
 FILE: src/hooks/useOffscreenImage.ts
 ================================================================================
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   getMemoryCachedImage,
   setMemoryCachedImage,
   getCachedBlobFromIDB,
-  setCachedBlobToIDB,
   fetchAndCacheImageBlob,
   normalizeImageCacheKey,
+  persistHtmlImageElementToDisk,
 } from '../lib/imageDBCache';
 import { resolveR2UrlToHttp } from '../components/PictureMapping/lib/r2Upload';
 
 /**
- * Custom hook to load & decode floorplan images off the Main Thread.
+ * Custom hook to load & decode floorplan images off the Main Thread with Persistent Disk Cache.
  * Features:
  * - 0ms In-Memory LRU Cache Hit
- * - IndexedDB Persistent Storage for instant offline / cold-boot (<30ms)
- * - Automatic resolution and caching for Cloudflare R2 links (r2:// and signed URLs)
+ * - Normalized Cache Key deduplication (switching between r2:// and signed HTTP URLs causes 0 flicker/re-decode)
+ * - Browser CacheStorage API + IndexedDB Persistent Disk Storage (<10ms cold-boot)
+ * - Automatic resolution and S3 SDK binary caching for Cloudflare R2 links
  * - Worker-based createImageBitmap() off-thread decoding
- * - Fallback to Blob ObjectURL and HTMLImageElement.decode()
  */
 export function useOffscreenImage(url: string | undefined | null, crossOrigin: string = 'anonymous') {
+  const normalizedKey = normalizeImageCacheKey(url);
+  const loadedKeyRef = useRef<string>('');
+
   const [image, setImage] = useState<HTMLImageElement | ImageBitmap | null>(() => {
     if (url) {
       const cached = getMemoryCachedImage(url);
-      if (cached) return cached;
+      if (cached) {
+        loadedKeyRef.current = normalizeImageCacheKey(url);
+        return cached;
+      }
     }
     return null;
   });
@@ -96428,16 +96562,18 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
   });
 
   useEffect(() => {
-    if (!url || typeof url !== 'string' || !url.trim()) {
+    if (!url || typeof url !== 'string' || !url.trim() || !normalizedKey) {
+      loadedKeyRef.current = '';
       setImage(null);
       setStatus('failed');
       return;
     }
 
-    // 1. Instant In-Memory Cache Hit (0ms)
+    // 1. Instant In-Memory Cache Hit (0ms) - also prevents re-decoding when r2:// resolves to signed URL
     const memCached = getMemoryCachedImage(url);
     if (memCached) {
-      setImage(memCached);
+      loadedKeyRef.current = normalizedKey;
+      setImage((prev) => (prev === memCached ? prev : memCached));
       setStatus('loaded');
       return;
     }
@@ -96446,22 +96582,23 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
     let createdBlobUrl: string | null = null;
     setStatus('loading');
 
-    async function loadWithIndexedDBCache() {
+    async function loadWithPersistentDiskCache() {
       try {
-        // Step A: Check IndexedDB (works across r2://, key, and signed URL)
+        // Step A: Check Persistent Disk Cache (CacheStorage API + IndexedDB)
         let blob = await getCachedBlobFromIDB(url!);
 
-        // Step B: If missing from IDB, fetch and cache (auto-resolves r2:// to presigned HTTP)
+        // Step B: If missing from Disk Cache, fetch and persist (auto-resolves r2:// or uses S3 SDK)
         if (!blob) {
-          blob = await fetchAndCacheImageBlob(url!);
+          blob = await fetchAndCacheImageBlob(url!, { decodeToMemory: false });
         }
 
         if (blob) {
-          // Step C: Try offscreen decoding using createImageBitmap
+          // Step C: Offscreen decoding using createImageBitmap
           try {
             if (typeof createImageBitmap === 'function') {
               const bitmap = await createImageBitmap(blob);
               if (isMounted) {
+                loadedKeyRef.current = normalizedKey;
                 setMemoryCachedImage(url!, bitmap);
                 setImage(bitmap);
                 setStatus('loaded');
@@ -96474,7 +96611,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
               }
             }
           } catch (_bitmapErr) {
-            // Fallthrough to ObjectURL decoding if createImageBitmap is not supported or failed
+            // Fallthrough to ObjectURL decoding if createImageBitmap fails
           }
 
           // Step D: Decode via Blob ObjectURL
@@ -96483,17 +96620,9 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           const img = new Image();
           img.src = blobUrlToRevoke;
 
-          const revokeBlobUrlSafely = () => {
-            if (createdBlobUrl === blobUrlToRevoke) {
-              createdBlobUrl = null;
-            }
-            try {
-              URL.revokeObjectURL(blobUrlToRevoke);
-            } catch (_) {}
-          };
-
           const onBlobImgDone = () => {
             if (isMounted) {
+              loadedKeyRef.current = normalizedKey;
               setMemoryCachedImage(url!, img);
               setImage(img);
               setStatus('loaded');
@@ -96511,9 +96640,15 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           return;
         }
 
-        // Step E: If direct blob fetch failed (e.g. CORS limitation or expired link), fallback to HTMLImageElement
+        // Step E: Fallback to HTMLImageElement if direct blob fetch was unavailable
         let fallbackSrc = url!;
-        if (fallbackSrc.startsWith('r2://') || (!fallbackSrc.startsWith('http://') && !fallbackSrc.startsWith('https://') && !fallbackSrc.startsWith('blob:') && !fallbackSrc.startsWith('data:'))) {
+        if (
+          fallbackSrc.startsWith('r2://') ||
+          (!fallbackSrc.startsWith('http://') &&
+            !fallbackSrc.startsWith('https://') &&
+            !fallbackSrc.startsWith('blob:') &&
+            !fallbackSrc.startsWith('data:'))
+        ) {
           const resolved = await resolveR2UrlToHttp(fallbackSrc);
           if (resolved) {
             fallbackSrc = resolved;
@@ -96530,7 +96665,9 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
 
         const onFallbackDone = () => {
           if (isMounted) {
+            loadedKeyRef.current = normalizedKey;
             setMemoryCachedImage(url!, fallbackImg);
+            persistHtmlImageElementToDisk(url!, fallbackImg);
             setImage(fallbackImg);
             setStatus('loaded');
           }
@@ -96541,6 +96678,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           directImg.src = fallbackSrc;
           directImg.onload = () => {
             if (isMounted) {
+              loadedKeyRef.current = normalizedKey;
               setMemoryCachedImage(url!, directImg);
               setImage(directImg);
               setStatus('loaded');
@@ -96566,7 +96704,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
       }
     }
 
-    loadWithIndexedDBCache();
+    loadWithPersistentDiskCache();
 
     return () => {
       isMounted = false;
@@ -96577,7 +96715,7 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
         createdBlobUrl = null;
       }
     };
-  }, [url, crossOrigin]);
+  }, [normalizedKey, url, crossOrigin]);
 
   return [image, status] as const;
 }
@@ -108419,64 +108557,53 @@ export async function compressImageToWebp(
 ================================================================================
 FILE: src/lib/imageDBCache.ts
 ================================================================================
-import { extractR2Key, resolveR2UrlToHttp } from '../components/PictureMapping/lib/r2Upload';
+import {
+  extractR2Key,
+  resolveR2UrlToHttp,
+  getStoredR2CredentialsAsync,
+  getS3Sdk,
+} from '../components/PictureMapping/lib/r2Upload';
 
 /**
- * IndexedDB & Memory Cache Manager for CAD Floorplan Images.
- * Provides instant 0ms switching between floors/versions during and across sessions.
- * 
- * Features:
- * 1. Normalized persistent Cache Keys (immune to signed URL expiration / query param changes).
- * 2. Two-tier caching: In-Memory LRU (0ms) + IndexedDB Persistent Blob Store (<30ms).
- * 3. Background Preloader Queue for all floor plans across HCM / HN.
- * 4. Automatic offscreen bitmap decoding via createImageBitmap() with ObjectURL fallback.
+ * Persistent Disk Cache (Browser CacheStorage API + IndexedDB) & Memory Cache Manager
+ * for CAD Floorplan Background Images & Maps (<500 lines per AGENTS.md Rule 12).
  */
 
 const DB_NAME = 'taka_cad_images_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'cad_blobs';
+const CACHE_STORAGE_NAME = 'taka-cad-floorplans-v1';
+
 const IS_CONSTRAINED_DEVICE =
   typeof window !== 'undefined' &&
   (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
     (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
     (typeof navigator !== 'undefined' && typeof (navigator as any).deviceMemory === 'number' && (navigator as any).deviceMemory <= 4));
-const MAX_MEMORY_CACHE = IS_CONSTRAINED_DEVICE ? 8 : 20; // Safe in-memory cache limit for active floorplan images
 
-// In-Memory LRU Cache for decoded ImageBitmap / HTMLImageElement
+const MAX_MEMORY_CACHE = IS_CONSTRAINED_DEVICE ? 8 : 24;
+
 const memoryCache = new Map<string, ImageBitmap | HTMLImageElement>();
-// In-Flight fetch promises to deduplicate network / IDB requests
 const inFlightRequests = new Map<string, Promise<Blob | null>>();
+const verifiedOnDiskKeys = new Set<string>();
 
-/**
- * Normalizes an image URL into a persistent cache key.
- * Strips volatile S3/R2 signed query parameters (e.g. ?X-Amz-Signature, ?Expires)
- * so that fresh signed URLs reuse already-cached image blobs across sessions.
- */
 export function normalizeImageCacheKey(url: string | undefined | null): string {
   if (!url || typeof url !== 'string') return '';
   const trimmed = url.trim();
   if (!trimmed) return '';
-  
-  // Data URLs and Blob URLs use their direct string/prefix
-  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
-    return trimmed;
-  }
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
 
-  // Unified persistent key for Cloudflare R2 objects across r2:// links, keys, and signed URLs
   const r2Key = extractR2Key(trimmed);
-  if (r2Key) {
-    return `r2_object_${r2Key}`;
-  }
+  if (r2Key) return `r2_object_${r2Key}`;
 
   try {
     const parsed = new URL(trimmed, typeof window !== 'undefined' ? window.location.href : 'http://localhost');
-    // If it contains AWS/R2 signed params, strip the search params for persistent storage key
     if (
       parsed.searchParams.has('X-Amz-Signature') ||
       parsed.searchParams.has('X-Amz-Credential') ||
       parsed.searchParams.has('x-amz-signature') ||
       parsed.searchParams.has('token') ||
-      parsed.searchParams.has('expires')
+      parsed.searchParams.has('expires') ||
+      parsed.searchParams.has('t')
     ) {
       return `${parsed.origin}${parsed.pathname}`;
     }
@@ -108484,6 +108611,10 @@ export function normalizeImageCacheKey(url: string | undefined | null): string {
   } catch (_e) {
     return trimmed;
   }
+}
+
+function toSyntheticCacheUrl(cacheKey: string): string {
+  return `https://cache.taka.local/cad-image/${encodeURIComponent(cacheKey)}`;
 }
 
 function updateMemoryCache(cacheKey: string, img: ImageBitmap | HTMLImageElement) {
@@ -108495,7 +108626,6 @@ function updateMemoryCache(cacheKey: string, img: ImageBitmap | HTMLImageElement
       try { (prev as ImageBitmap).close(); } catch (_) {}
     }
   } else if (memoryCache.size >= MAX_MEMORY_CACHE) {
-    // Evict oldest item and free its GPU texture memory if ImageBitmap
     const firstKey = memoryCache.keys().next().value;
     if (firstKey) {
       const evicted = memoryCache.get(firstKey);
@@ -108513,12 +108643,10 @@ export function getMemoryCachedImage(url: string): ImageBitmap | HTMLImageElemen
   if (!key) return null;
   const img = memoryCache.get(key);
   if (img) {
-    // Cold freeze / GPU context loss protection: check if ImageBitmap was detached or image broken
     if ('width' in img && img.width === 0) {
       memoryCache.delete(key);
       return null;
     }
-    // Move to end (most recently used)
     memoryCache.delete(key);
     memoryCache.set(key, img);
     return img;
@@ -108528,45 +108656,33 @@ export function getMemoryCachedImage(url: string): ImageBitmap | HTMLImageElemen
 
 export function setMemoryCachedImage(url: string, img: ImageBitmap | HTMLImageElement) {
   const key = normalizeImageCacheKey(url);
-  if (!key) return;
-  updateMemoryCache(key, img);
+  if (key) updateMemoryCache(key, img);
 }
 
-// IndexedDB Database Promise
 let dbPromise: Promise<IDBDatabase> | null = null;
 
 function getDB(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
-
   dbPromise = new Promise((resolve, reject) => {
     if (typeof window === 'undefined' || !window.indexedDB) {
-      reject(new Error('IndexedDB not supported in current environment'));
+      reject(new Error('IndexedDB unavailable'));
       return;
     }
-
     try {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
-
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME);
-        }
+        if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
       };
-
       request.onsuccess = () => {
         const db = request.result;
-        // Clean up connection promise when closed by browser sleep / discard
-        db.onclose = () => {
-          dbPromise = null;
-        };
+        db.onclose = () => { dbPromise = null; };
         db.onversionchange = () => {
           try { db.close(); } catch (_) {}
           dbPromise = null;
         };
         resolve(db);
       };
-
       request.onerror = () => {
         dbPromise = null;
         reject(request.error);
@@ -108576,123 +108692,195 @@ function getDB(): Promise<IDBDatabase> {
       reject(err);
     }
   });
-
   return dbPromise;
 }
 
 function queryIDB(db: IDBDatabase, key: string): Promise<Blob | null> {
   return new Promise((resolve) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.get(key);
-    req.onsuccess = () => resolve(req.result || null);
+    const req = tx.objectStore(STORE_NAME).get(key);
+    req.onsuccess = () => {
+      const res = req.result;
+      if (res instanceof Blob && res.size > 0) resolve(res);
+      else if (res instanceof ArrayBuffer && res.byteLength > 0) resolve(new Blob([res], { type: 'image/jpeg' }));
+      else resolve(null);
+    };
     req.onerror = () => resolve(null);
   });
+}
+
+async function getBlobFromCacheStorage(key: string): Promise<Blob | null> {
+  if (typeof window === 'undefined' || !('caches' in window) || !key) return null;
+  try {
+    const cache = await window.caches.open(CACHE_STORAGE_NAME);
+    const res = await cache.match(toSyntheticCacheUrl(key));
+    if (res && res.ok) {
+      const blob = await res.blob();
+      if (blob && blob.size > 0) {
+        verifiedOnDiskKeys.add(key);
+        return blob;
+      }
+    }
+  } catch (_e) {}
+  return null;
+}
+
+async function putBlobToCacheStorage(key: string, blob: Blob): Promise<void> {
+  if (typeof window === 'undefined' || !('caches' in window) || !key || !blob || blob.size === 0) return;
+  try {
+    const cache = await window.caches.open(CACHE_STORAGE_NAME);
+    await cache.put(
+      toSyntheticCacheUrl(key),
+      new Response(blob, {
+        headers: {
+          'Content-Type': blob.type || 'image/jpeg',
+          'Content-Length': String(blob.size),
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
+      })
+    );
+    verifiedOnDiskKeys.add(key);
+  } catch (_e) {}
 }
 
 export async function getCachedBlobFromIDB(url: string): Promise<Blob | null> {
   const key = normalizeImageCacheKey(url);
   if (!key) return null;
 
+  const cacheStorageHit = await getBlobFromCacheStorage(key);
+  if (cacheStorageHit) return cacheStorageHit;
+
   try {
     let db = await getDB();
+    let blob: Blob | null = null;
     try {
-      return await queryIDB(db, key);
+      blob = await queryIDB(db, key);
     } catch (_txErr) {
-      // Reconnect if database connection was invalidated during cold freeze / long sleep
       dbPromise = null;
       db = await getDB();
-      return await queryIDB(db, key);
+      blob = await queryIDB(db, key);
+    }
+    if (blob && blob.size > 0) {
+      verifiedOnDiskKeys.add(key);
+      putBlobToCacheStorage(key, blob).catch(() => {});
+      return blob;
     }
   } catch (_e) {
     dbPromise = null;
-    return null;
   }
+  return null;
 }
 
 export async function setCachedBlobToIDB(url: string, blob: Blob): Promise<void> {
   const key = normalizeImageCacheKey(url);
-  if (!key || !blob) return;
+  if (!key || !blob || blob.size === 0) return;
+
+  verifiedOnDiskKeys.add(key);
+  putBlobToCacheStorage(key, blob).catch(() => {});
 
   try {
     let db = await getDB();
     try {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      store.put(blob, key);
+      db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(blob, key);
     } catch (_txErr) {
       dbPromise = null;
       db = await getDB();
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      store.put(blob, key);
+      db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(blob, key);
     }
   } catch (_e) {
     dbPromise = null;
-    // Ignore IndexedDB write failures (e.g. quota exceeded or private browsing restrictions)
   }
 }
 
-/**
- * Fetches an image blob with deduplication, storing it in IndexedDB for subsequent visits.
- */
-export async function fetchAndCacheImageBlob(url: string): Promise<Blob | null> {
+async function fetchR2BlobViaSdk(rawUrlOrKey: string): Promise<Blob | null> {
+  const r2Key = extractR2Key(rawUrlOrKey);
+  if (!r2Key) return null;
+  try {
+    const creds = await getStoredR2CredentialsAsync();
+    if (!creds?.accountId || !creds?.accessKeyId || !creds?.secretAccessKey || !creds?.bucketName) return null;
+    const { S3Client, GetObjectCommand } = await getS3Sdk();
+    const s3 = new S3Client({
+      region: 'auto',
+      endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: creds.accessKeyId.trim(), secretAccessKey: creds.secretAccessKey.trim() },
+    });
+    const res = await s3.send(new GetObjectCommand({ Bucket: creds.bucketName.trim(), Key: r2Key }));
+    if (res.Body) {
+      const bytes = await (res.Body as any).transformToByteArray();
+      if (bytes && bytes.byteLength > 0) {
+        const mime = res.ContentType || (r2Key.toLowerCase().endsWith('.png') ? 'image/png' : r2Key.toLowerCase().endsWith('.webp') ? 'image/webp' : 'image/jpeg');
+        return new Blob([bytes], { type: mime });
+      }
+    }
+  } catch (_e) {}
+  return null;
+}
+
+export async function fetchAndCacheImageBlob(
+  url: string,
+  options?: { decodeToMemory?: boolean }
+): Promise<Blob | null> {
   if (!url) return null;
   const trimmed = url.trim();
-  if (!trimmed) return null;
+  if (!trimmed || trimmed.startsWith('data:')) return null;
 
   const key = normalizeImageCacheKey(trimmed);
+  if (!key) return null;
+  const shouldDecode = options?.decodeToMemory ?? !IS_CONSTRAINED_DEVICE;
 
-  // Check IDB first (normalized key matches across r2://, key, and signed URL)
   const existingBlob = await getCachedBlobFromIDB(trimmed);
-  if (existingBlob) return existingBlob;
-
-  // Deduplicate concurrent fetch requests for the same URL/key
-  if (inFlightRequests.has(key)) {
-    return inFlightRequests.get(key)!;
+  if (existingBlob) {
+    if (shouldDecode && !getMemoryCachedImage(trimmed) && typeof createImageBitmap === 'function') {
+      createImageBitmap(existingBlob).then((bmp) => setMemoryCachedImage(trimmed, bmp)).catch(() => {});
+    }
+    return existingBlob;
   }
+
+  if (inFlightRequests.has(key)) return inFlightRequests.get(key)!;
 
   const fetchPromise = (async () => {
     try {
+      let blob: Blob | null = null;
       let activeFetchUrl = trimmed;
 
-      // If it is an r2:// link or raw key, resolve to a presigned HTTP URL
-      if (activeFetchUrl.startsWith('r2://') || (!activeFetchUrl.startsWith('http://') && !activeFetchUrl.startsWith('https://') && !activeFetchUrl.startsWith('blob:') && !activeFetchUrl.startsWith('data:'))) {
+      if (
+        activeFetchUrl.startsWith('r2://') ||
+        (!activeFetchUrl.startsWith('http://') && !activeFetchUrl.startsWith('https://') && !activeFetchUrl.startsWith('blob:') && !activeFetchUrl.startsWith('data:'))
+      ) {
         const resolved = await resolveR2UrlToHttp(activeFetchUrl);
-        if (!resolved) return null;
-        activeFetchUrl = resolved;
+        if (resolved) activeFetchUrl = resolved;
       }
 
-      let res = await fetch(activeFetchUrl, { mode: 'cors' }).catch(() => null);
-
-      // If fetch failed with 401/403 (expired signed URL), refresh signed URL from R2 and retry once
-      if ((!res || !res.ok) && extractR2Key(trimmed)) {
-        const refreshedUrl = await resolveR2UrlToHttp(trimmed);
-        if (refreshedUrl && refreshedUrl !== activeFetchUrl) {
-          res = await fetch(refreshedUrl, { mode: 'cors' }).catch(() => null);
+      if (activeFetchUrl.startsWith('http://') || activeFetchUrl.startsWith('https://') || activeFetchUrl.startsWith('blob:')) {
+        let res = await fetch(activeFetchUrl, { mode: 'cors' }).catch(() => null);
+        if ((!res || !res.ok) && extractR2Key(trimmed)) {
+          const refreshedUrl = await resolveR2UrlToHttp(trimmed);
+          if (refreshedUrl && refreshedUrl !== activeFetchUrl) {
+            activeFetchUrl = refreshedUrl;
+            res = await fetch(refreshedUrl, { mode: 'cors' }).catch(() => null);
+          }
+        }
+        if (res && res.ok) {
+          const candidate = await res.blob().catch(() => null);
+          if (candidate && candidate.size > 0 && !candidate.type.includes('text/html')) blob = candidate;
         }
       }
 
-      // Universal server proxy fallback if browser CORS blocks R2/external fetch
-      if ((!res || !res.ok) && /^https?:\/\//i.test(activeFetchUrl)) {
-        res = await fetch(`/api/pdf-proxy?url=${encodeURIComponent(activeFetchUrl)}`).catch(() => null);
+      if (!blob && extractR2Key(trimmed)) blob = await fetchR2BlobViaSdk(trimmed);
+
+      if (!blob && /^https?:\/\//i.test(activeFetchUrl)) {
+        const res = await fetch(`/api/pdf-proxy?url=${encodeURIComponent(activeFetchUrl)}`).catch(() => null);
+        if (res && res.ok) {
+          const candidate = await res.blob().catch(() => null);
+          if (candidate && candidate.size > 0 && !candidate.type.includes('text/html')) blob = candidate;
+        }
       }
 
-      if (!res || !res.ok) {
-        return null;
-      }
-
-      const blob = await res.blob();
       if (blob && blob.size > 0) {
         await setCachedBlobToIDB(trimmed, blob);
-        // Pre-decode into memory cache so subsequent floor switches render in 0ms without decoding lag
-        try {
-          if (typeof createImageBitmap === 'function') {
-            createImageBitmap(blob).then(bitmap => {
-              setMemoryCachedImage(trimmed, bitmap);
-            }).catch(() => {});
-          }
-        } catch (_) {}
+        if (shouldDecode && !getMemoryCachedImage(trimmed) && typeof createImageBitmap === 'function') {
+          createImageBitmap(blob).then((bmp) => setMemoryCachedImage(trimmed, bmp)).catch(() => {});
+        }
         return blob;
       }
       return null;
@@ -108707,34 +108895,70 @@ export async function fetchAndCacheImageBlob(url: string): Promise<Blob | null> 
   return fetchPromise;
 }
 
-/**
- * Background Preloader: Silently pre-fetches and pre-caches floorplan images in IndexedDB & RAM.
- * Ensures that when users switch floors (B1, L1, L2, L3, L4, L5), the switch is instant (0ms).
- */
-export function preloadFloorImages(urls: (string | undefined | null)[]): void {
-  if (typeof window === 'undefined') return;
+export function persistHtmlImageElementToDisk(url: string, img: HTMLImageElement): void {
+  const key = normalizeImageCacheKey(url);
+  if (!key || verifiedOnDiskKeys.has(key) || !img?.naturalWidth || !img?.naturalHeight) return;
 
-  const validUrls = Array.from(new Set(urls.filter((u): u is string => !!u && typeof u === 'string' && !u.startsWith('data:'))));
+  setTimeout(() => {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(
+        (blob) => {
+          if (blob && blob.size > 0) setCachedBlobToIDB(url, blob).catch(() => {});
+          canvas.width = 0;
+          canvas.height = 0;
+        },
+        'image/jpeg',
+        0.92
+      );
+    } catch (_e) {}
+  }, 50);
+}
+
+export function preloadFloorImages(urls: (string | undefined | null)[], priorityUrl?: string | null): void {
+  if (typeof window === 'undefined') return;
+  const validUrls = Array.from(
+    new Set(urls.filter((u): u is string => !!u && typeof u === 'string' && u.trim().length > 0 && !u.trim().startsWith('data:')))
+  );
+  if (validUrls.length === 0) return;
+
+  const priorityKey = priorityUrl ? normalizeImageCacheKey(priorityUrl) : '';
+  if (priorityKey) {
+    validUrls.sort((a, b) => {
+      const ka = normalizeImageCacheKey(a);
+      const kb = normalizeImageCacheKey(b);
+      return ka === priorityKey ? -1 : kb === priorityKey ? 1 : 0;
+    });
+  }
+
+  if (priorityKey && validUrls.length > 0 && normalizeImageCacheKey(validUrls[0]) === priorityKey) {
+    const firstUrl = validUrls.shift()!;
+    fetchAndCacheImageBlob(firstUrl, { decodeToMemory: true }).catch(() => {});
+  }
   if (validUrls.length === 0) return;
 
   const runPreload = async () => {
     for (const url of validUrls) {
       try {
-        await fetchAndCacheImageBlob(url);
+        if (normalizeImageCacheKey(url)) {
+          await fetchAndCacheImageBlob(url, { decodeToMemory: !IS_CONSTRAINED_DEVICE });
+        }
       } catch (_e) {}
     }
   };
 
   if ('requestIdleCallback' in window) {
-    (window as any).requestIdleCallback(() => runPreload(), { timeout: 3000 });
+    (window as any).requestIdleCallback(() => runPreload(), { timeout: 2000 });
   } else {
-    setTimeout(runPreload, 200);
+    setTimeout(runPreload, 120);
   }
 }
 
-/**
- * Clears the IndexedDB CAD image cache and in-memory cache.
- */
 export async function clearCadImageCache(): Promise<void> {
   memoryCache.forEach((img) => {
     if (img && 'close' in img && typeof (img as ImageBitmap).close === 'function') {
@@ -108742,12 +108966,13 @@ export async function clearCadImageCache(): Promise<void> {
     }
   });
   memoryCache.clear();
-
+  verifiedOnDiskKeys.clear();
+  if (typeof window !== 'undefined' && 'caches' in window) {
+    try { await window.caches.delete(CACHE_STORAGE_NAME); } catch (_e) {}
+  }
   try {
     const db = await getDB();
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    store.clear();
+    db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).clear();
   } catch (_e) {}
 }
 
@@ -157253,3 +157478,240 @@ export {
   bulkPersistDelegations,
   deleteLocalRecord,
 };
+
+================================================================================
+FILE: src/lib/layoutConfigCache.ts
+================================================================================
+/**
+ * Persistent Disk Cache (IndexedDB + Browser CacheStorage API) for Layout Liveview Map Configurations.
+ * Stores `mapping_config.json` / `storeLocationData` (unit shapes, polygons, floor versions, thematic groups)
+ * on disk without the 1MB localStorage limit, enabling 0ms instant boot when opening Layout Liveview.
+ */
+
+const CONFIG_DB_NAME = 'taka_layout_config_db';
+const CONFIG_DB_VERSION = 1;
+const CONFIG_STORE_NAME = 'layout_configs';
+const PRIMARY_CONFIG_KEY = 'mapping_config_v1';
+const CACHE_STORAGE_NAME = 'taka-layout-config-cache-v1';
+const SYNTHETIC_CONFIG_URL = 'https://cache.taka.local/layout/mapping_config.json';
+const LS_BACKUP_KEY = 'taka_mapping_config_backup';
+const LS_META_KEY = 'taka_layout_config_meta_v1';
+
+// Synchronous in-memory mirror hydrated at startup for 0ms mount access
+let memoryLayoutConfig: any = null;
+let lastNetworkCheckAt = 0;
+
+/**
+ * Strips transient signed HTTP query params back to persistent `r2://` keys when saving to disk,
+ * while keeping a resolved runtime copy in memory so images hit IndexedDB/CacheStorage immediately.
+ */
+function hydrateFromLocalStorageSync(): any {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(LS_BACKUP_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && (parsed.storeLocationData || parsed.versions || parsed.version)) {
+        memoryLayoutConfig = parsed;
+        return parsed;
+      }
+    }
+  } catch (_e) {
+    // Ignore parse errors
+  }
+  return null;
+}
+
+// Immediately warm in-memory mirror from localStorage if available
+hydrateFromLocalStorageSync();
+
+let configDbPromise: Promise<IDBDatabase> | null = null;
+
+function getConfigDB(): Promise<IDBDatabase> {
+  if (configDbPromise) return configDbPromise;
+
+  configDbPromise = new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      reject(new Error('IndexedDB unavailable'));
+      return;
+    }
+    try {
+      const req = indexedDB.open(CONFIG_DB_NAME, CONFIG_DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = (e.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains(CONFIG_STORE_NAME)) {
+          db.createObjectStore(CONFIG_STORE_NAME);
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        db.onclose = () => {
+          configDbPromise = null;
+        };
+        db.onversionchange = () => {
+          try { db.close(); } catch (_) {}
+          configDbPromise = null;
+        };
+        resolve(db);
+      };
+      req.onerror = () => {
+        configDbPromise = null;
+        reject(req.error);
+      };
+    } catch (err) {
+      configDbPromise = null;
+      reject(err);
+    }
+  });
+
+  return configDbPromise;
+}
+
+/**
+ * Synchronously returns the cached layout config if already hydrated in memory or localStorage.
+ */
+export function getMemoryCachedLayoutConfig(): any {
+  if (memoryLayoutConfig) return memoryLayoutConfig;
+  return hydrateFromLocalStorageSync();
+}
+
+/**
+ * Reads the persisted layout config from Disk Cache (Browser CacheStorage API -> IndexedDB -> localStorage).
+ */
+export async function getCachedLayoutConfigFromDisk(): Promise<any> {
+  if (memoryLayoutConfig) return memoryLayoutConfig;
+
+  // 1. Check Browser CacheStorage API (fast native disk cache)
+  if (typeof window !== 'undefined' && 'caches' in window) {
+    try {
+      const cache = await window.caches.open(CACHE_STORAGE_NAME);
+      const res = await cache.match(SYNTHETIC_CONFIG_URL);
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && (data.storeLocationData || data.versions || data.version)) {
+          memoryLayoutConfig = data;
+          return data;
+        }
+      }
+    } catch (_e) {
+      // Fallthrough to IndexedDB
+    }
+  }
+
+  // 2. Check IndexedDB persistent store
+  try {
+    const db = await getConfigDB();
+    const idbData = await new Promise<any>((resolve) => {
+      const tx = db.transaction(CONFIG_STORE_NAME, 'readonly');
+      const store = tx.objectStore(CONFIG_STORE_NAME);
+      const req = store.get(PRIMARY_CONFIG_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+    if (idbData && (idbData.storeLocationData || idbData.versions || idbData.version)) {
+      memoryLayoutConfig = idbData;
+      return idbData;
+    }
+  } catch (_e) {
+    configDbPromise = null;
+  }
+
+  // 3. Fallback to localStorage
+  return hydrateFromLocalStorageSync();
+}
+
+/**
+ * Persists the layout config to Disk Cache (both IndexedDB and Browser CacheStorage API, plus localStorage if < 900KB).
+ * Runs off the main render path to guarantee 60fps UI responsiveness.
+ */
+export async function saveLayoutConfigToDisk(configData: any): Promise<void> {
+  if (!configData || typeof configData !== 'object') return;
+
+  const stamped = {
+    ...configData,
+    cachedAt: Date.now(),
+    timestamp: configData.timestamp || configData.updatedAt || Date.now(),
+  };
+
+  memoryLayoutConfig = stamped;
+
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(
+        LS_META_KEY,
+        JSON.stringify({
+          timestamp: stamped.timestamp,
+          cachedAt: stamped.cachedAt,
+        })
+      );
+    }
+  } catch (_e) {}
+
+  // Write to IndexedDB
+  try {
+    const db = await getConfigDB();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(CONFIG_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(CONFIG_STORE_NAME);
+      store.put(stamped, PRIMARY_CONFIG_KEY);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch (_e) {
+    configDbPromise = null;
+  }
+
+  // Write to Browser CacheStorage API (persistent OS disk cache)
+  if (typeof window !== 'undefined' && 'caches' in window) {
+    try {
+      const jsonStr = JSON.stringify(stamped);
+      const cache = await window.caches.open(CACHE_STORAGE_NAME);
+      const response = new Response(jsonStr, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=31536000',
+        },
+      });
+      await cache.put(SYNTHETIC_CONFIG_URL, response);
+
+      // If small enough (< 900KB), also mirror to localStorage for synchronous 0ms cold boot
+      if (jsonStr.length < 900000) {
+        try {
+          localStorage.setItem(LS_BACKUP_KEY, jsonStr);
+        } catch (_lsErr) {}
+      }
+    } catch (_e) {}
+  }
+}
+
+export function getLastLayoutNetworkCheckAt(): number {
+  return lastNetworkCheckAt;
+}
+
+export function markLayoutNetworkChecked(): void {
+  lastNetworkCheckAt = Date.now();
+}
+
+export function getCachedLayoutConfigTimestamp(): number {
+  if (memoryLayoutConfig?.timestamp) {
+    return Number(memoryLayoutConfig.timestamp) || 0;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LS_META_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return Number(parsed?.timestamp) || 0;
+      }
+    } catch (_e) {}
+  }
+  return 0;
+}
+
+// Warm up memoryLayoutConfig from IndexedDB/CacheStorage immediately on startup in background
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    getCachedLayoutConfigFromDisk().catch(() => {});
+  }, 10);
+}
+

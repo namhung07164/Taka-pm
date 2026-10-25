@@ -118,18 +118,6 @@ export function useLayoutFloorData({
     return finalVersions;
   }, [getAllStoreVersions, storeFilter, localStoreLocationData, config]);
 
-  // Pre-cache all floor maps for this store into IndexedDB
-  useEffect(() => {
-    if (availableStoreVersions.length > 0) {
-      const urls = availableStoreVersions
-        .map(v => v?.backgroundUrl)
-        .filter((u): u is string => typeof u === 'string' && u.length > 0 && !u.startsWith('r2://'));
-      if (urls.length > 0) {
-        preloadFloorImages(urls);
-      }
-    }
-  }, [availableStoreVersions]);
-
   // 2. Filter versions specific to targetLoc (e.g. L2) and year from Picture Mapping / global setting
   const prevLocationVersionsRef = useRef<any[]>([]);
   const prevLocationVersionsKeyRef = useRef<string>('');
@@ -208,13 +196,15 @@ export function useLayoutFloorData({
     }
 
     // Resolve backgroundUrl if empty or r2://
-    let bgUrl = v.backgroundUrl || '';
+    let bgUrl = v.backgroundUrl || ((v as any).r2Key ? `r2://${(v as any).r2Key}` : '');
     if (!bgUrl || bgUrl.startsWith('r2://')) {
       // Scan all cloud partitions and versions for resolved signed URL
       if (cloudPart?.mapVersions) {
         const matchingCloudV = cloudPart.mapVersions.find((cv: any) => cv.id === v.id || cv.name === v.name);
         if (matchingCloudV?.backgroundUrl && !matchingCloudV.backgroundUrl.startsWith('r2://')) {
           bgUrl = matchingCloudV.backgroundUrl;
+        } else if (!bgUrl && (matchingCloudV as any)?.r2Key) {
+          bgUrl = `r2://${(matchingCloudV as any).r2Key}`;
         }
       }
       if ((!bgUrl || bgUrl.startsWith('r2://')) && config?.storeLocationData) {
@@ -223,6 +213,8 @@ export function useLayoutFloorData({
           if (matchingCloudV?.backgroundUrl && !matchingCloudV.backgroundUrl.startsWith('r2://')) {
             bgUrl = matchingCloudV.backgroundUrl;
             break;
+          } else if (!bgUrl && (matchingCloudV as any)?.r2Key) {
+            bgUrl = `r2://${(matchingCloudV as any).r2Key}`;
           }
         }
       }
@@ -365,6 +357,18 @@ export function useLayoutFloorData({
 
   const activeBgUrl = version?.backgroundUrl || '';
   const [bgImage] = useOffscreenImage(activeBgUrl, 'anonymous');
+
+  // Pre-cache all floor maps for this store into Persistent Disk Cache (prioritizing active floor)
+  useEffect(() => {
+    if (availableStoreVersions.length > 0) {
+      const urls = availableStoreVersions
+        .map(v => v?.backgroundUrl || ((v as any)?.r2Key ? `r2://${(v as any).r2Key}` : ''))
+        .filter((u): u is string => typeof u === 'string' && u.length > 0 && !u.startsWith('data:'));
+      if (urls.length > 0) {
+        preloadFloorImages(urls, activeBgUrl);
+      }
+    }
+  }, [availableStoreVersions, activeBgUrl]);
 
   // Helper to accurately check if unit has user-attached images in localStorage partitioned by store
   const hasStoredUnitImages = useCallback((key: string | undefined | null, overrideStore?: string): boolean => {
