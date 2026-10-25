@@ -157715,3 +157715,2536 @@ if (typeof window !== 'undefined') {
   }, 10);
 }
 
+
+=== FILE: src/lib/layoutConfigCache.ts ===
+/**
+ * Persistent Disk Cache (IndexedDB + Browser CacheStorage API) for Layout Liveview Map Configurations.
+ * Stores `mapping_config.json` / `storeLocationData` (unit shapes, polygons, floor versions, thematic groups)
+ * on disk without the 1MB localStorage limit, enabling 0ms instant boot when opening Layout Liveview.
+ */
+
+const CONFIG_DB_NAME = 'taka_layout_config_db';
+const CONFIG_DB_VERSION = 1;
+const CONFIG_STORE_NAME = 'layout_configs';
+const PRIMARY_CONFIG_KEY = 'mapping_config_v2';
+const CACHE_STORAGE_NAME = 'taka-layout-config-cache-v2';
+const SYNTHETIC_CONFIG_URL = 'https://cache.taka.local/layout/mapping_config_v2.json';
+const LS_BACKUP_KEY = 'taka_mapping_config_backup';
+const LS_META_KEY = 'taka_layout_config_meta_v2';
+
+// Synchronous in-memory mirror hydrated at startup for 0ms mount access
+let memoryLayoutConfig: any = null;
+let lastNetworkCheckAt = 0;
+
+/**
+ * Validates that a layout config actually contains real floor versions or unit shapes,
+ * preventing empty initial store partitions from corrupting the persistent disk cache.
+ */
+export function isValidLayoutConfig(data: any): boolean {
+  if (!data || typeof data !== 'object') return false;
+
+  if (data.storeLocationData && typeof data.storeLocationData === 'object') {
+    for (const part of Object.values(data.storeLocationData) as any[]) {
+      if (Array.isArray(part?.mapVersions) && part.mapVersions.length > 0) {
+        const hasRealVersion = part.mapVersions.some(
+          (v: any) => v && (v.backgroundUrl || v.r2Key || v.id || v.name)
+        );
+        if (hasRealVersion) return true;
+      }
+      if (Array.isArray(part?.mapUnits) && part.mapUnits.length > 0) {
+        return true;
+      }
+    }
+  }
+
+  if (Array.isArray(data.versions) && data.versions.length > 0) return true;
+  if (data.version && (data.version.backgroundUrl || data.version.r2Key || data.version.id)) return true;
+  if (Array.isArray(data.mapUnits) && data.mapUnits.length > 0) return true;
+  if (Array.isArray(data.units) && data.units.length > 0) return true;
+
+  return false;
+}
+
+function hydrateFromLocalStorageSync(): any {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(LS_BACKUP_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (isValidLayoutConfig(parsed)) {
+        memoryLayoutConfig = parsed;
+        return parsed;
+      } else {
+        // Purge corrupted/empty backup
+        localStorage.removeItem(LS_BACKUP_KEY);
+      }
+    }
+  } catch (_e) {
+    try { localStorage.removeItem(LS_BACKUP_KEY); } catch (_) {}
+  }
+  return null;
+}
+
+// Immediately warm in-memory mirror from localStorage if available
+hydrateFromLocalStorageSync();
+
+let configDbPromise: Promise<IDBDatabase> | null = null;
+
+function getConfigDB(): Promise<IDBDatabase> {
+  if (configDbPromise) return configDbPromise;
+
+  configDbPromise = new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      reject(new Error('IndexedDB unavailable'));
+      return;
+    }
+    try {
+      const req = indexedDB.open(CONFIG_DB_NAME, CONFIG_DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = (e.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains(CONFIG_STORE_NAME)) {
+          db.createObjectStore(CONFIG_STORE_NAME);
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        db.onclose = () => {
+          configDbPromise = null;
+        };
+        db.onversionchange = () => {
+          try { db.close(); } catch (_) {}
+          configDbPromise = null;
+        };
+        resolve(db);
+      };
+      req.onerror = () => {
+        configDbPromise = null;
+        reject(req.error);
+      };
+    } catch (err) {
+      configDbPromise = null;
+      reject(err);
+    }
+  });
+
+  return configDbPromise;
+}
+
+/**
+ * Synchronously returns the cached layout config if already hydrated in memory or localStorage.
+ */
+export function getMemoryCachedLayoutConfig(): any {
+  if (memoryLayoutConfig && isValidLayoutConfig(memoryLayoutConfig)) {
+    return memoryLayoutConfig;
+  }
+  return hydrateFromLocalStorageSync();
+}
+
+/**
+ * Reads the persisted layout config from Disk Cache (Browser CacheStorage API -> IndexedDB -> localStorage).
+ */
+export async function getCachedLayoutConfigFromDisk(): Promise<any> {
+  if (memoryLayoutConfig && isValidLayoutConfig(memoryLayoutConfig)) {
+    return memoryLayoutConfig;
+  }
+
+  // 1. Check Browser CacheStorage API (fast native disk cache)
+  if (typeof window !== 'undefined' && 'caches' in window) {
+    try {
+      const cache = await window.caches.open(CACHE_STORAGE_NAME);
+      const res = await cache.match(SYNTHETIC_CONFIG_URL);
+      if (res && res.ok) {
+        const data = await res.json();
+        if (isValidLayoutConfig(data)) {
+          memoryLayoutConfig = data;
+          return data;
+        }
+      }
+    } catch (_e) {
+      // Fallthrough to IndexedDB
+    }
+  }
+
+  // 2. Check IndexedDB persistent store
+  try {
+    const db = await getConfigDB();
+    const idbData = await new Promise<any>((resolve) => {
+      const tx = db.transaction(CONFIG_STORE_NAME, 'readonly');
+      const store = tx.objectStore(CONFIG_STORE_NAME);
+      const req = store.get(PRIMARY_CONFIG_KEY);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+    if (isValidLayoutConfig(idbData)) {
+      memoryLayoutConfig = idbData;
+      return idbData;
+    }
+  } catch (_e) {
+    configDbPromise = null;
+  }
+
+  // 3. Fallback to localStorage
+  return hydrateFromLocalStorageSync();
+}
+
+/**
+ * Persists the layout config to Disk Cache (both IndexedDB and Browser CacheStorage API, plus localStorage if < 900KB).
+ * Runs off the main render path to guarantee 60fps UI responsiveness.
+ */
+export async function saveLayoutConfigToDisk(configData: any): Promise<void> {
+  if (!isValidLayoutConfig(configData)) return;
+
+  const stamped = {
+    ...configData,
+    cachedAt: Date.now(),
+    timestamp: configData.timestamp || configData.updatedAt || Date.now(),
+  };
+
+  memoryLayoutConfig = stamped;
+
+  setTimeout(async () => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          LS_META_KEY,
+          JSON.stringify({
+            timestamp: stamped.timestamp,
+            cachedAt: stamped.cachedAt,
+          })
+        );
+      }
+    } catch (_e) {}
+
+    // Write to IndexedDB
+    try {
+      const db = await getConfigDB();
+      await new Promise<void>((resolve) => {
+        const tx = db.transaction(CONFIG_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(CONFIG_STORE_NAME);
+        store.put(stamped, PRIMARY_CONFIG_KEY);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    } catch (_e) {
+      configDbPromise = null;
+    }
+
+    // Write to Browser CacheStorage API (persistent OS disk cache)
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      try {
+        const jsonStr = JSON.stringify(stamped);
+        const cache = await window.caches.open(CACHE_STORAGE_NAME);
+        const response = new Response(jsonStr, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'public, max-age=31536000',
+          },
+        });
+        await cache.put(SYNTHETIC_CONFIG_URL, response);
+
+        // If small enough (< 900KB), also mirror to localStorage for synchronous 0ms cold boot
+        if (jsonStr.length < 900000) {
+          try {
+            localStorage.setItem(LS_BACKUP_KEY, jsonStr);
+          } catch (_lsErr) {}
+        }
+      } catch (_e) {}
+    }
+  }, 0);
+}
+
+export function getLastLayoutNetworkCheckAt(): number {
+  return lastNetworkCheckAt;
+}
+
+export function markLayoutNetworkChecked(): void {
+  lastNetworkCheckAt = Date.now();
+}
+
+export function getCachedLayoutConfigTimestamp(): number {
+  if (memoryLayoutConfig?.timestamp && isValidLayoutConfig(memoryLayoutConfig)) {
+    return Number(memoryLayoutConfig.timestamp) || 0;
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(LS_META_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return Number(parsed?.timestamp) || 0;
+      }
+    } catch (_e) {}
+  }
+  return 0;
+}
+
+// Warm up memoryLayoutConfig from IndexedDB/CacheStorage immediately on startup in background
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    getCachedLayoutConfigFromDisk().catch(() => {});
+  }, 10);
+}
+
+
+=== FILE: src/lib/imageDBCache.ts ===
+import {
+  extractR2Key,
+  resolveR2UrlToHttp,
+} from '../components/PictureMapping/lib/r2Upload';
+
+/**
+ * Persistent Disk Cache (Browser CacheStorage API + IndexedDB) & Memory Cache Manager
+ * for CAD Floorplan Background Images & Maps (<500 lines per AGENTS.md Rule 12).
+ */
+
+const DB_NAME = 'taka_cad_images_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'cad_blobs';
+const CACHE_STORAGE_NAME = 'taka-cad-floorplans-v1';
+
+const IS_CONSTRAINED_DEVICE =
+  typeof window !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+    (typeof navigator !== 'undefined' && typeof (navigator as any).deviceMemory === 'number' && (navigator as any).deviceMemory <= 4));
+
+const MAX_MEMORY_CACHE = IS_CONSTRAINED_DEVICE ? 6 : 12;
+
+const memoryCache = new Map<string, ImageBitmap | HTMLImageElement>();
+const memoryObjectUrls = new Map<string, string>();
+const inFlightRequests = new Map<string, Promise<Blob | null>>();
+const verifiedOnDiskKeys = new Set<string>();
+
+export function normalizeImageCacheKey(url: string | undefined | null): string {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
+
+  const r2Key = extractR2Key(trimmed);
+  if (r2Key) return `r2_object_${r2Key}`;
+
+  try {
+    const parsed = new URL(trimmed, typeof window !== 'undefined' ? window.location.href : 'http://localhost');
+    if (
+      parsed.searchParams.has('X-Amz-Signature') ||
+      parsed.searchParams.has('X-Amz-Credential') ||
+      parsed.searchParams.has('x-amz-signature') ||
+      parsed.searchParams.has('token') ||
+      parsed.searchParams.has('expires') ||
+      parsed.searchParams.has('t')
+    ) {
+      return `${parsed.origin}${parsed.pathname}`;
+    }
+    return trimmed;
+  } catch (_e) {
+    return trimmed;
+  }
+}
+
+function toSyntheticCacheUrl(cacheKey: string): string {
+  return `https://cache.taka.local/cad-image/${encodeURIComponent(cacheKey)}`;
+}
+
+function cleanupEvictedEntry(cacheKey: string, img: ImageBitmap | HTMLImageElement | undefined, nextImg?: ImageBitmap | HTMLImageElement) {
+  if (img && img !== nextImg && 'close' in img && typeof (img as ImageBitmap).close === 'function') {
+    try { (img as ImageBitmap).close(); } catch (_) {}
+  }
+  const prevObjUrl = memoryObjectUrls.get(cacheKey);
+  if (prevObjUrl && (!nextImg || !('src' in nextImg) || nextImg.src !== prevObjUrl)) {
+    memoryObjectUrls.delete(cacheKey);
+    try { URL.revokeObjectURL(prevObjUrl); } catch (_) {}
+  }
+}
+
+function updateMemoryCache(cacheKey: string, img: ImageBitmap | HTMLImageElement, objectUrl?: string) {
+  if (!cacheKey) return;
+  if (memoryCache.has(cacheKey)) {
+    const prev = memoryCache.get(cacheKey);
+    memoryCache.delete(cacheKey);
+    cleanupEvictedEntry(cacheKey, prev, img);
+  } else if (memoryCache.size >= MAX_MEMORY_CACHE) {
+    const firstKey = memoryCache.keys().next().value;
+    if (firstKey) {
+      const evicted = memoryCache.get(firstKey);
+      memoryCache.delete(firstKey);
+      cleanupEvictedEntry(firstKey, evicted);
+    }
+  }
+  if (objectUrl) {
+    memoryObjectUrls.set(cacheKey, objectUrl);
+  }
+  memoryCache.set(cacheKey, img);
+}
+
+export function getMemoryCachedImage(url: string): ImageBitmap | HTMLImageElement | null {
+  const key = normalizeImageCacheKey(url);
+  if (!key) return null;
+  const img = memoryCache.get(key);
+  if (img) {
+    if ('width' in img && img.width === 0 && (!('naturalWidth' in img) || img.naturalWidth === 0)) {
+      memoryCache.delete(key);
+      return null;
+    }
+    memoryCache.delete(key);
+    memoryCache.set(key, img);
+    return img;
+  }
+  return null;
+}
+
+export function setMemoryCachedImage(url: string, img: ImageBitmap | HTMLImageElement, objectUrl?: string) {
+  const key = normalizeImageCacheKey(url);
+  if (key) updateMemoryCache(key, img, objectUrl);
+}
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function getDB(): Promise<IDBDatabase> {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      reject(new Error('IndexedDB unavailable'));
+      return;
+    }
+    try {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onclose = () => { dbPromise = null; };
+        db.onversionchange = () => {
+          try { db.close(); } catch (_) {}
+          dbPromise = null;
+        };
+        resolve(db);
+      };
+      request.onerror = () => {
+        dbPromise = null;
+        reject(request.error);
+      };
+    } catch (err) {
+      dbPromise = null;
+      reject(err);
+    }
+  });
+  return dbPromise;
+}
+
+function queryIDB(db: IDBDatabase, key: string): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const req = tx.objectStore(STORE_NAME).get(key);
+    req.onsuccess = () => {
+      const res = req.result;
+      if (res instanceof Blob && res.size > 0) resolve(res);
+      else if (res instanceof ArrayBuffer && res.byteLength > 0) resolve(new Blob([res], { type: 'image/jpeg' }));
+      else resolve(null);
+    };
+    req.onerror = () => resolve(null);
+  });
+}
+
+async function getBlobFromCacheStorage(key: string): Promise<Blob | null> {
+  if (typeof window === 'undefined' || !('caches' in window) || !key) return null;
+  try {
+    const cache = await window.caches.open(CACHE_STORAGE_NAME);
+    const res = await cache.match(toSyntheticCacheUrl(key));
+    if (res && res.ok) {
+      const blob = await res.blob();
+      if (blob && blob.size > 0) {
+        verifiedOnDiskKeys.add(key);
+        return blob;
+      }
+    }
+  } catch (_e) {}
+  return null;
+}
+
+async function putBlobToCacheStorage(key: string, blob: Blob): Promise<void> {
+  if (typeof window === 'undefined' || !('caches' in window) || !key || !blob || blob.size === 0) return;
+  try {
+    const cache = await window.caches.open(CACHE_STORAGE_NAME);
+    await cache.put(
+      toSyntheticCacheUrl(key),
+      new Response(blob, {
+        headers: {
+          'Content-Type': blob.type || 'image/jpeg',
+          'Content-Length': String(blob.size),
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
+      })
+    );
+    verifiedOnDiskKeys.add(key);
+  } catch (_e) {}
+}
+
+export async function getCachedBlobFromIDB(url: string): Promise<Blob | null> {
+  const key = normalizeImageCacheKey(url);
+  if (!key) return null;
+
+  const cacheStorageHit = await getBlobFromCacheStorage(key);
+  if (cacheStorageHit) return cacheStorageHit;
+
+  try {
+    let db = await getDB();
+    let blob: Blob | null = null;
+    try {
+      blob = await queryIDB(db, key);
+    } catch (_txErr) {
+      dbPromise = null;
+      db = await getDB();
+      blob = await queryIDB(db, key);
+    }
+    if (blob && blob.size > 0) {
+      verifiedOnDiskKeys.add(key);
+      putBlobToCacheStorage(key, blob).catch(() => {});
+      return blob;
+    }
+  } catch (_e) {
+    dbPromise = null;
+  }
+  return null;
+}
+
+export async function setCachedBlobToIDB(url: string, blob: Blob): Promise<void> {
+  const key = normalizeImageCacheKey(url);
+  if (!key || !blob || blob.size === 0) return;
+
+  verifiedOnDiskKeys.add(key);
+  putBlobToCacheStorage(key, blob).catch(() => {});
+
+  try {
+    let db = await getDB();
+    try {
+      db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(blob, key);
+    } catch (_txErr) {
+      dbPromise = null;
+      db = await getDB();
+      db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(blob, key);
+    }
+  } catch (_e) {
+    dbPromise = null;
+  }
+}
+
+/**
+ * Lightweight background downloader that stores the compressed floorplan binary Blob into
+ * CacheStorage + IndexedDB without decoding into RAM or blocking the main UI thread.
+ */
+export async function fetchAndCacheImageBlob(url: string): Promise<Blob | null> {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return null;
+
+  const key = normalizeImageCacheKey(trimmed);
+  if (!key) return null;
+  if (verifiedOnDiskKeys.has(key)) {
+    const hit = await getCachedBlobFromIDB(trimmed);
+    if (hit) return hit;
+  }
+
+  const existingBlob = await getCachedBlobFromIDB(trimmed);
+  if (existingBlob) return existingBlob;
+
+  if (inFlightRequests.has(key)) return inFlightRequests.get(key)!;
+
+  const fetchPromise = (async () => {
+    try {
+      let blob: Blob | null = null;
+      let activeFetchUrl = trimmed;
+
+      // Always resolve r2:// or R2 keys to a fresh presigned URL
+      if (
+        activeFetchUrl.startsWith('r2://') ||
+        (!activeFetchUrl.startsWith('http://') && !activeFetchUrl.startsWith('https://'))
+      ) {
+        const resolved = await resolveR2UrlToHttp(activeFetchUrl);
+        if (resolved) activeFetchUrl = resolved;
+      }
+
+      if (!/^https?:\/\//i.test(activeFetchUrl)) return null;
+
+      const isR2StorageUrl = activeFetchUrl.includes('.r2.cloudflarestorage.com');
+
+      // For Cloudflare R2 storage URLs, use the same-origin server proxy first to avoid CORS preflight failures
+      if (isR2StorageUrl) {
+        const proxyRes = await fetch(`/api/pdf-proxy?url=${encodeURIComponent(activeFetchUrl)}`).catch(() => null);
+        if (proxyRes && proxyRes.ok) {
+          const candidate = await proxyRes.blob().catch(() => null);
+          if (candidate && candidate.size > 0 && !candidate.type.includes('text/html')) {
+            blob = candidate;
+          }
+        }
+        // If presigned URL expired, re-sign once and retry proxy
+        if (!blob && extractR2Key(trimmed)) {
+          const refreshedUrl = await resolveR2UrlToHttp(`r2://${extractR2Key(trimmed)}`);
+          if (refreshedUrl && refreshedUrl !== activeFetchUrl) {
+            activeFetchUrl = refreshedUrl;
+            const retryRes = await fetch(`/api/pdf-proxy?url=${encodeURIComponent(refreshedUrl)}`).catch(() => null);
+            if (retryRes && retryRes.ok) {
+              const candidate = await retryRes.blob().catch(() => null);
+              if (candidate && candidate.size > 0 && !candidate.type.includes('text/html')) {
+                blob = candidate;
+              }
+            }
+          }
+        }
+      }
+
+      // Fallback or non-R2 direct CORS fetch
+      if (!blob) {
+        const directRes = await fetch(activeFetchUrl, { mode: 'cors' }).catch(() => null);
+        if (directRes && directRes.ok) {
+          const candidate = await directRes.blob().catch(() => null);
+          if (candidate && candidate.size > 0 && !candidate.type.includes('text/html')) {
+            blob = candidate;
+          }
+        }
+      }
+
+      // Final proxy fallback for non-R2 URLs if direct CORS failed
+      if (!blob && !isR2StorageUrl) {
+        const proxyRes = await fetch(`/api/pdf-proxy?url=${encodeURIComponent(activeFetchUrl)}`).catch(() => null);
+        if (proxyRes && proxyRes.ok) {
+          const candidate = await proxyRes.blob().catch(() => null);
+          if (candidate && candidate.size > 0 && !candidate.type.includes('text/html')) {
+            blob = candidate;
+          }
+        }
+      }
+
+      if (blob && blob.size > 0) {
+        await setCachedBlobToIDB(trimmed, blob);
+        return blob;
+      }
+      return null;
+    } catch (_err) {
+      return null;
+    } finally {
+      inFlightRequests.delete(key);
+    }
+  })();
+
+  inFlightRequests.set(key, fetchPromise);
+  return fetchPromise;
+}
+
+let preloadTimer: any = null;
+
+/**
+ * Gently caches up to 4 floorplan Blobs for the current store in the background after the active
+ * floor is already rendered. Stores ONLY compressed Blobs on disk (0MB RAM bitmap allocation).
+ */
+export function preloadFloorImages(urls: (string | undefined | null)[], excludeUrl?: string | null): void {
+  if (typeof window === 'undefined') return;
+  const excludeKey = excludeUrl ? normalizeImageCacheKey(excludeUrl) : '';
+
+  const seenKeys = new Set<string>();
+  const targetUrls: string[] = [];
+
+  for (const raw of urls) {
+    if (!raw || typeof raw !== 'string') continue;
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) continue;
+    const k = normalizeImageCacheKey(trimmed);
+    if (!k || k === excludeKey || seenKeys.has(k) || verifiedOnDiskKeys.has(k)) continue;
+    seenKeys.add(k);
+    targetUrls.push(trimmed);
+    if (targetUrls.length >= 4) break;
+  }
+
+  if (targetUrls.length === 0) return;
+
+  if (preloadTimer) clearTimeout(preloadTimer);
+  preloadTimer = setTimeout(async () => {
+    for (const u of targetUrls) {
+      try {
+        const k = normalizeImageCacheKey(u);
+        if (!verifiedOnDiskKeys.has(k)) {
+          await fetchAndCacheImageBlob(u);
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      } catch (_e) {}
+    }
+  }, 1800);
+}
+
+export async function clearCadImageCache(): Promise<void> {
+  memoryCache.forEach((img, key) => {
+    cleanupEvictedEntry(key, img);
+  });
+  memoryCache.clear();
+  memoryObjectUrls.clear();
+  verifiedOnDiskKeys.clear();
+  if (typeof window !== 'undefined' && 'caches' in window) {
+    try { await window.caches.delete(CACHE_STORAGE_NAME); } catch (_e) {}
+  }
+  try {
+    const db = await getDB();
+    db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).clear();
+  } catch (_e) {}
+}
+
+
+=== FILE: src/hooks/useOffscreenImage.ts ===
+import { useEffect, useRef, useState } from 'react';
+import {
+  getMemoryCachedImage,
+  setMemoryCachedImage,
+  getCachedBlobFromIDB,
+  fetchAndCacheImageBlob,
+  normalizeImageCacheKey,
+} from '../lib/imageDBCache';
+import { extractR2Key, resolveR2UrlToHttp } from '../components/PictureMapping/lib/r2Upload';
+
+/**
+ * Custom hook to load & decode floorplan images with Persistent Disk Cache (CacheStorage + IndexedDB)
+ * and zero main-thread blocking.
+ *
+ * Flow:
+ * 1. 0ms In-Memory LRU Cache Hit
+ * 2. <10ms Local Disk Cache Hit (CacheStorage / IndexedDB Blob -> async Image decode)
+ * 3. Immediate Native Browser C++ Image Stream (does not block on CORS fetch/proxy)
+ * 4. Quiet background persistence of the binary Blob to Disk Cache after the image renders
+ */
+export function useOffscreenImage(url: string | undefined | null, crossOrigin: string = 'anonymous') {
+  const normalizedKey = normalizeImageCacheKey(url);
+  const loadedKeyRef = useRef<string>('');
+
+  const [image, setImage] = useState<HTMLImageElement | ImageBitmap | null>(() => {
+    if (url) {
+      const cached = getMemoryCachedImage(url);
+      if (cached) {
+        loadedKeyRef.current = normalizeImageCacheKey(url);
+        return cached;
+      }
+    }
+    return null;
+  });
+
+  const [status, setStatus] = useState<'loading' | 'loaded' | 'failed'>(() => {
+    if (url && getMemoryCachedImage(url)) return 'loaded';
+    return url ? 'loading' : 'failed';
+  });
+
+  useEffect(() => {
+    if (!url || typeof url !== 'string' || !url.trim() || !normalizedKey) {
+      loadedKeyRef.current = '';
+      setImage(null);
+      setStatus('failed');
+      return;
+    }
+
+    // 1. Instant In-Memory Cache Hit (0ms)
+    const memCached = getMemoryCachedImage(url);
+    if (memCached) {
+      loadedKeyRef.current = normalizedKey;
+      setImage((prev) => (prev === memCached ? prev : memCached));
+      setStatus('loaded');
+      return;
+    }
+
+    let isMounted = true;
+    let bgCacheTimer: any = null;
+    setStatus('loading');
+
+    async function loadFloorplanImage() {
+      try {
+        // 2. Fast Local Disk Cache Check (CacheStorage API + IndexedDB)
+        const diskBlob = await getCachedBlobFromIDB(url!);
+        if (!isMounted) return;
+
+        if (diskBlob && diskBlob.size > 0) {
+          const blobUrl = URL.createObjectURL(diskBlob);
+          const diskImg = new Image();
+          diskImg.decoding = 'async';
+
+          const onDiskImgLoaded = () => {
+            if (!isMounted) return;
+            loadedKeyRef.current = normalizedKey;
+            setMemoryCachedImage(url!, diskImg, blobUrl);
+            setImage(diskImg);
+            setStatus('loaded');
+          };
+
+          diskImg.onload = onDiskImgLoaded;
+          diskImg.onerror = () => {
+            try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+            if (isMounted) loadFromNetwork();
+          };
+          diskImg.src = blobUrl;
+          return;
+        }
+
+        // 3. Not on disk yet -> Load immediately via native browser image loader (non-blocking)
+        await loadFromNetwork();
+      } catch (_err) {
+        if (isMounted) setStatus('failed');
+      }
+    }
+
+    async function loadFromNetwork() {
+      let targetSrc = url!.trim();
+
+      if (
+        targetSrc.startsWith('r2://') ||
+        (!targetSrc.startsWith('http://') &&
+          !targetSrc.startsWith('https://') &&
+          !targetSrc.startsWith('blob:') &&
+          !targetSrc.startsWith('data:'))
+      ) {
+        const resolved = await resolveR2UrlToHttp(targetSrc);
+        if (!isMounted) return;
+        if (resolved) {
+          targetSrc = resolved;
+        } else {
+          setStatus('failed');
+          return;
+        }
+      }
+
+      const isR2Direct = targetSrc.includes('.r2.cloudflarestorage.com');
+      const netImg = new Image();
+      netImg.decoding = 'async';
+
+      // R2 storage endpoints do not include CORS headers by default; omit crossOrigin so browser loads directly
+      if (crossOrigin && !isR2Direct && !targetSrc.startsWith('data:') && !targetSrc.startsWith('blob:')) {
+        netImg.crossOrigin = crossOrigin;
+      }
+
+      const onNetworkSuccess = (loadedEl: HTMLImageElement, finalResolvedUrl: string) => {
+        if (!isMounted) return;
+        loadedKeyRef.current = normalizedKey;
+        setMemoryCachedImage(url!, loadedEl);
+        setImage(loadedEl);
+        setStatus('loaded');
+
+        // 4. Quietly persist binary Blob to Disk Cache in background after floorplan is already on screen
+        if (!finalResolvedUrl.startsWith('data:') && !finalResolvedUrl.startsWith('blob:')) {
+          bgCacheTimer = setTimeout(() => {
+            fetchAndCacheImageBlob(finalResolvedUrl).catch(() => {});
+          }, 600);
+        }
+      };
+
+      const tryServerProxyFallback = async (sourceUrl: string) => {
+        if (!isMounted) return;
+        let freshUrl = sourceUrl;
+        const r2Key = extractR2Key(url!) || extractR2Key(sourceUrl);
+        if (r2Key) {
+          const reSigned = await resolveR2UrlToHttp(`r2://${r2Key}`);
+          if (!isMounted) return;
+          if (reSigned) freshUrl = reSigned;
+        }
+
+        const proxyImg = new Image();
+        proxyImg.decoding = 'async';
+        proxyImg.crossOrigin = 'anonymous';
+        const proxyUrl = `/api/pdf-proxy?url=${encodeURIComponent(freshUrl)}`;
+        proxyImg.onload = () => onNetworkSuccess(proxyImg, freshUrl);
+        proxyImg.onerror = () => {
+          // Last resort: try freshly re-signed direct URL without crossOrigin
+          if (freshUrl !== sourceUrl) {
+            const retryDirect = new Image();
+            retryDirect.decoding = 'async';
+            retryDirect.onload = () => onNetworkSuccess(retryDirect, freshUrl);
+            retryDirect.onerror = () => {
+              if (isMounted) setStatus('failed');
+            };
+            retryDirect.src = freshUrl;
+          } else {
+            if (isMounted) setStatus('failed');
+          }
+        };
+        proxyImg.src = proxyUrl;
+      };
+
+      netImg.onload = () => onNetworkSuccess(netImg, targetSrc);
+      netImg.onerror = () => {
+        if (!isMounted) return;
+        // If non-R2 failed due to crossOrigin attribute, retry without crossOrigin before proxy
+        if (netImg.crossOrigin) {
+          const noCorsImg = new Image();
+          noCorsImg.decoding = 'async';
+          noCorsImg.onload = () => onNetworkSuccess(noCorsImg, targetSrc);
+          noCorsImg.onerror = () => {
+            tryServerProxyFallback(targetSrc);
+          };
+          noCorsImg.src = targetSrc;
+        } else {
+          tryServerProxyFallback(targetSrc);
+        }
+      };
+
+      netImg.src = targetSrc;
+    }
+
+    loadFloorplanImage();
+
+    return () => {
+      isMounted = false;
+      if (bgCacheTimer) clearTimeout(bgCacheTimer);
+    };
+  }, [normalizedKey, url, crossOrigin]);
+
+  return [image, status] as const;
+}
+
+
+=== FILE: src/components/LiveLayoutParts/useLiveLayoutR2Config.ts ===
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { useDataStore } from '../PictureMapping/DataContext';
+import { extractR2Key, getS3Sdk, downloadR2JsonFile } from '../PictureMapping/lib/r2Upload';
+import {
+  getMemoryCachedLayoutConfig,
+  getCachedLayoutConfigFromDisk,
+  saveLayoutConfigToDisk,
+  getLastLayoutNetworkCheckAt,
+  markLayoutNetworkChecked,
+  getCachedLayoutConfigTimestamp,
+  isValidLayoutConfig,
+} from '../../lib/layoutConfigCache';
+import { db, APP_ID } from '../../lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
+import { setDoc } from '../../lib/firestoreWrites';
+import { getLocalConfigVersions } from '../../lib/configCacheService';
+
+export interface LiveLayoutR2ConfigState {
+  config: any;
+  setConfig: (config: any) => void;
+  loading: boolean;
+  setLoading: (loading: boolean) => void;
+  error: string | null;
+  setError: (error: string | null) => void;
+  showConfigModal: boolean;
+  setShowConfigModal: (show: boolean) => void;
+  cfgAccountId: string;
+  setCfgAccountId: (id: string) => void;
+  cfgBucketName: string;
+  setCfgBucketName: (bucket: string) => void;
+  cfgAccessKey: string;
+  setCfgAccessKey: (key: string) => void;
+  cfgSecretKey: string;
+  setCfgSecretKey: (sec: string) => void;
+  initFormFromStorage: () => void;
+  loadConfig: (forceRefresh?: boolean) => Promise<void>;
+  handleSaveR2Config: () => Promise<void>;
+}
+
+function getInitialSyncConfig(): any {
+  const mem = getMemoryCachedLayoutConfig();
+  if (mem && isValidLayoutConfig(mem)) return mem;
+
+  try {
+    const ds = useDataStore.getState();
+    if (ds.storeLocationData && Object.keys(ds.storeLocationData).length > 0) {
+      const candidate = {
+        storeLocationData: ds.storeLocationData,
+        store: ds.store,
+        location: ds.location,
+        activeMapVersionId: ds.activeMapVersionId,
+        mapUnits: ds.mapUnits,
+        versions: ds.mapVersions,
+        unitInfo: ds.unitInfo,
+        classInfo: ds.classInfo,
+        actualClassInfo: ds.actualClassInfo,
+        sales: ds.sales,
+        profits: ds.profits,
+        subFees: ds.subFees,
+        mdStatus: ds.mdStatus,
+        projectStatus: ds.projectStatus,
+        projectLink: ds.projectLink,
+        basePlan: ds.basePlan,
+        units: ds.units,
+      };
+      if (isValidLayoutConfig(candidate)) {
+        return candidate;
+      }
+    }
+  } catch (_e) {}
+
+  return null;
+}
+
+async function resolveConfigSignedUrls(
+  data: any,
+  creds: { accountId: string; accessKeyId: string; secretAccessKey: string; bucketName: string },
+  existingS3?: any
+): Promise<any> {
+  if (!data || !creds.accountId || !creds.accessKeyId || !creds.secretAccessKey || !creds.bucketName) {
+    return data;
+  }
+  const { S3Client, GetObjectCommand, getSignedUrl } = await getS3Sdk();
+  const s3 =
+    existingS3 ||
+    new S3Client({
+      region: 'auto',
+      endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
+      credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
+    });
+
+  const resolvePromises: Promise<void>[] = [];
+
+  if (data.storeLocationData) {
+    for (const pKey in data.storeLocationData) {
+      const partition = data.storeLocationData[pKey];
+      if (!partition?.mapVersions) continue;
+      for (const v of partition.mapVersions) {
+        const imgKey = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
+        if (imgKey) {
+          (v as any).r2Key = imgKey;
+          const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: imgKey });
+          resolvePromises.push(
+            getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
+              .then((url) => {
+                v.backgroundUrl = url;
+              })
+              .catch(() => {})
+          );
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(data.versions)) {
+    for (const v of data.versions) {
+      const imgKey = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
+      if (imgKey) {
+        (v as any).r2Key = imgKey;
+        const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: imgKey });
+        resolvePromises.push(
+          getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
+            .then((url) => {
+              v.backgroundUrl = url;
+            })
+            .catch(() => {})
+        );
+      }
+    }
+  }
+
+  if (data.version) {
+    const imgKey = extractR2Key(data.version.backgroundUrl) || (data.version as any).r2Key;
+    if (imgKey) {
+      (data.version as any).r2Key = imgKey;
+      const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: imgKey });
+      resolvePromises.push(
+        getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
+          .then((url) => {
+            data.version.backgroundUrl = url;
+          })
+          .catch(() => {})
+      );
+    }
+  }
+
+  if (resolvePromises.length > 0) {
+    await Promise.all(resolvePromises);
+  }
+  return data;
+}
+
+export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
+  const r2Config = useAppStore((state) => state.r2Config);
+  const setR2Config = useAppStore((state) => state.setR2Config);
+
+  const [config, setConfig] = useState<any>(() => getInitialSyncConfig());
+  const [loading, setLoading] = useState<boolean>(() => !getInitialSyncConfig());
+  const [error, setError] = useState<string | null>(null);
+  const [showConfigModal, setShowConfigModal] = useState(false);
+
+  const configRef = useRef<any>(config);
+  configRef.current = config;
+
+  // Form states for in-place R2 configuration
+  const [cfgAccountId, setCfgAccountId] = useState('');
+  const [cfgBucketName, setCfgBucketName] = useState('');
+  const [cfgAccessKey, setCfgAccessKey] = useState('');
+  const [cfgSecretKey, setCfgSecretKey] = useState('');
+
+  const initFormFromStorage = useCallback(() => {
+    setCfgAccountId(r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim());
+    setCfgBucketName(r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim());
+    setCfgAccessKey(
+      r2Config?.accessKeyId ||
+        (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim()
+    );
+    setCfgSecretKey(
+      r2Config?.secretAccessKey ||
+        (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim()
+    );
+  }, [r2Config]);
+
+  const applyAndCacheConfig = useCallback((data: any, persistToDisk = true) => {
+    if (!data || !isValidLayoutConfig(data)) return;
+    let finalData = data;
+    if (!data.storeLocationData && Array.isArray(data.versions) && data.versions.length > 0) {
+      const activeVersion = data.versions.find((v: any) => v.isDynamicActive) || data.versions[0];
+      finalData = {
+        ...data,
+        version: activeVersion,
+        units: data.mapUnits || data.units || [],
+      };
+    }
+
+    configRef.current = finalData;
+    setConfig(finalData);
+    setLoading(false);
+    setError(null);
+
+    try {
+      useDataStore.getState().setLoadedCloudData(finalData);
+    } catch (_e) {}
+
+    if (persistToDisk) {
+      saveLayoutConfigToDisk(finalData).catch(() => {});
+    }
+  }, []);
+
+  // Load config with Instant Persistent Disk Cache (CacheStorage + IndexedDB) + Background Stale-While-Revalidate
+  const loadConfig = useCallback(
+    async (forceRefresh = false) => {
+      setError(null);
+
+      // Resolve R2 credentials from memory or localStorage first
+      let accountId = r2Config?.accountId || (localStorage.getItem('r2_account_id') || '').trim();
+      let accessKeyId =
+        r2Config?.accessKeyId ||
+        (localStorage.getItem('r2_access_key') || localStorage.getItem('r2_access_key_id') || '').trim();
+      let secretAccessKey =
+        r2Config?.secretAccessKey ||
+        (localStorage.getItem('r2_secret_key') || localStorage.getItem('r2_secret_access_key') || '').trim();
+      let bucketName = r2Config?.bucketName || (localStorage.getItem('r2_bucket_name') || '').trim();
+
+      const cachedR2 =
+        localStorage.getItem('taka_cache_r2_config_v1') ?? localStorage.getItem('taka_r2_config_cache_v1');
+      if (cachedR2) {
+        try {
+          const parsed = JSON.parse(cachedR2);
+          if (parsed?.accountId && parsed?.accessKeyId && parsed?.secretAccessKey && parsed?.bucketName) {
+            accountId = parsed.accountId;
+            accessKeyId = parsed.accessKeyId;
+            secretAccessKey = parsed.secretAccessKey;
+            bucketName = parsed.bucketName;
+            useAppStore.getState().setR2Config(parsed);
+          }
+        } catch {}
+      }
+
+      // STEP 1: Instant Disk Cache hydration (<10ms)
+      let activeCached = configRef.current && isValidLayoutConfig(configRef.current) ? configRef.current : getInitialSyncConfig();
+      if (!activeCached) {
+        const diskHit = await getCachedLayoutConfigFromDisk();
+        if (diskHit && isValidLayoutConfig(diskHit)) {
+          activeCached = diskHit;
+          if (accountId && accessKeyId && secretAccessKey && bucketName) {
+            await resolveConfigSignedUrls(activeCached, { accountId, accessKeyId, secretAccessKey, bucketName });
+          }
+          applyAndCacheConfig({ ...activeCached }, false);
+        }
+      } else {
+        setLoading(false);
+        // Ensure any cached config also has freshly signed URLs if R2 credentials are present
+        if (accountId && accessKeyId && secretAccessKey && bucketName) {
+          resolveConfigSignedUrls(activeCached, { accountId, accessKeyId, secretAccessKey, bucketName })
+            .then((signed) => {
+              applyAndCacheConfig({ ...signed }, false);
+            })
+            .catch(() => {});
+        }
+      }
+
+      const knownPicMapVer = getLocalConfigVersions().pictureMappingVersion || 0;
+      const cachedTs = getCachedLayoutConfigTimestamp();
+      const lastCheck = getLastLayoutNetworkCheckAt();
+      const isCacheFreshEnough =
+        !forceRefresh &&
+        Boolean(activeCached) &&
+        lastCheck > 0 &&
+        Date.now() - lastCheck < 5 * 60 * 1000 &&
+        (knownPicMapVer === 0 || (cachedTs > 0 && cachedTs >= knownPicMapVer));
+
+      if (isCacheFreshEnough) {
+        return;
+      }
+
+      if (!activeCached) {
+        setLoading(true);
+      }
+
+      try {
+        const alreadyVerifiedEmptyByConfigSync = localStorage.getItem('taka_cache_r2_config_v1') === '';
+
+        if ((!accountId || !accessKeyId || !secretAccessKey || !bucketName) && !alreadyVerifiedEmptyByConfigSync) {
+          try {
+            const r2Doc = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'r2_credentials'));
+            if (r2Doc.exists()) {
+              const r2Data = r2Doc.data() as any;
+              if (r2Data?.accountId && r2Data?.accessKeyId) {
+                accountId = r2Data.accountId;
+                accessKeyId = r2Data.accessKeyId;
+                secretAccessKey = r2Data.secretAccessKey;
+                bucketName = r2Data.bucketName;
+                localStorage.setItem('taka_cache_r2_config_v1', JSON.stringify(r2Data));
+                localStorage.setItem('taka_r2_config_cache_v1', JSON.stringify(r2Data));
+                useAppStore.getState().setR2Config(r2Data);
+              } else {
+                localStorage.setItem('taka_cache_r2_config_v1', '');
+              }
+            } else {
+              localStorage.setItem('taka_cache_r2_config_v1', '');
+            }
+          } catch (fetchErr) {
+            console.warn('Could not fetch r2_credentials from Firestore:', fetchErr);
+          }
+        }
+
+        if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+          if (activeCached) return;
+          initFormFromStorage();
+          throw new Error(
+            'Cloudflare R2 is not configured yet. Please click "Configure R2" below or open Picture Mapping to connect Cloud Sync.'
+          );
+        }
+
+        const { S3Client } = await getS3Sdk();
+        const s3 = new S3Client({
+          region: 'auto',
+          endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+          credentials: { accessKeyId, secretAccessKey },
+        });
+
+        const downloadRes = await downloadR2JsonFile<any>(
+          'mapping_config.json',
+          { accountId, accessKeyId, secretAccessKey, bucketName },
+          s3
+        );
+        let data: any = downloadRes.success && downloadRes.data ? downloadRes.data : null;
+
+        const r2Timestamp = data?.timestamp || 0;
+        if (!data || (knownPicMapVer > 0 && knownPicMapVer > r2Timestamp)) {
+          try {
+            const snap = await getDoc(
+              doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'picture_mapping_config')
+            );
+            if (snap.exists()) {
+              const fsData = snap.data() as any;
+              if (fsData?.storeLocationData) {
+                const fsTimestamp = fsData.timestamp || (fsData.updatedAt ? new Date(fsData.updatedAt).getTime() : 0);
+                if (fsTimestamp > r2Timestamp || !data) {
+                  data = {
+                    ...(data || {}),
+                    ...fsData,
+                    storeLocationData: {
+                      ...(data?.storeLocationData || {}),
+                      ...fsData.storeLocationData,
+                    },
+                  };
+                }
+              }
+            }
+          } catch (fsErr) {
+            console.warn('Could not check Firestore backup:', fsErr);
+          }
+        }
+
+        if (!data || !isValidLayoutConfig(data)) {
+          if (activeCached) return;
+          throw new Error(
+            downloadRes.error ||
+              'Configuration file (mapping_config.json) not found on Cloud. Please check your Bucket or export floor plans first.'
+          );
+        }
+
+        markLayoutNetworkChecked();
+
+        // Resolve all R2 signed URLs locally (<3ms) before applying state once (prevents double-render & double-fetch)
+        await resolveConfigSignedUrls(data, { accountId, accessKeyId, secretAccessKey, bucketName }, s3);
+
+        applyAndCacheConfig({ ...data }, true);
+      } catch (err: any) {
+        if (!configRef.current || !isValidLayoutConfig(configRef.current)) {
+          setError(err.message || 'Failed to load layout configuration');
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [r2Config, initFormFromStorage, applyAndCacheConfig]
+  );
+
+  const handleSaveR2Config = useCallback(async () => {
+    const acc = cfgAccountId.trim();
+    const bkt = cfgBucketName.trim();
+    const key = cfgAccessKey.trim();
+    const sec = cfgSecretKey.trim();
+
+    if (!acc || !bkt || !key || !sec) {
+      alert('Please fill in all 4 fields: Account ID, Bucket Name, Access Key, and Secret Key.');
+      return;
+    }
+
+    localStorage.setItem('r2_account_id', acc);
+    localStorage.setItem('r2_bucket_name', bkt);
+    localStorage.setItem('r2_access_key', key);
+    localStorage.setItem('r2_access_key_id', key);
+    localStorage.setItem('r2_secret_key', sec);
+    localStorage.setItem('r2_secret_access_key', sec);
+
+    const configData = {
+      accountId: acc,
+      bucketName: bkt,
+      accessKeyId: key,
+      secretAccessKey: sec,
+    };
+    localStorage.setItem('taka_r2_config_cache_v1', JSON.stringify(configData));
+    setR2Config(configData);
+
+    try {
+      await setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'r2_credentials'), configData);
+      await setDoc(
+        doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'versions'),
+        {
+          r2Version: Date.now(),
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      console.error('Failed to save R2 config to server:', e);
+    }
+
+    setShowConfigModal(false);
+    loadConfig(true);
+  }, [cfgAccountId, cfgBucketName, cfgAccessKey, cfgSecretKey, setR2Config, loadConfig]);
+
+  useEffect(() => {
+    loadConfig(false);
+
+    const handleSyncUpdate = () => {
+      loadConfig(true);
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('taka_cloud_sync_updated', handleSyncUpdate);
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('taka_cloud_sync_updated', handleSyncUpdate);
+      }
+    };
+  }, [loadConfig]);
+
+  return {
+    config,
+    setConfig,
+    loading,
+    setLoading,
+    error,
+    setError,
+    showConfigModal,
+    setShowConfigModal,
+    cfgAccountId,
+    setCfgAccountId,
+    cfgBucketName,
+    setCfgBucketName,
+    cfgAccessKey,
+    setCfgAccessKey,
+    cfgSecretKey,
+    setCfgSecretKey,
+    initFormFromStorage,
+    loadConfig,
+    handleSaveR2Config,
+  };
+}
+
+export default useLiveLayoutR2Config;
+
+
+=== FILE: src/components/LayoutTabParts/useLayoutFloorData.ts ===
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { useDataStore } from '../PictureMapping/DataContext';
+import { preloadFloorImages } from '../../lib/imageDBCache';
+import { useOffscreenImage } from '../../hooks/useOffscreenImage';
+
+interface UseLayoutFloorDataProps {
+  config: any;
+  storeFilter: string;
+  locationFilter: string;
+  yearFilter?: string;
+}
+
+export function useLayoutFloorData({
+  config,
+  storeFilter,
+  locationFilter,
+  yearFilter,
+}: UseLayoutFloorDataProps) {
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const localStoreLocationData = useDataStore((state) => state.storeLocationData);
+  const localStore = useDataStore((state) => state.store);
+  const localLocation = useDataStore((state) => state.location);
+  const localMapUnits = useDataStore((state) => state.mapUnits);
+  const localMapVersions = useDataStore((state) => state.mapVersions);
+  const localActiveMapVersionId = useDataStore((state) => state.activeMapVersionId);
+  const getAllStoreVersions = useDataStore((state) => state.getAllStoreVersions);
+
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const targetLoc = locationFilter !== 'all' ? locationFilter : 'L1';
+
+  const activeYear = (
+    (yearFilter && yearFilter !== 'all' ? yearFilter : '') ||
+    (globalYearFilter && globalYearFilter !== 'all' ? globalYearFilter : '') ||
+    (storeFilter === 'HN' ? '2027' : '2026')
+  ).trim();
+
+  // 1. Gather all store versions across all sources (Zustand helper, local partitions, cloud partitions, and root config)
+  const prevAvailVersionsRef = useRef<any[]>([]);
+  const prevAvailVersionsKeyRef = useRef<string>('');
+
+  const availableStoreVersions = useMemo(() => {
+    const versionsMap = new Map<string, any>();
+
+    // From Zustand store helper
+    try {
+      const targetStoreParam = (storeFilter === 'HN' ? 'HN' : 'HCM');
+      const storeVers = getAllStoreVersions(targetStoreParam);
+      if (Array.isArray(storeVers)) {
+        storeVers.forEach(v => {
+          if (v?.id) versionsMap.set(v.id, v);
+        });
+      }
+    } catch (e) {}
+
+    // From local in-memory partitions
+    if (localStoreLocationData) {
+      Object.entries(localStoreLocationData).forEach(([key, part]: [string, any]) => {
+        if (key.startsWith(`${storeFilter}_`) && Array.isArray(part?.mapVersions)) {
+          part.mapVersions.forEach((v: any) => {
+            if (v?.id) versionsMap.set(v.id, { ...v, location: v.location || key.split('_')[1] });
+          });
+        }
+      });
+    }
+
+    // From cloud config partitions
+    if (config?.storeLocationData) {
+      Object.entries(config.storeLocationData).forEach(([key, part]: [string, any]) => {
+        if (key.startsWith(`${storeFilter}_`) && Array.isArray(part?.mapVersions)) {
+          part.mapVersions.forEach((v: any) => {
+            if (v?.id) {
+              const existing = versionsMap.get(v.id) || {};
+              const isLocalUpload =
+                existing.backgroundUrl &&
+                (existing.backgroundUrl.startsWith('blob:') || existing.backgroundUrl.startsWith('data:'));
+              const resolvedBg = isLocalUpload
+                ? existing.backgroundUrl
+                : v.backgroundUrl && !v.backgroundUrl.startsWith('r2://')
+                  ? v.backgroundUrl
+                  : existing.backgroundUrl && !existing.backgroundUrl.startsWith('r2://')
+                    ? existing.backgroundUrl
+                    : v.backgroundUrl || existing.backgroundUrl;
+              versionsMap.set(v.id, {
+                ...existing,
+                ...v,
+                backgroundUrl: resolvedBg,
+                r2Key: (v as any).r2Key || (existing as any).r2Key,
+                location: existing.location || v.location || key.split('_')[1],
+              });
+            }
+          });
+        }
+      });
+    }
+
+    // From cloud config root versions (legacy fallback for HCM only)
+    if (storeFilter === 'HCM' && Array.isArray(config?.versions)) {
+      config.versions.forEach((v: any) => {
+        if (v?.id) {
+          const existing = versionsMap.get(v.id) || {};
+          const isLocalUpload =
+            existing.backgroundUrl &&
+            (existing.backgroundUrl.startsWith('blob:') || existing.backgroundUrl.startsWith('data:'));
+          const resolvedBg = isLocalUpload
+            ? existing.backgroundUrl
+            : v.backgroundUrl && !v.backgroundUrl.startsWith('r2://')
+              ? v.backgroundUrl
+              : existing.backgroundUrl && !existing.backgroundUrl.startsWith('r2://')
+                ? existing.backgroundUrl
+                : v.backgroundUrl || existing.backgroundUrl;
+          versionsMap.set(v.id, {
+            ...existing,
+            ...v,
+            backgroundUrl: resolvedBg,
+            r2Key: (v as any).r2Key || (existing as any).r2Key,
+            store: existing.store || v.store || 'HCM',
+          });
+        }
+      });
+    }
+
+    const finalVersions = Array.from(versionsMap.values());
+    const key = `${storeFilter}_${finalVersions.map(v => `${v?.id || ''}_${v?.backgroundUrl || ''}`).join('|')}`;
+    if (key === prevAvailVersionsKeyRef.current) {
+      return prevAvailVersionsRef.current;
+    }
+    prevAvailVersionsKeyRef.current = key;
+    prevAvailVersionsRef.current = finalVersions;
+    return finalVersions;
+  }, [getAllStoreVersions, storeFilter, localStoreLocationData, config]);
+
+  // 2. Filter versions specific to targetLoc (e.g. L2) and year from Picture Mapping / global setting
+  const prevLocationVersionsRef = useRef<any[]>([]);
+  const prevLocationVersionsKeyRef = useRef<string>('');
+
+  const locationVersions = useMemo(() => {
+    if (availableStoreVersions.length === 0) return [];
+    
+    const tLoc = targetLoc.toUpperCase().trim();
+    const tokenRegex = new RegExp(`(^|[^a-zA-Z0-9])${tLoc}([^a-zA-Z0-9]|$)`, 'i');
+
+    const matched = availableStoreVersions.filter(v => {
+      const vLoc = (v.location || '').toUpperCase().trim();
+      const vName = (v.name || '').toUpperCase().trim();
+      return vLoc === tLoc || (vLoc === '' && tokenRegex.test(vName));
+    });
+
+    let result = matched;
+    if (matched.length === 0) {
+      result = [];
+    } else if (activeYear && activeYear !== 'all') {
+      const targetYear = String(activeYear).trim();
+      const yearMatched = matched.filter(v => String(v.year || '').trim() === targetYear);
+      if (yearMatched.length > 0) {
+        result = yearMatched;
+      } else {
+        result = [...matched].sort((a, b) => {
+          const yA = Number(a.year) || 0;
+          const yB = Number(b.year) || 0;
+          return yB - yA;
+        });
+      }
+    }
+
+    const key = `${targetLoc}_${activeYear}_${result.map(v => v?.id || '').join('|')}`;
+    if (key === prevLocationVersionsKeyRef.current) {
+      return prevLocationVersionsRef.current;
+    }
+    prevLocationVersionsKeyRef.current = key;
+    prevLocationVersionsRef.current = result;
+    return result;
+  }, [availableStoreVersions, targetLoc, activeYear]);
+
+  // 3. Resolve active version & units
+  const { r2Version, r2Units } = useMemo(() => {
+    const targetStoreParam = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+    const tLoc = targetLoc.toUpperCase().trim();
+    const pKey = `${targetStoreParam}_${tLoc}`;
+    
+    const localPart = localStoreLocationData?.[pKey] || (
+      localStore === targetStoreParam && String(localLocation).toUpperCase().trim() === tLoc
+        ? { mapUnits: localMapUnits, mapVersions: localMapVersions, activeMapVersionId: localActiveMapVersionId }
+        : null
+    );
+    const cloudPart = config?.storeLocationData?.[pKey];
+    const partition = (localPart && Array.isArray(localPart.mapVersions) && localPart.mapVersions.length > 0)
+      ? localPart
+      : cloudPart;
+
+    // Pick version: check selectedVersionId first, then localActiveMapVersionId from Picture tab, then partition.activeMapVersionId, then matching location versions
+    let v: any = null;
+    if (selectedVersionId && locationVersions.some(lv => lv.id === selectedVersionId)) {
+      v = locationVersions.find(lv => lv.id === selectedVersionId);
+    } else if (localActiveMapVersionId && locationVersions.some(lv => lv.id === localActiveMapVersionId)) {
+      v = locationVersions.find(lv => lv.id === localActiveMapVersionId);
+    } else if (partition?.activeMapVersionId && locationVersions.some(lv => lv.id === partition.activeMapVersionId)) {
+      v = locationVersions.find(lv => lv.id === partition.activeMapVersionId);
+    } else if (locationVersions.length > 0) {
+      // Prioritize version for this floor with dynamic rules or groups
+      v = locationVersions.find(lv => lv.isDynamicActive !== false && Array.isArray(lv.groups) && lv.groups.length > 0) ||
+          locationVersions.find(lv => Array.isArray(lv.groups) && lv.groups.length > 0) ||
+          locationVersions[0];
+    }
+
+    if (!v) {
+      return { r2Version: null, r2Units: [] };
+    }
+
+    // Resolve backgroundUrl if empty or r2://
+    let bgUrl = v.backgroundUrl || ((v as any).r2Key ? `r2://${(v as any).r2Key}` : '');
+    if (!bgUrl || bgUrl.startsWith('r2://')) {
+      // Scan all cloud partitions and versions for resolved signed URL
+      if (cloudPart?.mapVersions) {
+        const matchingCloudV = cloudPart.mapVersions.find((cv: any) => cv.id === v.id || cv.name === v.name);
+        if (matchingCloudV?.backgroundUrl && !matchingCloudV.backgroundUrl.startsWith('r2://')) {
+          bgUrl = matchingCloudV.backgroundUrl;
+        } else if (!bgUrl && (matchingCloudV as any)?.r2Key) {
+          bgUrl = `r2://${(matchingCloudV as any).r2Key}`;
+        }
+      }
+      if ((!bgUrl || bgUrl.startsWith('r2://')) && config?.storeLocationData) {
+        for (const part of Object.values(config.storeLocationData) as any[]) {
+          const matchingCloudV = part?.mapVersions?.find((cv: any) => cv.id === v.id || cv.name === v.name);
+          if (matchingCloudV?.backgroundUrl && !matchingCloudV.backgroundUrl.startsWith('r2://')) {
+            bgUrl = matchingCloudV.backgroundUrl;
+            break;
+          } else if (!bgUrl && (matchingCloudV as any)?.r2Key) {
+            bgUrl = `r2://${(matchingCloudV as any).r2Key}`;
+          }
+        }
+      }
+      if ((!bgUrl || bgUrl.startsWith('r2://')) && config?.version?.backgroundUrl && !config.version.backgroundUrl.startsWith('r2://')) {
+        if (config.version.id === v.id || config.version.name === v.name) {
+          bgUrl = config.version.backgroundUrl;
+        }
+      }
+    }
+    const finalVersion = { ...v, backgroundUrl: bgUrl };
+    const vLoc = (finalVersion.location || targetLoc || '').toUpperCase().trim();
+
+    let candidateUnits: any[] = [];
+    if (Array.isArray(finalVersion?.mapUnits) && finalVersion.mapUnits.length > 0) {
+      candidateUnits = finalVersion.mapUnits;
+    } else if (localStore === targetStoreParam && String(localLocation).toUpperCase().trim() === tLoc && Array.isArray(localMapUnits) && localMapUnits.length > 0) {
+      candidateUnits = localMapUnits;
+    } else if (localStoreLocationData?.[pKey]?.mapUnits && Array.isArray(localStoreLocationData[pKey].mapUnits) && localStoreLocationData[pKey].mapUnits.length > 0) {
+      candidateUnits = localStoreLocationData[pKey].mapUnits;
+    } else if (config?.storeLocationData?.[pKey]?.mapUnits && Array.isArray(config.storeLocationData[pKey].mapUnits) && config.storeLocationData[pKey].mapUnits.length > 0) {
+      candidateUnits = config.storeLocationData[pKey].mapUnits;
+    } else if (targetStoreParam === 'HCM' && Array.isArray(config?.mapUnits) && config.mapUnits.length > 0) {
+      candidateUnits = config.mapUnits;
+    } else if (targetStoreParam === 'HCM' && Array.isArray(config?.units) && config.units.length > 0) {
+      candidateUnits = config.units;
+    }
+
+    // Sanitize, filter strictly to target floor & year, and deduplicate overlapping ghost shapes
+    const unitsMap = new Map<string, any>();
+    const seenCoordinates = new Map<string, string>(); // geometryKey -> id
+    const seenUnitNames = new Map<string, string>(); // lowercase clean unit name -> id
+
+    candidateUnits.forEach((u: any) => {
+      if (!u || (!u.id && !u.name)) return;
+      if (!u.type && !u.points && !(u.width && u.height)) return;
+
+      const uLoc = String(u.location || '').toUpperCase().trim();
+      const uStore = String(u.store || '').toUpperCase().trim();
+
+      // Store check
+      if (uStore && uStore !== 'ALL' && uStore !== targetStoreParam) return;
+
+      // Year check
+      const uYr = String(u.year || '').trim();
+      if (uYr && uYr !== 'ALL' && activeYear && activeYear !== 'all' && uYr !== activeYear) return;
+
+      // Strict Floor check: accept units explicitly matching current floor, matching active version floor, or storewide
+      const isStorewideUnit = uLoc === 'STORE' || uLoc === 'ALL' || uLoc === 'STOREWIDE' || uLoc === 'ALL FLOORS';
+      if (uLoc && !isStorewideUnit && uLoc !== tLoc && uLoc !== vLoc) {
+        return;
+      }
+
+      const id = String(u.id || u.name);
+      const cleanName = String(u.name || '').trim();
+      const lowerName = cleanName.toLowerCase();
+
+      const taggedUnit = {
+        ...u,
+        id,
+        name: cleanName,
+        store: targetStoreParam,
+        location: uLoc || tLoc,
+      };
+
+      // Geometry hash for deduplication (rect, circle, polygon)
+      let coordKey = '';
+      if (u.type === 'rect' && u.width > 0 && u.height > 0) {
+        coordKey = `rect_${Math.round(u.x || 0)}_${Math.round(u.y || 0)}_${Math.round(u.width || 0)}_${Math.round(u.height || 0)}`;
+      } else if (u.type === 'circle' && u.radius > 0) {
+        coordKey = `circle_${Math.round(u.x || 0)}_${Math.round(u.y || 0)}_${Math.round(u.radius || 0)}`;
+      } else if (u.type === 'polygon' && Array.isArray(u.points) && u.points.length >= 4) {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (let i = 0; i < u.points.length; i += 2) {
+          const px = u.points[i];
+          const py = u.points[i + 1];
+          if (px < minX) minX = px;
+          if (px > maxX) maxX = px;
+          if (py < minY) minY = py;
+          if (py > maxY) maxY = py;
+        }
+        coordKey = `poly_${Math.round(minX)}_${Math.round(minY)}_${Math.round(maxX - minX)}_${Math.round(maxY - minY)}`;
+      }
+
+      // Check Coordinate Collision: If two shapes occupy the exact same geometry spot
+      if (coordKey && seenCoordinates.has(coordKey)) {
+        const prevId = seenCoordinates.get(coordKey)!;
+        const prev = unitsMap.get(prevId);
+        if (!prev?.name && taggedUnit.name) {
+          unitsMap.delete(prevId);
+          unitsMap.set(id, taggedUnit);
+          seenCoordinates.set(coordKey, id);
+          if (lowerName) seenUnitNames.set(lowerName, id);
+        }
+        return;
+      }
+
+      // Check Name Collision: If two units on the same floor have the exact same unit name
+      if (lowerName && seenUnitNames.has(lowerName)) {
+        const prevId = seenUnitNames.get(lowerName)!;
+        const prev = unitsMap.get(prevId);
+        if (!prev || (!prev.type && taggedUnit.type)) {
+          unitsMap.delete(prevId);
+          unitsMap.set(id, taggedUnit);
+          seenUnitNames.set(lowerName, id);
+          if (coordKey) seenCoordinates.set(coordKey, id);
+        }
+        return;
+      }
+
+      // Check Normalized Code Collision (e.g. "333-2" vs "L3-333-2" on same floor):
+      const normCode = lowerName.replace(/^(l\d+|b\d+|md-[lb]\d+)[-_]/i, '').trim();
+      if (normCode && normCode !== lowerName && seenUnitNames.has(normCode)) {
+        const prevId = seenUnitNames.get(normCode)!;
+        const prev = unitsMap.get(prevId);
+        if (prev && (!prev.type && taggedUnit.type)) {
+          unitsMap.delete(prevId);
+          unitsMap.set(id, taggedUnit);
+          seenUnitNames.set(normCode, id);
+          if (coordKey) seenCoordinates.set(coordKey, id);
+        }
+        return;
+      }
+
+      if (coordKey) seenCoordinates.set(coordKey, id);
+      if (lowerName) seenUnitNames.set(lowerName, id);
+      if (normCode) seenUnitNames.set(normCode, id);
+      unitsMap.set(id, taggedUnit);
+    });
+
+    const finalUnitsList = Array.from(unitsMap.values());
+    return { r2Version: finalVersion, r2Units: finalUnitsList };
+  }, [
+    config, storeFilter, targetLoc, localStoreLocationData, localStore, localLocation,
+    localMapUnits, localMapVersions, localActiveMapVersionId, selectedVersionId,
+    locationVersions
+  ]);
+
+  const version = r2Version;
+  const units = r2Units;
+
+  const activeBgUrl = version?.backgroundUrl || '';
+  const [bgImage] = useOffscreenImage(activeBgUrl, 'anonymous');
+
+  // Pre-cache other floor maps for this store into Persistent Disk Cache only AFTER the active floor image has loaded
+  useEffect(() => {
+    if (bgImage && availableStoreVersions.length > 0) {
+      const urls = availableStoreVersions
+        .map(v => v?.backgroundUrl || ((v as any)?.r2Key ? `r2://${(v as any).r2Key}` : ''))
+        .filter((u): u is string => typeof u === 'string' && u.length > 0 && !u.startsWith('data:'));
+      if (urls.length > 0) {
+        preloadFloorImages(urls, activeBgUrl);
+      }
+    }
+  }, [bgImage, availableStoreVersions, activeBgUrl]);
+
+  // Helper to accurately check if unit has user-attached images in localStorage partitioned by store
+  const hasStoredUnitImages = useCallback((key: string | undefined | null, overrideStore?: string): boolean => {
+    if (typeof window === 'undefined' || !key) return false;
+    try {
+      const activeStore = (overrideStore || (storeFilter === 'HN' ? 'HN' : 'HCM')).toUpperCase();
+      const storeKey = `taka_unit_images_${activeStore}_${key}`;
+      const raw = localStorage.getItem(storeKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return true;
+      }
+      // Migrate legacy un-prefixed key for HN if present
+      if (activeStore === 'HN') {
+        const legacyRaw = localStorage.getItem(`taka_unit_images_${key}`);
+        if (legacyRaw) {
+          try {
+            const parsed = JSON.parse(legacyRaw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const tagged = parsed.map((item: any) => ({ ...item, store: 'HN' }));
+              localStorage.setItem(storeKey, JSON.stringify(tagged));
+              localStorage.removeItem(`taka_unit_images_${key}`);
+              return true;
+            }
+          } catch {}
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, [storeFilter]);
+
+  // Realtime image change subscription to update canvas badges instantly upon add/delete in Tooltip
+  const [unitImagesRev, setUnitImagesRev] = useState(0);
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setUnitImagesRev(prev => prev + 1);
+    };
+    window.addEventListener('taka_unit_images_changed', handleStorageChange);
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('taka_unit_images_changed', handleStorageChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  // Reset selected version and ensure useDataStore partition syncs when locationFilter, storeFilter, or globalYearFilter changes
+  useEffect(() => {
+    setSelectedVersionId(prev => prev !== null ? null : prev);
+    const targetStore = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+    const targetFloor = locationFilter && locationFilter !== 'all' ? locationFilter : 'L1';
+    if (!targetFloor || targetFloor.trim() === '' || targetFloor.toUpperCase() === 'ALL') {
+      return;
+    }
+    const currStore = useDataStore.getState().store;
+    const currLocation = useDataStore.getState().location;
+    if (currStore !== targetStore || currLocation !== targetFloor) {
+      useDataStore.getState().setStoreAndLocation(targetStore, targetFloor);
+    }
+  }, [locationFilter, storeFilter, globalYearFilter]);
+
+  const effectiveLayoutYear = String(
+    activeYear || 
+    version?.year || 
+    (storeFilter === 'HN' ? '2027' : '2026')
+  ).trim();
+
+  return {
+    version,
+    units,
+    locationVersions,
+    availableStoreVersions,
+    bgImage,
+    resolvedBgUrl: activeBgUrl,
+    unitImagesRev,
+    hasStoredUnitImages,
+    selectedVersionId,
+    setSelectedVersionId,
+    targetLoc,
+    activeYear,
+    effectiveLayoutYear,
+  };
+}
+
+
+=== FILE: src/components/PictureMapping/DataContext.ts ===
+import { create } from 'zustand';
+import { UnitShape, MapVersion } from './components/DataMapping/types';
+import { useAppStore } from '../../store/useAppStore';
+import { saveLayoutConfigToDisk, getCachedLayoutConfigFromDisk, isValidLayoutConfig } from '../../lib/layoutConfigCache';
+
+export interface StoreLocationRecord {
+  mapUnits: UnitShape[];
+  mapVersions: MapVersion[];
+  activeMapVersionId: string | null;
+}
+
+export interface LoadedCloudDataPayload {
+  storeLocationData: Record<string, StoreLocationRecord>;
+  store?: 'HCM' | 'HN';
+  location?: string;
+  mapUnits?: UnitShape[];
+  mapVersions?: MapVersion[];
+  activeMapVersionId?: string | null;
+  reviewSelectedLabels?: string[];
+  reviewLabelColors?: Record<string, string>;
+  unitInfo?: any[];
+  classInfo?: any[];
+  actualClassInfo?: any[];
+  sales?: any[];
+  profits?: any[];
+  subFees?: any[];
+  mdStatus?: any[];
+  projectStatus?: any[];
+  projectLink?: any[];
+  basePlan?: any[];
+  units?: any[];
+}
+
+const getPartitionKey = (store: string, location: string) => `${store}_${location}`;
+
+let backupTimeout: any = null;
+export function autoBackupStoreLocationData(data: Record<string, StoreLocationRecord>, store: string, location: string, activeMapVersionId?: string | null) {
+  if (typeof window === 'undefined') return;
+  if (!isValidLayoutConfig({ storeLocationData: data })) return;
+  if (backupTimeout) clearTimeout(backupTimeout);
+  backupTimeout = setTimeout(() => {
+    const state = useDataStore.getState();
+    const consolidated = state.getConsolidatedSaveData();
+    const backupObj = {
+      ...consolidated,
+      storeLocationData: data,
+      store,
+      location,
+      activeMapVersionId,
+    };
+    if (!isValidLayoutConfig(backupObj)) return;
+    // Persist to unlimited Disk Cache (IndexedDB + CacheStorage API) without bumping cloud timestamp
+    saveLayoutConfigToDisk(backupObj).catch(() => {});
+  }, 1200);
+}
+
+interface DataStoreState {
+  store: 'HCM' | 'HN';
+  setStore: (store: 'HCM' | 'HN') => void;
+  location: string;
+  setLocation: (location: string) => void;
+  setStoreAndLocation: (store: 'HCM' | 'HN', location: string) => void;
+  storeLocationData: Record<string, StoreLocationRecord>;
+  setStoreLocationData: (data: Record<string, StoreLocationRecord>) => void;
+  setLoadedCloudData: (payload: LoadedCloudDataPayload) => void;
+  getConsolidatedSaveData: () => {
+    storeLocationData: Record<string, StoreLocationRecord>;
+    store: 'HCM' | 'HN';
+    location: string;
+    mapUnits: UnitShape[];
+    mapVersions: MapVersion[];
+    activeMapVersionId: string | null;
+    reviewSelectedLabels: string[];
+    reviewLabelColors: Record<string, string>;
+    unitInfo: any[];
+    classInfo: any[];
+    actualClassInfo: any[];
+    sales: any[];
+    profits: any[];
+    subFees: any[];
+    mdStatus: any[];
+    projectStatus: any[];
+    projectLink: any[];
+    basePlan: any[];
+    units: any[];
+  };
+  mapUnits: UnitShape[];
+  setMapUnits: (units: UnitShape[]) => void;
+  mapVersions: MapVersion[];
+  setMapVersions: (versions: MapVersion[]) => void;
+  activeMapVersionId: string | null;
+  setActiveMapVersionId: (id: string | null) => void;
+  reviewSelectedLabels: string[];
+  setReviewSelectedLabels: (labels: string[]) => void;
+  reviewLabelColors: Record<string, string>;
+  setReviewLabelColors: (colors: Record<string, string>) => void;
+  getAllStoreUnits: (store?: 'HCM' | 'HN') => UnitShape[];
+  getAllStoreVersions: (store?: 'HCM' | 'HN') => MapVersion[];
+  updateStoreUnitsAcrossLocations: (units: UnitShape[], store?: 'HCM' | 'HN') => void;
+  updateStoreVersionsAcrossLocations: (versions: MapVersion[], store?: 'HCM' | 'HN') => void;
+  syncGroupsToAllStoreLocations: (groups: MapVersion['groups'], store?: 'HCM' | 'HN') => void;
+  isCloudLoaded: boolean;
+  setIsCloudLoaded: (isCloudLoaded: boolean) => void;
+  isLoading: boolean;
+  setIsLoading: (isLoading: boolean) => void;
+  unitInfo: any[];
+  setUnitInfo: (info: any[]) => void;
+  projectStatus: any[];
+  setProjectStatus: (status: any[]) => void;
+  classInfo: any[];
+  setClassInfo: (info: any[]) => void;
+  actualClassInfo: any[];
+  setActualClassInfo: (info: any[]) => void;
+  sales: any[];
+  setSales: (sales: any[]) => void;
+  profits: any[];
+  setProfits: (profits: any[]) => void;
+  subFees: any[];
+  setSubFees: (fees: any[]) => void;
+  mdStatus: any[];
+  setMdStatus: (status: any[]) => void;
+  projectLink: any[];
+  setProjectLink: (link: any[]) => void;
+  basePlan: any[];
+  setBasePlan: (plan: any[]) => void;
+  units: any[];
+  setUnits: (units: any[]) => void;
+  loadFullCloudData: (payload: {
+    storeLocationData: Record<string, StoreLocationRecord>;
+    store?: 'HCM' | 'HN';
+    location?: string;
+    activeMapVersionId?: string | null;
+    reviewSelectedLabels?: string[];
+    reviewLabelColors?: Record<string, string>;
+    unitInfo?: any[];
+    classInfo?: any[];
+    actualClassInfo?: any[];
+    sales?: any[];
+    profits?: any[];
+    subFees?: any[];
+    mdStatus?: any[];
+    projectStatus?: any[];
+    projectLink?: any[];
+    basePlan?: any[];
+    units?: any[];
+  }) => void;
+}
+
+export const useDataStore = create<DataStoreState>((set, get) => ({
+  store: 'HCM',
+  location: 'L1',
+  storeLocationData: {},
+
+  setStore: (newStore) => {
+    const current = get();
+    if (current.store === newStore) return;
+    current.setStoreAndLocation(newStore, current.location);
+  },
+
+  setLocation: (newLocation) => {
+    const current = get();
+    if (current.location === newLocation) return;
+    current.setStoreAndLocation(current.store, newLocation);
+  },
+
+  setStoreAndLocation: (newStore, newLocation) => {
+    if (!newLocation || newLocation.trim() === '' || newLocation.toUpperCase() === 'ALL') {
+      return;
+    }
+    const state = get();
+    if (state.store === newStore && state.location === newLocation) {
+      return;
+    }
+    const oldKey = getPartitionKey(state.store, state.location);
+    const newKey = getPartitionKey(newStore, newLocation);
+
+    // Persist current active partition data only if it actually contains data or already exists
+    const hasCurrentData =
+      state.mapUnits.length > 0 ||
+      state.mapVersions.length > 0 ||
+      Boolean(state.storeLocationData[oldKey]);
+
+    const updatedStoreLocationData = hasCurrentData
+      ? {
+          ...state.storeLocationData,
+          [oldKey]: {
+            mapUnits: state.mapUnits,
+            mapVersions: state.mapVersions,
+            activeMapVersionId: state.activeMapVersionId,
+          },
+        }
+      : state.storeLocationData;
+
+    // Retrieve target partition data
+    const target = updatedStoreLocationData[newKey];
+    const newUnits = target?.mapUnits ?? [];
+    const newVersions = target?.mapVersions ?? [];
+    const newActiveVersionId = target?.activeMapVersionId ?? (newVersions.length > 0 ? newVersions[0].id : null);
+
+    set({
+      store: newStore,
+      location: newLocation,
+      storeLocationData: updatedStoreLocationData,
+      mapUnits: newUnits,
+      mapVersions: newVersions,
+      activeMapVersionId: newActiveVersionId,
+    });
+  },
+
+  setStoreLocationData: (data) => {
+    const state = get();
+    const currentKey = getPartitionKey(state.store, state.location);
+    const target = data[currentKey];
+    set({
+      storeLocationData: data,
+      ...(target ? {
+        mapUnits: target.mapUnits || [],
+        mapVersions: target.mapVersions || [],
+        activeMapVersionId: target.activeMapVersionId || (target.mapVersions?.[0]?.id ?? null),
+      } : {}),
+    });
+    autoBackupStoreLocationData(data, state.store, state.location, state.activeMapVersionId);
+  },
+
+  setLoadedCloudData: (payload: LoadedCloudDataPayload) => {
+    const state = get();
+    const targetStore = payload.store || state.store;
+    const targetLocation = (payload.location || state.location).toUpperCase().trim();
+    const pKey = getPartitionKey(targetStore, targetLocation);
+    
+    const storeLocationData = payload.storeLocationData || state.storeLocationData;
+    const target = storeLocationData[pKey];
+    
+    // Strict priority: use partition data for this exact store & floor first, fallback to root legacy only if partition is empty
+    const mapUnits = (target?.mapUnits && Array.isArray(target.mapUnits) && target.mapUnits.length > 0) 
+      ? target.mapUnits 
+      : (payload.mapUnits || []);
+    const mapVersions = (target?.mapVersions && Array.isArray(target.mapVersions) && target.mapVersions.length > 0) 
+      ? target.mapVersions 
+      : (payload.mapVersions || []);
+    const activeMapVersionId = target?.activeMapVersionId || payload.activeMapVersionId || (mapVersions[0]?.id ?? null);
+
+    set({
+      store: targetStore,
+      location: targetLocation,
+      storeLocationData,
+      mapUnits,
+      mapVersions,
+      activeMapVersionId,
+      ...(payload.reviewSelectedLabels ? { reviewSelectedLabels: payload.reviewSelectedLabels } : {}),
+      ...(payload.reviewLabelColors ? { reviewLabelColors: payload.reviewLabelColors } : {}),
+      ...(payload.unitInfo ? { unitInfo: payload.unitInfo } : {}),
+      ...(payload.classInfo ? { classInfo: payload.classInfo } : {}),
+      ...(payload.actualClassInfo ? { actualClassInfo: payload.actualClassInfo } : {}),
+      ...(payload.sales ? { sales: payload.sales } : {}),
+      ...(payload.profits ? { profits: payload.profits } : {}),
+      ...(payload.subFees ? { subFees: payload.subFees } : {}),
+      ...(payload.mdStatus ? { mdStatus: payload.mdStatus } : {}),
+      ...(payload.projectStatus ? { projectStatus: payload.projectStatus } : {}),
+      ...(payload.projectLink ? { projectLink: payload.projectLink } : {}),
+      ...(payload.basePlan ? { basePlan: payload.basePlan } : {}),
+      ...(payload.units ? { units: payload.units } : {}),
+    });
+  },
+
+  getConsolidatedSaveData: () => {
+    const state = get();
+    const currentKey = getPartitionKey(state.store, state.location);
+    const updatedStoreLocationData = {
+      ...state.storeLocationData,
+      [currentKey]: {
+        mapUnits: state.mapUnits,
+        mapVersions: state.mapVersions,
+        activeMapVersionId: state.activeMapVersionId,
+      },
+    };
+    return {
+      storeLocationData: updatedStoreLocationData,
+      store: state.store,
+      location: state.location,
+      mapUnits: state.mapUnits,
+      mapVersions: state.mapVersions,
+      activeMapVersionId: state.activeMapVersionId,
+      reviewSelectedLabels: state.reviewSelectedLabels,
+      reviewLabelColors: state.reviewLabelColors,
+      unitInfo: state.unitInfo,
+      classInfo: state.classInfo,
+      actualClassInfo: state.actualClassInfo,
+      sales: state.sales,
+      profits: state.profits,
+      subFees: state.subFees,
+      mdStatus: state.mdStatus,
+      projectStatus: state.projectStatus,
+      projectLink: state.projectLink,
+      basePlan: state.basePlan,
+      units: state.units,
+    };
+  },
+
+  mapUnits: [],
+  setMapUnits: (mapUnits) => {
+    const state = get();
+    const taggedUnits = mapUnits.map(u => ({
+      ...u,
+      store: u.store || state.store,
+      location: u.location || state.location,
+    }));
+    const key = getPartitionKey(state.store, state.location);
+    const newStoreLocationData = {
+      ...state.storeLocationData,
+      [key]: {
+        ...(state.storeLocationData[key] || { mapVersions: state.mapVersions, activeMapVersionId: state.activeMapVersionId }),
+        mapUnits: taggedUnits,
+      },
+    };
+    set({
+      mapUnits: taggedUnits,
+      storeLocationData: newStoreLocationData,
+    });
+    autoBackupStoreLocationData(newStoreLocationData, state.store, state.location, state.activeMapVersionId);
+  },
+
+  mapVersions: [],
+  setMapVersions: (mapVersions) => {
+    const state = get();
+    const appYear = String(useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026');
+    const taggedVersions = mapVersions.map(v => ({
+      ...v,
+      store: v.store || state.store,
+      location: v.location || state.location,
+      year: v.year ? String(v.year).trim() : appYear,
+    }));
+    const key = getPartitionKey(state.store, state.location);
+    const newStoreLocationData = {
+      ...state.storeLocationData,
+      [key]: {
+        ...(state.storeLocationData[key] || { mapUnits: state.mapUnits, activeMapVersionId: state.activeMapVersionId }),
+        mapVersions: taggedVersions,
+      },
+    };
+    set({
+      mapVersions: taggedVersions,
+      storeLocationData: newStoreLocationData,
+    });
+    autoBackupStoreLocationData(newStoreLocationData, state.store, state.location, state.activeMapVersionId);
+  },
+
+  activeMapVersionId: null,
+  setActiveMapVersionId: (activeMapVersionId) => {
+    const state = get();
+    // Identify which partition this version belongs to
+    let targetKey = getPartitionKey(state.store, state.location);
+    if (activeMapVersionId) {
+      for (const pKey in state.storeLocationData) {
+        if (state.storeLocationData[pKey]?.mapVersions?.some(v => v.id === activeMapVersionId)) {
+          targetKey = pKey;
+          break;
+        }
+      }
+    }
+    set({
+      activeMapVersionId,
+      storeLocationData: {
+        ...state.storeLocationData,
+        [targetKey]: {
+          ...(state.storeLocationData[targetKey] || { mapUnits: [], mapVersions: [] }),
+          activeMapVersionId,
+        },
+      },
+    });
+  },
+
+  reviewSelectedLabels: [],
+  setReviewSelectedLabels: (reviewSelectedLabels) => set({ reviewSelectedLabels }),
+  reviewLabelColors: {},
+  setReviewLabelColors: (reviewLabelColors) => set({ reviewLabelColors }),
+
+  getAllStoreUnits: (targetStore) => {
+    const state = get();
+    const currentStore = targetStore || state.store;
+    const currentKey = getPartitionKey(state.store, state.location);
+
+    const mergedData = {
+      ...state.storeLocationData,
+      [currentKey]: {
+        ...(state.storeLocationData[currentKey] || {}),
+        mapUnits: state.mapUnits,
+        mapVersions: state.mapVersions,
+        activeMapVersionId: state.activeMapVersionId,
+      },
+    };
+
+    const allUnits: UnitShape[] = [];
+    const seenIds = new Set<string>();
+
+    for (const key in mergedData) {
+      if (key.startsWith(`${currentStore}_`)) {
+        const partition = mergedData[key];
+        const loc = (key.split('_')[1] || state.location).toUpperCase().trim();
+        if (partition?.mapUnits) {
+          for (const u of partition.mapUnits) {
+            const compositeKey = `${key}_${u.id || u.name}`;
+            if (!seenIds.has(compositeKey)) {
+              seenIds.add(compositeKey);
+              allUnits.push({
+                ...u,
+                store: u.store || currentStore,
+                location: (u.location || loc).toUpperCase().trim(),
+              });
+            }
+          }
+        }
+      }
+    }
+    return allUnits;
+  },
+
+  getAllStoreVersions: (targetStore) => {
+    const state = get();
+    const currentStore = targetStore || state.store;
+    const currentKey = getPartitionKey(state.store, state.location);
+
+    const mergedData = { ...state.storeLocationData };
+    if (!mergedData[currentKey] && state.mapVersions && state.mapVersions.length > 0) {
+      mergedData[currentKey] = {
+        mapUnits: state.mapUnits || [],
+        mapVersions: state.mapVersions || [],
+        activeMapVersionId: state.activeMapVersionId,
+      };
+    }
+
+    const allVersions: MapVersion[] = [];
+    const seenIds = new Set<string>();
+
+    for (const key in mergedData) {
+      if (key.startsWith(`${currentStore}_`)) {
+        const partition = mergedData[key];
+        const loc = key.split('_')[1] || state.location || 'L1';
+        const appYear = String(useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026');
+        if (partition?.mapVersions) {
+          for (const v of partition.mapVersions) {
+            if (!seenIds.has(v.id)) {
+              seenIds.add(v.id);
+              const resolvedLoc = (v.location && String(v.location).trim()) 
+                ? String(v.location).trim().toUpperCase() 
+                : (v.name?.match(/(b\d|l\d|\d+f|gf|ug)/i)?.[1]?.toUpperCase() || loc);
+              const resolvedYear = (v.year && String(v.year).trim()) 
+                ? String(v.year).trim() 
+                : (v.name?.match(/(202\d|203\d)/i)?.[1] || appYear);
+              
+              allVersions.push({
+                ...v,
+                store: v.store || currentStore,
+                location: resolvedLoc,
+                year: resolvedYear,
+              });
+            }
+          }
+        }
+      }
+    }
+    return allVersions;
+  },
+
+  updateStoreUnitsAcrossLocations: (updatedUnits, targetStore) => {
+    const state = get();
+    const currentStore = targetStore || state.store;
+    const currentKey = getPartitionKey(state.store, state.location);
+
+    const unitsByPartition: Record<string, UnitShape[]> = {};
+    for (const u of updatedUnits) {
+      const uStore = u.store || currentStore;
+      const uLoc = (u.location && String(u.location).trim()) 
+        ? String(u.location).trim().toUpperCase() 
+        : (u.name?.match(/(b\d|l\d|\d+f|gf|ug)/i)?.[1]?.toUpperCase() || state.location || 'L1');
+      const pKey = getPartitionKey(uStore, uLoc);
+      if (!unitsByPartition[pKey]) unitsByPartition[pKey] = [];
+      unitsByPartition[pKey].push({ ...u, store: uStore, location: uLoc });
+    }
+
+    const updatedStoreLocationData = { ...state.storeLocationData };
+    for (const pKey in updatedStoreLocationData) {
+      if (pKey.startsWith(`${currentStore}_`)) {
+        updatedStoreLocationData[pKey] = {
+          ...(updatedStoreLocationData[pKey] || { mapVersions: [], activeMapVersionId: null }),
+          mapUnits: unitsByPartition[pKey] || [],
+        };
+      }
+    }
+    for (const pKey in unitsByPartition) {
+      if (!updatedStoreLocationData[pKey]) {
+        updatedStoreLocationData[pKey] = {
+          mapVersions: [],
+          activeMapVersionId: null,
+          mapUnits: unitsByPartition[pKey],
+        };
+      }
+    }
+
+    const activeUnits = updatedStoreLocationData[currentKey]?.mapUnits || [];
+
+    set({
+      storeLocationData: updatedStoreLocationData,
+      mapUnits: activeUnits,
+    });
+    autoBackupStoreLocationData(updatedStoreLocationData, state.store, state.location, state.activeMapVersionId);
+  },
+
+  updateStoreVersionsAcrossLocations: (updatedVersions, targetStore) => {
+    const state = get();
+    const currentStore = targetStore || state.store;
+    const currentKey = getPartitionKey(state.store, state.location);
+    const appYear = String(useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026');
+
+    const versionsByPartition: Record<string, MapVersion[]> = {};
+    for (const v of updatedVersions) {
+      const vStore = v.store || currentStore;
+      const vLoc = (v.location && String(v.location).trim()) 
+        ? String(v.location).trim().toUpperCase() 
+        : (v.name?.match(/(b\d|l\d|\d+f|gf|ug)/i)?.[1]?.toUpperCase() || state.location || 'L1');
+      const vYr = (v.year && String(v.year).trim()) 
+        ? String(v.year).trim() 
+        : (v.name?.match(/(202\d|203\d)/i)?.[1] || appYear);
+
+      const pKey = getPartitionKey(vStore, vLoc);
+      if (!versionsByPartition[pKey]) versionsByPartition[pKey] = [];
+      versionsByPartition[pKey].push({
+        ...v,
+        store: vStore,
+        location: vLoc,
+        year: vYr,
+      });
+    }
+
+    const updatedStoreLocationData = { ...state.storeLocationData };
+    for (const pKey in updatedStoreLocationData) {
+      if (pKey.startsWith(`${currentStore}_`)) {
+        const existing = updatedStoreLocationData[pKey];
+        const newVers = versionsByPartition[pKey] || [];
+        updatedStoreLocationData[pKey] = {
+          ...(existing || { mapUnits: [] }),
+          mapVersions: newVers,
+          activeMapVersionId: existing?.activeMapVersionId && newVers.some(v => v.id === existing.activeMapVersionId)
+            ? existing.activeMapVersionId
+            : (newVers[0]?.id || null),
+        };
+      }
+    }
+    for (const pKey in versionsByPartition) {
+      if (!updatedStoreLocationData[pKey]) {
+        const newVers = versionsByPartition[pKey];
+        updatedStoreLocationData[pKey] = {
+          mapUnits: [],
+          activeMapVersionId: newVers[0]?.id || null,
+          mapVersions: newVers,
+        };
+      }
+    }
+
+    const activePartition = updatedStoreLocationData[currentKey];
+    const activeVersions = activePartition?.mapVersions || [];
+    
+    // Preserve current state.activeMapVersionId if it still exists in updatedVersions
+    const isCurrentActiveValid = state.activeMapVersionId && updatedVersions.some(v => v.id === state.activeMapVersionId);
+    const activeVersionId = isCurrentActiveValid
+      ? state.activeMapVersionId
+      : (activePartition?.activeMapVersionId || (activeVersions[0]?.id ?? null));
+
+    set({
+      storeLocationData: updatedStoreLocationData,
+      mapVersions: activeVersions,
+      activeMapVersionId: activeVersionId,
+    });
+    autoBackupStoreLocationData(updatedStoreLocationData, state.store, state.location, activeVersionId);
+  },
+
+  syncGroupsToAllStoreLocations: (groups, targetStore) => {
+    const state = get();
+    const currentStore = targetStore || state.store;
+    const updatedStoreLocationData = { ...state.storeLocationData };
+
+    for (const pKey in updatedStoreLocationData) {
+      if (pKey.startsWith(`${currentStore}_`)) {
+        const partition = updatedStoreLocationData[pKey];
+        if (partition?.mapVersions) {
+          const newVersions = partition.mapVersions.map((v) => ({
+            ...v,
+            groups,
+          }));
+          updatedStoreLocationData[pKey] = {
+            ...partition,
+            mapVersions: newVersions,
+          };
+        }
+      }
+    }
+
+    const currentKey = getPartitionKey(state.store, state.location);
+    const activeVersions = updatedStoreLocationData[currentKey]?.mapVersions || state.mapVersions;
+
+    set({
+      storeLocationData: updatedStoreLocationData,
+      mapVersions: activeVersions,
+    });
+  },
+
+  isCloudLoaded: false,
+  setIsCloudLoaded: (isCloudLoaded) => set({ isCloudLoaded }),
+  isLoading: false,
+  setIsLoading: (isLoading) => set({ isLoading }),
+  unitInfo: [],
+  setUnitInfo: (unitInfo) => set({ unitInfo }),
+  projectStatus: [],
+  setProjectStatus: (projectStatus) => set({ projectStatus }),
+  classInfo: [],
+  setClassInfo: (classInfo) => set({ classInfo }),
+  actualClassInfo: [],
+  setActualClassInfo: (actualClassInfo) => set({ actualClassInfo }),
+  sales: [],
+  setSales: (sales) => set({ sales }),
+  profits: [],
+  setProfits: (profits) => set({ profits }),
+  subFees: [],
+  setSubFees: (subFees) => set({ subFees }),
+  mdStatus: [],
+  setMdStatus: (mdStatus) => set({ mdStatus }),
+  projectLink: [],
+  setProjectLink: (projectLink) => set({ projectLink }),
+  basePlan: [],
+  setBasePlan: (basePlan) => set({ basePlan }),
+  units: [],
+  setUnits: (units) => set({ units }),
+
+  loadFullCloudData: (payload) => {
+    const state = get();
+    const storeLocationData = payload.storeLocationData || {};
+
+    let activeStore = (payload.store || state.store) as 'HCM' | 'HN';
+    let activeLoc = payload.location || state.location;
+    let activeKey = getPartitionKey(activeStore, activeLoc);
+
+    if (!storeLocationData[activeKey]) {
+      const keys = Object.keys(storeLocationData);
+      if (keys.length > 0) {
+        const firstKey = keys[0];
+        const parts = firstKey.split('_');
+        activeStore = (parts[0] === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+        activeLoc = parts[1] || 'L1';
+        activeKey = firstKey;
+      }
+    }
+
+    const targetPartition = storeLocationData[activeKey] || {
+      mapUnits: [],
+      mapVersions: [],
+      activeMapVersionId: null,
+    };
+
+    const targetUnits = targetPartition.mapUnits || [];
+    const targetVersions = targetPartition.mapVersions || [];
+    const targetActiveVerId = payload.activeMapVersionId || targetPartition.activeMapVersionId || (targetVersions[0]?.id ?? null);
+
+    set({
+      isCloudLoaded: true,
+      store: activeStore,
+      location: activeLoc,
+      storeLocationData,
+      mapUnits: targetUnits,
+      mapVersions: targetVersions,
+      activeMapVersionId: targetActiveVerId,
+      ...(payload.reviewSelectedLabels ? { reviewSelectedLabels: payload.reviewSelectedLabels } : {}),
+      ...(payload.reviewLabelColors ? { reviewLabelColors: payload.reviewLabelColors } : {}),
+      ...(payload.unitInfo ? { unitInfo: payload.unitInfo } : {}),
+      ...(payload.classInfo ? { classInfo: payload.classInfo } : {}),
+      ...(payload.actualClassInfo ? { actualClassInfo: payload.actualClassInfo } : {}),
+      ...(payload.sales ? { sales: payload.sales } : {}),
+      ...(payload.profits ? { profits: payload.profits } : {}),
+      ...(payload.subFees ? { subFees: payload.subFees } : {}),
+      ...(payload.mdStatus ? { mdStatus: payload.mdStatus } : {}),
+      ...(payload.projectStatus ? { projectStatus: payload.projectStatus } : {}),
+      ...(payload.projectLink ? { projectLink: payload.projectLink } : {}),
+      ...(payload.basePlan ? { basePlan: payload.basePlan } : {}),
+      ...(payload.units ? { units: payload.units } : {}),
+    });
+
+    saveLayoutConfigToDisk({
+      ...payload,
+      storeLocationData,
+      store: activeStore,
+      location: activeLoc,
+      activeMapVersionId: targetActiveVerId,
+    }).catch(() => {});
+  },
+}));
+
+// Hydrate useDataStore from Persistent Disk Cache (CacheStorage / IndexedDB) immediately on startup
+if (typeof window !== 'undefined') {
+  setTimeout(async () => {
+    try {
+      const state = useDataStore.getState();
+      if (!state.storeLocationData || Object.keys(state.storeLocationData).length === 0) {
+        const diskConfig = await getCachedLayoutConfigFromDisk();
+        if (diskConfig && diskConfig.storeLocationData && Object.keys(diskConfig.storeLocationData).length > 0) {
+          useDataStore.getState().setLoadedCloudData(diskConfig);
+        }
+      }
+    } catch (_e) {}
+  }, 0);
+}
+
+

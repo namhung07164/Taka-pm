@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { UnitShape, MapVersion } from './components/DataMapping/types';
 import { useAppStore } from '../../store/useAppStore';
-import { saveLayoutConfigToDisk, getCachedLayoutConfigFromDisk } from '../../lib/layoutConfigCache';
+import { saveLayoutConfigToDisk, getCachedLayoutConfigFromDisk, isValidLayoutConfig } from '../../lib/layoutConfigCache';
 
 export interface StoreLocationRecord {
   mapUnits: UnitShape[];
@@ -36,29 +36,22 @@ const getPartitionKey = (store: string, location: string) => `${store}_${locatio
 let backupTimeout: any = null;
 export function autoBackupStoreLocationData(data: Record<string, StoreLocationRecord>, store: string, location: string, activeMapVersionId?: string | null) {
   if (typeof window === 'undefined') return;
+  if (!isValidLayoutConfig({ storeLocationData: data })) return;
   if (backupTimeout) clearTimeout(backupTimeout);
   backupTimeout = setTimeout(() => {
+    const state = useDataStore.getState();
+    const consolidated = state.getConsolidatedSaveData();
     const backupObj = {
+      ...consolidated,
       storeLocationData: data,
       store,
       location,
       activeMapVersionId,
-      updatedAt: Date.now(),
-      timestamp: Date.now(),
     };
-    // Always persist to unlimited Disk Cache (IndexedDB + CacheStorage API)
+    if (!isValidLayoutConfig(backupObj)) return;
+    // Persist to unlimited Disk Cache (IndexedDB + CacheStorage API) without bumping cloud timestamp
     saveLayoutConfigToDisk(backupObj).catch(() => {});
-    try {
-      const payload = JSON.stringify(backupObj);
-      if (payload.length < 1000000) {
-        localStorage.setItem('taka_mapping_config_backup', payload);
-      } else {
-        localStorage.removeItem('taka_mapping_config_backup');
-      }
-    } catch (e) {
-      try { localStorage.removeItem('taka_mapping_config_backup'); } catch (_) {}
-    }
-  }, 800);
+  }, 1200);
 }
 
 interface DataStoreState {
@@ -181,15 +174,22 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     const oldKey = getPartitionKey(state.store, state.location);
     const newKey = getPartitionKey(newStore, newLocation);
 
-    // Persist current active partition data
-    const updatedStoreLocationData = {
-      ...state.storeLocationData,
-      [oldKey]: {
-        mapUnits: state.mapUnits,
-        mapVersions: state.mapVersions,
-        activeMapVersionId: state.activeMapVersionId,
-      },
-    };
+    // Persist current active partition data only if it actually contains data or already exists
+    const hasCurrentData =
+      state.mapUnits.length > 0 ||
+      state.mapVersions.length > 0 ||
+      Boolean(state.storeLocationData[oldKey]);
+
+    const updatedStoreLocationData = hasCurrentData
+      ? {
+          ...state.storeLocationData,
+          [oldKey]: {
+            mapUnits: state.mapUnits,
+            mapVersions: state.mapVersions,
+            activeMapVersionId: state.activeMapVersionId,
+          },
+        }
+      : state.storeLocationData;
 
     // Retrieve target partition data
     const target = updatedStoreLocationData[newKey];
@@ -205,7 +205,6 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       mapVersions: newVersions,
       activeMapVersionId: newActiveVersionId,
     });
-    autoBackupStoreLocationData(updatedStoreLocationData, newStore, newLocation, newActiveVersionId);
   },
 
   setStoreLocationData: (data) => {

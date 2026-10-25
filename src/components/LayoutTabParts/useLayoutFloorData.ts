@@ -71,16 +71,22 @@ export function useLayoutFloorData({
           part.mapVersions.forEach((v: any) => {
             if (v?.id) {
               const existing = versionsMap.get(v.id) || {};
-              const resolvedBg = (existing.backgroundUrl && !existing.backgroundUrl.startsWith('r2://'))
+              const isLocalUpload =
+                existing.backgroundUrl &&
+                (existing.backgroundUrl.startsWith('blob:') || existing.backgroundUrl.startsWith('data:'));
+              const resolvedBg = isLocalUpload
                 ? existing.backgroundUrl
-                : (v.backgroundUrl && !v.backgroundUrl.startsWith('r2://'))
+                : v.backgroundUrl && !v.backgroundUrl.startsWith('r2://')
                   ? v.backgroundUrl
-                  : (existing.backgroundUrl || v.backgroundUrl);
-              versionsMap.set(v.id, { 
-                ...v, 
-                ...existing, 
+                  : existing.backgroundUrl && !existing.backgroundUrl.startsWith('r2://')
+                    ? existing.backgroundUrl
+                    : v.backgroundUrl || existing.backgroundUrl;
+              versionsMap.set(v.id, {
+                ...existing,
+                ...v,
                 backgroundUrl: resolvedBg,
-                location: existing.location || v.location || key.split('_')[1] 
+                r2Key: (v as any).r2Key || (existing as any).r2Key,
+                location: existing.location || v.location || key.split('_')[1],
               });
             }
           });
@@ -93,16 +99,22 @@ export function useLayoutFloorData({
       config.versions.forEach((v: any) => {
         if (v?.id) {
           const existing = versionsMap.get(v.id) || {};
-          const resolvedBg = (existing.backgroundUrl && !existing.backgroundUrl.startsWith('r2://'))
+          const isLocalUpload =
+            existing.backgroundUrl &&
+            (existing.backgroundUrl.startsWith('blob:') || existing.backgroundUrl.startsWith('data:'));
+          const resolvedBg = isLocalUpload
             ? existing.backgroundUrl
-            : (v.backgroundUrl && !v.backgroundUrl.startsWith('r2://'))
+            : v.backgroundUrl && !v.backgroundUrl.startsWith('r2://')
               ? v.backgroundUrl
-              : (existing.backgroundUrl || v.backgroundUrl);
-          versionsMap.set(v.id, { 
-            ...v, 
-            ...existing, 
+              : existing.backgroundUrl && !existing.backgroundUrl.startsWith('r2://')
+                ? existing.backgroundUrl
+                : v.backgroundUrl || existing.backgroundUrl;
+          versionsMap.set(v.id, {
+            ...existing,
+            ...v,
             backgroundUrl: resolvedBg,
-            store: existing.store || v.store || 'HCM' 
+            r2Key: (v as any).r2Key || (existing as any).r2Key,
+            store: existing.store || v.store || 'HCM',
           });
         }
       });
@@ -358,9 +370,9 @@ export function useLayoutFloorData({
   const activeBgUrl = version?.backgroundUrl || '';
   const [bgImage] = useOffscreenImage(activeBgUrl, 'anonymous');
 
-  // Pre-cache all floor maps for this store into Persistent Disk Cache (prioritizing active floor)
+  // Pre-cache other floor maps for this store into Persistent Disk Cache only AFTER the active floor image has loaded
   useEffect(() => {
-    if (availableStoreVersions.length > 0) {
+    if (bgImage && availableStoreVersions.length > 0) {
       const urls = availableStoreVersions
         .map(v => v?.backgroundUrl || ((v as any)?.r2Key ? `r2://${(v as any).r2Key}` : ''))
         .filter((u): u is string => typeof u === 'string' && u.length > 0 && !u.startsWith('data:'));
@@ -368,7 +380,7 @@ export function useLayoutFloorData({
         preloadFloorImages(urls, activeBgUrl);
       }
     }
-  }, [availableStoreVersions, activeBgUrl]);
+  }, [bgImage, availableStoreVersions, activeBgUrl]);
 
   // Helper to accurately check if unit has user-attached images in localStorage partitioned by store
   const hasStoredUnitImages = useCallback((key: string | undefined | null, overrideStore?: string): boolean => {
