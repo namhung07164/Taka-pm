@@ -117,18 +117,18 @@ export function useMobileSwipeGestures({
         return;
       }
 
-      // 1. Edge-Swipe Right from Left Screen Edge (startX <= 30px) -> Opens Mobile Navigation Drawer
-      if (diffX < -50 && startX <= 30) {
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          try {
-            navigator.vibrate(15);
-          } catch {}
-        }
-        window.dispatchEvent(new CustomEvent('taka_toggle_mobile_nav', { detail: { open: true } }));
+      // Screen Edge Threshold: only gestures initiated right against the extreme screen edge
+      // (<= 35px from left edge or >= innerWidth - 35px from right edge)
+      const EDGE_ZONE_PX = 35;
+      const isLeftEdge = startX <= EDGE_ZONE_PX;
+      const isRightEdge = startX >= window.innerWidth - EDGE_ZONE_PX;
+
+      // Screen Carousel Swipe MUST ONLY trigger from extreme edges (no free swiping in the middle of screen)
+      if (!isLeftEdge && !isRightEdge) {
         return;
       }
 
-      // 2. Global Horizontal Screen Swipe -> Switch Tab
+      // Check user permissions for tab sequence
       const currentUser = state.currentUser;
       const isAdmin = currentUser?.role === 'admin';
       const role = (
@@ -161,15 +161,26 @@ export function useMobileSwipeGestures({
       if (currentIdx === -1) return;
 
       let nextTab: TabId | null = null;
-      if (diffX > 65) {
-        // Swiped Left (<--) -> Move to Next Tab
-        if (currentIdx < permittedTabs.length - 1) {
-          nextTab = permittedTabs[currentIdx + 1];
-        }
-      } else if (diffX < -65 && startX > 30) {
-        // Swiped Right (-->) -> Move to Previous Tab
+
+      // 1. Swiping Right from Left Screen Edge (startX <= 35px, diffX < -45px)
+      if (isLeftEdge && diffX < -45) {
         if (currentIdx > 0) {
           nextTab = permittedTabs[currentIdx - 1];
+        } else {
+          // On first tab: open Mobile Navigation Drawer
+          if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            try {
+              navigator.vibrate(15);
+            } catch {}
+          }
+          window.dispatchEvent(new CustomEvent('taka_toggle_mobile_nav', { detail: { open: true } }));
+          return;
+        }
+      }
+      // 2. Swiping Left from Right Screen Edge (startX >= window.innerWidth - 35px, diffX > 45px)
+      else if (isRightEdge && diffX > 45) {
+        if (currentIdx < permittedTabs.length - 1) {
+          nextTab = permittedTabs[currentIdx + 1];
         }
       }
 

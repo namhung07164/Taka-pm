@@ -1,19 +1,17 @@
-import { disableNetwork, enableNetwork } from 'firebase/firestore';
-import { db } from './firebase';
 import { localDb } from './localDb';
 import { processPendingSync, getConnectionStatus } from './syncQueue';
 
 /**
  * Sync resilience helpers (additive module).
  *
- * 1. initNetworkRecovery: restarts the Firestore network layer after the app was in background.
- *    iOS Safari / PWA suspends WebChannel connections; the listener can stay "connected" but silently stop
- *    receiving updates. disableNetwork -> enableNetwork forces a clean reconnect (pending writes are preserved).
+ * 1. initNetworkRecovery: recovers sync state after the app was backgrounded or slept.
+ *    Flushes offline writes and performs a light delta catch-up without resetting Firestore's
+ *    connection channels or stream tokens (which avoids 1.2K+ full collection re-read spikes).
  * 2. resyncIfStale: delta documents are purged after 7 days. A device that has not synced for longer
  *    than that can never catch up through deltas, so wipe the local cache and reload once.
  */
 
-const HIDDEN_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes hidden before cycling network
+const HIDDEN_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes hidden before delta catch-up
 const WALL_CLOCK_CHECK_INTERVAL_MS = 20 * 1000;
 const WALL_CLOCK_JUMP_THRESHOLD_MS = 60 * 1000; // 60s OS sleep jump per Rule 16.2
 const STALE_RESYNC_MS = 6 * 24 * 60 * 60 * 1000; // < 7-day delta retention
@@ -22,8 +20,7 @@ const RESYNC_GUARD_KEY = 'taka_full_resync_guard_v1';
 let activeRecoveryPromise: Promise<void> | null = null;
 
 /**
- * If Firestore network is currently cycling (disableNetwork -> enableNetwork),
- * wait for it to finish before issuing getDocsFromServer queries.
+ * If recovery is in progress, wait for it before issuing subsequent operations.
  */
 export async function waitForNetworkRecovery(): Promise<void> {
   if (activeRecoveryPromise) {
@@ -48,9 +45,9 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
     lastRecoveredAt = now;
     const p = (async () => {
       try {
-        await disableNetwork(db);
-        await enableNetwork(db);
         await processPendingSync();
+        const { pullAndApplyDeltas } = await import('./deltaPullService');
+        await pullAndApplyDeltas(undefined, true);
       } catch (err) {
         console.warn('[syncResilience] Network recovery failed:', err);
       } finally {
