@@ -11334,6 +11334,7 @@ import { Project, Cost } from '../../types';
 import { cn, formatDisplayDateMain } from '../../lib/utils';
 import { CostEditableCell } from './CostEditableCell';
 import { PaidDateMatches } from './costTypes';
+import { SwipeableRow, SwipeAction } from '../common/SwipeableRow';
 
 interface CostMobileItemRowProps {
   cost: Cost;
@@ -11386,16 +11387,34 @@ export const CostMobileItemRow = React.memo(function CostMobileItemRow({
     thirdMatch: isThirdPaidMatch,
   } = getCostPaidMatches(c, paidDateStart, paidDateEnd, paidStageFilter);
 
+  const rightActions: SwipeAction[] = canWrite
+    ? [
+        {
+          label: 'Delete',
+          icon: <Trash2 className="w-5 h-5 text-white" />,
+          color: 'bg-rose-600',
+          onClick: () => handleDeleteCost(c),
+          isPrimary: true,
+          isDestructive: true,
+        },
+      ]
+    : [];
+
   return (
-    <div
-      key={c.id}
-      className={cn(
-        'p-2.5 rounded-lg border flex flex-col gap-2 transition-all',
-        isCostMatched && (paidDateStart || paidDateEnd)
-          ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800/80 shadow-2xs'
-          : 'bg-slate-50/70 dark:bg-[#18181a]/50 border-slate-200/60 dark:border-[#38383a]'
-      )}
+    <SwipeableRow
+      rightActions={rightActions}
+      onFullSwipeLeft={canWrite ? () => handleDeleteCost(c) : undefined}
+      containerClassName="rounded-lg shadow-2xs"
     >
+      <div
+        key={c.id}
+        className={cn(
+          'p-2.5 rounded-lg border flex flex-col gap-2 transition-all',
+          isCostMatched && (paidDateStart || paidDateEnd)
+            ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800/80 shadow-2xs'
+            : 'bg-slate-50/70 dark:bg-[#18181a]/50 border-slate-200/60 dark:border-[#38383a]'
+        )}
+      >
       {/* Top: Badges, Vendor, Description & Act/Forc */}
       <div className="flex justify-between items-start gap-2">
         <div className="flex flex-col gap-1 min-w-0 flex-1">
@@ -11637,6 +11656,7 @@ export const CostMobileItemRow = React.memo(function CostMobileItemRow({
         </div>
       </div>
     </div>
+    </SwipeableRow>
   );
 });
 
@@ -20215,12 +20235,13 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
 FILE: src/components/DetailTabParts/DetailMobileTaskItem.tsx
 ================================================================================
 import React, { memo } from 'react';
-import { ChevronUp, ChevronDown, ChevronRight, Maximize2, Trash2 } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronRight, Maximize2, Trash2, CheckCircle2 } from 'lucide-react';
 import { Task, Project } from '../../types';
 import { FastToggle } from './FastToggle';
 import { EditableCell } from './EditableCell';
 import { cleanDurationString } from '../../lib/taskImportService';
 import { cn, formatDisplayDateMain, calculateDays, getTaskStatus, getActStatusPercent } from '../../lib/utils';
+import { SwipeableRow, SwipeAction } from '../common/SwipeableRow';
 
 export interface DetailMobileTaskItemProps {
   task: Task;
@@ -20279,144 +20300,199 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
     ? 'border-l-[4px] border-l-amber-500' 
     : 'border-l-[4px] border-l-slate-400';
 
+  const isCompleted = t.runningStatus === 'Completed' || taskStatus === 'Completed';
+
+  const leftActions: SwipeAction[] = canWrite
+    ? [
+        {
+          label: isCompleted ? 'Reopen' : 'Done',
+          icon: <CheckCircle2 className="w-5 h-5 text-white" />,
+          color: isCompleted ? 'bg-amber-500' : 'bg-emerald-600',
+          onClick: () =>
+            handleUpdateTask(t, {
+              runningStatus: isCompleted ? 'On process' : 'Completed',
+            }),
+          isPrimary: true,
+        },
+      ]
+    : [];
+
+  const rightActions: SwipeAction[] = [
+    {
+      label: 'Details',
+      icon: <Maximize2 className="w-5 h-5 text-white" />,
+      color: 'bg-blue-600',
+      onClick: () => onEditTask(t, !canWrite, 'chat'),
+      isPrimary: !canWrite,
+    },
+    ...(canWrite
+      ? [
+          {
+            label: 'Delete',
+            icon: <Trash2 className="w-5 h-5 text-white" />,
+            color: 'bg-rose-600',
+            onClick: () => handleDeleteTask(t),
+            isPrimary: false,
+            isDestructive: true,
+          },
+        ]
+      : []),
+  ];
+
   return (
-    <div 
-      id={`detail-task-${t.id}`} 
-      style={{ contentVisibility: 'auto', containIntrinsicSize: '120px' }}
-      className={cn(
-        "bg-slate-50/90 dark:bg-[#252528] rounded-xl p-3 border border-slate-200/90 dark:border-[#444446] text-sm shadow-xs flex flex-col gap-2.5 transition-all", 
-        taskBorderAccent,
-        isFocused ? "ring-2 ring-inset ring-yellow-400 !bg-yellow-50 dark:!bg-yellow-900/20" : ""
-      )} 
-      onClick={() => canWrite && onEditTask(t, false, "chat")}
+    <SwipeableRow
+      leftActions={leftActions}
+      rightActions={rightActions}
+      onFullSwipeRight={
+        canWrite
+          ? () =>
+              handleUpdateTask(t, {
+                runningStatus: isCompleted ? 'On process' : 'Completed',
+              })
+          : undefined
+      }
+      onFullSwipeLeft={() => onEditTask(t, !canWrite, 'chat')}
+      containerClassName="rounded-xl shadow-xs"
     >
-      <div className="flex gap-3">
-        {canWrite && (
-          <div className="shrink-0 flex flex-col items-center justify-center -mr-1">
-            <button
-              onClick={(e) => { e.stopPropagation(); handleMoveTask(p, groupTasks, i, 'up'); }}
-              disabled={i === 0}
-              className="p-1 text-slate-400 dark:text-[#838383] hover:text-blue-600 dark:hover:text-[#8ab4f8] disabled:opacity-20 transition-colors cursor-pointer disabled:cursor-not-allowed touch-manipulation active:scale-95"
-              title="Move Up"
-            >
-              <ChevronUp className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); handleMoveTask(p, groupTasks, i, 'down'); }}
-              disabled={i === groupTasks.length - 1}
-              className="p-1 text-slate-400 dark:text-[#838383] hover:text-blue-600 dark:hover:text-[#8ab4f8] disabled:opacity-20 transition-colors cursor-pointer disabled:cursor-not-allowed touch-manipulation active:scale-95"
-              title="Move Down"
-            >
-              <ChevronDown className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-        <div className="flex flex-col w-20 shrink-0 text-xs text-slate-500 dark:text-[#a3a3a3] gap-1 border-r border-slate-200 dark:border-[#444446] pr-2">
-          <div className="font-mono text-blue-700 dark:text-[#8ab4f8] font-bold">{formatDisplayDateMain(t.start)}</div>
-          <div className="font-mono text-pink-700 dark:text-pink-400 font-bold">{formatDisplayDateMain(t.finish)}</div>
-          <div className="text-[10px] mt-1">
-            {canWrite ? (
-              <EditableCell
-                value={t.duration !== undefined && t.duration !== null ? t.duration : calculateDays(t.start, t.finish).replace('d', '')}
-                type="number"
-                className="text-slate-700 dark:text-[#c3c3c3] font-mono font-medium text-[10px] px-0.5 py-0"
-                onSave={(val) => {
-                  const cleanVal = cleanDurationString(val);
-                  handleUpdateTask(t, { duration: cleanVal, durationManual: true });
-                }}
-                canWrite={canWrite}
-              />
-            ) : (
-              <span className="italic">{t.duration !== undefined ? `${t.duration}d` : calculateDays(t.start, t.finish)}</span>
-            )}
-          </div>
-        </div>
-        <div className="flex-grow flex flex-col gap-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 shrink-0 inline-block">
-              {taskCode || t.taskCodePhu || `${p.code}#${i + 1}`}
-            </span>
-            {childTasksCount > 0 && (
+      <div 
+        id={`detail-task-${t.id}`} 
+        style={{ contentVisibility: 'auto', containIntrinsicSize: '120px' }}
+        className={cn(
+          "bg-slate-50/90 dark:bg-[#252528] rounded-xl p-3 border border-slate-200/90 dark:border-[#444446] text-sm flex flex-col gap-2.5 transition-all", 
+          taskBorderAccent,
+          isFocused ? "ring-2 ring-inset ring-yellow-400 !bg-yellow-50 dark:!bg-yellow-900/20" : ""
+        )} 
+        onClick={() => canWrite && onEditTask(t, false, "chat")}
+      >
+        <div className="flex gap-3">
+          {canWrite && (
+            <div className="shrink-0 flex flex-col items-center justify-center -mr-1">
               <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (onToggleModularParent) onToggleModularParent(t.id);
-                }}
-                className={cn(
-                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
-                  isModularExpanded
-                    ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
-                    : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
-                )}
-                title={isModularExpanded ? `Collapse ${childTasksCount} subtasks` : `Expand ${childTasksCount} subtasks`}
+                onClick={(e) => { e.stopPropagation(); handleMoveTask(p, groupTasks, i, 'up'); }}
+                disabled={i === 0}
+                className="p-1 text-slate-400 dark:text-[#838383] hover:text-blue-600 dark:hover:text-[#8ab4f8] disabled:opacity-20 transition-colors cursor-pointer disabled:cursor-not-allowed touch-manipulation active:scale-95"
+                title="Move Up"
               >
-                {isModularExpanded ? (
-                  <ChevronDown className="w-3 h-3 text-current font-bold" />
-                ) : (
-                  <ChevronRight className="w-3 h-3 text-current font-bold" />
-                )}
-                <span>({childTasksCount})</span>
+                <ChevronUp className="w-4 h-4" />
               </button>
-            )}
-            {Boolean(t.parentTaskId) && (
-              <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Task con (Sub-task)">
-                ↳ SUB
-              </span>
-            )}
-            <span className="font-bold text-slate-900 dark:text-[#ffffff] text-sm leading-snug break-words flex-1 min-w-0">
-              {t.name || '(Unnamed Task)'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between mt-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs text-slate-600 dark:text-[#a3a3a3] font-medium">{t.party || ''}</span>
-              {t.predecessor && (
-                <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-800">
-                  Pred: {t.predecessor}
-                </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleMoveTask(p, groupTasks, i, 'down'); }}
+                disabled={i === groupTasks.length - 1}
+                className="p-1 text-slate-400 dark:text-[#838383] hover:text-blue-600 dark:hover:text-[#8ab4f8] disabled:opacity-20 transition-colors cursor-pointer disabled:cursor-not-allowed touch-manipulation active:scale-95"
+                title="Move Down"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          <div className="flex flex-col w-20 shrink-0 text-xs text-slate-500 dark:text-[#a3a3a3] gap-1 border-r border-slate-200 dark:border-[#444446] pr-2">
+            <div className="font-mono text-blue-700 dark:text-[#8ab4f8] font-bold">{formatDisplayDateMain(t.start)}</div>
+            <div className="font-mono text-pink-700 dark:text-pink-400 font-bold">{formatDisplayDateMain(t.finish)}</div>
+            <div className="text-[10px] mt-1">
+              {canWrite ? (
+                <EditableCell
+                  value={t.duration !== undefined && t.duration !== null ? t.duration : calculateDays(t.start, t.finish).replace('d', '')}
+                  type="number"
+                  className="text-slate-700 dark:text-[#c3c3c3] font-mono font-medium text-[10px] px-0.5 py-0"
+                  onSave={(val) => {
+                    const cleanVal = cleanDurationString(val);
+                    handleUpdateTask(t, { duration: cleanVal, durationManual: true });
+                  }}
+                  canWrite={canWrite}
+                />
+              ) : (
+                <span className="italic">{t.duration !== undefined ? `${t.duration}d` : calculateDays(t.start, t.finish)}</span>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <FastToggle value={Boolean(t.delegation)} canWrite={canWrite} onToggle={(val) => handleUpdateTask(t, { delegation: val })} />
+          </div>
+          <div className="flex-grow flex flex-col gap-1 min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="px-1.5 py-0.5 text-[10px] font-bold font-mono rounded bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 shrink-0 inline-block">
+                {taskCode || t.taskCodePhu || `${p.code}#${i + 1}`}
+              </span>
+              {childTasksCount > 0 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onToggleModularParent) onToggleModularParent(t.id);
+                  }}
+                  className={cn(
+                    "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
+                    isModularExpanded
+                      ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                      : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                  )}
+                  title={isModularExpanded ? `Collapse ${childTasksCount} subtasks` : `Expand ${childTasksCount} subtasks`}
+                >
+                  {isModularExpanded ? (
+                    <ChevronDown className="w-3 h-3 text-current font-bold" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3 text-current font-bold" />
+                  )}
+                  <span>({childTasksCount})</span>
+                </button>
+              )}
+              {Boolean(t.parentTaskId) && (
+                <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Task con (Sub-task)">
+                  ↳ SUB
+                </span>
+              )}
+              <span className="font-bold text-slate-900 dark:text-[#ffffff] text-sm leading-snug break-words flex-1 min-w-0">
+                {t.name || '(Unnamed Task)'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between mt-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs text-slate-600 dark:text-[#a3a3a3] font-medium">{t.party || ''}</span>
+                {t.predecessor && (
+                  <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-1.5 py-0.2 rounded border border-blue-200 dark:border-blue-800">
+                    Pred: {t.predecessor}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <FastToggle value={Boolean(t.delegation)} canWrite={canWrite} onToggle={(val) => handleUpdateTask(t, { delegation: val })} />
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      
-      <div className="flex justify-between items-end pt-2 border-t border-slate-200 dark:border-[#444446] mt-1">
-        <div className="flex gap-3 items-center">
-          <button 
-            onClick={(e) => { e.stopPropagation(); onEditTask(t, false, "chat"); }} 
-            className="text-blue-500 hover:text-blue-700 dark:text-[#8ab4f8] p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-[#28282a] transition-colors touch-manipulation active:scale-95" 
-            title="Open Task Modal"
-          >
-            <Maximize2 className="w-4 h-4" />
-          </button>
-          {canWrite && (
+        
+        <div className="flex justify-between items-end pt-2 border-t border-slate-200 dark:border-[#444446] mt-1">
+          <div className="flex gap-3 items-center">
             <button 
-              onClick={(e) => { e.stopPropagation(); handleDeleteTask(t); }} 
-              className="text-red-400 hover:text-red-600 dark:text-red-400 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors touch-manipulation active:scale-95"
-              title="Delete Task"
+              onClick={(e) => { e.stopPropagation(); onEditTask(t, false, "chat"); }} 
+              className="text-blue-500 hover:text-blue-700 dark:text-[#8ab4f8] p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-[#28282a] transition-colors touch-manipulation active:scale-95" 
+              title="Open Task Modal"
             >
-              <Trash2 className="w-4 h-4" />
+              <Maximize2 className="w-4 h-4" />
             </button>
-          )}
-        </div>
-        <div className="flex flex-col gap-1 items-end">
-          <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${taskStatusColorClass}`}>
-            Pl: {taskStatus}
+            {canWrite && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); handleDeleteTask(t); }} 
+                className="text-red-400 hover:text-red-600 dark:text-red-400 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors touch-manipulation active:scale-95"
+                title="Delete Task"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
           </div>
-          {showActStatus && (
-            <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${delStatusColorClass}`}>
-              Act: {delStatusText} ({getActStatusPercent(delStatusText)}%)
+          <div className="flex flex-col gap-1 items-end">
+            <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${taskStatusColorClass}`}>
+              Pl: {taskStatus}
             </div>
-          )}
+            {showActStatus && (
+              <div className={`text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-md border ${delStatusColorClass}`}>
+                Act: {delStatusText} ({getActStatusPercent(delStatusText)}%)
+              </div>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </SwipeableRow>
   );
 });
+
 
 ================================================================================
 FILE: src/components/DetailTabParts/DetailMobileView.tsx
@@ -38005,10 +38081,11 @@ FILE: src/components/GeneralTabParts/GeneralMobileCard.tsx
 import React, { Fragment, memo } from 'react';
 import { Project } from '../../types';
 import { DragOverTarget } from './generalTypes';
-import { getStatus, formatDisplayDateMain, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
+import { cn, getStatus, formatDisplayDateMain, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
-import { Pin, GripVertical, ChevronUp, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { Pin, GripVertical, ChevronUp, ChevronDown, CheckCircle2, FileText } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import { SwipeableRow, SwipeAction } from '../common/SwipeableRow';
 
 interface GeneralMobileCardProps {
   project: Project;
@@ -38128,6 +38205,28 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
   const isTarget = dragOverTarget?.id === p.id;
   const isJustDropped = justDroppedId === p.id;
 
+  const leftActions: SwipeAction[] = p.id
+    ? [
+        {
+          label: isPinned ? t('Unpin') : t('Pin'),
+          icon: <Pin className={cn('w-5 h-5 text-white', isPinned && 'fill-current')} />,
+          color: isPinned ? 'bg-slate-600' : 'bg-amber-500',
+          onClick: (e) => handlePinToggle(e as any, p.id!),
+          isPrimary: true,
+        },
+      ]
+    : [];
+
+  const rightActions: SwipeAction[] = [
+    {
+      label: t('Detail'),
+      icon: <FileText className="w-5 h-5 text-white" />,
+      color: 'bg-blue-600',
+      onClick: () => onProjectClick(p),
+      isPrimary: true,
+    },
+  ];
+
   return (
     <React.Fragment key={p.id || p.no || idx}>
       {/* Insertion line indicator on mobile when dragging above */}
@@ -38139,10 +38238,17 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
         </div>
       )}
 
-      <div
-        onDragOver={(e) => handleRowDragOver(e, p, idx)}
-        onDrop={(e) => isTarget && handleRowDrop(e, p.id!, dragOverTarget.position)}
-        onClick={() => onProjectClick(p)}
+      <SwipeableRow
+        leftActions={leftActions}
+        rightActions={rightActions}
+        onFullSwipeRight={p.id ? () => handlePinToggle({} as any, p.id!) : undefined}
+        onFullSwipeLeft={() => onProjectClick(p)}
+        containerClassName="rounded-xl shadow-xs"
+      >
+        <div
+          onDragOver={(e) => handleRowDragOver(e, p, idx)}
+          onDrop={(e) => isTarget && handleRowDrop(e, p.id!, dragOverTarget.position)}
+          onClick={() => onProjectClick(p)}
         className={`relative ${bgCardTint} border ${
           isJustDropped
             ? 'border-emerald-500 ring-2 ring-emerald-500/50 scale-[1.01] transition-all duration-700'
@@ -38360,6 +38466,7 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
           </div>
         )}
       </div>
+      </SwipeableRow>
 
       {/* Insertion line indicator on mobile when dragging below */}
       {draggedPinnedId && isTarget && dragOverTarget.position === 'below' && (
@@ -56465,6 +56572,15 @@ export const Navigation = React.memo(function Navigation({
   const mobileNavRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const handleToggleNav = (e: Event) => {
+      const customEvent = e as CustomEvent<{ open?: boolean }>;
+      setIsMobileMenuOpen(Boolean(customEvent?.detail?.open));
+    };
+    window.addEventListener('taka_toggle_mobile_nav', handleToggleNav);
+    return () => window.removeEventListener('taka_toggle_mobile_nav', handleToggleNav);
+  }, []);
+
+  useEffect(() => {
     if (!isMobileMenuOpen && !expandedParent) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -56752,7 +56868,22 @@ export const Navigation = React.memo(function Navigation({
               onClick={() => setIsMobileMenuOpen(false)}
             />
             {/* Drawer */}
-            <div className="relative w-[280px] max-w-[80vw] bg-white dark:bg-[#1e1e20] h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 ease-out">
+            <div
+              className="relative w-[280px] max-w-[80vw] bg-white dark:bg-[#1e1e20] h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 ease-out touch-pan-y"
+              onTouchStart={(e) => {
+                (e.currentTarget as any)._touchStartX = e.touches[0].clientX;
+              }}
+              onTouchEnd={(e) => {
+                const startX = (e.currentTarget as any)._touchStartX || 0;
+                const endX = e.changedTouches[0].clientX;
+                if (endX - startX > 50) {
+                  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                    try { navigator.vibrate(12); } catch {}
+                  }
+                  setIsMobileMenuOpen(false);
+                }
+              }}
+            >
               <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-[#333336]">
                 <span className="font-bold text-lg text-slate-800 dark:text-[#f3f3f3]">Navigation</span>
                 <button
@@ -56816,6 +56947,7 @@ export const Navigation = React.memo(function Navigation({
     </>
   );
 });
+
 
 ================================================================================
 FILE: src/components/NotificationParts/NotificationFilterToolbar.tsx
@@ -88650,6 +88782,7 @@ import { undoManager } from "../../lib/undoManager";
 import { triggerChangeFlash } from "../../lib/changeFlashService";
 import { Project, TabId, Task } from "../../types";
 import { useAppKeyboardAndTouch } from "./useAppKeyboardAndTouch";
+import { useMobileSwipeGestures } from "./useMobileSwipeGestures";
 
 interface UseAppNavigationAndShortcutsParams {
   projects: Project[];
@@ -89067,6 +89200,11 @@ export function useAppNavigationAndShortcuts({
     handleGoBackRef,
   });
 
+  useMobileSwipeGestures({
+    activeTab,
+    onTabChange: handleTabChange,
+  });
+
   return {
     handleTabChange,
     handleNavigateToTaskDetail,
@@ -89077,6 +89215,7 @@ export function useAppNavigationAndShortcuts({
     handleGoBack,
   };
 }
+
 
 ================================================================================
 FILE: src/hooks/appParts/useAppNotificationsSync.ts
@@ -157722,3 +157861,499 @@ if (typeof window !== 'undefined') {
     getCachedLayoutConfigFromDisk().catch(() => {});
   }, 10);
 }
+
+
+==================== FILE: src/components/common/SwipeableRow.tsx ====================
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { cn } from '../../lib/utils';
+
+export interface SwipeAction {
+  label: string;
+  icon: React.ReactNode;
+  color?: string; // Tailwind background color, e.g. 'bg-rose-600', 'bg-blue-600'
+  textColor?: string;
+  onClick: (e: React.MouseEvent | React.TouchEvent) => void;
+  isPrimary?: boolean;
+  isDestructive?: boolean;
+}
+
+export interface SwipeableRowProps {
+  children: React.ReactNode;
+  leftActions?: SwipeAction[]; // Revealed on Swipe Right (-->)
+  rightActions?: SwipeAction[]; // Revealed on Swipe Left (<--)
+  onFullSwipeLeft?: () => void;
+  onFullSwipeRight?: () => void;
+  fullSwipeThreshold?: number; // px, defaults to 160
+  disabled?: boolean;
+  className?: string;
+  containerClassName?: string;
+}
+
+export const SwipeableRow = React.memo(function SwipeableRow({
+  children,
+  leftActions = [],
+  rightActions = [],
+  onFullSwipeLeft,
+  onFullSwipeRight,
+  fullSwipeThreshold = 170,
+  disabled = false,
+  className,
+  containerClassName,
+}: SwipeableRowProps) {
+  const [offsetX, setOffsetX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isOpen, setIsOpen] = useState<'left' | 'right' | null>(null);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const touchStartRef = useRef<{ x: number; y: number; time: number }>({ x: 0, y: 0, time: 0 });
+  const touchDirectionRef = useRef<'horizontal' | 'vertical' | null>(null);
+  const hasTriggeredHapticRef = useRef(false);
+
+  const leftActionsWidth = leftActions.length * 75;
+  const rightActionsWidth = rightActions.length * 75;
+
+  const closeActions = useCallback(() => {
+    setOffsetX(0);
+    setIsOpen(null);
+    setIsDragging(false);
+  }, []);
+
+  // Close row on click outside if open
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        closeActions();
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isOpen, closeActions]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (disabled || e.touches.length > 1) return;
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+    touchDirectionRef.current = null;
+    hasTriggeredHapticRef.current = false;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (disabled || e.touches.length > 1) return;
+    const touch = e.touches[0];
+    const diffX = touch.clientX - touchStartRef.current.x;
+    const diffY = touch.clientY - touchStartRef.current.y;
+
+    // Disambiguate horizontal swipe vs vertical page scroll within first 8px
+    if (!touchDirectionRef.current) {
+      if (Math.abs(diffX) > 8 || Math.abs(diffY) > 8) {
+        if (Math.abs(diffY) > Math.abs(diffX)) {
+          touchDirectionRef.current = 'vertical';
+          return;
+        } else {
+          touchDirectionRef.current = 'horizontal';
+          setIsDragging(true);
+          if (containerRef.current) {
+            containerRef.current.setAttribute('data-swipeable-active', 'true');
+          }
+        }
+      } else {
+        return;
+      }
+    }
+
+    if (touchDirectionRef.current !== 'horizontal') return;
+
+    // Prevent native scroll once horizontal swipe is confirmed
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+
+    let targetX = diffX;
+    if (isOpen === 'left') targetX += leftActionsWidth;
+    if (isOpen === 'right') targetX -= rightActionsWidth;
+
+    // Boundary constraints with rubber-band resistance
+    if (targetX > 0 && leftActions.length === 0) {
+      targetX = Math.min(targetX * 0.15, 20); // Resistance when no actions
+    } else if (targetX < 0 && rightActions.length === 0) {
+      targetX = Math.max(targetX * 0.15, -20);
+    } else if (targetX > leftActionsWidth) {
+      const over = targetX - leftActionsWidth;
+      targetX = leftActionsWidth + over * 0.35;
+    } else if (targetX < -rightActionsWidth) {
+      const over = Math.abs(targetX) - rightActionsWidth;
+      targetX = -(rightActionsWidth + over * 0.35);
+    }
+
+    // Subtle haptic bump when crossing full swipe threshold
+    const isPastLeftThreshold = targetX > fullSwipeThreshold && Boolean(onFullSwipeRight || leftActions[0]);
+    const isPastRightThreshold = targetX < -fullSwipeThreshold && Boolean(onFullSwipeLeft || rightActions[0]);
+    if ((isPastLeftThreshold || isPastRightThreshold) && !hasTriggeredHapticRef.current) {
+      hasTriggeredHapticRef.current = true;
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try {
+          navigator.vibrate(12);
+        } catch {
+          // Ignore
+        }
+      }
+    } else if (!isPastLeftThreshold && !isPastRightThreshold) {
+      hasTriggeredHapticRef.current = false;
+    }
+
+    setOffsetX(targetX);
+  };
+
+  const handleTouchEnd = () => {
+    if (containerRef.current) {
+      containerRef.current.removeAttribute('data-swipeable-active');
+    }
+
+    if (touchDirectionRef.current !== 'horizontal') {
+      setIsDragging(false);
+      return;
+    }
+
+    setIsDragging(false);
+
+    // Full Swipe Right (-->): triggers primary left action
+    if (offsetX > fullSwipeThreshold) {
+      if (onFullSwipeRight) {
+        onFullSwipeRight();
+      } else if (leftActions.length > 0) {
+        leftActions[0].onClick({} as any);
+      }
+      closeActions();
+      return;
+    }
+
+    // Full Swipe Left (<--): triggers primary right action
+    if (offsetX < -fullSwipeThreshold) {
+      if (onFullSwipeLeft) {
+        onFullSwipeLeft();
+      } else if (rightActions.length > 0) {
+        // Trigger primary action (usually the first action or primary marked)
+        const primary = rightActions.find((a) => a.isPrimary) || rightActions[0];
+        primary.onClick({} as any);
+      }
+      closeActions();
+      return;
+    }
+
+    // Snap points
+    if (offsetX > 35 && leftActions.length > 0) {
+      setOffsetX(leftActionsWidth);
+      setIsOpen('left');
+    } else if (offsetX < -35 && rightActions.length > 0) {
+      setOffsetX(-rightActionsWidth);
+      setIsOpen('right');
+    } else {
+      closeActions();
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className={cn('relative overflow-hidden touch-pan-y select-none rounded-xl', containerClassName)}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+    >
+      {/* Left Action Buttons (Revealed when swiped right -->) */}
+      {leftActions.length > 0 && (
+        <div
+          className="absolute inset-y-0 left-0 flex items-stretch z-0 overflow-hidden"
+          style={{ width: Math.max(offsetX, 0) }}
+        >
+          {leftActions.map((action, idx) => (
+            <button
+              key={action.label || idx}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                action.onClick(e);
+                closeActions();
+              }}
+              className={cn(
+                'flex-1 flex flex-col items-center justify-center px-3 py-2 text-white font-bold text-xs gap-1 transition-all active:scale-95 cursor-pointer touch-manipulation',
+                action.color || 'bg-emerald-600',
+                action.textColor || 'text-white'
+              )}
+            >
+              <div className="w-5 h-5 flex items-center justify-center shrink-0">{action.icon}</div>
+              <span className="text-[11px] font-semibold leading-tight">{action.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Right Action Buttons (Revealed when swiped left <--) */}
+      {rightActions.length > 0 && (
+        <div
+          className="absolute inset-y-0 right-0 flex items-stretch justify-end z-0 overflow-hidden"
+          style={{ width: Math.max(-offsetX, 0) }}
+        >
+          {rightActions.map((action, idx) => (
+            <button
+              key={action.label || idx}
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                action.onClick(e);
+                closeActions();
+              }}
+              className={cn(
+                'flex-1 flex flex-col items-center justify-center px-3 py-2 text-white font-bold text-xs gap-1 transition-all active:scale-95 cursor-pointer touch-manipulation',
+                action.color || (action.isDestructive ? 'bg-rose-600' : 'bg-blue-600'),
+                action.textColor || 'text-white'
+              )}
+            >
+              <div className="w-5 h-5 flex items-center justify-center shrink-0">{action.icon}</div>
+              <span className="text-[11px] font-semibold leading-tight">{action.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Main Swiping Content */}
+      <div
+        className={cn('relative z-10 bg-inherit transition-transform', className)}
+        style={{
+          transform: `translateX(${offsetX}px)`,
+          transition: isDragging ? 'none' : 'transform 0.28s cubic-bezier(0.2, 0.9, 0.2, 1)',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+});
+
+
+
+==================== FILE: src/hooks/appParts/useMobileSwipeGestures.ts ====================
+import { useEffect, useRef } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { TabId, AppRole, PermissionModule } from '../../types';
+
+interface UseMobileSwipeGesturesParams {
+  activeTab: TabId;
+  onTabChange: (newTab: TabId) => void;
+}
+
+const TAB_SEQUENCE: TabId[] = [
+  'general',
+  'budget',
+  'cost',
+  'gantt',
+  'detail',
+  'layout',
+  'calendar',
+  'summary',
+  'taskDelegation',
+];
+
+const TAB_MODULE_MAP: Partial<Record<TabId, PermissionModule>> = {
+  general: 'general',
+  budget: 'budget',
+  cost: 'costDetail',
+  gantt: 'report',
+  detail: 'detail',
+  layout: 'layout',
+  calendar: 'calendar',
+  summary: 'summary',
+  taskDelegation: 'taskDelegation',
+  taskDelegationCalendar: 'taskDelegation',
+  manual: undefined,
+  csv_export: 'importCsv',
+  picture_mapping: 'pictureMapping',
+  accControl: undefined,
+  notification: undefined,
+  setting: undefined,
+};
+
+export function useMobileSwipeGestures({
+  activeTab,
+  onTabChange,
+}: UseMobileSwipeGesturesParams) {
+  const activeTabRef = useRef(activeTab);
+  const onTabChangeRef = useRef(onTabChange);
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+    onTabChangeRef.current = onTabChange;
+  });
+
+  useEffect(() => {
+    let startX = 0;
+    let startY = 0;
+    let startTime = 0;
+    let touchTarget: HTMLElement | null = null;
+    let isMultiTouch = false;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length > 1) {
+        isMultiTouch = true;
+        return;
+      }
+      isMultiTouch = false;
+      const touch = e.touches[0];
+      startX = touch.clientX;
+      startY = touch.clientY;
+      startTime = Date.now();
+      touchTarget = e.target as HTMLElement;
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (isMultiTouch || !touchTarget) return;
+      if (window.visualViewport && window.visualViewport.scale > 1) return;
+
+      const elapsed = Date.now() - startTime;
+      if (elapsed > 450) return; // Too slow for a deliberate swipe
+
+      const touch = e.changedTouches[0];
+      const diffX = startX - touch.clientX;
+      const diffY = startY - touch.clientY;
+      const absX = Math.abs(diffX);
+      const absY = Math.abs(diffY);
+
+      // Must be a clear horizontal swipe
+      if (absX < 65 || absX < absY * 2.0) return;
+
+      // Guard: active text selection
+      const selection = window.getSelection();
+      if (selection && selection.toString().length > 0) return;
+
+      // Guard: active modal open
+      const state = useAppStore.getState();
+      const isAnyModalOpen = Boolean(
+        state.isLoginModalOpen ||
+          state.isProjectModalOpen ||
+          state.isTaskModalOpen ||
+          state.isUserModalOpen ||
+          state.isPrintPreview ||
+          state.isCommandPaletteOpen
+      );
+      if (isAnyModalOpen) return;
+
+      // Guard: form inputs, canvas, Konva floorplans, or swiping list row
+      if (
+        touchTarget.closest(
+          'input, textarea, select, [contenteditable="true"], canvas, .konvajs-content, #canvas-container, [data-swipeable-active="true"], [data-gesture-ignore="true"]'
+        )
+      ) {
+        return;
+      }
+
+      // Guard: horizontally scrollable elements (tables, overflow-x-auto)
+      const scrollableParent = touchTarget.closest('.overflow-x-auto, table');
+      if (scrollableParent && scrollableParent.scrollWidth > scrollableParent.clientWidth + 20) {
+        return;
+      }
+
+      // 1. Edge-Swipe Right from Left Screen Edge (startX <= 30px) -> Opens Mobile Navigation Drawer
+      if (diffX < -50 && startX <= 30) {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          try {
+            navigator.vibrate(15);
+          } catch {}
+        }
+        window.dispatchEvent(new CustomEvent('taka_toggle_mobile_nav', { detail: { open: true } }));
+        return;
+      }
+
+      // 2. Global Horizontal Screen Swipe -> Switch Tab
+      const currentUser = state.currentUser;
+      const isAdmin = currentUser?.role === 'admin';
+      const role = (
+        currentUser?.role === 'admin'
+          ? 'Staff'
+          : (currentUser?.role as string)?.toUpperCase() === 'CP'
+          ? 'CP'
+          : (currentUser?.role as string)?.toLowerCase() === 'manager'
+          ? 'Manager'
+          : (currentUser?.role as string)?.toLowerCase() === 'staff'
+          ? 'Staff'
+          : (currentUser?.role as string)?.toLowerCase() === 'external'
+          ? 'External'
+          : ((currentUser?.role as any) || 'Staff')
+      ) as AppRole;
+      const perms = state.permissionMatrix[role]?.See;
+      const writePerms = state.permissionMatrix[role]?.Write;
+
+      const isTabPermitted = (tId: TabId) => {
+        const mod = TAB_MODULE_MAP[tId];
+        if (!mod) return true;
+        if (mod === 'taskDelegation') return isAdmin || Boolean(perms?.[mod]);
+        return isAdmin || Boolean(perms?.[mod]) || Boolean(writePerms?.[mod]);
+      };
+
+      const permittedTabs = TAB_SEQUENCE.filter(isTabPermitted);
+      if (permittedTabs.length <= 1) return;
+
+      const currentIdx = permittedTabs.indexOf(activeTabRef.current);
+      if (currentIdx === -1) return;
+
+      let nextTab: TabId | null = null;
+      if (diffX > 65) {
+        // Swiped Left (<--) -> Move to Next Tab
+        if (currentIdx < permittedTabs.length - 1) {
+          nextTab = permittedTabs[currentIdx + 1];
+        }
+      } else if (diffX < -65 && startX > 30) {
+        // Swiped Right (-->) -> Move to Previous Tab
+        if (currentIdx > 0) {
+          nextTab = permittedTabs[currentIdx - 1];
+        }
+      }
+
+      if (nextTab && nextTab !== activeTabRef.current) {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          try {
+            navigator.vibrate(15);
+          } catch {}
+        }
+        const dir = diffX > 0 ? 'left' : 'right';
+        const formattedName = nextTab.charAt(0).toUpperCase() + nextTab.slice(1);
+        showSwipeIndicator(formattedName, dir);
+        onTabChangeRef.current(nextTab);
+      }
+    };
+
+    document.addEventListener('touchstart', handleTouchStart, { passive: true });
+    document.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, []);
+}
+
+function showSwipeIndicator(tabLabel: string, direction: 'left' | 'right') {
+  if (typeof document === 'undefined') return;
+  const existing = document.getElementById('taka-swipe-indicator');
+  if (existing) existing.remove();
+
+  const pill = document.createElement('div');
+  pill.id = 'taka-swipe-indicator';
+  pill.className =
+    'fixed top-14 left-1/2 -translate-x-1/2 z-[99] bg-slate-900/90 text-white dark:bg-white/95 dark:text-slate-900 px-4 py-1.5 rounded-full shadow-xl backdrop-blur-md text-xs font-extrabold flex items-center gap-1.5 pointer-events-none transition-all duration-300';
+  pill.innerHTML =
+    direction === 'left'
+      ? `<span>${tabLabel}</span> <span class="text-sm font-bold">›</span>`
+      : `<span class="text-sm font-bold">‹</span> <span>${tabLabel}</span>`;
+  document.body.appendChild(pill);
+
+  setTimeout(() => {
+    pill.style.opacity = '0';
+    pill.style.transform = 'translate(-50%, -6px)';
+    setTimeout(() => pill.remove(), 250);
+  }, 650);
+}
+

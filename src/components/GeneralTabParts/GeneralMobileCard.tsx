@@ -1,10 +1,11 @@
 import React, { Fragment, memo } from 'react';
 import { Project } from '../../types';
 import { DragOverTarget } from './generalTypes';
-import { getStatus, formatDisplayDateMain, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
+import { cn, getStatus, formatDisplayDateMain, computePlanProgressFromSummaries, computeActProgressFromSummaries } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
-import { Pin, GripVertical, ChevronUp, ChevronDown, CheckCircle2 } from 'lucide-react';
+import { Pin, GripVertical, ChevronUp, ChevronDown, CheckCircle2, FileText } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
+import { SwipeableRow, SwipeAction } from '../common/SwipeableRow';
 
 interface GeneralMobileCardProps {
   project: Project;
@@ -124,6 +125,28 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
   const isTarget = dragOverTarget?.id === p.id;
   const isJustDropped = justDroppedId === p.id;
 
+  const leftActions: SwipeAction[] = p.id
+    ? [
+        {
+          label: isPinned ? t('Unpin') : t('Pin'),
+          icon: <Pin className={cn('w-5 h-5 text-white', isPinned && 'fill-current')} />,
+          color: isPinned ? 'bg-slate-600' : 'bg-amber-500',
+          onClick: (e) => handlePinToggle(e as any, p.id!),
+          isPrimary: true,
+        },
+      ]
+    : [];
+
+  const rightActions: SwipeAction[] = [
+    {
+      label: t('Detail'),
+      icon: <FileText className="w-5 h-5 text-white" />,
+      color: 'bg-blue-600',
+      onClick: () => onProjectClick(p),
+      isPrimary: true,
+    },
+  ];
+
   return (
     <React.Fragment key={p.id || p.no || idx}>
       {/* Insertion line indicator on mobile when dragging above */}
@@ -135,10 +158,17 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
         </div>
       )}
 
-      <div
-        onDragOver={(e) => handleRowDragOver(e, p, idx)}
-        onDrop={(e) => isTarget && handleRowDrop(e, p.id!, dragOverTarget.position)}
-        onClick={() => onProjectClick(p)}
+      <SwipeableRow
+        leftActions={leftActions}
+        rightActions={rightActions}
+        onFullSwipeRight={p.id ? () => handlePinToggle({} as any, p.id!) : undefined}
+        onFullSwipeLeft={() => onProjectClick(p)}
+        containerClassName="rounded-xl shadow-xs"
+      >
+        <div
+          onDragOver={(e) => handleRowDragOver(e, p, idx)}
+          onDrop={(e) => isTarget && handleRowDrop(e, p.id!, dragOverTarget.position)}
+          onClick={() => onProjectClick(p)}
         className={`relative ${bgCardTint} border ${
           isJustDropped
             ? 'border-emerald-500 ring-2 ring-emerald-500/50 scale-[1.01] transition-all duration-700'
@@ -356,6 +386,7 @@ export const GeneralMobileCard = memo(function GeneralMobileCard({
           </div>
         )}
       </div>
+      </SwipeableRow>
 
       {/* Insertion line indicator on mobile when dragging below */}
       {draggedPinnedId && isTarget && dragOverTarget.position === 'below' && (

@@ -7,6 +7,7 @@ import { undoManager } from "../../lib/undoManager";
 import { triggerChangeFlash } from "../../lib/changeFlashService";
 import { Project, TabId, Task } from "../../types";
 import { useAppKeyboardAndTouch } from "./useAppKeyboardAndTouch";
+import { useMobileSwipeGestures } from "./useMobileSwipeGestures";
 
 interface UseAppNavigationAndShortcutsParams {
   projects: Project[];
@@ -422,6 +423,11 @@ export function useAppNavigationAndShortcuts({
     handleDataUndoRef,
     handleDataRedoRef,
     handleGoBackRef,
+  });
+
+  useMobileSwipeGestures({
+    activeTab,
+    onTabChange: handleTabChange,
   });
 
   return {

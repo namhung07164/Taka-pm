@@ -91,6 +91,15 @@ export const Navigation = React.memo(function Navigation({
   const mobileNavRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const handleToggleNav = (e: Event) => {
+      const customEvent = e as CustomEvent<{ open?: boolean }>;
+      setIsMobileMenuOpen(Boolean(customEvent?.detail?.open));
+    };
+    window.addEventListener('taka_toggle_mobile_nav', handleToggleNav);
+    return () => window.removeEventListener('taka_toggle_mobile_nav', handleToggleNav);
+  }, []);
+
+  useEffect(() => {
     if (!isMobileMenuOpen && !expandedParent) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -378,7 +387,22 @@ export const Navigation = React.memo(function Navigation({
               onClick={() => setIsMobileMenuOpen(false)}
             />
             {/* Drawer */}
-            <div className="relative w-[280px] max-w-[80vw] bg-white dark:bg-[#1e1e20] h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 ease-out">
+            <div
+              className="relative w-[280px] max-w-[80vw] bg-white dark:bg-[#1e1e20] h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 ease-out touch-pan-y"
+              onTouchStart={(e) => {
+                (e.currentTarget as any)._touchStartX = e.touches[0].clientX;
+              }}
+              onTouchEnd={(e) => {
+                const startX = (e.currentTarget as any)._touchStartX || 0;
+                const endX = e.changedTouches[0].clientX;
+                if (endX - startX > 50) {
+                  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                    try { navigator.vibrate(12); } catch {}
+                  }
+                  setIsMobileMenuOpen(false);
+                }
+              }}
+            >
               <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-[#333336]">
                 <span className="font-bold text-lg text-slate-800 dark:text-[#f3f3f3]">Navigation</span>
                 <button

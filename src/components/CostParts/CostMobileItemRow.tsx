@@ -4,6 +4,7 @@ import { Project, Cost } from '../../types';
 import { cn, formatDisplayDateMain } from '../../lib/utils';
 import { CostEditableCell } from './CostEditableCell';
 import { PaidDateMatches } from './costTypes';
+import { SwipeableRow, SwipeAction } from '../common/SwipeableRow';
 
 interface CostMobileItemRowProps {
   cost: Cost;
@@ -56,16 +57,34 @@ export const CostMobileItemRow = React.memo(function CostMobileItemRow({
     thirdMatch: isThirdPaidMatch,
   } = getCostPaidMatches(c, paidDateStart, paidDateEnd, paidStageFilter);
 
+  const rightActions: SwipeAction[] = canWrite
+    ? [
+        {
+          label: 'Delete',
+          icon: <Trash2 className="w-5 h-5 text-white" />,
+          color: 'bg-rose-600',
+          onClick: () => handleDeleteCost(c),
+          isPrimary: true,
+          isDestructive: true,
+        },
+      ]
+    : [];
+
   return (
-    <div
-      key={c.id}
-      className={cn(
-        'p-2.5 rounded-lg border flex flex-col gap-2 transition-all',
-        isCostMatched && (paidDateStart || paidDateEnd)
-          ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800/80 shadow-2xs'
-          : 'bg-slate-50/70 dark:bg-[#18181a]/50 border-slate-200/60 dark:border-[#38383a]'
-      )}
+    <SwipeableRow
+      rightActions={rightActions}
+      onFullSwipeLeft={canWrite ? () => handleDeleteCost(c) : undefined}
+      containerClassName="rounded-lg shadow-2xs"
     >
+      <div
+        key={c.id}
+        className={cn(
+          'p-2.5 rounded-lg border flex flex-col gap-2 transition-all',
+          isCostMatched && (paidDateStart || paidDateEnd)
+            ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800/80 shadow-2xs'
+            : 'bg-slate-50/70 dark:bg-[#18181a]/50 border-slate-200/60 dark:border-[#38383a]'
+        )}
+      >
       {/* Top: Badges, Vendor, Description & Act/Forc */}
       <div className="flex justify-between items-start gap-2">
         <div className="flex flex-col gap-1 min-w-0 flex-1">
@@ -307,5 +326,6 @@ export const CostMobileItemRow = React.memo(function CostMobileItemRow({
         </div>
       </div>
     </div>
+    </SwipeableRow>
   );
 });
