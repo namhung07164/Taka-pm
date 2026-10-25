@@ -119,10 +119,12 @@ export function evaluateProjectTaskHydrationState(params: {
     hasFreshMarker(markers, 'tasks_proj', p.code) ||
     isYearFresh;
 
+  const hasTaskSummaryArray = Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0;
   const hasLocalProjTasks =
     coversAllSummaries ||
-    (isVerifiedInSession && localProjTasks.length >= expectedSummaryCount) ||
-    (isProjMarkerFresh && localProjTasks.length >= expectedSummaryCount);
+    (!hasTaskSummaryArray &&
+      ((isVerifiedInSession && localProjTasks.length >= expectedSummaryCount) ||
+        (isProjMarkerFresh && localProjTasks.length >= expectedSummaryCount)));
 
   const isZeroTaskProject =
     (p.taskCount || 0) === 0 &&

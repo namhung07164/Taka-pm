@@ -377,34 +377,50 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
   const writeJob = new Promise<void>((resolve) => {
     setTimeout(async () => {
       try {
-        await localDb.transaction(
-          'rw',
-          [localDb.projects, localDb.tasks, localDb.costs, localDb.delegations],
-          async () => {
-            const processDeltaItem = async (docId?: string, collectionName?: any, action?: string, data?: any, isPatch?: boolean) => {
-              if (!docId || !collectionName) return;
-              if (collectionName === 'taka_delegation_groups') collectionName = 'taka_delegations';
-              if (action === 'delete' || data?.isDeleted === true) {
-                await deleteLocalRecord(collectionName, docId);
-              } else if (isPatch === true || (action === 'update' && isPatch !== false)) {
-                await patchLocalRecord(collectionName, docId, data || {});
-              } else {
-                await upsertLocalRecord(collectionName, { id: docId, ...data });
-              }
-            };
-
-            for (const delta of deltas) {
-              if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
-                for (const item of delta.batchItems) {
-                  if (item.invalidate) continue;
-                  await processDeltaItem(item.docId, item.collectionName, item.action, item.data, item.isPatch);
+        await localDb.transaction('rw', [localDb.projects, localDb.tasks, localDb.costs, localDb.delegations], async () => {
+          const processDeltaItem = async (
+            docId?: string, collectionName?: any, action?: string, data?: any, isPatch?: boolean,
+            meta?: { year?: string; projectId?: string; projectCode?: string; projectStore?: string }
+          ) => {
+            if (!docId || !collectionName) return;
+            if (collectionName === 'taka_delegation_groups') collectionName = 'taka_delegations';
+            const enriched = collectionName === 'taka_tasks' && data && typeof data === 'object'
+              ? {
+                  ...(meta?.projectId ? { projectId: meta.projectId } : {}),
+                  ...(meta?.projectCode ? { projectCode: meta.projectCode } : {}),
+                  ...(meta?.projectStore ? { projectStore: meta.projectStore } : {}),
+                  ...(meta?.year ? { projectYear: meta.year } : {}),
+                  ...data,
                 }
-              } else if (delta.docId && delta.collectionName) {
-                await processDeltaItem(delta.docId, delta.collectionName, delta.action, delta.data, delta.isPatch);
+              : data || {};
+            const hasFullIdentity = !isPatch && Boolean(enriched?.name && (enriched?.code || enriched?.projectCode || enriched?.projectId));
+            if (action === 'delete' || enriched?.isDeleted === true) {
+              await deleteLocalRecord(collectionName, docId);
+            } else if (isPatch === true || (action === 'update' && !hasFullIdentity)) {
+              await patchLocalRecord(collectionName, docId, enriched);
+            } else {
+              await upsertLocalRecord(collectionName, { id: docId, ...enriched });
+            }
+          };
+
+          for (const delta of deltas) {
+            if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
+              for (const item of delta.batchItems) {
+                if (item.invalidate) continue;
+                await processDeltaItem(item.docId, item.collectionName, item.action, item.data, item.isPatch, {
+                  year: item.year || delta.year,
+                  projectId: (item as any).projectId || delta.projectId,
+                  projectCode: (item as any).projectCode || delta.projectCode,
+                  projectStore: (item as any).projectStore || delta.projectStore,
+                });
               }
+            } else if (delta.docId && delta.collectionName) {
+              await processDeltaItem(delta.docId, delta.collectionName, delta.action, delta.data, delta.isPatch, {
+                year: delta.year, projectId: delta.projectId, projectCode: delta.projectCode, projectStore: delta.projectStore,
+              });
             }
           }
-        );
+        });
       } catch (err) {
         console.warn('[backgroundSyncWorker] applyDeltasToLocalDatabase error:', err);
       } finally {
@@ -425,23 +441,12 @@ export function offloadPersistSnapshot(
   items: any[]
 ): void {
   if (!items || items.length === 0) return;
-
   setTimeout(async () => {
     try {
-      switch (collectionName) {
-        case 'taka_projects':
-          await bulkPersistProjects(items as Project[]);
-          break;
-        case 'taka_tasks':
-          await bulkPersistTasks(items as Task[]);
-          break;
-        case 'taka_costs':
-          await bulkPersistCosts(items as Cost[]);
-          break;
-        case 'taka_delegations':
-          await bulkPersistDelegations(items as DelegationGroup[]);
-          break;
-      }
+      if (collectionName === 'taka_projects') await bulkPersistProjects(items as Project[]);
+      else if (collectionName === 'taka_tasks') await bulkPersistTasks(items as Task[]);
+      else if (collectionName === 'taka_costs') await bulkPersistCosts(items as Cost[]);
+      else if (collectionName === 'taka_delegations') await bulkPersistDelegations(items as DelegationGroup[]);
     } catch (err) {
       console.warn(`[backgroundSyncWorker] offloadPersistSnapshot error on ${collectionName}:`, err);
     }
@@ -450,35 +455,20 @@ export function offloadPersistSnapshot(
 
 let syncCoordinatorTimer: any = null;
 
-/**
- * Khởi chạy Background Sync Coordinator
- * Điều phối đồng bộ hai chiều giữa Dexie Local Engine và Firestore Delta Bus
- */
 export function startBackgroundSyncCoordinator(intervalMs: number = 5 * 60 * 1000): () => void {
   if (typeof window === 'undefined') return () => {};
-
   bootstrapLocalStore().catch(() => {});
   const cleanupBroadcast = initBroadcastSyncListener();
-
-  setTimeout(() => {
-    purgeOldDeltas(48).catch(() => {});
-  }, 5000);
-
+  setTimeout(() => { purgeOldDeltas(48).catch(() => {}); }, 5000);
   const runSync = async () => {
     try {
-      const year = useAppStore.getState().globalYearFilter;
-      await pullAndApplyDeltas(year);
+      await pullAndApplyDeltas(useAppStore.getState().globalYearFilter);
     } catch (err) {
       console.warn('[backgroundSyncWorker] runSync error:', err);
     }
   };
-
-  if (syncCoordinatorTimer) {
-    clearInterval(syncCoordinatorTimer);
-  }
-
+  if (syncCoordinatorTimer) clearInterval(syncCoordinatorTimer);
   syncCoordinatorTimer = setInterval(runSync, intervalMs);
-
   return () => {
     if (syncCoordinatorTimer) {
       clearInterval(syncCoordinatorTimer);

@@ -2,6 +2,7 @@ import { doc, getDocFromServer, getDoc } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { usePerformanceStore } from '../store/usePerformanceStore';
+import { safeGetItemLocal, safeSetItemLocal } from './storage';
 import type { TakaDelta, TakaDeltaItem } from '../types';
 
 const PHYSICAL_COLLECTION: Record<TakaDeltaItem['collectionName'], string> = {
@@ -28,20 +29,52 @@ const tsOf = (v: any): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+const DEFERRED_INVALIDATIONS_STORAGE_KEY = 'taka_deferred_trigate_invalidations_v1';
 const deferredTriGateInvalidations = new Map<string, TakaDeltaItem>();
 const MAX_DEFERRED_INVALIDATIONS = 500;
 const inFlightDocReads = new Map<string, Promise<TakaDeltaItem | null>>();
 const recentlyResolvedAt = new Map<string, number>();
 const RECENT_RESOLVE_DEDUP_MS = 2000;
+let deferredHydratedFromStorage = false;
+
+function ensureDeferredHydrated(): void {
+  if (deferredHydratedFromStorage) return;
+  deferredHydratedFromStorage = true;
+  try {
+    const raw = safeGetItemLocal(DEFERRED_INVALIDATIONS_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      for (const item of parsed) {
+        if (item?.docId && item?.collectionName) {
+          deferredTriGateInvalidations.set(`${item.collectionName}:${item.docId}`, item);
+        }
+      }
+    }
+  } catch {
+    // Ignore malformed storage
+  }
+}
+
+function persistDeferredInvalidations(): void {
+  try {
+    const items = Array.from(deferredTriGateInvalidations.values());
+    safeSetItemLocal(DEFERRED_INVALIDATIONS_STORAGE_KEY, JSON.stringify(items));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
 
 function queueDeferredInvalidation(item: TakaDeltaItem): void {
   if (!item?.docId || !item?.collectionName) return;
+  ensureDeferredHydrated();
   const key = `${item.collectionName}:${item.docId}`;
   deferredTriGateInvalidations.set(key, item);
   if (deferredTriGateInvalidations.size > MAX_DEFERRED_INVALIDATIONS) {
     const oldest = deferredTriGateInvalidations.keys().next().value;
     if (oldest !== undefined) deferredTriGateInvalidations.delete(oldest);
   }
+  persistDeferredInvalidations();
 }
 
 /**
@@ -95,6 +128,7 @@ function isRelevant(item: TakaDeltaItem, nowMs: number): boolean {
 export async function flushDeferredInvalidations(
   collectionName: TakaDeltaItem['collectionName']
 ): Promise<TakaDelta[]> {
+  ensureDeferredHydrated();
   const toFlush: TakaDeltaItem[] = [];
   for (const [k, item] of deferredTriGateInvalidations.entries()) {
     if (item.collectionName === collectionName) {
@@ -103,6 +137,7 @@ export async function flushDeferredInvalidations(
     }
   }
   if (toFlush.length === 0) return [];
+  persistDeferredInvalidations();
   return resolveInvalidations(toFlush);
 }
 
