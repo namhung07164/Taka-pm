@@ -1,5 +1,5 @@
 import React, { memo, useMemo } from 'react';
-import { ExternalLink, Unlink, Trash2 } from 'lucide-react';
+import { ExternalLink, Unlink, Trash2, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { TaskModalLogicType } from '../../hooks/useTaskModalLogic';
 import { MultiSelect } from '../MultiSelect';
@@ -283,7 +283,15 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
             {canWrite ? 'Cancel' : 'Close'}
           </button>
           {canWrite && (
-            <button title="Save Task" type="submit" className="px-6 py-2 bg-slate-900 dark:bg-blue-600 text-white rounded-lg font-bold text-sm shadow-xl active:scale-95 transition-all cursor-pointer">Save Task</button>
+            <button
+              title={task ? "Save Task" : "Create Task"}
+              type="submit"
+              disabled={logic.isSubmitting}
+              className="px-6 py-2 bg-slate-900 dark:bg-blue-600 text-white rounded-lg font-bold text-sm shadow-xl active:scale-95 transition-all cursor-pointer touch-manipulation disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {logic.isSubmitting && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
+              <span>{logic.isSubmitting ? (task ? 'Saving...' : 'Creating...') : (task ? 'Save Task' : 'Create Task')}</span>
+            </button>
           )}
         </div>
       </div>

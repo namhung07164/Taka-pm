@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '../../store/useAppStore';
 import { useDataStore } from '../PictureMapping/DataContext';
 import { preloadFloorImages } from '../../lib/imageDBCache';
-import { resolveR2UrlToHttp } from '../PictureMapping/lib/r2Upload';
 import { useOffscreenImage } from '../../hooks/useOffscreenImage';
 
 interface UseLayoutFloorDataProps {
@@ -364,28 +363,8 @@ export function useLayoutFloorData({
   const version = r2Version;
   const units = r2Units;
 
-  const [resolvedBgUrl, setResolvedBgUrl] = useState<string>('');
-
-  useEffect(() => {
-    let isMounted = true;
-    const rawUrl = version?.backgroundUrl || '';
-    if (!rawUrl) {
-      setResolvedBgUrl(prev => prev === '' ? prev : '');
-      return;
-    }
-    if (rawUrl.startsWith('r2://') || (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://') && !rawUrl.startsWith('data:') && !rawUrl.startsWith('blob:'))) {
-      resolveR2UrlToHttp(rawUrl).then(url => {
-        if (isMounted) setResolvedBgUrl(prev => prev === (url || rawUrl) ? prev : (url || rawUrl));
-      }).catch(() => {
-        if (isMounted) setResolvedBgUrl(prev => prev === rawUrl ? prev : rawUrl);
-      });
-    } else {
-      setResolvedBgUrl(prev => prev === rawUrl ? prev : rawUrl);
-    }
-    return () => { isMounted = false; };
-  }, [version?.backgroundUrl]);
-
-  const [bgImage] = useOffscreenImage(resolvedBgUrl || version?.backgroundUrl || '', 'anonymous');
+  const activeBgUrl = version?.backgroundUrl || '';
+  const [bgImage] = useOffscreenImage(activeBgUrl, 'anonymous');
 
   // Helper to accurately check if unit has user-attached images in localStorage partitioned by store
   const hasStoredUnitImages = useCallback((key: string | undefined | null, overrideStore?: string): boolean => {
@@ -460,7 +439,7 @@ export function useLayoutFloorData({
     locationVersions,
     availableStoreVersions,
     bgImage,
-    resolvedBgUrl,
+    resolvedBgUrl: activeBgUrl,
     unitImagesRev,
     hasStoredUnitImages,
     selectedVersionId,

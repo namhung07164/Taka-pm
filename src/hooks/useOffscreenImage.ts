@@ -103,7 +103,6 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
               setImage(img);
               setStatus('loaded');
             }
-            setTimeout(revokeBlobUrlSafely, 100);
           };
 
           if (typeof img.decode === 'function') {
@@ -111,7 +110,6 @@ export function useOffscreenImage(url: string | undefined | null, crossOrigin: s
           } else {
             img.onload = onBlobImgDone;
             img.onerror = () => {
-              revokeBlobUrlSafely();
               if (isMounted) setStatus('failed');
             };
           }

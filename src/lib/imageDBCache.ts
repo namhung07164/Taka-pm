@@ -264,6 +264,14 @@ export async function fetchAndCacheImageBlob(url: string): Promise<Blob | null> 
       const blob = await res.blob();
       if (blob && blob.size > 0) {
         await setCachedBlobToIDB(trimmed, blob);
+        // Pre-decode into memory cache so subsequent floor switches render in 0ms without decoding lag
+        try {
+          if (typeof createImageBitmap === 'function') {
+            createImageBitmap(blob).then(bitmap => {
+              setMemoryCachedImage(trimmed, bitmap);
+            }).catch(() => {});
+          }
+        } catch (_) {}
         return blob;
       }
       return null;

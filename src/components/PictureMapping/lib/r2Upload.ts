@@ -222,6 +222,9 @@ export async function getStoredR2CredentialsAsync(): Promise<R2Credentials | nul
   return null;
 }
 
+// In-Memory cache for resolved presigned URLs to eliminate redundant SDK imports and HMAC signings
+const resolvedR2UrlCache = new Map<string, { url: string; expiresAt: number }>();
+
 /**
  * Resolves an r2:// link, R2 object key, or expired signed URL into a valid presigned HTTP GET URL.
  */
@@ -241,6 +244,11 @@ export async function resolveR2UrlToHttp(url: string | null | undefined): Promis
   }
 
   if (r2Key) {
+    const cached = resolvedR2UrlCache.get(r2Key);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.url;
+    }
+
     const creds = await getStoredR2CredentialsAsync();
     if (creds) {
       try {
@@ -251,7 +259,11 @@ export async function resolveR2UrlToHttp(url: string | null | undefined): Promis
           credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
         });
         const command = new GetObjectCommand({ Bucket: creds.bucketName, Key: r2Key });
-        return await getSignedUrl(s3, command, { expiresIn: 3600 * 24 * 7 });
+        const signed = await getSignedUrl(s3, command, { expiresIn: 3600 * 24 * 7 });
+        if (signed) {
+          resolvedR2UrlCache.set(r2Key, { url: signed, expiresAt: Date.now() + 2 * 3600 * 1000 });
+        }
+        return signed;
       } catch (err) {
         console.warn('[R2 Resolve] Could not generate presigned url for key:', r2Key, err);
       }
