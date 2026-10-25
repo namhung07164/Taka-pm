@@ -49,7 +49,7 @@ export function useProjectsHydration({
   const globalYearFilter = useAppStore((state) => state.globalYearFilter);
   const globalStoreFilter = useAppStore((state) => state.globalStoreFilter);
   const setCloudStatus = useAppStore((state) => state.setCloudStatus);
-  const [recoveryTick] = useState(0);
+  const [recoveryTick, setRecoveryTick] = useState(0);
 
   const projectsPool = useRef<Map<string, () => void>>(new Map());
   const prevSigProjects = useRef<string>('');
@@ -223,7 +223,15 @@ export function useProjectsHydration({
   // Sleep/Wake & Network Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
+      serverVerifiedProjectYearsInSession.clear();
+      projectsPool.current.forEach((u, key) => {
+        if ((u as any)?.__isDeltaNoop) {
+          projectsPool.current.delete(key);
+        }
+      });
       hydrateProjectsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+      pullAndApplyDeltas(undefined, true).catch(() => {});
+      setRecoveryTick((prev) => prev + 1);
     };
 
     window.addEventListener('taka_sleep_wake_recovery', handleSleepWakeRecovery);
@@ -302,13 +310,12 @@ export function useProjectsHydration({
       const hasVerifiedSigMarker = hasFreshMarker(markers, 'projects_year', sessionYearKey);
       const isVerifiedInThisSession = serverVerifiedProjectYearsInSession.has(sessionYearKey);
 
-      // Skip Firestore when we have local projects for the year, or when this exact (querySignature, year)
-      // was already verified against Firestore server (within 24h TTL or current session) and is kept in sync via taka_deltas.
       const deltaManaged =
         ((hasLocalDataForActiveStore || hasVerifiedSigMarker) && isClosedOrPastYear) ||
         (DELTA_FIRST.projects &&
+          isVerifiedInThisSession &&
           hasFreshYearMarker &&
-          (hasLocalDataForActiveStore || hasLocalDataForYear || hasVerifiedSigMarker || isVerifiedInThisSession));
+          (hasLocalDataForActiveStore || hasLocalDataForYear || hasVerifiedSigMarker));
 
       if (deltaManaged) {
         setCloudStatus('online');

@@ -180,7 +180,7 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
       continue;
     }
 
-    if (isRecentLocal) {
+    if (isRecentLocal || rawTaskSummaries.length > 0) {
       nextTasks.push(t);
       continue;
     }

@@ -88,15 +88,47 @@ export async function ensureProjectTasksLoaded(
     return true;
   };
 
-  const currentTasks = useAppStore.getState().tasks || [];
+  const stateNow = useAppStore.getState();
+  const currentTasks = stateNow.tasks || [];
+  const projects = stateNow.projects || [];
+  const matchingProjs = projects.filter((p) => {
+    if (ctxProjectId && p.id === ctxProjectId) return true;
+    if (ctxProjectId && p.id && p.id !== ctxProjectId) return false;
+    if (cleanCodeLower && (!p.code || p.code.trim().toLowerCase() !== cleanCodeLower)) return false;
+    if (ctxStoreLower && p.store && p.store.trim().toLowerCase() !== ctxStoreLower) return false;
+    if (ctxYearStr && p.year !== undefined && String(p.year).trim() !== ctxYearStr) return false;
+    return true;
+  });
 
-  // 1. If we already have tasks for this specific project context in memory, return them (0 Read)
+  const expectedSummaryIds = new Set<string>();
+  let expectedCount = 0;
+  matchingProjs.forEach((p) => {
+    const sLen = Array.isArray(p.taskSummaries) ? p.taskSummaries.length : 0;
+    expectedCount = Math.max(expectedCount, p.taskCount || 0, sLen);
+    if (Array.isArray(p.taskSummaries)) {
+      p.taskSummaries.forEach((s: any) => {
+        const sId = String(s?.id || '').trim().toLowerCase();
+        if (sId && !sId.startsWith('ts_')) expectedSummaryIds.add(sId);
+      });
+    }
+  });
+
+  const coversExpected = (list: Task[]): boolean => {
+    if (list.length === 0 || list.length < expectedCount) return false;
+    if (expectedSummaryIds.size === 0) return true;
+    const idSet = new Set(list.map((t) => String(t.id || '').trim().toLowerCase()));
+    for (const sId of expectedSummaryIds) {
+      if (!idSet.has(sId)) return false;
+    }
+    return true;
+  };
+
+  // 1. If we already have all expected tasks for this specific project context in memory, return them (0 Read)
   const existing = currentTasks.filter(matchesContext);
-  if (existing.length > 0) return existing;
+  if (coversExpected(existing)) return existing;
 
   const cacheKey = `${ctxProjectId || '*'}|${cleanCodeLower}|${ctxStoreLower || '*'}|${ctxYearStr || '*'}`;
 
-  // If already fetching, return existing promise
   if (pendingProjectFetches.has(cacheKey)) {
     return pendingProjectFetches.get(cacheKey)!;
   }
@@ -112,7 +144,7 @@ export async function ensureProjectTasksLoaded(
         ctxStoreLower || undefined
       );
       const validLocal = (localTasks || []).filter(matchesContext);
-      if (validLocal.length > 0) {
+      if (coversExpected(validLocal)) {
         const latestTasks = useAppStore.getState().tasks || [];
         const currentIds = new Set(latestTasks.map((t) => t.id));
         const toAdd = validLocal.filter((t) => !currentIds.has(t.id));
@@ -123,17 +155,9 @@ export async function ensureProjectTasksLoaded(
       }
 
       // 3. Check if project has 0 tasks according to project summary (0 Read)
-      const projects = useAppStore.getState().projects || [];
-      const matchingProjs = projects.filter((p) => {
-        if (ctxProjectId && p.id === ctxProjectId) return true;
-        if (ctxProjectId && p.id && p.id !== ctxProjectId) return false;
-        if (cleanCodeLower && (!p.code || p.code.trim().toLowerCase() !== cleanCodeLower)) return false;
-        if (ctxStoreLower && p.store && p.store.trim().toLowerCase() !== ctxStoreLower) return false;
-        if (ctxYearStr && p.year !== undefined && String(p.year).trim() !== ctxYearStr) return false;
-        return true;
-      });
       if (
         matchingProjs.length > 0 &&
+        expectedCount === 0 &&
         matchingProjs.every(
           (p) =>
             (p.taskCount || 0) === 0 && (!p.taskSummaries || p.taskSummaries.length === 0)
@@ -142,26 +166,40 @@ export async function ensureProjectTasksLoaded(
         return [];
       }
 
-      // 4. Fallback to Firestore only when Dexie is empty and project expects tasks
+      // 4. Fallback to Firestore when local cache is incomplete or empty
       const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks');
-      const q = ctxProjectId
-        ? query(colRef, where('projectId', '==', ctxProjectId))
-        : query(colRef, where('projectCode', '==', cleanCode));
-      const snap = await getDocs(q);
-      const loaded: Task[] = [];
-      snap.forEach((docSnap) => {
-        const d = { id: docSnap.id, ...docSnap.data() } as Task;
-        if (matchesContext(d)) loaded.push(d);
+      const queries = [];
+      if (ctxProjectId) {
+        queries.push(getDocs(query(colRef, where('projectId', '==', ctxProjectId))));
+      }
+      if (cleanCode) {
+        const codeVariants = Array.from(
+          new Set([cleanCode, cleanCode.toUpperCase(), cleanCode.toLowerCase()])
+        );
+        queries.push(
+          getDocs(
+            codeVariants.length > 1
+              ? query(colRef, where('projectCode', 'in', codeVariants))
+              : query(colRef, where('projectCode', '==', codeVariants[0]))
+          )
+        );
+      }
+      const snaps = await Promise.all(queries);
+      const loadedMap = new Map<string, Task>();
+      snaps.forEach((snap) => {
+        snap.forEach((docSnap) => {
+          const d = { id: docSnap.id, ...docSnap.data() } as Task;
+          if (matchesContext(d)) loadedMap.set(docSnap.id, d);
+        });
       });
+      const loaded = Array.from(loadedMap.values());
 
       if (loaded.length > 0) {
         bulkPersistTasks(loaded).catch(() => {});
         const latestTasks = useAppStore.getState().tasks || [];
-        const currentIds = new Set(latestTasks.map((t) => t.id));
-        const toAdd = loaded.filter((t) => !currentIds.has(t.id));
-        if (toAdd.length > 0) {
-          useAppStore.getState().setTasks([...latestTasks, ...toAdd]);
-        }
+        const mergedById = new Map<string, Task>(latestTasks.map((t) => [t.id, t]));
+        loaded.forEach((t) => mergedById.set(t.id, t));
+        useAppStore.getState().setTasks(Array.from(mergedById.values()));
       }
       return loaded;
     } catch (err) {

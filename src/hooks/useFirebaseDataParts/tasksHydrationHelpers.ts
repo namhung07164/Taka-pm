@@ -1,6 +1,6 @@
 import { Task, Project, DelegationGroup } from '../../types';
 import { isTaskBelongsToProject, matchProjectCode } from '../../lib/utils';
-import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS, calculateProjectComputedDates } from '../../lib/projectDatesService';
+import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../../lib/projectDatesService';
 import { bulkPersistProjects } from '../../lib/localDb';
 
 export { matchProjectCode };
@@ -477,6 +477,9 @@ export function healProjectsAfterTasksBatch(params: {
     };
     if (!fromCache && hasStructuralChange) {
       bulkPersistProjects([healedProj]).catch(() => {});
+      if (isFullyHydratedProject && workingProj.id) {
+        syncProjectDatesToFirestore(String(workingProj.id), computed).catch(() => {});
+      }
     }
     return healedProj;
   });

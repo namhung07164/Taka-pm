@@ -2,14 +2,134 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { useAppStore } from '../../store/useAppStore';
 import { usePerformanceStore } from '../../store/usePerformanceStore';
 import { db, APP_ID } from '../../lib/firebase';
-import { Project, Task } from '../../types';
+import { Project, Task, TakaDeltaItem } from '../../types';
 import { buildStoreAndYearQuery } from './firebaseQueryHelpers';
-import { markLoaded } from '../../lib/loadedMarkers';
+import { hasFreshMarker, markLoaded } from '../../lib/loadedMarkers';
+import { markProjectTasksHydrated } from '../../lib/utils';
+import { resolveInvalidations } from '../../lib/deltaInvalidateService';
+import { applyIncomingDeltas } from '../../lib/deltaSyncService';
 import {
   filterCompatibleProjectChanges,
   buildZombieTaskRemovalsForYear,
   buildZombieTaskRemovalsForProject,
 } from './tasksHydrationHelpers';
+
+/**
+ * Computes a primitive signature of active projects and their summary counts so useTasksHydration
+ * reacts immediately when projects load or their taskSummaries count changes, without re-rendering on unrelated edits.
+ */
+export function computeActiveProjectsSummarySig(
+  projects: Project[],
+  expandedProjectIds: string[],
+  searchActiveProjectIds: string[],
+  isTasksRequested: boolean
+): string {
+  if (!isTasksRequested || !Array.isArray(projects) || projects.length === 0) return '';
+  const activeIds = new Set([
+    ...(expandedProjectIds || []).map(String),
+    ...(searchActiveProjectIds || []).map(String),
+  ]);
+  if (activeIds.size === 0) return '';
+  const parts: string[] = [];
+  for (let i = 0; i < projects.length; i++) {
+    const p = projects[i];
+    if (!p || p.isDeleted) continue;
+    const pId = String(p.id || '');
+    const pCode = String(p.code || '').trim();
+    if ((pId && activeIds.has(pId)) || (pCode && activeIds.has(pCode))) {
+      const sLen = Array.isArray(p.taskSummaries) ? p.taskSummaries.length : -1;
+      parts.push(`${pId}:${sLen}:${p.taskCount ?? 0}`);
+    }
+  }
+  return parts.join('|');
+}
+
+/**
+ * Evaluates whether a single project's tasks are already covered by local Dexie/memory and delta sync,
+ * or whether a Firestore listener needs to be attached.
+ */
+export function evaluateProjectTaskHydrationState(params: {
+  p: Project;
+  projKey: string;
+  localProjTasks: Task[];
+  markers: Set<string>;
+  isYearFresh: boolean;
+  isArchivedPastYear: boolean;
+  isTargetedExpansion: boolean;
+  deltaFirstTasks: boolean;
+  tasksPool: Map<string, () => void>;
+  knownHydratedProjectCodes: Set<string>;
+}): { alreadyActiveInPool: boolean; deltaManaged: boolean; isZeroTaskProject: boolean; coversAllSummaries: boolean } {
+  const {
+    p,
+    projKey,
+    localProjTasks,
+    markers,
+    isYearFresh,
+    isArchivedPastYear,
+    isTargetedExpansion,
+    deltaFirstTasks,
+    tasksPool,
+    knownHydratedProjectCodes,
+  } = params;
+
+  const expectedSummaryCount = Array.isArray(p.taskSummaries)
+    ? p.taskSummaries.length
+    : p.taskCount || 0;
+  const localIdsLower = new Set(
+    localProjTasks.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean)
+  );
+  const coversAllSummaries =
+    expectedSummaryCount > 0 &&
+    localProjTasks.length >= expectedSummaryCount &&
+    (!Array.isArray(p.taskSummaries) ||
+      p.taskSummaries.every((s: any) => {
+        const sId = String(s?.id || '').trim().toLowerCase();
+        return !sId || sId.startsWith('ts_') || localIdsLower.has(sId);
+      }));
+
+  const isVerifiedInSession = knownHydratedProjectCodes.has(String(p.id));
+  const existingListener = tasksPool.get(projKey);
+  const isNoop = Boolean((existingListener as any)?.__isNoop);
+  if (
+    isNoop &&
+    (!coversAllSummaries ||
+      expectedSummaryCount > localProjTasks.length ||
+      (localProjTasks.length === 0 && expectedSummaryCount > 0))
+  ) {
+    tasksPool.delete(projKey);
+    knownHydratedProjectCodes.delete(String(p.id));
+  }
+
+  if (tasksPool.has(projKey)) {
+    return { alreadyActiveInPool: true, deltaManaged: false, isZeroTaskProject: false, coversAllSummaries };
+  }
+
+  const isProjMarkerFresh =
+    hasFreshMarker(markers, 'tasks_proj', p.id) ||
+    hasFreshMarker(markers, 'tasks_proj', p.code) ||
+    isYearFresh;
+
+  const hasLocalProjTasks =
+    coversAllSummaries ||
+    (isVerifiedInSession && localProjTasks.length >= expectedSummaryCount) ||
+    (isProjMarkerFresh && localProjTasks.length >= expectedSummaryCount);
+
+  const isZeroTaskProject =
+    (p.taskCount || 0) === 0 &&
+    Array.isArray(p.taskSummaries) &&
+    p.taskSummaries.length === 0 &&
+    localProjTasks.length === 0;
+
+  const deltaManaged =
+    (isZeroTaskProject && (!isTargetedExpansion || isVerifiedInSession)) ||
+    (hasLocalProjTasks && isArchivedPastYear) ||
+    (deltaFirstTasks &&
+      (!isTargetedExpansion || isVerifiedInSession) &&
+      (coversAllSummaries || (hasLocalProjTasks && isProjMarkerFresh)));
+
+  return { alreadyActiveInPool: false, deltaManaged, isZeroTaskProject, coversAllSummaries };
+}
 
 /**
  * Builds Firestore query for a single project's tasks (including linkCodes and case variations).
@@ -134,6 +254,14 @@ export function attachYearTasksListener(params: {
           changesToApply = [...changesToApply, ...zombieRemovals];
         }
       }
+      if (!fromCache && Array.isArray(projectsInYear)) {
+        projectsInYear.forEach((p) => {
+          if (p?.id) {
+            knownHydratedProjectCodes?.add(String(p.id));
+            markProjectTasksHydrated(p.id);
+          }
+        });
+      }
       batchTasksUpdate(changesToApply, fromCache);
       setCloudStatus('online');
 
@@ -142,13 +270,14 @@ export function attachYearTasksListener(params: {
         if (Array.isArray(projectsInYear)) {
           projectsInYear.forEach((p) => {
             if (p?.id) {
-              knownHydratedProjectCodes?.add(String(p.id));
               markLoaded('tasks_proj', p.id).catch(() => {});
             }
           });
         }
         const u = tasksPool.get(yearKey);
-        tasksPool.set(yearKey, () => {});
+        const noop = () => {};
+        (noop as any).__isNoop = true;
+        tasksPool.set(yearKey, noop);
         u?.();
         usePerformanceStore.getState().unregisterListener(`taka_tasks_${yearKey}`);
       }
@@ -199,25 +328,63 @@ export function attachProjectTasksListener(params: {
       usePerformanceStore.getState().trackSnapshot(`taka_tasks_${projKey}`, snapshot);
       setIsTasksLoading(false);
       const fromCache = snapshot.metadata.fromCache;
-      const expectedCount = Array.isArray(p.taskSummaries)
-        ? p.taskSummaries.length
-        : p.taskCount || 0;
+      const latestProj =
+        (useAppStore.getState().projects || []).find((proj) => proj.id === p.id) || p;
+      const expectedCount = Array.isArray(latestProj.taskSummaries)
+        ? latestProj.taskSummaries.length
+        : latestProj.taskCount || 0;
       if (!fromCache || snapshot.docs.length >= expectedCount) {
         knownHydratedProjectCodes.add(String(p.id));
+        markProjectTasksHydrated(p.id);
       }
 
-      let compatibleChanges = filterCompatibleProjectChanges(snapshot.docChanges(), p);
+      let compatibleChanges = filterCompatibleProjectChanges(snapshot.docChanges(), latestProj);
 
       if (!fromCache && !snapshot.metadata.hasPendingWrites) {
         const currentTasksNow = getCurrentPendingOrStoreTasks();
-        const compatibleServerDocs = filterCompatibleServerDocsForProject(snapshot.docs, p);
+        const compatibleServerDocs = filterCompatibleServerDocsForProject(
+          snapshot.docs,
+          latestProj
+        );
         const zombieRemovals = buildZombieTaskRemovalsForProject(
           compatibleServerDocs,
           currentTasksNow,
-          p
+          latestProj
         );
         if (zombieRemovals.length > 0) {
           compatibleChanges = [...compatibleChanges, ...zombieRemovals];
+        }
+
+        // Verify any task ID in latestProj.taskSummaries not returned by the projectCode query:
+        // resolveInvalidations fetches it if it exists under projectId, or emits a delete delta if it was deleted on server.
+        if (Array.isArray(latestProj.taskSummaries) && latestProj.taskSummaries.length > 0) {
+          const serverIdsLower = new Set(
+            compatibleServerDocs.map((d) => String(d.id || '').trim().toLowerCase())
+          );
+          const verifyItems: TakaDeltaItem[] = [];
+          const pYearStr = String(latestProj.year || new Date().getFullYear());
+          latestProj.taskSummaries.forEach((s: any) => {
+            const sId = String(s?.id || '').trim();
+            if (!sId || sId.startsWith('ts_')) return;
+            if (!serverIdsLower.has(sId.toLowerCase())) {
+              verifyItems.push({
+                docId: sId,
+                collectionName: 'taka_tasks',
+                action: 'update',
+                data: {},
+                isPatch: true,
+                invalidate: true,
+                year: pYearStr,
+              });
+            }
+          });
+          if (verifyItems.length > 0) {
+            resolveInvalidations(verifyItems)
+              .then((synthetic) => {
+                if (synthetic.length > 0) applyIncomingDeltas(synthetic);
+              })
+              .catch(() => {});
+          }
         }
       }
 
@@ -227,7 +394,9 @@ export function attachProjectTasksListener(params: {
       if (deltaFirstTasks && !fromCache) {
         markLoaded('tasks_proj', p.id).catch(() => {});
         const u = tasksPool.get(projKey);
-        tasksPool.set(projKey, () => {});
+        const noop = () => {};
+        (noop as any).__isNoop = true;
+        tasksPool.set(projKey, noop);
         u?.();
         usePerformanceStore.getState().unregisterListener(`taka_tasks_${projKey}`);
       }

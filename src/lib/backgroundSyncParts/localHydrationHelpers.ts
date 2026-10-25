@@ -155,9 +155,8 @@ export function isZombieTaskAgainstProjects(
   const projUpdatedMs = tsOf(matchedEntry.project.updatedAt);
   if (updatedMs > 0 && projUpdatedMs > 0 && updatedMs > projUpdatedMs) return false;
   if (matchedEntry.isZeroTaskProject) return true;
-  if (!matchedEntry.allSummariesHaveIds || matchedEntry.summaryIds.size === 0) return false;
 
-  return !matchedEntry.summaryIds.has(String(t.id).trim().toLowerCase());
+  return false;
 }
 
 /**

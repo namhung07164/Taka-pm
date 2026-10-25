@@ -1,8 +1,10 @@
-import { Project, Task } from '../../types';
+import { Project, Task, TakaDeltaItem } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { localDb, deleteLocalRecord, patchLocalRecord } from '../../lib/localDb';
 import { markTasksDeleted } from '../../lib/taskDeletedTracker';
 import { isTaskBelongsToProject } from '../../lib/taskStateService';
+import { resolveInvalidations } from '../../lib/deltaInvalidateService';
+import { applyIncomingDeltas } from '../../lib/deltaSyncService';
 
 // Chuyển updatedAt (ISO string / Firestore Timestamp / plain {seconds} / number) về ms
 export const tsOf = (v: any): number => {
@@ -185,8 +187,10 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     });
   }
 
-  // 2. Any in-memory task belonging to this project that is not in serverSummaryIds (and not edited in last 30s, nor newer than project doc) is a zombie task
+  // 2. Any in-memory task belonging to this project that is not in serverSummaryIds:
+  // If project explicitly has 0 tasks, delete immediately; otherwise verify via pendingInvalidatedTaskIds against taka_tasks server
   const projUpdatedMs = tsOf(data.updatedAt);
+  const projYearStr = String(resolvedData.year || new Date().getFullYear());
   const localProjTasks = getLocalProjectTasksFromIndex(resolvedData, tasksIndex);
   const localProjTasksById = new Map<string, any>();
   localProjTasks.forEach((t) => {
@@ -197,24 +201,31 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
       const updatedMs = tsOf(t.updatedAt);
       const isOlderOrEqualToProj = !projUpdatedMs || !updatedMs || projUpdatedMs >= updatedMs;
       if (isOlderOrEqualToProj && (!updatedMs || nowMs - updatedMs > 60000)) {
-        markTasksDeleted([t.id], id);
-        pendingDeletedTaskIds.add(t.id);
+        if (isZeroTaskServer) {
+          markTasksDeleted([t.id], id);
+          pendingDeletedTaskIds.add(t.id);
+        } else {
+          pendingInvalidatedTaskIds.set(String(t.id), projYearStr);
+        }
       }
     }
   });
 
-  // 3. Patch summary fields in-place for already-loaded local tasks without firing N getDocFromServer calls.
-  // Unexpanded projects already render from project.taskSummaries (0 Read) and receive full tasks via taka_deltas.
-  void expandedSet;
-  void pendingInvalidatedTaskIds;
+  // 3. Patch summary fields in-place for already-loaded local tasks and enqueue missing task IDs when project is active/partially loaded
+  const isProjectExpandedOrLoaded =
+    localProjTasksById.size > 0 ||
+    expandedSet.has(String(id)) ||
+    (Boolean(data.code) && expandedSet.has(String(data.code).trim()));
 
-  if (localProjTasksById.size > 0 && serverSummaryIds.size > 0) {
+  if (serverSummaryIds.size > 0 && isProjectExpandedOrLoaded) {
     data.taskSummaries.forEach((s: any) => {
       const sId = String(s?.id || '').trim();
       if (!sId || sId.startsWith('ts_')) return;
       const sIdLower = sId.toLowerCase();
       const localT = localProjTasksById.get(sIdLower);
-      if (localT) {
+      if (!localT) {
+        pendingInvalidatedTaskIds.set(sId, projYearStr);
+      } else {
         const localUpdatedMs = tsOf(localT.updatedAt);
         const isRecentlyEditedLocally = localUpdatedMs > 0 && nowMs - localUpdatedMs <= 60000;
         if (!isRecentlyEditedLocally) {
@@ -235,7 +246,6 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
             (s.party !== undefined && s.party !== localT.party) ||
             sParent !== localParent;
           if (summaryDiffers) {
-            // Patch summary fields directly in memory (and Dexie via background reconciliation) to avoid getDocFromServer
             if (s.name !== undefined) localT.name = s.name;
             if (s.start !== undefined) localT.start = s.start;
             if (s.finish !== undefined) localT.finish = s.finish;
@@ -252,13 +262,16 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
 }
 
 /**
- * Background Dexie Task Reconciliation: purges zombie tasks or patches stale fields in localDb.tasks
+ * Background Dexie Task Reconciliation: purges zombie tasks, patches stale fields, and heals missing tasks in localDb.tasks
  * according to authoritative server project.taskSummaries.
  */
 export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]): void {
   setTimeout(async () => {
     try {
       const nowBg = Date.now();
+      const missingTaskItems: TakaDeltaItem[] = [];
+      const seenMissingIds = new Set<string>();
+
       for (const p of changed) {
         if (!p?.id || !Array.isArray(p.taskSummaries)) continue;
         const summaryIds = new Set(
@@ -267,6 +280,7 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
         const isZeroTask = p.taskSummaries.length === 0 && (p.taskCount ?? 0) === 0;
         if (summaryIds.size === 0 && !isZeroTask) continue;
         const projUpdatedMs = tsOf(p.updatedAt);
+        const pYearStr = String(p.year || new Date().getFullYear());
 
         const summaryById = new Map<string, any>();
         p.taskSummaries.forEach((s: any) => {
@@ -295,11 +309,18 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
             .catch(() => []),
         ]);
         const candidateMap = new Map<string, any>();
+        const candidateLowerSet = new Set<string>();
         byId.forEach((t) => {
-          if (t?.id) candidateMap.set(t.id, t);
+          if (t?.id) {
+            candidateMap.set(t.id, t);
+            candidateLowerSet.add(String(t.id).trim().toLowerCase());
+          }
         });
         byCode.forEach((t) => {
-          if (t?.id && isTaskBelongsToProject(t, p)) candidateMap.set(t.id, t);
+          if (t?.id && isTaskBelongsToProject(t, p)) {
+            candidateMap.set(t.id, t);
+            candidateLowerSet.add(String(t.id).trim().toLowerCase());
+          }
         });
 
         for (const [tid, t] of candidateMap.entries()) {
@@ -309,13 +330,26 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           if (tUpdatedMs > 0 && projUpdatedMs > 0 && tUpdatedMs > projUpdatedMs) continue;
 
           if (!summaryIds.has(tidLower)) {
-            markTasksDeleted([tid], p.id);
-            await deleteLocalRecord('taka_tasks', tid);
-            const curTasks = useAppStore.getState().tasks || [];
-            if (curTasks.some((ct) => String(ct.id).trim().toLowerCase() === tidLower)) {
-              useAppStore
-                .getState()
-                .setTasks(curTasks.filter((ct) => String(ct.id).trim().toLowerCase() !== tidLower));
+            if (isZeroTask) {
+              markTasksDeleted([tid], p.id);
+              await deleteLocalRecord('taka_tasks', tid);
+              const curTasks = useAppStore.getState().tasks || [];
+              if (curTasks.some((ct) => String(ct.id).trim().toLowerCase() === tidLower)) {
+                useAppStore
+                  .getState()
+                  .setTasks(curTasks.filter((ct) => String(ct.id).trim().toLowerCase() !== tidLower));
+              }
+            } else if (!seenMissingIds.has(tidLower)) {
+              seenMissingIds.add(tidLower);
+              missingTaskItems.push({
+                docId: String(tid),
+                collectionName: 'taka_tasks',
+                action: 'update',
+                data: {},
+                isPatch: true,
+                invalidate: true,
+                year: pYearStr,
+              });
             }
           } else {
             const s = summaryById.get(tidLower);
@@ -348,6 +382,34 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
               }
             }
           }
+        }
+
+        // If localDb had partial tasks for this project (e.g. 2 instead of 10) or tasks are requested, fetch missing summary task IDs
+        if (candidateLowerSet.size > 0 || useAppStore.getState().isTasksRequested) {
+          p.taskSummaries.forEach((s: any) => {
+            const sId = String(s?.id || '').trim();
+            if (!sId || sId.startsWith('ts_')) return;
+            const sIdLower = sId.toLowerCase();
+            if (!candidateLowerSet.has(sIdLower) && !seenMissingIds.has(sIdLower)) {
+              seenMissingIds.add(sIdLower);
+              missingTaskItems.push({
+                docId: sId,
+                collectionName: 'taka_tasks',
+                action: 'update',
+                data: {},
+                isPatch: true,
+                invalidate: true,
+                year: pYearStr,
+              });
+            }
+          });
+        }
+      }
+
+      if (missingTaskItems.length > 0) {
+        const synthetic = await resolveInvalidations(missingTaskItems);
+        if (synthetic.length > 0) {
+          applyIncomingDeltas(synthetic);
         }
       }
     } catch {}
