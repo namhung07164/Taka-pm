@@ -224,7 +224,8 @@ export function useProjectsHydration({
   useEffect(() => {
     const handleSleepWakeRecovery = (e?: Event) => {
       const elapsedSleepMs = Number((e as CustomEvent)?.detail?.elapsedSleepMs || 0);
-      if (elapsedSleepMs === 0 || elapsedSleepMs > 30 * 60 * 1000) {
+      // Only reset pool if device slept longer than the 24h marker TTL; normal sleep/wake is handled by pullAndApplyDeltas
+      if (elapsedSleepMs > 24 * 60 * 60 * 1000) {
         serverVerifiedProjectYearsInSession.clear();
         projectsPool.current.forEach((u, key) => {
           if ((u as any)?.__isDeltaNoop) {
@@ -280,9 +281,8 @@ export function useProjectsHydration({
     liveTargetYears.forEach(async (year) => {
       const sessionYearKey = `${querySignature}_${year}`;
       const existingPoolEntry = projectsPool.current.get(year);
-      const isNoopSlot = Boolean((existingPoolEntry as any)?.__isDeltaNoop);
 
-      if (existingPoolEntry && !isNoopSlot) {
+      if (existingPoolEntry) {
         hydrateProjectsFromLocal(year).catch(() => {});
         return;
       }
@@ -316,11 +316,11 @@ export function useProjectsHydration({
       const deltaManaged =
         ((hasLocalDataForActiveStore || hasVerifiedSigMarker) && isClosedOrPastYear) ||
         (DELTA_FIRST.projects &&
-          isVerifiedInThisSession &&
-          hasFreshYearMarker &&
+          (isVerifiedInThisSession || hasFreshYearMarker || hasVerifiedSigMarker) &&
           (hasLocalDataForActiveStore || hasLocalDataForYear || hasVerifiedSigMarker));
 
       if (deltaManaged) {
+        serverVerifiedProjectYearsInSession.add(sessionYearKey);
         setCloudStatus('online');
         usePerformanceStore
           .getState()

@@ -175,8 +175,8 @@ async function getBlobFromCacheStorage(key: string): Promise<Blob | null> {
   return null;
 }
 
-async function putBlobToCacheStorage(key: string, blob: Blob): Promise<void> {
-  if (typeof window === 'undefined' || !('caches' in window) || !key || !blob || blob.size === 0) return;
+async function putBlobToCacheStorage(key: string, blob: Blob): Promise<boolean> {
+  if (typeof window === 'undefined' || !('caches' in window) || !key || !blob || blob.size === 0) return false;
   try {
     const cache = await window.caches.open(CACHE_STORAGE_NAME);
     await cache.put(
@@ -190,7 +190,10 @@ async function putBlobToCacheStorage(key: string, blob: Blob): Promise<void> {
       })
     );
     verifiedOnDiskKeys.add(key);
-  } catch (_e) {}
+    return true;
+  } catch (_e) {
+    return false;
+  }
 }
 
 export async function getCachedBlobFromIDB(url: string): Promise<Blob | null> {
@@ -226,7 +229,13 @@ export async function setCachedBlobToIDB(url: string, blob: Blob): Promise<void>
   if (!key || !blob || blob.size === 0) return;
 
   verifiedOnDiskKeys.add(key);
-  putBlobToCacheStorage(key, blob).catch(() => {});
+  const storedInCacheApi = await putBlobToCacheStorage(key, blob);
+
+  // On iOS/iPadOS (IS_CONSTRAINED_DEVICE), if CacheStorage succeeded, skip duplicating the raw Blob into
+  // IndexedDB to strictly preserve the 40MB WebKit IndexedDB budget for TakaLocalDB & Firestore cache (Rule 3).
+  if (IS_CONSTRAINED_DEVICE && storedInCacheApi) {
+    return;
+  }
 
   try {
     let db = await getDB();
@@ -347,11 +356,11 @@ export async function fetchAndCacheImageBlob(url: string): Promise<Blob | null> 
 let preloadTimer: any = null;
 
 /**
- * Gently caches up to 4 floorplan Blobs for the current store in the background after the active
- * floor is already rendered. Stores ONLY compressed Blobs on disk (0MB RAM bitmap allocation).
+ * Gently caches floorplan Blobs for the current store in the background after the active
+ * floor is already rendered. On iOS, skips bulk preloading to protect the 40MB origin quota.
  */
 export function preloadFloorImages(urls: (string | undefined | null)[], excludeUrl?: string | null): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || IS_CONSTRAINED_DEVICE) return;
   const excludeKey = excludeUrl ? normalizeImageCacheKey(excludeUrl) : '';
 
   const seenKeys = new Set<string>();

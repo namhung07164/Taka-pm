@@ -439,7 +439,8 @@ export function useTasksHydration({
 
     const handleSleepWakeRecovery = (e?: Event) => {
       const elapsedSleepMs = Number((e as CustomEvent)?.detail?.elapsedSleepMs || 0);
-      if (elapsedSleepMs === 0 || elapsedSleepMs > 30 * 60 * 1000) {
+      // Only reset pool if device slept longer than the 24h marker TTL; normal sleep/wake is handled by pullAndApplyDeltas
+      if (elapsedSleepMs > 24 * 60 * 60 * 1000) {
         knownHydratedProjectCodes.current.clear();
         tasksPool.current.forEach((u, key) => {
           if ((u as any)?.__isNoop) {

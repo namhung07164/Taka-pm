@@ -134,9 +134,8 @@ export function evaluateProjectTaskHydrationState(params: {
     (isZeroTaskProject && (!isTargetedExpansion || isVerifiedInSession || isProjMarkerFresh)) ||
     (hasLocalProjTasks && isArchivedPastYear) ||
     (deltaFirstTasks &&
-      ((coversAllSummaries && isProjMarkerFresh) ||
-        ((!isTargetedExpansion || isVerifiedInSession) &&
-          (coversAllSummaries || (hasLocalProjTasks && isProjMarkerFresh)))));
+      (coversAllSummaries ||
+        (hasLocalProjTasks && (isProjMarkerFresh || isVerifiedInSession))));
 
   return { alreadyActiveInPool: false, deltaManaged, isZeroTaskProject, coversAllSummaries };
 }
@@ -363,38 +362,6 @@ export function attachProjectTasksListener(params: {
         );
         if (zombieRemovals.length > 0) {
           compatibleChanges = [...compatibleChanges, ...zombieRemovals];
-        }
-
-        // Verify any task ID in latestProj.taskSummaries not returned by the projectCode query:
-        // resolveInvalidations fetches it if it exists under projectId, or emits a delete delta if it was deleted on server.
-        if (Array.isArray(latestProj.taskSummaries) && latestProj.taskSummaries.length > 0) {
-          const serverIdsLower = new Set(
-            compatibleServerDocs.map((d) => String(d.id || '').trim().toLowerCase())
-          );
-          const verifyItems: TakaDeltaItem[] = [];
-          const pYearStr = String(latestProj.year || new Date().getFullYear());
-          latestProj.taskSummaries.forEach((s: any) => {
-            const sId = String(s?.id || '').trim();
-            if (!sId || sId.startsWith('ts_')) return;
-            if (!serverIdsLower.has(sId.toLowerCase())) {
-              verifyItems.push({
-                docId: sId,
-                collectionName: 'taka_tasks',
-                action: 'update',
-                data: {},
-                isPatch: true,
-                invalidate: true,
-                year: pYearStr,
-              });
-            }
-          });
-          if (verifyItems.length > 0) {
-            resolveInvalidations(verifyItems)
-              .then((synthetic) => {
-                if (synthetic.length > 0) applyIncomingDeltas(synthetic);
-              })
-              .catch(() => {});
-          }
         }
       }
 
