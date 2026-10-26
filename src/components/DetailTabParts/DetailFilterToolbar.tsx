@@ -285,11 +285,12 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
                     const p: any = {};
                     let rowNo: any = null;
                     headers.forEach((h, i) => {
-                      const fieldMap: any = { 'store': 'store', 'location': 'location', 'year': 'year', 'code': 'code', 'name': 'name', 'no': 'no', 'sizem2': 'sizeM2', 'size': 'sizeM2', 'area': 'sizeM2' };
+                      const fieldMap: any = { 'store': 'store', 'location': 'location', 'year': 'year', 'code': 'code', 'name': 'name', 'no': 'no', 'shoptype': 'shopType', 'shop type': 'shopType', 'shop_type': 'shopType', 'shop': 'shopType', 'sizem2': 'sizeM2', 'size': 'sizeM2', 'area': 'sizeM2' };
                       const target = fieldMap[h];
                       if (target) {
                         let val: any = row[i];
                         if (target === 'year' || target === 'no' || target === 'sizeM2') val = isNaN(Number(val)) ? val : Number(val);
+                        if (target === 'shopType') val = val !== undefined && val !== null ? String(val).trim() : '';
                         p[target] = val;
                         if (target === 'no') rowNo = val;
                       }

@@ -1,6 +1,6 @@
 import React, { Dispatch, SetStateAction, memo } from 'react';
 import { Target, Plus } from 'lucide-react';
-import { Project, AppUser } from '../../types';
+import { Project, AppUser, SHOP_TYPE_OPTIONS } from '../../types';
 import { FastInput } from '../FastInput';
 import { FastTextarea } from './FastTextarea';
 import { MultiSelect } from '../MultiSelect';
@@ -221,9 +221,9 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
           </div>
         </div>
 
-        {/* Row 3: Project Name & Size (m²) */}
+        {/* Row 3: Project Name, Shop Type & Size (m²) */}
         <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mb-5">
-          <div className="sm:col-span-8 md:col-span-9">
+          <div className="sm:col-span-12 md:col-span-6">
             <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
               Project Name *
             </label>
@@ -238,7 +238,26 @@ export const ProjectDetailsForm = memo(function ProjectDetailsForm({
             />
           </div>
 
-          <div className="sm:col-span-4 md:col-span-3">
+          <div className="sm:col-span-6 md:col-span-3">
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              Shop Type
+            </label>
+            <select
+              value={formData.shopType || ''}
+              onChange={(e) => setFormData({ ...formData, shopType: e.target.value })}
+              disabled={!canWrite}
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-[#e3e3e3] cursor-pointer"
+            >
+              <option value="">Select Shop Type</option>
+              {SHOP_TYPE_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="sm:col-span-6 md:col-span-3">
             <label className="flex items-center justify-between text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1 gap-1">
               <span>Size (m²)</span>
               {matchedUnitSizeInfo?.sizeM2 !== undefined && matchedUnitSizeInfo.sizeM2 > 0 && (

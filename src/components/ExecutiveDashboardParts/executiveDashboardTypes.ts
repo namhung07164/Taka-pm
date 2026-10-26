@@ -10,6 +10,7 @@ export interface EVMProjectItem {
   code: string;
   name: string;
   store: string;
+  shopType?: string;
   sizeM2?: number;
   bac: number;
   ac: number;

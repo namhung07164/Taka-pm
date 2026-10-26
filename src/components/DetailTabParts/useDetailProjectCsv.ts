@@ -21,13 +21,14 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
   } | null>(null);
 
   const handleExportProjects = () => {
-    const headers = ['store', 'location', 'year', 'code', 'name', 'sizeM2'];
+    const headers = ['store', 'location', 'year', 'code', 'name', 'shopType', 'sizeM2'];
     const data = filteredProjects.map(p => [
       p.store || '',
       p.location || '',
       p.year || '',
       p.code || '',
       p.name || '',
+      p.shopType || '',
       p.sizeM2 !== undefined && p.sizeM2 !== null ? p.sizeM2 : ''
     ]);
     const csv = generateCSV(headers, data);
@@ -111,6 +112,10 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
               'projectname': 'name',
               'project name': 'name',
               'task name': 'name',
+              'shoptype': 'shopType',
+              'shop type': 'shopType',
+              'shop_type': 'shopType',
+              'shop': 'shopType',
               'sizem2': 'sizeM2',
               'size m2': 'sizeM2',
               'size': 'sizeM2',
@@ -125,6 +130,8 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
               let val: any = row[i];
               if (targetField === 'year') {
                 val = !isNaN(Number(val)) ? Number(val) : String(val).trim();
+              } else if (targetField === 'shopType') {
+                val = val !== undefined && val !== null && String(val).trim() !== '' ? String(val).trim() : undefined;
               } else if (targetField === 'sizeM2') {
                 const clean = String(val ?? '').replace(/,/g, '').trim();
                 const num = Number(clean);

@@ -16311,7 +16311,7 @@ export const TAB_CONFIG: Record<string, CsvTabConfigItem> = {
   project: {
     id: 'project',
     label: 'Xuất Project',
-    columns: ['store', 'location', 'year', 'code', 'name'],
+    columns: ['store', 'location', 'year', 'code', 'name', 'shopType', 'sizeM2'],
     fileNamePrefix: 'taka_projects_exported',
     icon: 'ph-file-csv',
     exportType: 'csv',
@@ -16496,7 +16496,6 @@ export const safeSetStorage = (key: string, value: string) => {
     console.warn('Browser blocked localStorage write', e);
   }
 };
-
 
 ================================================================================
 FILE: src/components/CsvExportParts/useCsvExportState.ts
@@ -19614,11 +19613,12 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
                     const p: any = {};
                     let rowNo: any = null;
                     headers.forEach((h, i) => {
-                      const fieldMap: any = { 'store': 'store', 'location': 'location', 'year': 'year', 'code': 'code', 'name': 'name', 'no': 'no', 'sizem2': 'sizeM2', 'size': 'sizeM2', 'area': 'sizeM2' };
+                      const fieldMap: any = { 'store': 'store', 'location': 'location', 'year': 'year', 'code': 'code', 'name': 'name', 'no': 'no', 'shoptype': 'shopType', 'shop type': 'shopType', 'shop_type': 'shopType', 'shop': 'shopType', 'sizem2': 'sizeM2', 'size': 'sizeM2', 'area': 'sizeM2' };
                       const target = fieldMap[h];
                       if (target) {
                         let val: any = row[i];
                         if (target === 'year' || target === 'no' || target === 'sizeM2') val = isNaN(Number(val)) ? val : Number(val);
+                        if (target === 'shopType') val = val !== undefined && val !== null ? String(val).trim() : '';
                         p[target] = val;
                         if (target === 'no') rowNo = val;
                       }
@@ -19715,6 +19715,7 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
     </>
   );
 });
+
 ================================================================================
 FILE: src/components/DetailTabParts/DetailFloatingActionBar.tsx
 ================================================================================
@@ -20181,6 +20182,11 @@ export const DetailMobileProjectCard = memo(function DetailMobileProjectCard({
           {p.location && (
             <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
               • {p.location}
+            </span>
+          )}
+          {p.shopType && (
+            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+              {p.shopType}
             </span>
           )}
           {Boolean(p.sizeM2 && p.sizeM2 > 0) && (
@@ -20771,6 +20777,7 @@ import { Project, Task } from '../../types';
 import { cn, formatDisplayDateTime, calculateDays } from '../../lib/utils';
 import { ChevronRight, ChevronDown, Plus, Trash2, Edit3, ArrowDownUp, GripVertical } from 'lucide-react';
 import { DetailTableRow } from './detailTypes';
+import { buildProjectParentHierarchyIndex } from './useDetailFlatRows';
 import { EditableCell } from './EditableCell';
 import { FastToggle } from './FastToggle';
 import { QuickNavButton } from '../QuickNavButton';
@@ -20818,46 +20825,10 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
   const groupTasks = item.groupTasks;
   const effectiveTaskCount = item.effectiveTaskCount;
 
-  const parentTaskMap = React.useMemo(() => {
-    const map = new Map<string, Task>();
-    (groupTasks || []).forEach((gt) => {
-      if (gt.id) {
-        const idStr = String(gt.id).trim();
-        map.set(idStr, gt);
-        map.set(idStr.toLowerCase(), gt);
-      }
-      if (gt.taskCodePhu) {
-        const codeStr = String(gt.taskCodePhu).trim().toLowerCase();
-        map.set(codeStr, gt);
-        const numMatch = codeStr.match(/[-#]?(\d+)$/);
-        if (numMatch) {
-          map.set(numMatch[1], gt);
-          map.set(`#${numMatch[1]}`, gt);
-        }
-      }
-      if (gt.orderIndex !== undefined && gt.orderIndex !== null) {
-        map.set(String(Number(gt.orderIndex) + 1), gt);
-        map.set(`#${Number(gt.orderIndex) + 1}`, gt);
-      }
-      if (gt.name) {
-        map.set(String(gt.name).trim().toLowerCase(), gt);
-      }
-    });
-    return map;
-  }, [groupTasks]);
-
-  const projectModularParentIds = React.useMemo(() => {
-    const parentIds = new Set<string>();
-    (groupTasks || []).forEach((t) => {
-      if (t.parentTaskId) {
-        const rawParentId = String(t.parentTaskId).trim();
-        const matchedParent = parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase());
-        const effectiveId = matchedParent ? String(matchedParent.id) : rawParentId;
-        parentIds.add(effectiveId);
-      }
-    });
-    return Array.from(parentIds);
-  }, [groupTasks, parentTaskMap]);
+  const { projectModularParentIds, projectChildTasksCount } = React.useMemo(
+    () => buildProjectParentHierarchyIndex(groupTasks || []),
+    [groupTasks]
+  );
 
   const hasModularTasks = projectModularParentIds.length > 0;
   const isProjectModularExpanded =
@@ -20866,10 +20837,6 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
       expandedModularTasks?.has(id) || 
       expandedModularTasks?.has(id.toLowerCase())
     );
-
-  const projectChildTasksCount = React.useMemo(() => {
-    return (groupTasks || []).filter((t) => Boolean(t.parentTaskId)).length;
-  }, [groupTasks]);
 
   const handleToggleProjectModular = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -21056,6 +21023,11 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
               onSave={(val) => onUpdateProject(p, 'name', val)}
               canWrite={canWrite}
             />
+            {p.shopType && (
+              <span className="text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800 shrink-0 select-none">
+                {p.shopType}
+              </span>
+            )}
             {Boolean(p.sizeM2 && p.sizeM2 > 0) && (
               <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 shrink-0 select-none">
                 {p.sizeM2} m²
@@ -21188,6 +21160,7 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
     </tr>
   );
 });
+
 ================================================================================
 FILE: src/components/DetailTabParts/DetailTableHeader.tsx
 ================================================================================
@@ -24229,8 +24202,10 @@ export function useDetailBulkActions({
       setSelectedTaskIds(new Set());
       lastCheckedTaskIdRef.current = null;
 
-      // 2. Update Dexie (IndexedDB)
+      // 2. Sync project summaries + Update Dexie (IndexedDB)
       try {
+        const { saveTaskStateUnified } = await import('../../lib/taskStateService');
+        await saveTaskStateUnified(updatedTasks.filter(t => allIdsToUnlink.has(t.id)));
         const { localDb } = await import('../../lib/localDb');
         await Promise.all(
           unlinkedArray.map(id => (localDb.tasks.update as any)(id, { parentTaskId: null, parentId: null, updatedAt: now }))
@@ -24243,7 +24218,7 @@ export function useDetailBulkActions({
       const batch = writeBatch(db);
       unlinkedArray.forEach(id => {
         const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
-        batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
+        batch.set(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now }, { merge: true });
       });
 
       try {
@@ -24346,7 +24321,7 @@ export function useDetailBulkActions({
           }
         }
         
-        batch.update(docRef, payload);
+        batch.set(docRef, payload, { merge: true });
         updateCount++;
       });
 
@@ -26107,13 +26082,14 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
   } | null>(null);
 
   const handleExportProjects = () => {
-    const headers = ['store', 'location', 'year', 'code', 'name', 'sizeM2'];
+    const headers = ['store', 'location', 'year', 'code', 'name', 'shopType', 'sizeM2'];
     const data = filteredProjects.map(p => [
       p.store || '',
       p.location || '',
       p.year || '',
       p.code || '',
       p.name || '',
+      p.shopType || '',
       p.sizeM2 !== undefined && p.sizeM2 !== null ? p.sizeM2 : ''
     ]);
     const csv = generateCSV(headers, data);
@@ -26197,6 +26173,10 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
               'projectname': 'name',
               'project name': 'name',
               'task name': 'name',
+              'shoptype': 'shopType',
+              'shop type': 'shopType',
+              'shop_type': 'shopType',
+              'shop': 'shopType',
               'sizem2': 'sizeM2',
               'size m2': 'sizeM2',
               'size': 'sizeM2',
@@ -26211,6 +26191,8 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
               let val: any = row[i];
               if (targetField === 'year') {
                 val = !isNaN(Number(val)) ? Number(val) : String(val).trim();
+              } else if (targetField === 'shopType') {
+                val = val !== undefined && val !== null && String(val).trim() !== '' ? String(val).trim() : undefined;
               } else if (targetField === 'sizeM2') {
                 const clean = String(val ?? '').replace(/,/g, '').trim();
                 const num = Number(clean);
@@ -26362,6 +26344,7 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
     projectImportErrorModal
   };
 }
+
 ================================================================================
 FILE: src/components/DetailTabParts/useDetailProjectInfo.ts
 ================================================================================
@@ -27248,19 +27231,6 @@ export function useDetailTaskMutations({
         try {
           // 1. Xóa tức thì khỏi Zustand store & đồng bộ nguyên tử Batch Firestore + Delta Sync
           await deleteTaskStateUnified([t]);
-          
-          // 2. Phát tín hiệu Delta XÓA với đầy đủ 4 khóa định danh (CỰC KỲ QUAN TRỌNG)
-          const { recordDelta } = await import('../../lib/deltaSyncService');
-          recordDelta({
-            docId: t.id,
-            collectionName: 'taka_tasks',
-            action: 'delete',
-            data: { id: t.id, isDeleted: true },
-            projectId: t.projectId,
-            projectCode: t.projectCode,
-            year: t.projectYear ? String(t.projectYear) : undefined,
-            store: t.projectStore
-          }).catch(console.error);
 
           undoManager.push({
             description: `Delete Task: ${t.name}`,
@@ -27294,34 +27264,34 @@ export function useDetailTaskMutations({
     _options?: { skipPredecessorRecalc?: boolean; skipProjectRollup?: boolean }
   ) => {
     try {
-      if (updates.name && updates.name !== t.name) {
-        const currentProject = projects.find(p => 
-          (t.projectId && p.id === t.projectId) ||
-          (p.code === t.projectCode &&
-          (String(p.year || '') === String(t.projectYear || '') || (!p.year && !t.projectYear)) &&
-          (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore)))
-        );
-        if (currentProject) {
-          const normUpdateName = normalizeTaskNameForComparison(updates.name);
-          const isDuplicate = tasks.some(tsk => {
-            if (tsk.id === t.id || tsk.isDeleted) return false;
-            const sameProject = isTaskBelongsToProject(tsk, currentProject, projects);
-            if (!sameProject) return false;
+      const liveState = useAppStore.getState();
+      const activeTasks = liveState.tasks || tasks;
+      const activeProjects = liveState.projects || projects;
+      const currentProject = activeProjects.find(p => 
+        (t.projectId && p.id === t.projectId) ||
+        (p.code === t.projectCode &&
+        (String(p.year || '') === String(t.projectYear || '') || (!p.year && !t.projectYear)) &&
+        (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore)))
+      );
 
-            if (tsk.name && (tsk.name || '').trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
-            const tNorm = normalizeTaskNameForComparison(tsk.name);
-            return !!(normUpdateName && tNorm && normUpdateName === tNorm);
-          });
-          if (isDuplicate) {
-            useAppStore.getState().setToast({ title: "Notice", message: `Task name "${updates.name}" already exists in project ${currentProject.code} (${currentProject.year} - ${currentProject.store}). Please enter a different name.` });
-            return;
-          }
+      if (updates.name && updates.name !== t.name && currentProject) {
+        const normUpdateName = normalizeTaskNameForComparison(updates.name);
+        const isDuplicate = activeTasks.some(tsk => {
+          if (tsk.id === t.id || tsk.isDeleted) return false;
+          if (!isTaskBelongsToProject(tsk, currentProject, activeProjects)) return false;
+          if (tsk.name && (tsk.name || '').trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
+          const tNorm = normalizeTaskNameForComparison(tsk.name);
+          return !!(normUpdateName && tNorm && normUpdateName === tNorm);
+        });
+        if (isDuplicate) {
+          useAppStore.getState().setToast({ title: "Notice", message: `Task name "${updates.name}" already exists in project ${currentProject.code} (${currentProject.year} - ${currentProject.store}). Please enter a different name.` });
+          return;
         }
       }
 
       if (updates.predecessor !== undefined && updates.predecessor !== t.predecessor) {
         let val = updates.predecessor;
-        const taskNoMap = buildTaskNoMap(projects, tasks);
+        const taskNoMap = buildTaskNoMap(activeProjects, activeTasks);
         let parts = splitPredecessors(val, taskNoMap);
         if (parts.length > 2) parts = parts.slice(0, 2);
         
@@ -27338,22 +27308,21 @@ export function useDetailTaskMutations({
 
       let predecessorUpdates: { id: string; predecessor: string; updatedAt: string }[] = [];
       if (updates.taskCodePhu !== undefined && updates.taskCodePhu !== t.taskCodePhu) {
-        const oldCode = (t.taskCodePhu || computeTaskCode(projects, tasks, t)).trim();
-        const newCode = (updates.taskCodePhu || computeTaskCode(projects, tasks.map(item => item.id === t.id ? { ...item, ...updates } : item), { ...t, ...updates })).trim();
+        const oldCode = (t.taskCodePhu || computeTaskCode(activeProjects, activeTasks, t)).trim();
+        const newCode = (updates.taskCodePhu || computeTaskCode(activeProjects, activeTasks.map(item => item.id === t.id ? { ...item, ...updates } : item), { ...t, ...updates })).trim();
         if (oldCode && newCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
           const map = new Map<string, string>();
           map.set(oldCode.toLowerCase(), newCode);
-          predecessorUpdates = updatePredecessorsStrings(map, tasks, projects);
+          predecessorUpdates = updatePredecessorsStrings(map, activeTasks, activeProjects);
         }
       }
 
       let targetTaskId = t.id;
       if (targetTaskId && targetTaskId.startsWith('ts_')) {
-        // Cùng mã dự án chưa đủ: phải cùng store và year (mã phụ ảo `<mã>#<số>` trùng giữa các store/năm)
         const sameProjectIdentity = (x: any) =>
           String(x.projectStore || '').trim().toLowerCase() === String(t.projectStore || '').trim().toLowerCase() &&
           String(x.projectYear ?? '').trim() === String(t.projectYear ?? '').trim();
-        let realTask = tasks.find(tsk => 
+        let realTask = activeTasks.find(tsk => 
           !tsk.id.startsWith('ts_') &&
           tsk.projectCode === t.projectCode &&
           sameProjectIdentity(tsk) &&
@@ -27362,7 +27331,11 @@ export function useDetailTaskMutations({
         );
         if (!realTask && t.projectCode) {
           try {
-            const loaded = await ensureProjectTasksLoaded(t.projectCode);
+            const loaded = await ensureProjectTasksLoaded(t.projectCode, {
+              projectId: t.projectId,
+              store: t.projectStore,
+              year: t.projectYear,
+            });
             const loadedSame = loaded.filter(sameProjectIdentity);
             if (loadedSame.length > 0) {
               realTask = loadedSame.find(tsk =>
@@ -27382,10 +27355,21 @@ export function useDetailTaskMutations({
       }
       const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', targetTaskId);
       
-      let newT = { ...t, id: targetTaskId, ...updates, updatedAt: new Date().toISOString() };
+      let newT: Task = {
+        ...t,
+        id: targetTaskId,
+        projectId: updates.projectId || t.projectId || currentProject?.id,
+        projectCode: updates.projectCode || t.projectCode || currentProject?.code || '',
+        projectStore: updates.projectStore || t.projectStore || currentProject?.store,
+        projectYear: updates.projectYear ?? t.projectYear ?? currentProject?.year,
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      delete (newT as any)._isVirtualSummary;
+
       if (updates.predecessor !== undefined) {
-        let currentTasks = useAppStore.getState().tasks || tasks;
-        let taskNoMap = buildTaskNoMap(projects, currentTasks);
+        let currentTasks = useAppStore.getState().tasks || activeTasks;
+        let taskNoMap = buildTaskNoMap(activeProjects, currentTasks);
         let parts = splitPredecessors(updates.predecessor, taskNoMap);
         if (parts.length >= 2) {
           newT.durationManual = false;
@@ -27396,12 +27380,22 @@ export function useDetailTaskMutations({
         if (updates.predecessor.trim() && (!parsed.length || parsed.some(p => !p.task))) {
           for (const token of parts) {
             const cleanToken = token.replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
-            const matchedProj = projects.find(p => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
-            if (matchedProj && matchedProj.code !== t.projectCode) {
-              const loaded = await ensureProjectTasksLoaded(matchedProj.code);
+            const matchedProj = activeProjects.find(
+              p =>
+                p.code &&
+                cleanToken.toLowerCase().startsWith(p.code.toLowerCase()) &&
+                (!t.projectStore || !p.store || p.store.trim().toLowerCase() === t.projectStore.trim().toLowerCase()) &&
+                (!t.projectYear || !p.year || String(p.year).trim() === String(t.projectYear).trim())
+            ) || activeProjects.find(p => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
+            if (matchedProj && (matchedProj.id !== t.projectId || matchedProj.code !== t.projectCode)) {
+              const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
+                projectId: matchedProj.id,
+                store: matchedProj.store,
+                year: matchedProj.year,
+              });
               if (loaded.length > 0) {
                 currentTasks = useAppStore.getState().tasks || currentTasks;
-                taskNoMap = buildTaskNoMap(projects, currentTasks);
+                taskNoMap = buildTaskNoMap(activeProjects, currentTasks);
                 parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
               }
             }
@@ -27486,28 +27480,59 @@ export function useDetailTaskMutations({
         }
       }
 
-      const updatesToDependents = scheduleDependentTasks(newT, tasks, projects);
+      const latestTasks = useAppStore.getState().tasks || activeTasks;
+      const updatesToDependents = scheduleDependentTasks(newT, latestTasks, activeProjects);
       const batch = writeBatch(db);
 
       const scheduledUpdatedTask = updatesToDependents.find(d => d.id === newT.id);
       if (scheduledUpdatedTask) {
-        newT = scheduledUpdatedTask as any;
+        newT = { ...(scheduledUpdatedTask as any) };
+        delete (newT as any)._isVirtualSummary;
       }
 
-      const allCurrentTasksWithScheduled = tasks.map(tsk => {
-        if (tsk.id === newT.id) return newT;
-        const dep = updatesToDependents.find(d => d.id === tsk.id);
-        return dep || tsk;
+      const depUpdateMap = new Map<string, Task>();
+      updatesToDependents.forEach(d => {
+        const cleanDep = { ...d };
+        delete (cleanDep as any)._isVirtualSummary;
+        depUpdateMap.set(cleanDep.id, cleanDep);
       });
-      if (!allCurrentTasksWithScheduled.some(tsk => tsk.id === newT.id)) {
-        allCurrentTasksWithScheduled.push(newT);
+
+      const affectedProjIds = new Set<string>();
+      const affectedProjCodes = new Set<string>();
+      const registerScope = (item: Partial<Task>) => {
+        if (item.projectId) affectedProjIds.add(String(item.projectId).trim());
+        if (item.projectCode) affectedProjCodes.add(String(item.projectCode).trim().toLowerCase());
+      };
+      registerScope(newT);
+      updatesToDependents.forEach(registerScope);
+
+      const scopedTasksForRollup: Task[] = [];
+      let foundNewT = false;
+      for (let i = 0; i < latestTasks.length; i++) {
+        const tsk = latestTasks[i];
+        if (!tsk || tsk.isDeleted) continue;
+        const matchesScope =
+          (tsk.projectId && affectedProjIds.has(String(tsk.projectId).trim())) ||
+          (tsk.projectCode && affectedProjCodes.has(String(tsk.projectCode).trim().toLowerCase()));
+        if (!matchesScope) continue;
+        if (tsk.id === newT.id) {
+          scopedTasksForRollup.push(newT);
+          foundNewT = true;
+        } else {
+          scopedTasksForRollup.push(depUpdateMap.get(tsk.id) || tsk);
+        }
       }
-      const { updatedParents } = rollupParentTaskDates(allCurrentTasksWithScheduled);
+      if (!foundNewT) {
+        scopedTasksForRollup.push(newT);
+      }
+      const { updatedParents: rawUpdatedParents } = rollupParentTaskDates(scopedTasksForRollup);
+      const updatedParents = rawUpdatedParents.map(pt => {
+        const cleanPt = { ...pt };
+        delete (cleanPt as any)._isVirtualSummary;
+        return cleanPt;
+      });
 
       batch.set(tRef, newT, { merge: true });
-
-      // Rule 9 Mandate: Parent task rollups are computed 100% in-memory on client.
-      // We keep updatedParents in memory via saveTaskStateUnified below, but do NOT issue Firestore writeBatch for parent tasks.
 
       if (updates.delegation === true) {
          const deterministicGroupId = `del_${t.id}`;
@@ -27522,7 +27547,7 @@ export function useDetailTaskMutations({
               name: t.name || 'Delegated Task',
               projectCode: t.projectCode,
               projectStore: t.projectStore,
-              projectYear: (t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))) ? Number(t.projectYear) : (Number(projects.find(p => p.code === t.projectCode)?.year) || new Date().getFullYear()),
+              projectYear: (t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))) ? Number(t.projectYear) : (Number(activeProjects.find(p => p.code === t.projectCode)?.year) || new Date().getFullYear()),
               subTasks: [{ 
                  id: generateId(), 
                  name: '', 
@@ -27543,60 +27568,72 @@ export function useDetailTaskMutations({
          }
       }
 
-      const depUpdates = updatesToDependents.filter(d => d.id !== newT.id);
+      const depUpdates = Array.from(depUpdateMap.values()).filter(d => d.id !== newT.id);
       depUpdates.forEach(depTask => {
         const depRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id);
         batch.set(depRef, { ...depTask, updatedAt: new Date().toISOString() }, { merge: true });
       });
 
       predecessorUpdates.forEach(pu => {
-        if (pu.id !== t.id && !updatesToDependents.some(d => d.id === pu.id)) {
+        if (pu.id !== t.id && !depUpdateMap.has(pu.id)) {
           const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id);
-          batch.update(pRef, { predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+          batch.set(pRef, { predecessor: pu.predecessor, updatedAt: pu.updatedAt }, { merge: true });
         }
       });
       
       const allUpdatesToSave = [
         newT,
         ...depUpdates,
-        ...updatedParents.filter(pt => pt.id !== newT.id && !depUpdates.some(d => d.id === pt.id)),
-        ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdates.some(d => d.id === pu.id))
+        ...updatedParents.filter(pt => pt.id !== newT.id && !depUpdateMap.has(pt.id)),
+        ...predecessorUpdates.filter(pu => pu.id !== t.id && !depUpdateMap.has(pu.id))
       ];
-      const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
-        const prev = tasks.find((tsk) => tsk.id === item.id);
-        return createPatchDeltaItem({
-          docId: item.id,
-          collectionName: 'taka_tasks',
-          previous: prev,
-          updated: item,
-          action: 'update',
-          year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
-        });
-      });
 
-      // Ensure all delta items have the 4-key identity from the original task context
-      deltaItems.forEach(di => {
-        if (di.action === 'update' && di.data) {
-           if (!di.data.projectId && t.projectId) di.data.projectId = t.projectId;
-           if (!di.data.projectCode && t.projectCode) di.data.projectCode = t.projectCode;
-           if (!di.data.projectStore && t.projectStore) di.data.projectStore = t.projectStore;
-           if (!di.data.projectYear && t.projectYear) di.data.projectYear = t.projectYear;
+      // 1. Update Zustand immediately in 0ms so UI responds instantaneously
+      useAppStore.getState().optimisticUpdateTasks(allUpdatesToSave);
+
+      // 2. Offload Firestore commit, Delta broadcast, and Project Date sync in parallel
+      setTimeout(async () => {
+        try {
+          const prevTaskById = new Map<string, Task>();
+          for (let i = 0; i < latestTasks.length; i++) {
+            const item = latestTasks[i];
+            if (item?.id) prevTaskById.set(item.id, item);
+          }
+
+          const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
+            const prev = prevTaskById.get(item.id);
+            return createPatchDeltaItem({
+              docId: item.id,
+              collectionName: 'taka_tasks',
+              previous: prev,
+              updated: item,
+              action: 'update',
+              year: (item as any).projectYear ? String((item as any).projectYear) : (t.projectYear ? String(t.projectYear) : undefined),
+            });
+          });
+
+          deltaItems.forEach(di => {
+            if (di.action === 'update' && di.data) {
+              if (!di.data.projectId && newT.projectId) di.data.projectId = newT.projectId;
+              if (!di.data.projectCode && newT.projectCode) di.data.projectCode = newT.projectCode;
+              if (!di.data.projectStore && newT.projectStore) di.data.projectStore = newT.projectStore;
+              if (!di.data.projectYear && newT.projectYear) di.data.projectYear = newT.projectYear;
+            }
+          });
+
+          const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+          markExplicitDelta(deltaItems);
+          await Promise.all([
+            batch.commit(),
+            saveTaskStateUnified(allUpdatesToSave, { syncProjects: true }),
+          ]);
+          recordBatchDeltas(deltaItems, currentUser.username || currentUser.id).catch(() => {});
+        } catch (error: any) {
+          console.error("Batch commit failed", error);
+          useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+          saveTaskStateUnified([t, ...depUpdates.map(d => latestTasks.find(tsk => tsk.id === d.id) || d)]);
         }
-      });
-
-      saveTaskStateUnified(allUpdatesToSave);
-
-      try {
-        const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
-        markExplicitDelta(deltaItems);
-        await batch.commit();
-        recordBatchDeltas(deltaItems, currentUser.username || currentUser.id).catch(() => {});
-      } catch (error: any) {
-        console.error("Batch commit failed", error);
-        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-        saveTaskStateUnified([t, ...depUpdates.map(d => tasks.find(tsk => tsk.id === d.id) || d)]);
-        return;
-      }
+      }, 0);
       
       undoManager.push({
         description: `Update Task Schedule: ${t.name}`,
@@ -28303,6 +28340,11 @@ export const ExecutiveDashboardProjectsTable: React.FC<ExecutiveDashboardProject
                   <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-200 max-w-[220px]" title={item.name}>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="truncate">{item.name}</span>
+                      {Boolean(item.shopType) && (
+                        <span className="text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1 py-0.2 rounded border border-amber-200 dark:border-amber-800 shrink-0">
+                          {item.shopType}
+                        </span>
+                      )}
                       {Boolean(item.sizeM2 && item.sizeM2 > 0) && (
                         <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1 py-0.2 rounded border border-indigo-200 dark:border-indigo-800 shrink-0">
                           {item.sizeM2} m²
@@ -28379,6 +28421,7 @@ export const ExecutiveDashboardProjectsTable: React.FC<ExecutiveDashboardProject
   );
 });
 ExecutiveDashboardProjectsTable.displayName = 'ExecutiveDashboardProjectsTable';
+
 ================================================================================
 FILE: src/components/ExecutiveDashboardParts/executiveDashboardTypes.ts
 ================================================================================
@@ -28394,6 +28437,7 @@ export interface EVMProjectItem {
   code: string;
   name: string;
   store: string;
+  shopType?: string;
   sizeM2?: number;
   bac: number;
   ac: number;
@@ -28449,6 +28493,7 @@ export interface CashflowData {
   totalYearActual: number;
   totalYearForecast: number;
 }
+
 ================================================================================
 FILE: src/components/ExecutiveDashboardParts/useExecutiveDashboardData.ts
 ================================================================================
@@ -28597,6 +28642,7 @@ export function useExecutiveDashboardData({
         code: p.code,
         name: p.name || p.code,
         store: p.store || 'Unknown',
+        shopType: p.shopType || '',
         sizeM2: p.sizeM2 || 0,
         bac,
         ac,
@@ -28744,6 +28790,7 @@ export function useExecutiveDashboardData({
     cashflowData,
   };
 }
+
 ================================================================================
 FILE: src/components/FastInput.tsx
 import React, { forwardRef, useEffect, useRef, useState } from 'react';
@@ -75119,6 +75166,8 @@ import { getLinkCodesValidationError } from './projectModalTypes';
 import { useProjectModalMutations } from './useProjectModalMutations';
 import { hydrateDelegationsForProjects, hydrateDelegationsFromLocal, hydrateTasksForProjects } from '../../lib/backgroundSyncWorker';
 import { ensureProjectTasksLoaded } from '../../lib/taskStateService';
+import { resolveMatchedUnitSizeM2 } from '../../lib/unitSizeResolver';
+import { useDataStore } from '../PictureMapping/DataContext';
 
 interface UseProjectModalDataParams {
   isOpen: boolean;
@@ -75142,11 +75191,15 @@ export function useProjectModalData({
   const appUsers = useAppStore(state => state.appUsers);
   const subAppUsers = useAppStore(state => state.subAppUsers);
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const mapUnits = useDataStore(state => state.mapUnits);
+  const mapVersions = useDataStore(state => state.mapVersions);
+  const storeLocationData = useDataStore(state => state.storeLocationData);
 
   const [activeTab, setActiveTab] = useState<'details' | 'chat' | 'delegation'>(initialTab);
   const [isAddingLocation, setIsAddingLocation] = useState(false);
   const [newLocation, setNewLocation] = useState("");
   const yearRef = useRef<HTMLInputElement>(null);
+  const lastAutoUnitSizeRef = useRef<number | undefined>(undefined);
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -75188,6 +75241,7 @@ export function useProjectModalData({
     year: new Date().getFullYear(),
     code: '',
     name: '',
+    shopType: '',
     party: '',
     detail: '',
     startMode: 'auto',
@@ -75207,6 +75261,16 @@ export function useProjectModalData({
     const rawLink = formData.linkCodes !== undefined ? String(formData.linkCodes) : String(formData.code || '');
     return getLinkCodesValidationError(rawLink, String(formData.code || ''), project?.id, projects, formData.year, formData.store);
   }, [formData.linkCodes, formData.code, formData.year, formData.store, project?.id, projects]);
+
+  const matchedUnitSizeInfo = useMemo(() => {
+    return resolveMatchedUnitSizeM2({
+      code: formData.code,
+      linkCodes: formData.linkCodes,
+      store: formData.store,
+      location: formData.location,
+      year: formData.year,
+    });
+  }, [formData.code, formData.linkCodes, formData.store, formData.location, formData.year, mapUnits, mapVersions, storeLocationData]);
 
   const { isSubmitting, handleSubmit, handleDelete } = useProjectModalMutations({
     project,
@@ -75241,11 +75305,25 @@ export function useProjectModalData({
 
   useEffect(() => {
     if (project) {
+      const autoMatched = resolveMatchedUnitSizeM2({
+        code: project.code,
+        linkCodes: project.linkCodes ?? project.code,
+        store: project.store,
+        location: project.location,
+        year: project.year,
+      });
+      const initialSize =
+        project.sizeM2 !== undefined && project.sizeM2 !== null && project.sizeM2 > 0
+          ? project.sizeM2
+          : autoMatched.sizeM2;
+      lastAutoUnitSizeRef.current = autoMatched.sizeM2;
       setFormData({
         ...project,
-        linkCodes: project.linkCodes ?? project.code ?? ''
+        linkCodes: project.linkCodes ?? project.code ?? '',
+        ...(initialSize !== undefined ? { sizeM2: initialSize } : {}),
       });
     } else {
+      lastAutoUnitSizeRef.current = undefined;
       let defaultStore = 'HCM';
       if (currentUser?.role !== 'admin') {
         const allowedStores: string[] = [];
@@ -75283,6 +75361,7 @@ export function useProjectModalData({
         code: '',
         linkCodes: '',
         name: '',
+        shopType: '',
         party: '',
         detail: '',
         startMode: 'auto',
@@ -75291,6 +75370,23 @@ export function useProjectModalData({
       });
     }
   }, [project, isOpen, currentUser, locations]);
+
+  // Auto-sync Size (m²) from matched Picture Mapping unit(s) for the selected version/year
+  useEffect(() => {
+    if (!isOpen) return;
+    const nextAutoSize = matchedUnitSizeInfo.sizeM2;
+    if (nextAutoSize !== undefined && nextAutoSize > 0) {
+      setFormData(prev => {
+        const cur = prev.sizeM2;
+        if (cur === undefined || cur === null || cur === 0 || cur === lastAutoUnitSizeRef.current) {
+          lastAutoUnitSizeRef.current = nextAutoSize;
+          if (cur === nextAutoSize) return prev;
+          return { ...prev, sizeM2: nextAutoSize };
+        }
+        return prev;
+      });
+    }
+  }, [isOpen, matchedUnitSizeInfo.sizeM2]);
 
   const handleAddNewLocation = async () => {
     if (!newLocation.trim()) {
@@ -75337,12 +75433,12 @@ export function useProjectModalData({
     confirmModal,
     setConfirmModal,
     yearRef,
+    matchedUnitSizeInfo,
     handleAddNewLocation,
     handleSubmit,
     handleDelete
   };
 }
-
 
 ================================================================================
 FILE: src/components/ProjectModalParts/useProjectModalMutations.ts
@@ -77971,16 +78067,17 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
 
   const handleRepairServer = () => {
     if (!report) return;
+    const missingInFirestoreCount = summaryIssues.reduce((acc, r) => acc + r.ghostInSummary.length, 0);
     onConfirmAction(
-      'Cập nhật Summary theo Firestore',
-      `Ghi đè lại bảng tóm tắt của ${summaryIssues.length} dự án để nhận toàn bộ các task đang có trên server Firestore (bao gồm cả task thừa nếu có). Tiếp tục?`,
+      'Đồng bộ nhanh Summary ⇄ Firestore',
+      `Hệ thống sẽ đồng bộ song song (Mass Batch) cho ${summaryIssues.length} dự án: khôi phục ${missingInFirestoreCount} task đang có trong Summary nhưng bị thiếu trên bảng taka_tasks của Firestore, đồng thời chuẩn hóa lại bộ đếm & ngày rollup cha-con. Tiếp tục?`,
       async () => {
         setRunning(true);
         try {
-          const res = await repairServerSummaries(report, (d, t) => setProgress(`Đang sửa ${d}/${t}...`));
+          const res = await repairServerSummaries(report, (d, t) => setProgress(`Đang đồng bộ nhanh ${d}/${t}...`));
           toast(
-            'Đã cập nhật summary',
-            `Sửa ${res.fixed} dự án. Bỏ qua ${res.skippedEmpty} dự án không có task thật. Hãy chạy kiểm tra lại.`,
+            'Đã đồng bộ Summary ⇄ Firestore',
+            `Đã đồng bộ ${res.fixed} dự án${res.backfilledTasks ? ` và khôi phục ${res.backfilledTasks} task thiếu lên Firestore` : ''}. Hãy bấm Kiểm tra chéo để xác nhận.`,
             'success'
           );
           setReport(null);
@@ -78052,11 +78149,11 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
           <button
             onClick={handleRepairServer}
             disabled={running}
-            title="Đồng bộ danh sách summary theo toàn bộ task trên server (chỉ dùng nếu muốn thêm task trên server vào summary)"
+            title="Khôi phục các task bị thiếu trên Firestore từ Summary và đồng bộ lại toàn bộ Summary"
             className={`${btn} border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20`}
           >
             <Wrench className="w-4 h-4 text-amber-500" />
-            Cập nhật Summary theo Firestore ({summaryIssues.length})
+            Cập nhật Summary ⇄ Firestore ({summaryIssues.length})
           </button>
         )}
 
@@ -78099,7 +78196,7 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                     <th className="px-2 py-1.5">Dự án</th>
                     <th className="px-2 py-1.5">Task Firestore</th>
                     <th className="px-2 py-1.5">Summary chuẩn</th>
-                    <th className="px-2 py-1.5 text-rose-600 dark:text-rose-400">Thừa trên Firestore (ngoài Summary)</th>
+                    <th className="px-2 py-1.5 text-rose-600 dark:text-rose-400">Lệch Firestore vs Summary</th>
                     <th className="px-2 py-1.5">Thiết bị (thiếu / thừa)</th>
                     <th className="px-2 py-1.5 text-right">Thao tác</th>
                   </tr>
@@ -78108,6 +78205,7 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                   {report.issues.slice(0, 80).map((r) => {
                     const isExpanded = expandedProjectId === r.projectId;
                     const hasExcess = r.missingInSummary.length > 0;
+                    const hasMissingInFirestore = r.ghostInSummary.length > 0;
                     const excessTasks = hasExcess
                       ? r.missingInSummary
                           .map((id) => report.internal.serverTasksById.get(id))
@@ -78139,13 +78237,26 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                             {r.summaryTaskCount} / {r.summaryEntryCount}
                           </td>
                           <td className="px-2 py-1">
-                            {hasExcess ? (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-                                +{r.missingInSummary.length} task thừa
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 dark:text-[#777]">-</span>
-                            )}
+                            <div className="flex flex-wrap items-center gap-1">
+                              {hasExcess && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+                                  +{r.missingInSummary.length} task thừa
+                                </span>
+                              )}
+                              {hasMissingInFirestore && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  Thiếu {r.ghostInSummary.length} task trên Firestore
+                                </span>
+                              )}
+                              {!hasExcess && !hasMissingInFirestore && r.summaryIssue && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600 dark:bg-[#2a2a2d] dark:text-[#aaa]">
+                                  Lệch ngày rollup / bộ đếm
+                                </span>
+                              )}
+                              {!hasExcess && !hasMissingInFirestore && !r.summaryIssue && (
+                                <span className="text-slate-400 dark:text-[#777]">-</span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-2 py-1 text-slate-500 dark:text-[#999]">
                             {r.deviceIssue
@@ -78229,6 +78340,7 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
 };
 
 export default SummaryAuditPanel;
+
 
 
 ================================================================================
@@ -90657,14 +90769,18 @@ export async function executeTaskSave({
     if (!finalFormData.party) finalFormData.party = currentProject?.party || 'Takashimaya';
 
     if (cloudStatus === 'offline') {
-      let payload = {
+      let payload: any = {
         ...finalFormData,
         id,
+        projectId: finalFormData.projectId || task?.projectId || currentProject.id,
+        projectCode: finalFormData.projectCode || currentProject.code,
+        projectStore: finalFormData.projectStore || currentProject.store,
         projectYear: Number(currentYear) || new Date().getFullYear(),
         comments: task?.comments || finalFormData.comments || [],
         updatedAt: new Date().toISOString(),
         orderIndex: newOrderIndex
       };
+      delete payload._isVirtualSummary;
       addPendingUpdate({ collectionPath: `artifacts/${APP_ID}/public/data/taka_tasks`, action: 'set', docId: id, data: payload } as any);
       setToast({ title: 'Draft Saved', message: 'Task saved offline. Will sync when connection returns.' });
       onClose();
@@ -90675,11 +90791,15 @@ export async function executeTaskSave({
     let dataToSave: any = {
       ...finalFormData,
       id,
+      projectId: finalFormData.projectId || task?.projectId || currentProject.id,
+      projectCode: finalFormData.projectCode || currentProject.code,
+      projectStore: finalFormData.projectStore || currentProject.store,
       projectYear: Number(currentYear) || new Date().getFullYear(),
       comments: task?.comments || finalFormData.comments || [],
       updatedAt: new Date().toISOString(),
       orderIndex: newOrderIndex
     };
+    delete dataToSave._isVirtualSummary;
 
     dataToSave.realtimeUpdate = Boolean(dataToSave.predecessor && dataToSave.predecessor.trim());
 
@@ -90745,17 +90865,14 @@ export async function executeTaskSave({
       const updatesToDependents = scheduleDependentTasks(dataToSave as Task, tasks, projects);
       const scheduledUpdatedTask = updatesToDependents.find(d => d.id === dataToSave.id);
       if (scheduledUpdatedTask) {
-        dataToSave = scheduledUpdatedTask as any;
+        dataToSave = { ...(scheduledUpdatedTask as any) };
+        delete dataToSave._isVirtualSummary;
       }
       depUpdates = updatesToDependents.filter(d => d.id !== id);
     }
 
     const batch = writeBatch(db);
-    if (task) {
-      batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave);
-    } else {
-      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave);
-    }
+    batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave, { merge: true });
 
     depUpdates.forEach(depTask => {
       const depProj = projects.find(p => p.code === depTask.projectCode);
@@ -90763,9 +90880,10 @@ export async function executeTaskSave({
         ? Number(depTask.projectYear)
         : (depProj?.year && !isNaN(Number(depProj.year)) ? Number(depProj.year) : new Date().getFullYear());
       const pu = predecessorUpdatesMap.get(depTask.id);
-      const data = pu 
+      const data: any = pu 
         ? { ...depTask, projectYear: depYear, predecessor: pu.predecessor, updatedAt: new Date().toISOString() } 
         : { ...depTask, projectYear: depYear, updatedAt: new Date().toISOString() };
+      delete data._isVirtualSummary;
       Object.keys(data).forEach(key => {
         if ((data as any)[key] === undefined) {
           delete (data as any)[key];
@@ -90784,33 +90902,15 @@ export async function executeTaskSave({
     const optimisticList: any[] = [dataToSave];
     depUpdates.forEach(depTask => {
       const pu = predecessorUpdatesMap.get(depTask.id);
-      if (pu) {
-        optimisticList.push({ ...depTask, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
-      } else {
-        optimisticList.push(depTask);
-      }
+      const cleanDep: any = pu ? { ...depTask, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : { ...depTask };
+      delete cleanDep._isVirtualSummary;
+      optimisticList.push(cleanDep);
     });
     predecessorUpdates.forEach(pu => {
       if (!mappedDepUpdates.has(pu.id)) {
         optimisticList.push({ id: pu.id, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
       }
     });
-
-    const isNewTask = !task;
-    const oldAny = (task || {}) as any;
-    const newAny = dataToSave as any;
-    const datesOrStatusChanged =
-      isNewTask ||
-      task?.start !== dataToSave.start ||
-      task?.finish !== dataToSave.finish ||
-      task?.runningStatus !== dataToSave.runningStatus ||
-      task?.approval !== dataToSave.approval ||
-      Boolean(oldAny.isCompleted) !== Boolean(newAny.isCompleted) ||
-      (oldAny.status || '') !== (newAny.status || '') ||
-      task?.projectCode !== dataToSave.projectCode ||
-      task?.projectStore !== dataToSave.projectStore ||
-      task?.projectYear !== dataToSave.projectYear ||
-      depUpdates.length > 0;
 
     // 1. Optimistic in-memory update into Zustand Store (0ms instant UI reaction)
     useAppStore.getState().optimisticUpdateTasks(optimisticList);
@@ -90819,7 +90919,7 @@ export async function executeTaskSave({
     onClose();
     setIsSubmitting(false);
 
-    // 3. Offload network commit, delta emission, Dexie persistence, and project date rollups to background microtask
+    // 3. Offload network commit, delta emission, Dexie persistence, and project date rollups in parallel
     setTimeout(async () => {
       try {
         const deltaItems = optimisticList.map(item => {
@@ -90835,28 +90935,30 @@ export async function executeTaskSave({
         });
         const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
         markExplicitDelta(deltaItems);
-        await batch.commit();
+        await Promise.all([
+          batch.commit(),
+          saveTaskStateUnified(optimisticList, { syncProjects: true }).catch(() => {}),
+        ]);
         recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
 
-        // Background Dexie persistence & project summarization
-        saveTaskStateUnified(optimisticList, { syncProjects: true }).catch(() => {});
-
-        if (datesOrStatusChanged) {
+        // If task moved from an older project/store/year, also resync the previous project's taskSummaries
+        if (
+          task &&
+          (task.projectId !== dataToSave.projectId ||
+            task.projectCode !== dataToSave.projectCode ||
+            task.projectStore !== dataToSave.projectStore ||
+            task.projectYear !== dataToSave.projectYear)
+        ) {
           const allTasksCurrent = useAppStore.getState().tasks;
-          const targetProjId = dataToSave.projectId ? String(dataToSave.projectId) : (currentProject?.id ? String(currentProject.id) : undefined);
-          syncProjectDatesByCode(dataToSave.projectCode, dataToSave.projectStore, dataToSave.projectYear, allTasksCurrent, targetProjId);
-          if (task && (task.projectCode !== dataToSave.projectCode || task.projectStore !== dataToSave.projectStore || task.projectYear !== dataToSave.projectYear)) {
-            const oldProjId = task.projectId ? String(task.projectId) : targetProjId;
-            syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent, oldProjId);
-          }
+          const oldProjId = task.projectId ? String(task.projectId) : undefined;
+          syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent, oldProjId);
         }
       } catch (error: any) {
         console.error("Background task save failed:", error);
-        // Fallback to offline queue to prevent silent data loss
         optimisticList.forEach(item => {
           addPendingUpdate({
             collectionPath: `artifacts/${APP_ID}/public/data/taka_tasks`,
-            action: task ? 'update' : 'set',
+            action: 'set',
             docId: item.id,
             data: item
           } as any);
@@ -90900,6 +91002,7 @@ export async function executeTaskSave({
     return false;
   }
 }
+
 
 ================================================================================
 FILE: src/hooks/taskModal/useTaskModalFormState.ts
@@ -92009,10 +92112,13 @@ export function useDetailTaskReorder({
 
       sorted.forEach((t, index) => {
         const newCode = `${p.code}#${index + 1}`;
-        if (t.orderIndex !== index || t.taskCodePhu !== newCode) {
+        const origTask = groupTasks.find(gt => gt.id === t.id) || t;
+        const parentChanged = t.parentTaskId !== origTask.parentTaskId;
+        if (t.orderIndex !== index || t.taskCodePhu !== newCode || parentChanged) {
           updatesPerTask.set(t.id, { 
             orderIndex: index, 
-            taskCodePhu: newCode, 
+            taskCodePhu: newCode,
+            ...(t.parentTaskId ? { parentTaskId: t.parentTaskId } : {}),
             updatedAt: now 
           });
         }
@@ -92039,13 +92145,18 @@ export function useDetailTaskReorder({
         });
       }
 
-      // Heal all remaining legacy or out-of-sync predecessors
+      // Heal all remaining legacy or out-of-sync predecessors (including parent task SS/FF rollup predecessors)
       const healed = healAllTasksPredecessors(allUpdatedTasks, projects);
       if (healed.changedCount > 0) {
         allUpdatedTasks = healed.updatedTasks;
         healed.updatesToSave.forEach(u => {
           const existingUpdates = updatesPerTask.get(u.id) || {};
-          updatesPerTask.set(u.id, { ...existingUpdates, predecessor: u.predecessor, updatedAt: u.updatedAt });
+          updatesPerTask.set(u.id, {
+            ...existingUpdates,
+            ...(u.predecessor !== undefined ? { predecessor: u.predecessor } : {}),
+            ...(u.taskCodePhu !== undefined ? { taskCodePhu: u.taskCodePhu } : {}),
+            updatedAt: u.updatedAt,
+          });
         });
       }
 
@@ -92054,7 +92165,7 @@ export function useDetailTaskReorder({
 
       updatesPerTask.forEach((updates, taskId) => {
         const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
-        batch.update(tRef, updates);
+        batch.set(tRef, updates, { merge: true });
       });
 
       try {
@@ -92130,13 +92241,18 @@ export function useDetailTaskReorder({
         });
       }
 
-      // Heal any remaining legacy or out-of-sync predecessors
+      // Heal any remaining legacy or out-of-sync predecessors (including parent task SS/FF rollup predecessors)
       const healed = healAllTasksPredecessors(allUpdatedTasks, projects);
       if (healed.changedCount > 0) {
         allUpdatedTasks = healed.updatedTasks;
         healed.updatesToSave.forEach(u => {
           const existingUpdates = updatesPerTask.get(u.id) || {};
-          updatesPerTask.set(u.id, { ...existingUpdates, predecessor: u.predecessor, updatedAt: u.updatedAt });
+          updatesPerTask.set(u.id, {
+            ...existingUpdates,
+            ...(u.predecessor !== undefined ? { predecessor: u.predecessor } : {}),
+            ...(u.taskCodePhu !== undefined ? { taskCodePhu: u.taskCodePhu } : {}),
+            updatedAt: u.updatedAt,
+          });
         });
       }
 
@@ -92145,7 +92261,7 @@ export function useDetailTaskReorder({
 
       updatesPerTask.forEach((updates, taskId) => {
         const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
-        batch.update(tRef, updates);
+        batch.set(tRef, updates, { merge: true });
       });
 
       try {
@@ -92266,7 +92382,7 @@ export function useDetailTaskReorder({
 
       for (const tu of result.taskUpdates) {
         const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", tu.id);
-        currentWriteBatch.update(tRef, tu.updates);
+        currentWriteBatch.set(tRef, tu.updates, { merge: true });
         writeCount++;
         if (writeCount >= 400) {
           writeBatches.push(currentWriteBatch.commit());
@@ -92279,10 +92395,10 @@ export function useDetailTaskReorder({
         const alreadyInBatch = result.taskUpdates.some((tu) => tu.id === pu.id);
         if (!alreadyInBatch) {
           const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", pu.id);
-          currentWriteBatch.update(tRef, {
+          currentWriteBatch.set(tRef, {
             predecessor: pu.predecessor,
             updatedAt: pu.updatedAt,
-          });
+          }, { merge: true });
           writeCount++;
           if (writeCount >= 400) {
             writeBatches.push(currentWriteBatch.commit());
@@ -104292,7 +104408,7 @@ export async function exportToExcel({ activeTab, sortedProjects }: ExportToExcel
 
   if (activeTab === 'general') {
     const wsData: (string | number)[][] = [];
-    wsData.push(["Year", "Store", "Location", "Code", "Project", "Size (m²)", "Status", "Pj Start", "Pj Compl", "Opening"]);
+    wsData.push(["Year", "Store", "Location", "Code", "Project", "Shop Type", "Size (m²)", "Status", "Pj Start", "Pj Compl", "Opening"]);
     sortedProjects.forEach((p) => {
       wsData.push([
         p.year || "",
@@ -104300,6 +104416,7 @@ export async function exportToExcel({ activeTab, sortedProjects }: ExportToExcel
         p.location || "",
         p.code,
         p.name,
+        p.shopType || "",
         p.sizeM2 !== undefined && p.sizeM2 !== null ? p.sizeM2 : "",
         getStatus(p.computedTakStart, p.computedTakCompl, p.computedOpening || p.opening, p.code),
         p.computedTakStart ? String(p.computedTakStart).substring(0, 10) : "",
@@ -104625,6 +104742,8 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
 
   pdf.save(`export_${activeTab}_${Date.now()}.pdf`);
 }
+
+
 ================================================================================
 FILE: src/lib/financialAtomicService.ts
 ================================================================================
@@ -113426,6 +113545,44 @@ export function calculateProjectComputedDates(
  * Đã tích hợp Dirty Check: Chỉ ghi vào Firestore khi có sự thay đổi thực sự
  * về mốc thời gian (start, finish/compl, opening), tiến độ hoặc số lượng task.
  */
+const pendingProjectSyncPayloads = new Map<string, { payload: Record<string, any>; year?: string }>();
+const inFlightProjectSyncSet = new Set<string>();
+
+async function flushProjectSummarySync(projectId: string): Promise<void> {
+  if (inFlightProjectSyncSet.has(projectId)) return;
+  inFlightProjectSyncSet.add(projectId);
+  try {
+    const [{ markExplicitDelta }, { recordDelta }] = await Promise.all([
+      import("./autoDeltaQueue"),
+      import("./deltaSyncService"),
+    ]);
+    while (pendingProjectSyncPayloads.has(projectId)) {
+      const next = pendingProjectSyncPayloads.get(projectId)!;
+      pendingProjectSyncPayloads.delete(projectId);
+      const projectRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", projectId);
+      markExplicitDelta([{ docId: projectId, collectionName: "taka_projects" }]);
+      await Promise.all([
+        setDoc(projectRef, next.payload, { merge: true }),
+        recordDelta({
+          docId: projectId,
+          collectionName: "taka_projects",
+          action: "update",
+          isPatch: true,
+          data: next.payload,
+          year: next.year,
+        }).catch(() => {}),
+      ]);
+    }
+  } catch (error) {
+    console.error(`Error syncing computed dates for project ${projectId}:`, error);
+  } finally {
+    inFlightProjectSyncSet.delete(projectId);
+    if (pendingProjectSyncPayloads.has(projectId)) {
+      flushProjectSummarySync(projectId).catch(() => {});
+    }
+  }
+}
+
 export async function syncProjectDatesToFirestore(
   projectId: string,
   dates: ComputedProjectDates
@@ -113438,12 +113595,9 @@ export async function syncProjectDatesToFirestore(
     const existingCount = existingProject?.taskCount || existingProject?.taskSummaries?.length || 0;
     const existingSummaries = existingProject?.taskSummaries || [];
 
-    // When computed, dates.taskSummaries and dates.taskCount are authoritative
     const safeTaskSummaries = dates.taskSummaries !== undefined ? dates.taskSummaries : existingSummaries;
     const safeTaskCount = dates.taskCount !== undefined ? dates.taskCount : existingCount;
 
-    // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task, taskSummaries) thực sự thay đổi.
-    // Sử dụng canonical signature không phụ thuộc thứ tự key của object từ Firestore/IndexedDB để tránh ghi thừa.
     const toSummariesSig = (list: any[]) =>
       (list || [])
         .map(
@@ -113461,7 +113615,6 @@ export async function syncProjectDatesToFirestore(
       Number(existingProject.taskCount ?? 0) !== Number(safeTaskCount ?? dates.taskCount ?? 0) ||
       toSummariesSig(existingProject.taskSummaries || []) !== toSummariesSig(safeTaskSummaries || dates.taskSummaries || []);
 
-    // Cập nhật Optimistic in-memory Store tức thời (0ms) để UI đồng bộ mượt mà
     let updatedProjectObj: Project | null = null;
     if (existingProject) {
       const updated = projects.map((p) => {
@@ -113484,43 +113637,17 @@ export async function syncProjectDatesToFirestore(
       }
     }
 
-    if (!hasChanged) {
-      // Dữ liệu tổng hợp không đổi -> Tiết kiệm 100% lượt Write cho project tổng hợp
-      return;
-    }
-
-    const projectRef = doc(
-      db,
-      "artifacts",
-      APP_ID,
-      "public",
-      "data",
-      "taka_projects",
-      projectId
-    );
+    if (!hasChanged) return;
 
     const updatePayload: Record<string, any> = {
       updatedAt: new Date().toISOString(),
     };
-
-    if (dates.computedTakStart !== undefined) {
-      updatePayload.computedTakStart = dates.computedTakStart;
-    }
-    if (dates.computedTakCompl !== undefined) {
-      updatePayload.computedTakCompl = dates.computedTakCompl;
-    }
-    if (dates.computedOpening !== undefined) {
-      updatePayload.computedOpening = dates.computedOpening;
-    }
-    if (dates.computedPlanProgress !== undefined) {
-      updatePayload.computedPlanProgress = dates.computedPlanProgress;
-    }
-    if (dates.computedActProgress !== undefined) {
-      updatePayload.computedActProgress = dates.computedActProgress;
-    }
-    if (safeTaskCount !== undefined) {
-      updatePayload.taskCount = safeTaskCount;
-    }
+    if (dates.computedTakStart !== undefined) updatePayload.computedTakStart = dates.computedTakStart;
+    if (dates.computedTakCompl !== undefined) updatePayload.computedTakCompl = dates.computedTakCompl;
+    if (dates.computedOpening !== undefined) updatePayload.computedOpening = dates.computedOpening;
+    if (dates.computedPlanProgress !== undefined) updatePayload.computedPlanProgress = dates.computedPlanProgress;
+    if (dates.computedActProgress !== undefined) updatePayload.computedActProgress = dates.computedActProgress;
+    if (safeTaskCount !== undefined) updatePayload.taskCount = safeTaskCount;
     if (safeTaskSummaries !== undefined) {
       updatePayload.taskSummaries = safeTaskSummaries.map((ts: any) => {
         const item: Record<string, any> = {};
@@ -113533,21 +113660,11 @@ export async function syncProjectDatesToFirestore(
       });
     }
 
-    const { markExplicitDelta } = await import("./autoDeltaQueue");
-    markExplicitDelta([{ docId: projectId, collectionName: "taka_projects" }]);
-
-    await setDoc(projectRef, updatePayload, { merge: true });
-
-    // Phát tín hiệu delta của taka_projects để các thiết bị khác đồng bộ real-time
-    const { recordDelta } = await import("./deltaSyncService");
-    recordDelta({
-      docId: projectId,
-      collectionName: "taka_projects",
-      action: "update",
-      isPatch: true,
-      data: updatePayload,
+    pendingProjectSyncPayloads.set(projectId, {
+      payload: updatePayload,
       year: existingProject?.year ? String(existingProject.year) : undefined,
-    }).catch(() => {});
+    });
+    await flushProjectSummarySync(projectId);
   } catch (error) {
     console.error(`Error syncing computed dates for project ${projectId}:`, error);
   }
@@ -113595,6 +113712,9 @@ export {
   computeProjectActStatus,
   syncAllProjectsTaskCountFromFirestore,
 } from "./projectDatesBackfill";
+
+
+
 
 ================================================================================
 FILE: src/lib/r2StorageUtils.ts
@@ -114390,32 +114510,18 @@ export const deleteStorageFiles = async (urls: string[]) => {
 FILE: src/lib/summaryAuditService.ts
 ================================================================================
 /**
- * summaryAuditService.ts
- *
- * Kiểm tra chéo 3 lớp dữ liệu:
- *   (1) Task thật trên Firestore  (nguồn sự thật)
- *   (2) "Summary" của từng dự án trên Firestore (taskCount + taskSummaries trong tài liệu dự án)
- *   (3) Dữ liệu đang giữ trên thiết bị này (Zustand + Dexie)
- *
- * Quy trình: đọc toàn bộ dự án và task từ SERVER một lần (tốn đúng bằng số tài liệu), rồi so sánh.
- * Chỉ dùng thủ công (admin). Đọc: số dự án + số task. Không ghi gì cho đến khi bấm sửa.
+ * summaryAuditService.ts - Kiểm tra chéo 3 lớp dữ liệu: (1) Task Firestore, (2) Summary dự án, (3) Local (Zustand + Dexie).
  */
 import { collection, getDocsFromServer } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { Project, Task } from '../types';
-import {
-  calculateProjectComputedDates,
-  syncProjectDatesToFirestore,
-  matchProjectCode,
-} from './projectDatesService';
+import { calculateProjectComputedDates, matchProjectCode } from './projectDatesService';
 import { normalizeStoreCode, normalizeYearString } from './taskDeduplicationService';
 import { bulkPersistTasks, bulkPersistProjects, deleteLocalRecord } from './localDb';
 
-const RECENT_EDIT_GUARD_MS = 10 * 60 * 1000; // task sửa trong 10 phút gần đây: không coi là "thừa" trên thiết bị
-
+const RECENT_EDIT_GUARD_MS = 10 * 60 * 1000;
 const norm = (v: unknown): string => String(v ?? '').trim().toLowerCase();
-
 const identityKey = (code: unknown, store: unknown, year: unknown): string =>
   `${norm(code)}__${normalizeStoreCode(store as any)}__${normalizeYearString(year as any)}`;
 
@@ -114424,18 +114530,18 @@ export interface AuditRow {
   code: string;
   store: string;
   year: string;
-  serverTaskCount: number; // số task thật (chưa xóa) thuộc dự án trên Firestore
-  summaryTaskCount: number; // project.taskCount trên Firestore
-  summaryEntryCount: number; // độ dài taskSummaries trên Firestore
-  missingInSummary: string[]; // task thật nhưng không có trong summary
-  ghostInSummary: string[]; // mục summary không có task thật tương ứng
-  noIdEntries: number; // mục summary không có id
+  serverTaskCount: number;
+  summaryTaskCount: number;
+  summaryEntryCount: number;
+  missingInSummary: string[];
+  ghostInSummary: string[];
+  noIdEntries: number;
   countMismatch: boolean;
   summaryIssue: boolean;
-  loadedLocally: boolean; // thiết bị này đã nạp task của dự án
-  missingLocal: string[]; // task có trên server nhưng thiết bị chưa có
-  ghostLocal: string[]; // task thiết bị có nhưng server không có
-  localProjectStale: boolean; // bản dự án trên thiết bị khác bản trên server
+  loadedLocally: boolean;
+  missingLocal: string[];
+  ghostLocal: string[];
+  localProjectStale: boolean;
   deviceIssue: boolean;
 }
 
@@ -114443,8 +114549,8 @@ export interface AuditReport {
   generatedAt: number;
   projectCount: number;
   taskCount: number;
-  orphanCount: number; // task không thuộc dự án nào
-  ambiguousCount: number; // task khớp nhiều dự án
+  orphanCount: number;
+  ambiguousCount: number;
   issues: AuditRow[];
   internal: {
     projects: Map<string, Project>;
@@ -114475,19 +114581,12 @@ function buildOwnerResolver(projects: Project[]) {
     if (exact && exact.length === 1) return { owner: exact[0], status: 'ok' };
     if (exact && exact.length > 1) return { status: 'ambiguous' };
 
-    // Task cũ thiếu store/year, hoặc dự án nhiều mã (linkCodes): khớp theo mã, chỉ nhận khi duy nhất
-    const sameStore = (p: Project) =>
-      !t.projectStore || normalizeStoreCode(p.store) === normalizeStoreCode(t.projectStore as any);
+    const sameStore = (p: Project) => !t.projectStore || normalizeStoreCode(p.store) === normalizeStoreCode(t.projectStore as any);
     const sameYear = (p: Project) =>
-      t.projectYear === undefined ||
-      t.projectYear === null ||
-      t.projectYear === '' ||
+      t.projectYear === undefined || t.projectYear === null || t.projectYear === '' ||
       normalizeYearString(p.year as any) === normalizeYearString(t.projectYear as any);
     const candidates = projects.filter(
-      (p) =>
-        sameStore(p) &&
-        sameYear(p) &&
-        (matchProjectCode(p.code, t.projectCode) || matchProjectCode((p as any).linkCodes, t.projectCode))
+      (p) => sameStore(p) && sameYear(p) && (matchProjectCode(p.code, t.projectCode) || matchProjectCode((p as any).linkCodes, t.projectCode))
     );
     if (candidates.length === 1) return { owner: candidates[0], status: 'ok' };
     if (candidates.length > 1) return { status: 'ambiguous' };
@@ -114502,12 +114601,8 @@ const isRecent = (t: Task): boolean => {
 
 export async function runSummaryAudit(onProgress?: (msg: string) => void): Promise<AuditReport> {
   onProgress?.('Đang đọc dự án từ Firestore (server)...');
-  const projSnap = await getDocsFromServer(
-    collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects')
-  );
-  const projects = projSnap.docs
-    .map((d) => ({ ...(d.data() as any), id: d.id } as Project))
-    .filter((p) => !p.isDeleted);
+  const projSnap = await getDocsFromServer(collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects'));
+  const projects = projSnap.docs.map((d) => ({ ...(d.data() as any), id: d.id } as Project)).filter((p) => !p.isDeleted);
 
   onProgress?.(`Đã đọc ${projects.length} dự án. Đang đọc task từ Firestore (server)...`);
   const taskSnap = await getDocsFromServer(
@@ -114567,17 +114662,41 @@ export async function runSummaryAudit(onProgress?: (msg: string) => void): Promi
 
     const summaries: any[] = Array.isArray(p.taskSummaries) ? (p.taskSummaries as any[]) : [];
     const summaryIds = new Set<string>();
+    const summaryById = new Map<string, any>();
     let noIdEntries = 0;
     summaries.forEach((s) => {
-      if (s && s.id) summaryIds.add(String(s.id));
-      else noIdEntries++;
+      if (s && s.id) {
+        const sid = String(s.id);
+        summaryIds.add(sid);
+        summaryById.set(sid, s);
+      } else {
+        noIdEntries++;
+      }
+    });
+
+    const computedForAudit = owned.length > 0 ? calculateProjectComputedDates(p, owned, st.delegationGroups || []) : null;
+    const expectedSummaries = computedForAudit?.taskSummaries || [];
+    const hasParentOrRollupDrift = expectedSummaries.some((es: any) => {
+      if (!es?.id) return false;
+      const cur = summaryById.get(String(es.id));
+      if (!cur) return true;
+      return (
+        (cur.parentTaskId || '') !== (es.parentTaskId || '') ||
+        Boolean(cur.isModularParent) !== Boolean(es.isModularParent) ||
+        (cur.start || '') !== (es.start || '') ||
+        (cur.finish || '') !== (es.finish || '')
+      );
     });
 
     const missingInSummary = [...expectedSummaryIds].filter((id) => !summaryIds.has(id));
     const ghostInSummary = [...summaryIds].filter((id) => !ownedIds.has(id));
     const countMismatch = Number(p.taskCount ?? 0) !== owned.length;
     const summaryIssue =
-      missingInSummary.length > 0 || ghostInSummary.length > 0 || noIdEntries > 0 || countMismatch;
+      missingInSummary.length > 0 ||
+      ghostInSummary.length > 0 ||
+      noIdEntries > 0 ||
+      countMismatch ||
+      hasParentOrRollupDrift;
 
     const localOwned = localOwner.get(pid) || [];
     const localIds = new Set(localOwned.map((t) => t.id));
@@ -114629,56 +114748,165 @@ export async function runSummaryAudit(onProgress?: (msg: string) => void): Promi
 }
 
 /**
- * Sửa summary trên Firestore: dựng lại taskCount + taskSummaries CHỈ từ task thật (không gộp summary cũ).
- * Bỏ qua dự án mà server không có task nào nhưng summary đang có dữ liệu (cần xem thủ công).
+ * Đồng bộ hai chiều Summary ⇄ Firestore (taka_tasks & taka_projects):
+ * Khôi phục task thiếu trên Firestore từ Summary, chuẩn hóa rollup cha-con & ghi Mass Batch song song.
  */
 export async function repairServerSummaries(
   report: AuditReport,
   onProgress?: (done: number, total: number) => void
-): Promise<{ fixed: number; skippedEmpty: number }> {
+): Promise<{ fixed: number; skippedEmpty: number; backfilledTasks?: number }> {
   if (Date.now() - report.generatedAt > 10 * 60 * 1000) {
     throw new Error('Báo cáo đã cũ hơn 10 phút. Hãy chạy kiểm tra lại trước khi sửa.');
   }
   const targets = report.issues.filter((r) => r.summaryIssue);
-  let fixed = 0;
-  let skippedEmpty = 0;
+  if (targets.length === 0) return { fixed: 0, skippedEmpty: 0, backfilledTasks: 0 };
+
+  const { doc } = await import('firebase/firestore');
+  const { writeBatch } = await import('./firestoreWrites');
+  const { recordBatchDeltas } = await import('./deltaSyncService');
+  const { isTaskDeletedInTracker } = await import('./taskDeletedTracker');
+  const { markExplicitDelta } = await import('./autoDeltaQueue');
+
+  let fixed = 0, skippedEmpty = 0, backfilledTasks = 0;
+  const nowIso = new Date().toISOString();
+  const batchOps: { ref: any; data: any }[] = [];
+  const deltaItems: any[] = [];
+  const localTasksToUpsert: Task[] = [];
+  const updatedServerProjects = new Map<string, Project>();
+  const delegationGroups = useAppStore.getState().delegationGroups || [];
 
   for (let i = 0; i < targets.length; i++) {
     const row = targets[i];
-    onProgress?.(i + 1, targets.length);
     const serverProject = report.internal.projects.get(row.projectId);
     if (!serverProject) continue;
-    if (row.serverTaskCount === 0 && (row.summaryTaskCount > 0 || row.summaryEntryCount > 0)) {
-      skippedEmpty++;
-      continue;
-    }
 
-    // Đưa bản server vào store trước để phép so sánh "dirty check" trong syncProjectDatesToFirestore
-    // so với dữ liệu server chứ không phải bản cục bộ cũ.
-    const st = useAppStore.getState();
-    if (st.projects.some((p) => p.id === row.projectId)) {
-      st.setProjects(
-        st.projects.map((p) => (p.id === row.projectId ? ({ ...p, ...serverProject } as Project) : p))
-      );
-    }
+    const owned = [...(report.internal.ownerTasks.get(row.projectId) || [])];
+    const ownedById = new Map<string, Task>(owned.map((t) => [String(t.id), t]));
+    const rawSummaries: any[] = Array.isArray(serverProject.taskSummaries) ? (serverProject.taskSummaries as any[]) : [];
 
-    const owned = report.internal.ownerTasks.get(row.projectId) || [];
-    const computed = calculateProjectComputedDates(
-      { ...serverProject, taskSummaries: [] } as Project,
-      owned,
-      useAppStore.getState().delegationGroups || []
-    );
-    await syncProjectDatesToFirestore(row.projectId, computed);
+    rawSummaries.forEach((s, idx) => {
+      if (!s || !s.id) return;
+      const sid = String(s.id);
+      if (ownedById.has(sid) || isTaskDeletedInTracker(sid)) return;
+      if (!s.name && !s.start && !s.finish && !s.taskCodePhu) return;
+
+      const taskId = sid.startsWith('ts_') ? `t_${Date.now()}_${Math.random().toString(36).substring(2, 9)}` : sid;
+      const numYear = Number(serverProject.year);
+      const restoredTask: Task = {
+        id: taskId,
+        projectId: String(serverProject.id),
+        projectCode: String(serverProject.code || ''),
+        projectStore: serverProject.store,
+        projectYear: !isNaN(numYear) && numYear > 0 ? numYear : (serverProject.year as any),
+        name: String(s.name || ''),
+        start: String(s.start || ''),
+        finish: String(s.finish || s.start || ''),
+        baselineStart: String(s.baselineStart || s.start || ''),
+        baselineFinish: String(s.baselineFinish || s.finish || s.start || ''),
+        duration: s.duration !== undefined && s.duration !== null ? String(s.duration) : '0',
+        durationManual: Boolean(s.durationManual), finishManual: Boolean(s.finishManual),
+        runningStatus: s.runningStatus || 'Not Started',
+        approval: s.approval || 'Not Approved',
+        party: String(s.party || serverProject.party || 'Takashimaya'),
+        predecessor: String(s.predecessor || ''),
+        taskCodePhu: String(s.taskCodePhu || ''),
+        orderIndex: typeof s.orderIndex === 'number' ? s.orderIndex : idx,
+        ...(s.parentTaskId ? { parentTaskId: String(s.parentTaskId) } : {}),
+        ...(s.isModularParent !== undefined ? { isModularParent: Boolean(s.isModularParent) } : {}),
+        ...(s.delegation !== undefined ? { delegation: Boolean(s.delegation) } : {}),
+        ...(s.realtimeUpdate !== undefined ? { realtimeUpdate: Boolean(s.realtimeUpdate) } : {}),
+        updatedAt: s.updatedAt || nowIso,
+      };
+      owned.push(restoredTask);
+      ownedById.set(taskId, restoredTask);
+      localTasksToUpsert.push(restoredTask);
+      backfilledTasks++;
+
+      batchOps.push({ ref: doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', taskId), data: restoredTask });
+      deltaItems.push({ docId: taskId, collectionName: 'taka_tasks', action: 'create', data: restoredTask, year: serverProject.year ? String(serverProject.year) : undefined });
+    });
+
+    const computed = calculateProjectComputedDates({ ...serverProject, taskSummaries: [] } as Project, owned, delegationGroups);
+
+    (computed.taskSummaries || []).forEach((es: any) => {
+      if (!es?.id) return;
+      const existingTask = ownedById.get(String(es.id));
+      if (!existingTask) return;
+      const parentChanged =
+        Boolean(existingTask.isModularParent) !== Boolean(es.isModularParent) ||
+        (Boolean(es.isModularParent) && ((existingTask.start || '') !== (es.start || '') || (existingTask.finish || '') !== (es.finish || '')));
+      if (parentChanged) {
+        const patchedParent: Task = {
+          ...existingTask,
+          start: es.start || existingTask.start,
+          finish: es.finish || existingTask.finish,
+          duration: es.duration ?? existingTask.duration,
+          isModularParent: Boolean(es.isModularParent),
+          updatedAt: nowIso,
+        };
+        localTasksToUpsert.push(patchedParent);
+        batchOps.push({
+          ref: doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', patchedParent.id),
+          data: { start: patchedParent.start, finish: patchedParent.finish, duration: patchedParent.duration, isModularParent: patchedParent.isModularParent, updatedAt: nowIso },
+        });
+      }
+    });
+
+    const cleanSummaries = (computed.taskSummaries || []).map((ts: any) => {
+      const item: Record<string, any> = {};
+      for (const [k, v] of Object.entries(ts)) {
+        if (v !== undefined && v !== null && v !== '' && v !== false && k !== '_isVirtualSummary') item[k] = v;
+      }
+      return item;
+    });
+
+    const projPayload: Record<string, any> = {
+      computedTakStart: computed.computedTakStart,
+      computedTakCompl: computed.computedTakCompl,
+      computedOpening: computed.computedOpening,
+      computedPlanProgress: computed.computedPlanProgress,
+      computedActProgress: computed.computedActProgress,
+      taskCount: computed.taskCount ?? cleanSummaries.length,
+      taskSummaries: cleanSummaries,
+      updatedAt: nowIso,
+    };
+
+    batchOps.push({ ref: doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', row.projectId), data: projPayload });
+    deltaItems.push({ docId: row.projectId, collectionName: 'taka_projects', action: 'update', isPatch: true, data: projPayload, year: serverProject.year ? String(serverProject.year) : undefined });
+    updatedServerProjects.set(row.projectId, { ...serverProject, ...projPayload } as Project);
     fixed++;
   }
-  return { fixed, skippedEmpty };
+
+  if (batchOps.length > 0) {
+    if (deltaItems.length > 0) markExplicitDelta(deltaItems);
+    const CHUNK = 400;
+    const commits: Promise<any>[] = [];
+    for (let i = 0; i < batchOps.length; i += CHUNK) {
+      const b = writeBatch(db);
+      batchOps.slice(i, i + CHUNK).forEach((op) => b.set(op.ref, op.data, { merge: true }));
+      commits.push(b.commit());
+    }
+    await Promise.all(commits);
+    onProgress?.(targets.length, targets.length);
+    if (deltaItems.length > 0) {
+      const user = useAppStore.getState().currentUser;
+      recordBatchDeltas(deltaItems, user?.email || user?.username || 'summary_audit').catch(() => {});
+    }
+  }
+
+  const st = useAppStore.getState();
+  if (localTasksToUpsert.length > 0) {
+    st.optimisticUpdateTasks(localTasksToUpsert);
+    await bulkPersistTasks(localTasksToUpsert).catch(() => {});
+  }
+  if (updatedServerProjects.size > 0) {
+    st.setProjects((st.projects || []).map((p) => (p.id && updatedServerProjects.has(String(p.id)) ? ({ ...p, ...updatedServerProjects.get(String(p.id)) } as Project) : p)));
+    await bulkPersistProjects(Array.from(updatedServerProjects.values())).catch(() => {});
+  }
+
+  return { fixed, skippedEmpty, backfilledTasks };
 }
 
-/**
- * Sửa dữ liệu trên thiết bị này theo Firestore:
- *  - thêm task còn thiếu, xóa task thừa (không động đến task sửa trong 10 phút gần đây)
- *  - thay bản dự án cũ bằng bản server (Zustand + Dexie)
- */
 export async function repairLocalDevice(
   report: AuditReport
 ): Promise<{ added: number; removed: number; projectsRefreshed: number }> {
@@ -114690,16 +114918,14 @@ export async function repairLocalDevice(
   const toAddMap = new Map<string, Task>();
   const staleProjectIds = new Set<string>();
 
-  report.issues
-    .filter((r) => r.deviceIssue)
-    .forEach((r) => {
-      r.ghostLocal.forEach((id) => toDelete.add(id));
-      r.missingLocal.forEach((id) => {
-        const t = report.internal.serverTasksById.get(id);
-        if (t) toAddMap.set(id, t);
-      });
-      if (r.localProjectStale) staleProjectIds.add(r.projectId);
+  report.issues.filter((r) => r.deviceIssue).forEach((r) => {
+    r.ghostLocal.forEach((id) => toDelete.add(id));
+    r.missingLocal.forEach((id) => {
+      const t = report.internal.serverTasksById.get(id);
+      if (t) toAddMap.set(id, t);
     });
+    if (r.localProjectStale) staleProjectIds.add(r.projectId);
+  });
 
   const currentTasks = st.tasks || [];
   const kept = currentTasks.filter((t) => !toDelete.has(t.id));
@@ -114734,10 +114960,6 @@ export async function repairLocalDevice(
   return { added: added.length, removed: toDelete.size, projectsRefreshed };
 }
 
-/**
- * Xóa vĩnh viễn các task thừa trên Firestore (taka_tasks) không nằm trong Summary chuẩn của dự án.
- * Đây là các task mồ côi / tàn dư từ các đợt import cũ, giúp đưa số task thật trên Firestore khớp 100% với Summary.
- */
 export async function purgeExcessFirestoreTasks(
   report: AuditReport,
   targetProjectIds?: string[],
@@ -114746,51 +114968,37 @@ export async function purgeExcessFirestoreTasks(
   if (Date.now() - report.generatedAt > 10 * 60 * 1000) {
     throw new Error('Báo cáo đã cũ hơn 10 phút. Hãy chạy kiểm tra lại trước khi xóa.');
   }
-
-  const targets = report.issues.filter((r) => {
-    if (targetProjectIds && targetProjectIds.length > 0) {
-      return targetProjectIds.includes(r.projectId) && r.missingInSummary.length > 0;
-    }
-    return r.missingInSummary.length > 0;
-  });
-
-  if (targets.length === 0) {
-    return { purgedTasks: 0, updatedProjects: 0 };
-  }
+  const targets = report.issues.filter((r) =>
+    targetProjectIds && targetProjectIds.length > 0
+      ? targetProjectIds.includes(r.projectId) && r.missingInSummary.length > 0
+      : r.missingInSummary.length > 0
+  );
+  if (targets.length === 0) return { purgedTasks: 0, updatedProjects: 0 };
 
   const { doc } = await import('firebase/firestore');
   const { writeBatch } = await import('./firestoreWrites');
-  const { db, APP_ID } = await import('./firebase');
-  const { deleteLocalRecord } = await import('./localDb');
   const st = useAppStore.getState();
 
   const allTaskIdsToDelete: string[] = [];
-  targets.forEach((row) => {
-    row.missingInSummary.forEach((id) => allTaskIdsToDelete.push(id));
-  });
+  targets.forEach((row) => row.missingInSummary.forEach((id) => allTaskIdsToDelete.push(id)));
 
   const BATCH_SIZE = 400;
   for (let i = 0; i < allTaskIdsToDelete.length; i += BATCH_SIZE) {
     const chunk = allTaskIdsToDelete.slice(i, i + BATCH_SIZE);
     const batch = writeBatch(db);
-    chunk.forEach((id) => {
-      const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
-      batch.delete(ref);
-    });
+    chunk.forEach((id) => batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id)));
     await batch.commit();
     onProgress?.(Math.min(i + BATCH_SIZE, allTaskIdsToDelete.length), allTaskIdsToDelete.length);
   }
 
-  // Xóa khỏi Dexie và Zustand
   const deletedSet = new Set(allTaskIdsToDelete);
   for (const id of allTaskIdsToDelete) {
     await deleteLocalRecord('taka_tasks', id).catch(() => {});
   }
-  const remainingTasks = (st.tasks || []).filter((t) => !deletedSet.has(t.id));
-  st.setTasks(remainingTasks);
-
+  st.setTasks((st.tasks || []).filter((t) => !deletedSet.has(t.id)));
   return { purgedTasks: allTaskIdsToDelete.length, updatedProjects: targets.length };
 }
+
 
 
 ================================================================================
@@ -121373,7 +121581,14 @@ import {
 export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSlice> = (set) => ({
   optimisticUpdateTasks: (updatedTasks) => set((state) => {
     if (!updatedTasks || updatedTasks.length === 0) return state;
-    const updatedMap = new Map(updatedTasks.map(t => [t.id, t]));
+    const sanitizedUpdates = updatedTasks.map((ut) => {
+      if (!ut || typeof ut !== "object") return ut;
+      if (!("_isVirtualSummary" in ut)) return ut;
+      const copy: any = { ...ut };
+      delete copy._isVirtualSummary;
+      return copy as Partial<Task> & { id: string };
+    });
+    const updatedMap = new Map(sanitizedUpdates.map(t => [t.id, t]));
     const existingIds = new Set(state.tasks.map(t => t.id));
     let hasIdentityOrNameChange = false;
     
@@ -121389,13 +121604,15 @@ export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSli
           ) {
             hasIdentityOrNameChange = true;
           }
-          return { ...t, ...update } as Task;
+          const merged: any = { ...t, ...update };
+          delete merged._isVirtualSummary;
+          return merged as Task;
         }
         return t;
       })
       .filter((t): t is Task => t !== null);
 
-    const newTasks = updatedTasks.filter(
+    const newTasks = sanitizedUpdates.filter(
       t => t.id && !existingIds.has(t.id) && !(t as any).isDeleted
     ) as Task[];
 
@@ -121578,6 +121795,7 @@ export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSli
     )
   })),
 });
+
 
 ================================================================================
 FILE: src/store/slices/createUISlice.ts
@@ -122608,6 +122826,19 @@ export interface TaskSummaryItem {
   name: string;
   start: string;
   finish: string;
+  orderIndex?: number;
+  duration?: string | number;
+  parentTaskId?: string;
+  isModularParent?: boolean;
+  taskCodePhu?: string;
+  runningStatus?: 'On process' | 'Delayed' | 'Completed' | 'Upcoming' | string;
+  approval?: 'Approved' | 'Rejected' | 'Pending' | string;
+  party?: string;
+  delegation?: boolean;
+  predecessor?: string;
+  predecessorTaskIds?: string[];
+  baselineStart?: string;
+  baselineFinish?: string;
   link?: string;
   imageUrl?: string;
   thumbnail?: string;
@@ -122635,6 +122866,7 @@ export interface Project {
   openingMode?: 'auto' | 'manual';
   budget?: number;
   actual?: number;
+  shopType?: ShopType | string;
   sizeM2?: number;
   location?: string;
   type?: string;
@@ -122665,6 +122897,16 @@ export interface Project {
   thumbnail?: string;
   imageLinks?: any[];
 }
+
+export const SHOP_TYPE_OPTIONS = [
+  'Open Counter',
+  'Semi-A',
+  'Semi-B',
+  'Semi-C',
+  'Skeleton',
+] as const;
+
+export type ShopType = typeof SHOP_TYPE_OPTIONS[number];
 
 export const MD_STATUS_OPTIONS = [
   'approached',
@@ -122724,6 +122966,7 @@ export interface Task {
   textColor?: string;
   taskCodePhu?: string;
   parentTaskId?: string;
+  isModularParent?: boolean;
   isDeleted?: boolean;
   predecessors?: TaskPredecessor[]; // Lưu trữ danh sách Hard Link dưới dạng mảng Object
   predecessorTaskIds?: string[]; // IDs of tasks mentioned in the predecessor string
@@ -122734,10 +122977,12 @@ export type PredecessorType = 'FS' | 'SS' | 'FF' | 'SF';
 export interface TaskPredecessor {
   taskId: string;
   type: PredecessorType;
+  lagDays?: number;
 }
 
 export interface Cost {
   id: string;
+  projectId?: string;
   projectCode: string;
   projectYear?: number | string;
   projectStore?: string;
@@ -122959,6 +123204,8 @@ export interface TakaDelta {
   /** Firestore TTL policy timestamp: documents expire automatically without client-side reads */
   expireAt?: any;
 }
+
+
 ================================================================================
 FILE: src/lib/pdfBinaryCache.ts
 /**
@@ -158452,5 +158699,810 @@ function showSwipeIndicator(tabLabel: string, direction: 'left' | 'right') {
     pill.style.transform = 'translate(-50%, -6px)';
     setTimeout(() => pill.remove(), 250);
   }, 650);
+}
+
+
+================================================================================
+FILE: src/components/ProjectModalParts/ProjectDetailsForm.tsx
+================================================================================
+import React, { Dispatch, SetStateAction, memo } from 'react';
+import { Target, Plus } from 'lucide-react';
+import { Project, AppUser, SHOP_TYPE_OPTIONS } from '../../types';
+import { FastInput } from '../FastInput';
+import { FastTextarea } from './FastTextarea';
+import { MultiSelect } from '../MultiSelect';
+import { getStatus, cn } from '../../lib/utils';
+import { useLanguage } from '../../lib/LanguageContext';
+import { LinkCodesValidationError } from './projectModalTypes';
+import { MatchedUnitSizeResult } from '../../lib/unitSizeResolver';
+
+interface ProjectDetailsFormProps {
+  formData: Partial<Project>;
+  setFormData: React.Dispatch<React.SetStateAction<Partial<Project>>>;
+  linkCodesError: LinkCodesValidationError | null;
+  canWrite: boolean;
+  currentUser: AppUser | null;
+  locations: string[];
+  parties: string[];
+  isAddingLocation: boolean;
+  setIsAddingLocation: (v: boolean) => void;
+  newLocation: string;
+  setNewLocation: (v: string) => void;
+  handleAddNewLocation: () => Promise<void>;
+  enrichedProject: any;
+  project: Project | null;
+  handleSubmit: (e: React.FormEvent) => Promise<void>;
+  handleDelete: () => Promise<void>;
+  onClose: () => void;
+  yearRef: React.RefObject<HTMLInputElement | null>;
+  matchedUnitSizeInfo?: MatchedUnitSizeResult;
+}
+
+export const ProjectDetailsForm = memo(function ProjectDetailsForm({
+  formData,
+  setFormData,
+  linkCodesError,
+  canWrite,
+  currentUser,
+  locations,
+  parties,
+  isAddingLocation,
+  setIsAddingLocation,
+  newLocation,
+  setNewLocation,
+  handleAddNewLocation,
+  enrichedProject,
+  project,
+  handleSubmit,
+  handleDelete,
+  onClose,
+  yearRef,
+  matchedUnitSizeInfo
+}: ProjectDetailsFormProps) {
+  const { t } = useLanguage();
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col flex-grow overflow-hidden">
+      <div className="p-4 md:p-6 overflow-y-auto flex-grow">
+        {/* Row 1: Store, Location, Year */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              Store *
+            </label>
+            <select
+              value={formData.store || ""}
+              onChange={(e) => setFormData({ ...formData, store: e.target.value })}
+              required
+              disabled={!canWrite}
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20]"
+            >
+              <option value="" disabled hidden>Select Store</option>
+              <option value="HCM">HCM</option>
+              <option value="HN">HN</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1 flex items-center justify-between">
+              <span>Location *</span>
+              {currentUser?.role === 'admin' && !isAddingLocation && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddingLocation(true)}
+                  className="text-blue-500 hover:text-blue-600 dark:text-blue-400 font-medium text-[10px] flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" /> Add New
+                </button>
+              )}
+            </label>
+            {isAddingLocation ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newLocation}
+                  onChange={(e) => setNewLocation(e.target.value)}
+                  placeholder="Enter new location"
+                  className="flex-grow p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20]"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={handleAddNewLocation}
+                  className="px-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold cursor-pointer"
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIsAddingLocation(false); setNewLocation(''); }}
+                  className="px-3 bg-slate-200 dark:bg-[#333336] text-slate-700 dark:text-[#e3e3e3] rounded-lg hover:bg-slate-300 dark:hover:bg-[#444446] text-sm font-bold cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <select
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                required
+                disabled={!canWrite}
+                className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20]"
+              >
+                <option value="">Select Location</option>
+                {Array.from(new Set([...locations]))
+                  .filter((loc) => String(loc).toLowerCase() !== "all")
+                  .filter((loc) => {
+                    if (currentUser?.role === 'admin') return true;
+                    let permLoc = (loc as string).toLowerCase();
+                    if (["md-b1", "md-l1", "md-l2", "md-l3", "md-l4"].includes(permLoc)) {
+                      permLoc = permLoc.replace("md-", "");
+                    }
+                    return currentUser?.locationPermissions?.["all"] || currentUser?.locationPermissions?.[permLoc];
+                  })
+                  .map((loc) => (
+                    <option key={loc as string} value={loc as string}>{loc as string}</option>
+                  ))}
+              </select>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              Year *
+            </label>
+            <input
+              ref={yearRef as any}
+              type="number"
+              inputMode="numeric"
+              value={formData.year || ''}
+              onChange={(e) => setFormData({ ...formData, year: e.target.value ? parseInt(e.target.value) : '' })}
+              required
+              readOnly={!canWrite}
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+            />
+          </div>
+        </div>
+
+        {/* Row 2: Project Code & Project Code Link */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mb-4">
+          <div className="sm:col-span-5">
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              Project Code *
+            </label>
+            <FastInput
+              type="text"
+              inputMode="text"
+              value={formData.code || ''}
+              onChange={(val) => {
+                const cleanCode = val.replace(/\s+/g, '');
+                setFormData((prev) => {
+                  const newCode = cleanCode;
+                  const currentLink = prev.linkCodes;
+                  const oldCode = prev.code || '';
+                  const shouldSync = !currentLink || currentLink.trim() === '' || currentLink.trim() === oldCode.trim();
+                  return {
+                    ...prev,
+                    code: newCode,
+                    linkCodes: shouldSync ? newCode : currentLink
+                  };
+                });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.code === 'Space') {
+                  e.preventDefault();
+                }
+              }}
+              required
+              readOnly={!canWrite}
+              placeholder="e.g. PM-L1-HCM-2026-01"
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-mono font-bold uppercase"
+            />
+          </div>
+
+          <div className="sm:col-span-7">
+            <label className="block text-[11px] font-bold text-slate-400 dark:text-[#838383] uppercase mb-1 flex items-center justify-between">
+              <span>Project Code Link</span>
+              <span className="text-[10px] text-slate-400 font-normal lowercase">(multi, separated by ",")</span>
+            </label>
+            <FastInput
+              type="text"
+              inputMode="text"
+              value={formData.linkCodes ?? (formData.code || '')}
+              onChange={(val) => setFormData({ ...formData, linkCodes: val })}
+              placeholder="e.g. L3-303-1, L3-303-2"
+              readOnly={!canWrite}
+              className={cn(
+                "w-full p-2.5 border rounded-lg focus:ring-2 outline-none text-xs bg-slate-50 dark:bg-[#1a1a1c]",
+                linkCodesError
+                  ? "border-rose-500 text-rose-600 dark:text-rose-400 focus:ring-rose-500"
+                  : "border-slate-200 dark:border-[#444446] focus:ring-blue-500"
+              )}
+            />
+            {linkCodesError && (
+              <p className="mt-1.5 text-[11px] text-rose-500 dark:text-rose-400 font-medium flex items-start gap-1 leading-tight">
+                <span className="shrink-0">⚠️</span>
+                <span>Code "<strong>{linkCodesError.invalidCode}</strong>" already belongs to project "<strong>{linkCodesError.duplicateProjectCode}</strong>"{linkCodesError.duplicateProjectYear ? ` (${linkCodesError.duplicateProjectYear})` : ''} - {linkCodesError.duplicateProjectName}. Cannot be used as link.</span>
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Row 3: Project Name, Shop Type & Size (m²) */}
+        <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mb-5">
+          <div className="sm:col-span-12 md:col-span-6">
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              Project Name *
+            </label>
+            <FastInput
+              type="text"
+              inputMode="text"
+              value={formData.name || ''}
+              onChange={(val) => setFormData({ ...formData, name: val })}
+              required
+              readOnly={!canWrite}
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+            />
+          </div>
+
+          <div className="sm:col-span-6 md:col-span-3">
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              Shop Type
+            </label>
+            <select
+              value={formData.shopType || ''}
+              onChange={(e) => setFormData({ ...formData, shopType: e.target.value })}
+              disabled={!canWrite}
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-[#e3e3e3] cursor-pointer"
+            >
+              <option value="">Select Shop Type</option>
+              {SHOP_TYPE_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="sm:col-span-6 md:col-span-3">
+            <label className="flex items-center justify-between text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1 gap-1">
+              <span>Size (m²)</span>
+              {matchedUnitSizeInfo?.sizeM2 !== undefined && matchedUnitSizeInfo.sizeM2 > 0 && (
+                <button
+                  type="button"
+                  disabled={!canWrite}
+                  onClick={() => setFormData(prev => ({ ...prev, sizeM2: matchedUnitSizeInfo.sizeM2 }))}
+                  className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors cursor-pointer truncate max-w-[110px]"
+                  title={`Auto-matched from Picture Mapping unit (${matchedUnitSizeInfo.matchedUnitNames.join(', ')})${matchedUnitSizeInfo.versionName ? ` • ${matchedUnitSizeInfo.versionName}` : ''}. Click to sync.`}
+                >
+                  Unit: {matchedUnitSizeInfo.sizeM2}m²
+                </button>
+              )}
+            </label>
+            <FastInput
+              type="text"
+              inputMode="decimal"
+              value={formData.sizeM2 !== undefined && formData.sizeM2 !== null ? String(formData.sizeM2) : ''}
+              onChange={(val) => {
+                const trimmed = val.trim().replace(',', '.');
+                const num = trimmed === '' ? undefined : parseFloat(trimmed);
+                setFormData({ ...formData, sizeM2: isNaN(num as number) ? undefined : num });
+              }}
+              readOnly={!canWrite}
+              placeholder={matchedUnitSizeInfo?.sizeM2 ? `${matchedUnitSizeInfo.sizeM2} (Unit)` : "e.g. 150"}
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+            />
+          </div>
+        </div>
+
+        {/* Baseline Start & Finish */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="flex items-center justify-between text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              <span>{t("Baseline Start")}</span>
+              {canWrite && (
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, baselineStart: enrichedProject?.computedTakStart || '' })}
+                  className="text-blue-500 hover:text-blue-600 outline-none transition-colors cursor-pointer"
+                  title="Copy from Plan"
+                >
+                  <Target className="w-3.5 h-3.5"/>
+                </button>
+              )}
+            </label>
+            <input
+              type="datetime-local"
+              value={formData.baselineStart || ''}
+              readOnly={!canWrite}
+              onChange={(e) => setFormData({ ...formData, baselineStart: e.target.value })}
+              className="w-full p-2 border border-slate-200 dark:border-[#444446] rounded-lg text-sm group-hover:border-slate-300 dark:group-hover:border-[#555557] focus:border-blue-500 outline-none read-only:bg-slate-50 read-only:text-slate-500"
+            />
+          </div>
+          <div>
+            <label className="flex items-center justify-between text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              <span>{t("Baseline Finish")}</span>
+              {canWrite && (
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, baselineFinish: enrichedProject?.computedTakCompl || '' })}
+                  className="text-blue-500 hover:text-blue-600 outline-none transition-colors cursor-pointer"
+                  title="Copy from Plan"
+                >
+                  <Target className="w-3.5 h-3.5"/>
+                </button>
+              )}
+            </label>
+            <input
+              type="datetime-local"
+              value={formData.baselineFinish || ''}
+              readOnly={!canWrite}
+              onChange={(e) => setFormData({ ...formData, baselineFinish: e.target.value })}
+              className="w-full p-2 border border-slate-200 dark:border-[#444446] rounded-lg text-sm group-hover:border-slate-300 dark:group-hover:border-[#555557] focus:border-blue-500 outline-none read-only:bg-slate-50 read-only:text-slate-500"
+            />
+          </div>
+        </div>
+
+        {/* Party MultiSelect */}
+        <div className="mb-5">
+          <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+            {t("Party")}
+          </label>
+          <MultiSelect
+            value={formData.party || ''}
+            onChange={(val) => setFormData({ ...formData, party: val })}
+            options={parties}
+            placeholder="Contractor A, Contractor B"
+            disabled={!canWrite}
+            className="w-full text-sm"
+          />
+        </div>
+
+        {/* MD Status & Description */}
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-4 mb-5">
+          <div>
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              MD Status
+            </label>
+            <select
+              value={formData.mdStatus || ''}
+              onChange={(e) => setFormData({ ...formData, mdStatus: e.target.value })}
+              disabled={!canWrite}
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white dark:bg-[#1e1e20]"
+            >
+              <option value="">-- None --</option>
+              <option value="approached">approached</option>
+              <option value="negotiation">negotiation</option>
+              <option value="Verbally agreed">Verbally agreed</option>
+              <option value="MOU signed">MOU signed</option>
+              <option value="Signed agreement">Signed agreement</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">
+              Description
+            </label>
+            <FastTextarea
+              inputMode="text"
+              value={formData.detail || ''}
+              onChange={(val) => setFormData({ ...formData, detail: val })}
+              rows={3}
+              readOnly={!canWrite}
+              className="w-full p-2.5 border border-slate-200 dark:border-[#444446] rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm resize-none"
+            />
+          </div>
+        </div>
+
+        {/* Read-only Computed Dates & Status */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 md:grid-cols-2 gap-4 mb-8">
+          <div>
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Pj Start</label>
+            <input
+              type="datetime-local"
+              value={enrichedProject?.computedTakStart || ''}
+              readOnly
+              disabled
+              className="w-full p-2 border border-slate-200 dark:border-[#444446] rounded-lg text-sm bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-400 dark:text-[#838383] cursor-not-allowed font-medium"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Pj Compl</label>
+            <input
+              type="datetime-local"
+              value={enrichedProject?.computedTakCompl || ''}
+              readOnly
+              disabled
+              className="w-full p-2 border border-slate-200 dark:border-[#444446] rounded-lg text-sm bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-400 dark:text-[#838383] cursor-not-allowed font-medium"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">Opening</label>
+            <input
+              type="datetime-local"
+              value={enrichedProject?.computedOpening || ''}
+              readOnly
+              disabled
+              className="w-full p-2 border border-slate-200 dark:border-[#444446] rounded-lg text-sm bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-400 dark:text-[#838383] cursor-not-allowed font-medium"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-400 dark:text-[#838383] uppercase mb-1">{t("Status")}</label>
+            <input
+              type="text"
+              value={getStatus(enrichedProject?.computedTakStart || '', enrichedProject?.computedTakCompl || '', enrichedProject?.computedOpening || '', formData.code || '')}
+              disabled
+              className="w-full p-2 border border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-400 dark:text-[#838383] rounded-lg font-bold text-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Action Footer */}
+      <div className="px-4 md:px-6 py-4 border-t border-slate-100 dark:border-[#333336] flex items-center justify-between shrink-0 bg-white dark:bg-[#1e1e20] pb-[env(safe-area-inset-bottom)]">
+        {project && canWrite && (
+          <button
+            title="Delete from Cloud"
+            type="button"
+            onClick={handleDelete}
+            className="px-4 py-2 text-sm font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg cursor-pointer"
+          >
+            Delete from Cloud
+          </button>
+        )}
+        <div className="flex gap-3 ml-auto">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-6 py-2 text-sm font-bold text-slate-600 dark:text-[#a3a3a3] hover:bg-slate-100 dark:hover:bg-[#28282a] rounded-lg cursor-pointer"
+          >
+            Close
+          </button>
+          {canWrite && (
+            <button
+              title="Save to Cloud"
+              type="submit"
+              className="px-8 py-2 bg-slate-900 dark:bg-blue-600 text-white rounded-lg font-bold text-sm shadow-xl active:scale-95 transition-all cursor-pointer"
+            >
+              Save to Cloud
+            </button>
+          )}
+        </div>
+      </div>
+    </form>
+  );
+});
+
+
+================================================================================
+FILE: src/components/ProjectModalParts/useProjectModalMutations.ts
+================================================================================
+import React, { Dispatch, SetStateAction, useState } from 'react';
+import { Project, Task } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { removeCodeFromLinkCodesString, extractAllProjectCodes } from '../../lib/utils';
+import { doc } from 'firebase/firestore';
+import { writeBatch, setDoc, deleteDoc } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import { undoManager } from '../../lib/undoManager';
+import { addPendingUpdate } from '../../lib/syncQueue';
+import { calculateProjectComputedDates, getTasksForProject } from '../../lib/projectDatesService';
+import { deleteStorageFiles, extractStorageUrls } from '../../lib/storageUtils';
+import { recordDelta } from '../../lib/deltaSyncService';
+import { LinkCodesValidationError } from './projectModalTypes';
+import { handleProjectIdentityChange } from './projectModalIdentityService';
+import { syncProjectSizeToUnits } from '../../lib/unitSizeResolver';
+
+interface UseProjectModalMutationsParams {
+  project: Project | null;
+  formData: Partial<Project>;
+  canWrite: boolean;
+  projects: Project[];
+  tasks: Task[];
+  linkCodesError: LinkCodesValidationError | null;
+  enrichedProject: any;
+  onClose: () => void;
+  setConfirmModal: React.Dispatch<React.SetStateAction<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>>;
+}
+
+export function useProjectModalMutations({
+  project,
+  formData,
+  canWrite,
+  projects,
+  tasks,
+  linkCodesError,
+  enrichedProject,
+  onClose,
+  setConfirmModal
+}: UseProjectModalMutationsParams) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const setToast = useAppStore(state => state.setToast);
+  const cloudStatus = useAppStore(state => state.cloudStatus);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
+    try {
+      if (!canWrite) {
+        setIsSubmitting(false);
+        return;
+      }
+
+      const allStoreProjects = useAppStore.getState().projects || [];
+      const validNos = allStoreProjects.map(p => p.no).filter(n => typeof n === 'number' && !isNaN(n));
+      let no = project ? project.no : (validNos.length ? Math.max(...validNos) + 1 : 1);
+      if (isNaN(no)) no = (validNos.length ? Math.max(...validNos) + 1 : 1);
+
+      const docId = project?.id || String(no);
+
+      if (!formData.year || String(formData.year).trim() === '') {
+        setToast({ title: 'Validation Error', message: 'Project Year is strictly required.', type: 'error' });
+        setIsSubmitting(false);
+        return;
+      }
+      const yearNum = Number(formData.year);
+      if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+        setToast({ title: 'Validation Error', message: 'Please enter a valid Project Year.', type: 'error' });
+        setIsSubmitting(false);
+        return;
+      }
+
+      const cleanCode = String(formData.code || '').replace(/\s+/g, '');
+      if (!cleanCode) {
+        setToast({ title: 'Validation Error', message: 'Project Code is strictly required and cannot contain spaces.', type: 'error' });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (linkCodesError) {
+        const yearDetail = linkCodesError.duplicateProjectYear ? ` (Year ${linkCodesError.duplicateProjectYear})` : '';
+        setToast({
+          title: 'Duplicate Project Code',
+          message: `Code "${linkCodesError.invalidCode}" is already assigned to project "${linkCodesError.duplicateProjectCode}"${yearDetail} (${linkCodesError.duplicateProjectName}). Another project's code cannot be used as Project Code Link.`,
+          type: 'error'
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      const storeTasks = useAppStore.getState().tasks;
+      const storeDelegationGroups = useAppStore.getState().delegationGroups;
+      const projectForDates = project ? { ...project, ...formData } : formData;
+      const computedDates = calculateProjectComputedDates(
+        projectForDates,
+        getTasksForProject(projectForDates, storeTasks),
+        storeDelegationGroups
+      );
+
+      const dataToSave: any = {
+        ...formData,
+        no,
+        year: yearNum,
+        code: String(formData.code).trim(),
+        linkCodes: formData.linkCodes ? String(formData.linkCodes).trim() : String(formData.code).trim(),
+        shopType: formData.shopType ? String(formData.shopType).trim() : undefined,
+        sizeM2: (formData.sizeM2 !== undefined && formData.sizeM2 !== null && (formData.sizeM2 as any) !== '' && !isNaN(Number(formData.sizeM2)))
+          ? Number(formData.sizeM2)
+          : undefined,
+        isDeleted: false,
+        taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : (project?.taskCount || 0),
+        taskSummaries: (computedDates.taskSummaries && computedDates.taskSummaries.length >= (project?.taskSummaries?.length || 0))
+          ? computedDates.taskSummaries
+          : (project?.taskSummaries || computedDates.taskSummaries || []),
+        computedPlanProgress: computedDates.computedPlanProgress ?? project?.computedPlanProgress ?? 0,
+        computedActProgress: computedDates.computedActProgress ?? project?.computedActProgress ?? 0,
+        computedTakStart: computedDates.computedTakStart || project?.computedTakStart || enrichedProject?.computedTakStart || formData.start || "",
+        computedTakCompl: computedDates.computedTakCompl || project?.computedTakCompl || enrichedProject?.computedTakCompl || formData.handover || "",
+        computedOpening: computedDates.computedOpening || project?.computedOpening || enrichedProject?.computedOpening || formData.opening || "",
+      };
+
+      if (cloudStatus === 'offline') {
+        const payload = { ...dataToSave, updatedAt: new Date().toISOString() };
+        delete payload.id;
+        Object.keys(payload).forEach(key => {
+          if ((payload as any)[key] === undefined) delete (payload as any)[key];
+        });
+        addPendingUpdate({ collectionPath: `artifacts/${APP_ID}/public/data/taka_projects`, action: 'set', docId, data: payload } as any);
+        syncProjectSizeToUnits({
+          id: docId,
+          code: dataToSave.code,
+          linkCodes: dataToSave.linkCodes,
+          store: dataToSave.store,
+          location: dataToSave.location,
+          year: yearNum,
+          sizeM2: dataToSave.sizeM2,
+        });
+        setToast({ title: 'Draft Saved', message: 'Project saved offline. Will sync when connection returns.' });
+        onClose();
+        setIsSubmitting(false);
+        return;
+      }
+
+      delete dataToSave.id;
+      Object.keys(dataToSave).forEach(key => {
+        if (dataToSave[key] === undefined) {
+          delete dataToSave[key];
+        }
+      });
+
+      const isDuplicate = projects.some(p =>
+        String(p.code || '').trim().toLowerCase() === String(formData.code || '').trim().toLowerCase() &&
+        String(p.year) === String(formData.year) &&
+        String(p.store || '').trim().toLowerCase() === String(formData.store || '').trim().toLowerCase() &&
+        (!project || (project.id && p.id ? p.id !== project.id : String(p.no) !== String(project.no)))
+      );
+
+      if (isDuplicate) {
+        setToast({ title: "Error", message: `Project code "${formData.code}" already exists in year ${formData.year} - Store ${formData.store}. Please enter a different code.`, type: "error" });
+        setIsSubmitting(false);
+        return;
+      }
+
+      const isIdentityChange = project && (
+        String(project.code || '').trim() !== String(formData.code || '').trim() ||
+        String(project.year) !== String(formData.year) ||
+        String(project.store || '').trim() !== String(formData.store || '').trim()
+      );
+
+      if (isIdentityChange) {
+        await handleProjectIdentityChange({
+          project,
+          formData,
+          dataToSave,
+          docId,
+          yearNum,
+          projects,
+          setToast
+        });
+      } else {
+        const fullProjectPayload = {
+          ...dataToSave,
+          updatedAt: new Date().toISOString()
+        };
+        setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), fullProjectPayload, { merge: true });
+
+        // Record delta so Desktop and other devices receive instant realtime update via delta pipeline
+        recordDelta({
+          docId,
+          collectionName: 'taka_projects',
+          action: project ? 'update' : 'create',
+          data: fullProjectPayload,
+          year: String(yearNum),
+        }).catch(console.error);
+
+        const rawProjects = useAppStore.getState().projects || [];
+        const savedCode = String(formData.code).trim().toLowerCase();
+        const savedYearStr = String(formData.year || '').trim();
+        const savedStoreStr = String(formData.store || '').trim().toUpperCase();
+
+        const otherProjectsToClean: { id: string; linkCodes: string }[] = [];
+        const updatedProjects = rawProjects.map(p => {
+          if (project && ((p.id && p.id === project.id) || (p.no !== undefined && project.no !== undefined && p.no === project.no))) {
+            return { ...p, ...dataToSave, isDeleted: false, id: project.id || docId, updatedAt: new Date().toISOString() };
+          }
+          const pStore = String(p.store || '').trim().toUpperCase();
+          const pYear = String(p.year || '').trim();
+          if ((!savedStoreStr || !pStore || pStore === savedStoreStr) && (!savedYearStr || !pYear || pYear === savedYearStr)) {
+            if (p.linkCodes) {
+              const allCodes = extractAllProjectCodes(p);
+              if (allCodes.includes(savedCode) && String(p.code || '').trim().toLowerCase() !== savedCode) {
+                const cleaned = removeCodeFromLinkCodesString(p.linkCodes, formData.code);
+                otherProjectsToClean.push({ id: p.id || String(p.no), linkCodes: cleaned });
+                return { ...p, linkCodes: cleaned, updatedAt: new Date().toISOString() };
+              }
+            }
+          }
+          return p;
+        });
+
+        otherProjectsToClean.forEach(item => {
+          setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', item.id), {
+            linkCodes: item.linkCodes,
+            updatedAt: new Date().toISOString()
+          }, { merge: true }).catch(console.error);
+        });
+
+        if (project) {
+          useAppStore.getState().setProjects(updatedProjects);
+        } else {
+          useAppStore.getState().setProjects([...updatedProjects, { ...dataToSave, isDeleted: false, id: docId, updatedAt: new Date().toISOString() } as any]);
+
+          const currentYearFilter = useAppStore.getState().globalYearFilter;
+          const currentStoreFilter = useAppStore.getState().globalStoreFilter;
+          let filterChangedNotice = '';
+
+          if (currentYearFilter !== 'all' && String(currentYearFilter) !== String(yearNum)) {
+            useAppStore.getState().setGlobalYearFilter(String(yearNum));
+            filterChangedNotice += ` Năm ${yearNum}`;
+          }
+          if (currentStoreFilter !== 'all' && currentStoreFilter !== formData.store) {
+            const curUser = useAppStore.getState().currentUser;
+            const canSeeStore = curUser?.role === 'admin' || (formData.store === 'HCM' ? curUser?.storePermissions?.hcm : curUser?.storePermissions?.hn);
+            if (canSeeStore) {
+              useAppStore.getState().setGlobalStoreFilter(formData.store);
+              filterChangedNotice += ` Chi nhánh ${formData.store}`;
+            }
+          }
+
+          setToast({
+            title: "Project Created Successfully",
+            message: filterChangedNotice
+              ? `Created project ${formData.code} (${yearNum} - ${formData.store}) and automatically switched active filter to${filterChangedNotice}.`
+              : `Created project ${formData.code} successfully.`,
+            type: "success"
+          });
+        }
+
+        undoManager.push({
+          description: project ? `Update Project: ${formData.code}` : `Create Project: ${formData.code}`,
+          revert: async () => {
+            if (project) {
+              setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), project, { merge: true });
+            } else {
+              deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId));
+            }
+          }
+        });
+      }
+      syncProjectSizeToUnits({
+        id: docId,
+        code: dataToSave.code,
+        linkCodes: dataToSave.linkCodes,
+        store: dataToSave.store,
+        location: dataToSave.location,
+        year: yearNum,
+        sizeM2: dataToSave.sizeM2,
+      });
+
+      onClose();
+    } catch (e: any) {
+      console.error("Save project error:", e);
+      setToast({ title: "Error", message: e?.message || "Failed to save project.", type: "error" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!project) return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Project',
+      message: `Permanently delete project ${project.code || project.name || ''} and all associated tasks?`,
+      onConfirm: async () => {
+        try {
+          const { deleteProjectStateUnified } = await import('../../lib/taskStateService');
+          await deleteProjectStateUnified(project.id || String(project.no) || project.code, project);
+          useAppStore.getState().setToast({
+            title: "Success",
+            message: `Deleted project ${project.code} successfully.`,
+            type: "success"
+          });
+          onClose();
+        } catch (e: any) {
+          console.error("Delete project error:", e);
+          useAppStore.getState().setToast({
+            title: "Error",
+            message: e?.message || "Failed to delete project.",
+            type: "error"
+          });
+        }
+      }
+    });
+  };
+
+  return {
+    isSubmitting,
+    handleSubmit,
+    handleDelete
+  };
 }
 

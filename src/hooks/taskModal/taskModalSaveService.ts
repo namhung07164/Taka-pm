@@ -247,14 +247,18 @@ export async function executeTaskSave({
     if (!finalFormData.party) finalFormData.party = currentProject?.party || 'Takashimaya';
 
     if (cloudStatus === 'offline') {
-      let payload = {
+      let payload: any = {
         ...finalFormData,
         id,
+        projectId: finalFormData.projectId || task?.projectId || currentProject.id,
+        projectCode: finalFormData.projectCode || currentProject.code,
+        projectStore: finalFormData.projectStore || currentProject.store,
         projectYear: Number(currentYear) || new Date().getFullYear(),
         comments: task?.comments || finalFormData.comments || [],
         updatedAt: new Date().toISOString(),
         orderIndex: newOrderIndex
       };
+      delete payload._isVirtualSummary;
       addPendingUpdate({ collectionPath: `artifacts/${APP_ID}/public/data/taka_tasks`, action: 'set', docId: id, data: payload } as any);
       setToast({ title: 'Draft Saved', message: 'Task saved offline. Will sync when connection returns.' });
       onClose();
@@ -265,11 +269,15 @@ export async function executeTaskSave({
     let dataToSave: any = {
       ...finalFormData,
       id,
+      projectId: finalFormData.projectId || task?.projectId || currentProject.id,
+      projectCode: finalFormData.projectCode || currentProject.code,
+      projectStore: finalFormData.projectStore || currentProject.store,
       projectYear: Number(currentYear) || new Date().getFullYear(),
       comments: task?.comments || finalFormData.comments || [],
       updatedAt: new Date().toISOString(),
       orderIndex: newOrderIndex
     };
+    delete dataToSave._isVirtualSummary;
 
     dataToSave.realtimeUpdate = Boolean(dataToSave.predecessor && dataToSave.predecessor.trim());
 
@@ -335,17 +343,14 @@ export async function executeTaskSave({
       const updatesToDependents = scheduleDependentTasks(dataToSave as Task, tasks, projects);
       const scheduledUpdatedTask = updatesToDependents.find(d => d.id === dataToSave.id);
       if (scheduledUpdatedTask) {
-        dataToSave = scheduledUpdatedTask as any;
+        dataToSave = { ...(scheduledUpdatedTask as any) };
+        delete dataToSave._isVirtualSummary;
       }
       depUpdates = updatesToDependents.filter(d => d.id !== id);
     }
 
     const batch = writeBatch(db);
-    if (task) {
-      batch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave);
-    } else {
-      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave);
-    }
+    batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave, { merge: true });
 
     depUpdates.forEach(depTask => {
       const depProj = projects.find(p => p.code === depTask.projectCode);
@@ -353,9 +358,10 @@ export async function executeTaskSave({
         ? Number(depTask.projectYear)
         : (depProj?.year && !isNaN(Number(depProj.year)) ? Number(depProj.year) : new Date().getFullYear());
       const pu = predecessorUpdatesMap.get(depTask.id);
-      const data = pu 
+      const data: any = pu 
         ? { ...depTask, projectYear: depYear, predecessor: pu.predecessor, updatedAt: new Date().toISOString() } 
         : { ...depTask, projectYear: depYear, updatedAt: new Date().toISOString() };
+      delete data._isVirtualSummary;
       Object.keys(data).forEach(key => {
         if ((data as any)[key] === undefined) {
           delete (data as any)[key];
@@ -374,11 +380,9 @@ export async function executeTaskSave({
     const optimisticList: any[] = [dataToSave];
     depUpdates.forEach(depTask => {
       const pu = predecessorUpdatesMap.get(depTask.id);
-      if (pu) {
-        optimisticList.push({ ...depTask, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
-      } else {
-        optimisticList.push(depTask);
-      }
+      const cleanDep: any = pu ? { ...depTask, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : { ...depTask };
+      delete cleanDep._isVirtualSummary;
+      optimisticList.push(cleanDep);
     });
     predecessorUpdates.forEach(pu => {
       if (!mappedDepUpdates.has(pu.id)) {
@@ -393,7 +397,7 @@ export async function executeTaskSave({
     onClose();
     setIsSubmitting(false);
 
-    // 3. Offload network commit, delta emission, Dexie persistence, and project date rollups to background microtask
+    // 3. Offload network commit, delta emission, Dexie persistence, and project date rollups in parallel
     setTimeout(async () => {
       try {
         const deltaItems = optimisticList.map(item => {
@@ -409,11 +413,11 @@ export async function executeTaskSave({
         });
         const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
         markExplicitDelta(deltaItems);
-        await batch.commit();
+        await Promise.all([
+          batch.commit(),
+          saveTaskStateUnified(optimisticList, { syncProjects: true }).catch(() => {}),
+        ]);
         recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
-
-        // Background Dexie persistence & project summarization (syncs target project & parent rollups)
-        await saveTaskStateUnified(optimisticList, { syncProjects: true }).catch(() => {});
 
         // If task moved from an older project/store/year, also resync the previous project's taskSummaries
         if (
@@ -429,11 +433,10 @@ export async function executeTaskSave({
         }
       } catch (error: any) {
         console.error("Background task save failed:", error);
-        // Fallback to offline queue to prevent silent data loss
         optimisticList.forEach(item => {
           addPendingUpdate({
             collectionPath: `artifacts/${APP_ID}/public/data/taka_tasks`,
-            action: task ? 'update' : 'set',
+            action: 'set',
             docId: item.id,
             data: item
           } as any);

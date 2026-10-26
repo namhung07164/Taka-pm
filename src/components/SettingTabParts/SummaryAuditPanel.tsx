@@ -90,16 +90,17 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
 
   const handleRepairServer = () => {
     if (!report) return;
+    const missingInFirestoreCount = summaryIssues.reduce((acc, r) => acc + r.ghostInSummary.length, 0);
     onConfirmAction(
-      'Cập nhật Summary theo Firestore',
-      `Ghi đè lại bảng tóm tắt của ${summaryIssues.length} dự án để nhận toàn bộ các task đang có trên server Firestore (bao gồm cả task thừa nếu có). Tiếp tục?`,
+      'Đồng bộ nhanh Summary ⇄ Firestore',
+      `Hệ thống sẽ đồng bộ song song (Mass Batch) cho ${summaryIssues.length} dự án: khôi phục ${missingInFirestoreCount} task đang có trong Summary nhưng bị thiếu trên bảng taka_tasks của Firestore, đồng thời chuẩn hóa lại bộ đếm & ngày rollup cha-con. Tiếp tục?`,
       async () => {
         setRunning(true);
         try {
-          const res = await repairServerSummaries(report, (d, t) => setProgress(`Đang sửa ${d}/${t}...`));
+          const res = await repairServerSummaries(report, (d, t) => setProgress(`Đang đồng bộ nhanh ${d}/${t}...`));
           toast(
-            'Đã cập nhật summary',
-            `Sửa ${res.fixed} dự án. Bỏ qua ${res.skippedEmpty} dự án không có task thật. Hãy chạy kiểm tra lại.`,
+            'Đã đồng bộ Summary ⇄ Firestore',
+            `Đã đồng bộ ${res.fixed} dự án${res.backfilledTasks ? ` và khôi phục ${res.backfilledTasks} task thiếu lên Firestore` : ''}. Hãy bấm Kiểm tra chéo để xác nhận.`,
             'success'
           );
           setReport(null);
@@ -171,11 +172,11 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
           <button
             onClick={handleRepairServer}
             disabled={running}
-            title="Đồng bộ danh sách summary theo toàn bộ task trên server (chỉ dùng nếu muốn thêm task trên server vào summary)"
+            title="Khôi phục các task bị thiếu trên Firestore từ Summary và đồng bộ lại toàn bộ Summary"
             className={`${btn} border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20`}
           >
             <Wrench className="w-4 h-4 text-amber-500" />
-            Cập nhật Summary theo Firestore ({summaryIssues.length})
+            Cập nhật Summary ⇄ Firestore ({summaryIssues.length})
           </button>
         )}
 
@@ -218,7 +219,7 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                     <th className="px-2 py-1.5">Dự án</th>
                     <th className="px-2 py-1.5">Task Firestore</th>
                     <th className="px-2 py-1.5">Summary chuẩn</th>
-                    <th className="px-2 py-1.5 text-rose-600 dark:text-rose-400">Thừa trên Firestore (ngoài Summary)</th>
+                    <th className="px-2 py-1.5 text-rose-600 dark:text-rose-400">Lệch Firestore vs Summary</th>
                     <th className="px-2 py-1.5">Thiết bị (thiếu / thừa)</th>
                     <th className="px-2 py-1.5 text-right">Thao tác</th>
                   </tr>
@@ -227,6 +228,7 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                   {report.issues.slice(0, 80).map((r) => {
                     const isExpanded = expandedProjectId === r.projectId;
                     const hasExcess = r.missingInSummary.length > 0;
+                    const hasMissingInFirestore = r.ghostInSummary.length > 0;
                     const excessTasks = hasExcess
                       ? r.missingInSummary
                           .map((id) => report.internal.serverTasksById.get(id))
@@ -258,13 +260,26 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                             {r.summaryTaskCount} / {r.summaryEntryCount}
                           </td>
                           <td className="px-2 py-1">
-                            {hasExcess ? (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-                                +{r.missingInSummary.length} task thừa
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 dark:text-[#777]">-</span>
-                            )}
+                            <div className="flex flex-wrap items-center gap-1">
+                              {hasExcess && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+                                  +{r.missingInSummary.length} task thừa
+                                </span>
+                              )}
+                              {hasMissingInFirestore && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  Thiếu {r.ghostInSummary.length} task trên Firestore
+                                </span>
+                              )}
+                              {!hasExcess && !hasMissingInFirestore && r.summaryIssue && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600 dark:bg-[#2a2a2d] dark:text-[#aaa]">
+                                  Lệch ngày rollup / bộ đếm
+                                </span>
+                              )}
+                              {!hasExcess && !hasMissingInFirestore && !r.summaryIssue && (
+                                <span className="text-slate-400 dark:text-[#777]">-</span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-2 py-1 text-slate-500 dark:text-[#999]">
                             {r.deviceIssue

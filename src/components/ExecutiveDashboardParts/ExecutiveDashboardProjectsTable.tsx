@@ -87,6 +87,11 @@ export const ExecutiveDashboardProjectsTable: React.FC<ExecutiveDashboardProject
                   <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-200 max-w-[220px]" title={item.name}>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="truncate">{item.name}</span>
+                      {Boolean(item.shopType) && (
+                        <span className="text-[10px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1 py-0.2 rounded border border-amber-200 dark:border-amber-800 shrink-0">
+                          {item.shopType}
+                        </span>
+                      )}
                       {Boolean(item.sizeM2 && item.sizeM2 > 0) && (
                         <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1 py-0.2 rounded border border-indigo-200 dark:border-indigo-800 shrink-0">
                           {item.sizeM2} m²

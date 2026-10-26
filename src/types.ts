@@ -62,6 +62,7 @@ export interface Project {
   openingMode?: 'auto' | 'manual';
   budget?: number;
   actual?: number;
+  shopType?: ShopType | string;
   sizeM2?: number;
   location?: string;
   type?: string;
@@ -92,6 +93,16 @@ export interface Project {
   thumbnail?: string;
   imageLinks?: any[];
 }
+
+export const SHOP_TYPE_OPTIONS = [
+  'Open Counter',
+  'Semi-A',
+  'Semi-B',
+  'Semi-C',
+  'Skeleton',
+] as const;
+
+export type ShopType = typeof SHOP_TYPE_OPTIONS[number];
 
 export const MD_STATUS_OPTIONS = [
   'approached',

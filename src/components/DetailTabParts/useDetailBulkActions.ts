@@ -84,7 +84,7 @@ export function useDetailBulkActions({
       const batch = writeBatch(db);
       unlinkedArray.forEach(id => {
         const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
-        batch.update(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now });
+        batch.set(docRef, { parentTaskId: deleteField(), parentId: null, updatedAt: now }, { merge: true });
       });
 
       try {
@@ -187,7 +187,7 @@ export function useDetailBulkActions({
           }
         }
         
-        batch.update(docRef, payload);
+        batch.set(docRef, payload, { merge: true });
         updateCount++;
       });
 

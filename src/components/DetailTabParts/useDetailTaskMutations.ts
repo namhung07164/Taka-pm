@@ -85,34 +85,34 @@ export function useDetailTaskMutations({
     _options?: { skipPredecessorRecalc?: boolean; skipProjectRollup?: boolean }
   ) => {
     try {
-      if (updates.name && updates.name !== t.name) {
-        const currentProject = projects.find(p => 
-          (t.projectId && p.id === t.projectId) ||
-          (p.code === t.projectCode &&
-          (String(p.year || '') === String(t.projectYear || '') || (!p.year && !t.projectYear)) &&
-          (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore)))
-        );
-        if (currentProject) {
-          const normUpdateName = normalizeTaskNameForComparison(updates.name);
-          const isDuplicate = tasks.some(tsk => {
-            if (tsk.id === t.id || tsk.isDeleted) return false;
-            const sameProject = isTaskBelongsToProject(tsk, currentProject, projects);
-            if (!sameProject) return false;
+      const liveState = useAppStore.getState();
+      const activeTasks = liveState.tasks || tasks;
+      const activeProjects = liveState.projects || projects;
+      const currentProject = activeProjects.find(p => 
+        (t.projectId && p.id === t.projectId) ||
+        (p.code === t.projectCode &&
+        (String(p.year || '') === String(t.projectYear || '') || (!p.year && !t.projectYear)) &&
+        (String(p.store || '') === String(t.projectStore || '') || (!p.store && !t.projectStore)))
+      );
 
-            if (tsk.name && (tsk.name || '').trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
-            const tNorm = normalizeTaskNameForComparison(tsk.name);
-            return !!(normUpdateName && tNorm && normUpdateName === tNorm);
-          });
-          if (isDuplicate) {
-            useAppStore.getState().setToast({ title: "Notice", message: `Task name "${updates.name}" already exists in project ${currentProject.code} (${currentProject.year} - ${currentProject.store}). Please enter a different name.` });
-            return;
-          }
+      if (updates.name && updates.name !== t.name && currentProject) {
+        const normUpdateName = normalizeTaskNameForComparison(updates.name);
+        const isDuplicate = activeTasks.some(tsk => {
+          if (tsk.id === t.id || tsk.isDeleted) return false;
+          if (!isTaskBelongsToProject(tsk, currentProject, activeProjects)) return false;
+          if (tsk.name && (tsk.name || '').trim().toLowerCase() === (updates.name || '').trim().toLowerCase()) return true;
+          const tNorm = normalizeTaskNameForComparison(tsk.name);
+          return !!(normUpdateName && tNorm && normUpdateName === tNorm);
+        });
+        if (isDuplicate) {
+          useAppStore.getState().setToast({ title: "Notice", message: `Task name "${updates.name}" already exists in project ${currentProject.code} (${currentProject.year} - ${currentProject.store}). Please enter a different name.` });
+          return;
         }
       }
 
       if (updates.predecessor !== undefined && updates.predecessor !== t.predecessor) {
         let val = updates.predecessor;
-        const taskNoMap = buildTaskNoMap(projects, tasks);
+        const taskNoMap = buildTaskNoMap(activeProjects, activeTasks);
         let parts = splitPredecessors(val, taskNoMap);
         if (parts.length > 2) parts = parts.slice(0, 2);
         
@@ -129,22 +129,21 @@ export function useDetailTaskMutations({
 
       let predecessorUpdates: { id: string; predecessor: string; updatedAt: string }[] = [];
       if (updates.taskCodePhu !== undefined && updates.taskCodePhu !== t.taskCodePhu) {
-        const oldCode = (t.taskCodePhu || computeTaskCode(projects, tasks, t)).trim();
-        const newCode = (updates.taskCodePhu || computeTaskCode(projects, tasks.map(item => item.id === t.id ? { ...item, ...updates } : item), { ...t, ...updates })).trim();
+        const oldCode = (t.taskCodePhu || computeTaskCode(activeProjects, activeTasks, t)).trim();
+        const newCode = (updates.taskCodePhu || computeTaskCode(activeProjects, activeTasks.map(item => item.id === t.id ? { ...item, ...updates } : item), { ...t, ...updates })).trim();
         if (oldCode && newCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
           const map = new Map<string, string>();
           map.set(oldCode.toLowerCase(), newCode);
-          predecessorUpdates = updatePredecessorsStrings(map, tasks, projects);
+          predecessorUpdates = updatePredecessorsStrings(map, activeTasks, activeProjects);
         }
       }
 
       let targetTaskId = t.id;
       if (targetTaskId && targetTaskId.startsWith('ts_')) {
-        // Cùng mã dự án chưa đủ: phải cùng store và year (mã phụ ảo `<mã>#<số>` trùng giữa các store/năm)
         const sameProjectIdentity = (x: any) =>
           String(x.projectStore || '').trim().toLowerCase() === String(t.projectStore || '').trim().toLowerCase() &&
           String(x.projectYear ?? '').trim() === String(t.projectYear ?? '').trim();
-        let realTask = tasks.find(tsk => 
+        let realTask = activeTasks.find(tsk => 
           !tsk.id.startsWith('ts_') &&
           tsk.projectCode === t.projectCode &&
           sameProjectIdentity(tsk) &&
@@ -177,10 +176,21 @@ export function useDetailTaskMutations({
       }
       const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', targetTaskId);
       
-      let newT = { ...t, id: targetTaskId, ...updates, updatedAt: new Date().toISOString() };
+      let newT: Task = {
+        ...t,
+        id: targetTaskId,
+        projectId: updates.projectId || t.projectId || currentProject?.id,
+        projectCode: updates.projectCode || t.projectCode || currentProject?.code || '',
+        projectStore: updates.projectStore || t.projectStore || currentProject?.store,
+        projectYear: updates.projectYear ?? t.projectYear ?? currentProject?.year,
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      delete (newT as any)._isVirtualSummary;
+
       if (updates.predecessor !== undefined) {
-        let currentTasks = useAppStore.getState().tasks || tasks;
-        let taskNoMap = buildTaskNoMap(projects, currentTasks);
+        let currentTasks = useAppStore.getState().tasks || activeTasks;
+        let taskNoMap = buildTaskNoMap(activeProjects, currentTasks);
         let parts = splitPredecessors(updates.predecessor, taskNoMap);
         if (parts.length >= 2) {
           newT.durationManual = false;
@@ -191,13 +201,13 @@ export function useDetailTaskMutations({
         if (updates.predecessor.trim() && (!parsed.length || parsed.some(p => !p.task))) {
           for (const token of parts) {
             const cleanToken = token.replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
-            const matchedProj = projects.find(
+            const matchedProj = activeProjects.find(
               p =>
                 p.code &&
                 cleanToken.toLowerCase().startsWith(p.code.toLowerCase()) &&
                 (!t.projectStore || !p.store || p.store.trim().toLowerCase() === t.projectStore.trim().toLowerCase()) &&
                 (!t.projectYear || !p.year || String(p.year).trim() === String(t.projectYear).trim())
-            ) || projects.find(p => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
+            ) || activeProjects.find(p => p.code && cleanToken.toLowerCase().startsWith(p.code.toLowerCase()));
             if (matchedProj && (matchedProj.id !== t.projectId || matchedProj.code !== t.projectCode)) {
               const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
                 projectId: matchedProj.id,
@@ -206,7 +216,7 @@ export function useDetailTaskMutations({
               });
               if (loaded.length > 0) {
                 currentTasks = useAppStore.getState().tasks || currentTasks;
-                taskNoMap = buildTaskNoMap(projects, currentTasks);
+                taskNoMap = buildTaskNoMap(activeProjects, currentTasks);
                 parsed = parsePredecessors(updates.predecessor, taskNoMap, newT);
               }
             }
@@ -291,16 +301,22 @@ export function useDetailTaskMutations({
         }
       }
 
-      const updatesToDependents = scheduleDependentTasks(newT, tasks, projects);
+      const latestTasks = useAppStore.getState().tasks || activeTasks;
+      const updatesToDependents = scheduleDependentTasks(newT, latestTasks, activeProjects);
       const batch = writeBatch(db);
 
       const scheduledUpdatedTask = updatesToDependents.find(d => d.id === newT.id);
       if (scheduledUpdatedTask) {
-        newT = scheduledUpdatedTask as any;
+        newT = { ...(scheduledUpdatedTask as any) };
+        delete (newT as any)._isVirtualSummary;
       }
 
       const depUpdateMap = new Map<string, Task>();
-      updatesToDependents.forEach(d => depUpdateMap.set(d.id, d));
+      updatesToDependents.forEach(d => {
+        const cleanDep = { ...d };
+        delete (cleanDep as any)._isVirtualSummary;
+        depUpdateMap.set(cleanDep.id, cleanDep);
+      });
 
       const affectedProjIds = new Set<string>();
       const affectedProjCodes = new Set<string>();
@@ -313,8 +329,8 @@ export function useDetailTaskMutations({
 
       const scopedTasksForRollup: Task[] = [];
       let foundNewT = false;
-      for (let i = 0; i < tasks.length; i++) {
-        const tsk = tasks[i];
+      for (let i = 0; i < latestTasks.length; i++) {
+        const tsk = latestTasks[i];
         if (!tsk || tsk.isDeleted) continue;
         const matchesScope =
           (tsk.projectId && affectedProjIds.has(String(tsk.projectId).trim())) ||
@@ -330,12 +346,14 @@ export function useDetailTaskMutations({
       if (!foundNewT) {
         scopedTasksForRollup.push(newT);
       }
-      const { updatedParents } = rollupParentTaskDates(scopedTasksForRollup);
+      const { updatedParents: rawUpdatedParents } = rollupParentTaskDates(scopedTasksForRollup);
+      const updatedParents = rawUpdatedParents.map(pt => {
+        const cleanPt = { ...pt };
+        delete (cleanPt as any)._isVirtualSummary;
+        return cleanPt;
+      });
 
       batch.set(tRef, newT, { merge: true });
-
-      // Rule 9 Mandate: Parent task rollups are computed 100% in-memory on client.
-      // We keep updatedParents in memory via saveTaskStateUnified below, but do NOT issue Firestore writeBatch for parent tasks.
 
       if (updates.delegation === true) {
          const deterministicGroupId = `del_${t.id}`;
@@ -350,7 +368,7 @@ export function useDetailTaskMutations({
               name: t.name || 'Delegated Task',
               projectCode: t.projectCode,
               projectStore: t.projectStore,
-              projectYear: (t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))) ? Number(t.projectYear) : (Number(projects.find(p => p.code === t.projectCode)?.year) || new Date().getFullYear()),
+              projectYear: (t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))) ? Number(t.projectYear) : (Number(activeProjects.find(p => p.code === t.projectCode)?.year) || new Date().getFullYear()),
               subTasks: [{ 
                  id: generateId(), 
                  name: '', 
@@ -371,7 +389,7 @@ export function useDetailTaskMutations({
          }
       }
 
-      const depUpdates = updatesToDependents.filter(d => d.id !== newT.id);
+      const depUpdates = Array.from(depUpdateMap.values()).filter(d => d.id !== newT.id);
       depUpdates.forEach(depTask => {
         const depRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id);
         batch.set(depRef, { ...depTask, updatedAt: new Date().toISOString() }, { merge: true });
@@ -380,7 +398,7 @@ export function useDetailTaskMutations({
       predecessorUpdates.forEach(pu => {
         if (pu.id !== t.id && !depUpdateMap.has(pu.id)) {
           const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id);
-          batch.update(pRef, { predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+          batch.set(pRef, { predecessor: pu.predecessor, updatedAt: pu.updatedAt }, { merge: true });
         }
       });
       
@@ -394,12 +412,12 @@ export function useDetailTaskMutations({
       // 1. Update Zustand immediately in 0ms so UI responds instantaneously
       useAppStore.getState().optimisticUpdateTasks(allUpdatesToSave);
 
-      // 2. Offload Firestore commit, Delta broadcast, and Project Date sync to background microtask
+      // 2. Offload Firestore commit, Delta broadcast, and Project Date sync in parallel
       setTimeout(async () => {
         try {
           const prevTaskById = new Map<string, Task>();
-          for (let i = 0; i < tasks.length; i++) {
-            const item = tasks[i];
+          for (let i = 0; i < latestTasks.length; i++) {
+            const item = latestTasks[i];
             if (item?.id) prevTaskById.set(item.id, item);
           }
 
@@ -417,22 +435,24 @@ export function useDetailTaskMutations({
 
           deltaItems.forEach(di => {
             if (di.action === 'update' && di.data) {
-              if (!di.data.projectId && t.projectId) di.data.projectId = t.projectId;
-              if (!di.data.projectCode && t.projectCode) di.data.projectCode = t.projectCode;
-              if (!di.data.projectStore && t.projectStore) di.data.projectStore = t.projectStore;
-              if (!di.data.projectYear && t.projectYear) di.data.projectYear = t.projectYear;
+              if (!di.data.projectId && newT.projectId) di.data.projectId = newT.projectId;
+              if (!di.data.projectCode && newT.projectCode) di.data.projectCode = newT.projectCode;
+              if (!di.data.projectStore && newT.projectStore) di.data.projectStore = newT.projectStore;
+              if (!di.data.projectYear && newT.projectYear) di.data.projectYear = newT.projectYear;
             }
           });
 
           const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
           markExplicitDelta(deltaItems);
-          await batch.commit();
+          await Promise.all([
+            batch.commit(),
+            saveTaskStateUnified(allUpdatesToSave, { syncProjects: true }),
+          ]);
           recordBatchDeltas(deltaItems, currentUser.username || currentUser.id).catch(() => {});
-          await saveTaskStateUnified(allUpdatesToSave, { syncProjects: true });
         } catch (error: any) {
           console.error("Batch commit failed", error);
           useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-          saveTaskStateUnified([t, ...depUpdates.map(d => tasks.find(tsk => tsk.id === d.id) || d)]);
+          saveTaskStateUnified([t, ...depUpdates.map(d => latestTasks.find(tsk => tsk.id === d.id) || d)]);
         }
       }, 0);
       

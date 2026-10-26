@@ -100,7 +100,7 @@ export function useDetailTaskReorder({
 
       updatesPerTask.forEach((updates, taskId) => {
         const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
-        batch.update(tRef, updates);
+        batch.set(tRef, updates, { merge: true });
       });
 
       try {
@@ -196,7 +196,7 @@ export function useDetailTaskReorder({
 
       updatesPerTask.forEach((updates, taskId) => {
         const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
-        batch.update(tRef, updates);
+        batch.set(tRef, updates, { merge: true });
       });
 
       try {
@@ -317,7 +317,7 @@ export function useDetailTaskReorder({
 
       for (const tu of result.taskUpdates) {
         const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", tu.id);
-        currentWriteBatch.update(tRef, tu.updates);
+        currentWriteBatch.set(tRef, tu.updates, { merge: true });
         writeCount++;
         if (writeCount >= 400) {
           writeBatches.push(currentWriteBatch.commit());
@@ -330,10 +330,10 @@ export function useDetailTaskReorder({
         const alreadyInBatch = result.taskUpdates.some((tu) => tu.id === pu.id);
         if (!alreadyInBatch) {
           const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", pu.id);
-          currentWriteBatch.update(tRef, {
+          currentWriteBatch.set(tRef, {
             predecessor: pu.predecessor,
             updatedAt: pu.updatedAt,
-          });
+          }, { merge: true });
           writeCount++;
           if (writeCount >= 400) {
             writeBatches.push(currentWriteBatch.commit());

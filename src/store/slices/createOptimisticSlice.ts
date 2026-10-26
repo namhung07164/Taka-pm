@@ -13,7 +13,14 @@ import {
 export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSlice> = (set) => ({
   optimisticUpdateTasks: (updatedTasks) => set((state) => {
     if (!updatedTasks || updatedTasks.length === 0) return state;
-    const updatedMap = new Map(updatedTasks.map(t => [t.id, t]));
+    const sanitizedUpdates = updatedTasks.map((ut) => {
+      if (!ut || typeof ut !== "object") return ut;
+      if (!("_isVirtualSummary" in ut)) return ut;
+      const copy: any = { ...ut };
+      delete copy._isVirtualSummary;
+      return copy as Partial<Task> & { id: string };
+    });
+    const updatedMap = new Map(sanitizedUpdates.map(t => [t.id, t]));
     const existingIds = new Set(state.tasks.map(t => t.id));
     let hasIdentityOrNameChange = false;
     
@@ -29,13 +36,15 @@ export const createOptimisticSlice: StateCreator<AppState, [], [], OptimisticSli
           ) {
             hasIdentityOrNameChange = true;
           }
-          return { ...t, ...update } as Task;
+          const merged: any = { ...t, ...update };
+          delete merged._isVirtualSummary;
+          return merged as Task;
         }
         return t;
       })
       .filter((t): t is Task => t !== null);
 
-    const newTasks = updatedTasks.filter(
+    const newTasks = sanitizedUpdates.filter(
       t => t.id && !existingIds.has(t.id) && !(t as any).isDeleted
     ) as Task[];
 

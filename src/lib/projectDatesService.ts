@@ -313,6 +313,44 @@ export function calculateProjectComputedDates(
  * Đã tích hợp Dirty Check: Chỉ ghi vào Firestore khi có sự thay đổi thực sự
  * về mốc thời gian (start, finish/compl, opening), tiến độ hoặc số lượng task.
  */
+const pendingProjectSyncPayloads = new Map<string, { payload: Record<string, any>; year?: string }>();
+const inFlightProjectSyncSet = new Set<string>();
+
+async function flushProjectSummarySync(projectId: string): Promise<void> {
+  if (inFlightProjectSyncSet.has(projectId)) return;
+  inFlightProjectSyncSet.add(projectId);
+  try {
+    const [{ markExplicitDelta }, { recordDelta }] = await Promise.all([
+      import("./autoDeltaQueue"),
+      import("./deltaSyncService"),
+    ]);
+    while (pendingProjectSyncPayloads.has(projectId)) {
+      const next = pendingProjectSyncPayloads.get(projectId)!;
+      pendingProjectSyncPayloads.delete(projectId);
+      const projectRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", projectId);
+      markExplicitDelta([{ docId: projectId, collectionName: "taka_projects" }]);
+      await Promise.all([
+        setDoc(projectRef, next.payload, { merge: true }),
+        recordDelta({
+          docId: projectId,
+          collectionName: "taka_projects",
+          action: "update",
+          isPatch: true,
+          data: next.payload,
+          year: next.year,
+        }).catch(() => {}),
+      ]);
+    }
+  } catch (error) {
+    console.error(`Error syncing computed dates for project ${projectId}:`, error);
+  } finally {
+    inFlightProjectSyncSet.delete(projectId);
+    if (pendingProjectSyncPayloads.has(projectId)) {
+      flushProjectSummarySync(projectId).catch(() => {});
+    }
+  }
+}
+
 export async function syncProjectDatesToFirestore(
   projectId: string,
   dates: ComputedProjectDates
@@ -325,12 +363,9 @@ export async function syncProjectDatesToFirestore(
     const existingCount = existingProject?.taskCount || existingProject?.taskSummaries?.length || 0;
     const existingSummaries = existingProject?.taskSummaries || [];
 
-    // When computed, dates.taskSummaries and dates.taskCount are authoritative
     const safeTaskSummaries = dates.taskSummaries !== undefined ? dates.taskSummaries : existingSummaries;
     const safeTaskCount = dates.taskCount !== undefined ? dates.taskCount : existingCount;
 
-    // Dirty Check: Chỉ gửi lệnh ghi vào Firestore nếu các chỉ số cốt lõi (ngày, tiến độ, số lượng task, taskSummaries) thực sự thay đổi.
-    // Sử dụng canonical signature không phụ thuộc thứ tự key của object từ Firestore/IndexedDB để tránh ghi thừa.
     const toSummariesSig = (list: any[]) =>
       (list || [])
         .map(
@@ -348,7 +383,6 @@ export async function syncProjectDatesToFirestore(
       Number(existingProject.taskCount ?? 0) !== Number(safeTaskCount ?? dates.taskCount ?? 0) ||
       toSummariesSig(existingProject.taskSummaries || []) !== toSummariesSig(safeTaskSummaries || dates.taskSummaries || []);
 
-    // Cập nhật Optimistic in-memory Store tức thời (0ms) để UI đồng bộ mượt mà
     let updatedProjectObj: Project | null = null;
     if (existingProject) {
       const updated = projects.map((p) => {
@@ -371,43 +405,17 @@ export async function syncProjectDatesToFirestore(
       }
     }
 
-    if (!hasChanged) {
-      // Dữ liệu tổng hợp không đổi -> Tiết kiệm 100% lượt Write cho project tổng hợp
-      return;
-    }
-
-    const projectRef = doc(
-      db,
-      "artifacts",
-      APP_ID,
-      "public",
-      "data",
-      "taka_projects",
-      projectId
-    );
+    if (!hasChanged) return;
 
     const updatePayload: Record<string, any> = {
       updatedAt: new Date().toISOString(),
     };
-
-    if (dates.computedTakStart !== undefined) {
-      updatePayload.computedTakStart = dates.computedTakStart;
-    }
-    if (dates.computedTakCompl !== undefined) {
-      updatePayload.computedTakCompl = dates.computedTakCompl;
-    }
-    if (dates.computedOpening !== undefined) {
-      updatePayload.computedOpening = dates.computedOpening;
-    }
-    if (dates.computedPlanProgress !== undefined) {
-      updatePayload.computedPlanProgress = dates.computedPlanProgress;
-    }
-    if (dates.computedActProgress !== undefined) {
-      updatePayload.computedActProgress = dates.computedActProgress;
-    }
-    if (safeTaskCount !== undefined) {
-      updatePayload.taskCount = safeTaskCount;
-    }
+    if (dates.computedTakStart !== undefined) updatePayload.computedTakStart = dates.computedTakStart;
+    if (dates.computedTakCompl !== undefined) updatePayload.computedTakCompl = dates.computedTakCompl;
+    if (dates.computedOpening !== undefined) updatePayload.computedOpening = dates.computedOpening;
+    if (dates.computedPlanProgress !== undefined) updatePayload.computedPlanProgress = dates.computedPlanProgress;
+    if (dates.computedActProgress !== undefined) updatePayload.computedActProgress = dates.computedActProgress;
+    if (safeTaskCount !== undefined) updatePayload.taskCount = safeTaskCount;
     if (safeTaskSummaries !== undefined) {
       updatePayload.taskSummaries = safeTaskSummaries.map((ts: any) => {
         const item: Record<string, any> = {};
@@ -420,21 +428,11 @@ export async function syncProjectDatesToFirestore(
       });
     }
 
-    const { markExplicitDelta } = await import("./autoDeltaQueue");
-    markExplicitDelta([{ docId: projectId, collectionName: "taka_projects" }]);
-
-    await setDoc(projectRef, updatePayload, { merge: true });
-
-    // Phát tín hiệu delta của taka_projects để các thiết bị khác đồng bộ real-time
-    const { recordDelta } = await import("./deltaSyncService");
-    recordDelta({
-      docId: projectId,
-      collectionName: "taka_projects",
-      action: "update",
-      isPatch: true,
-      data: updatePayload,
+    pendingProjectSyncPayloads.set(projectId, {
+      payload: updatePayload,
       year: existingProject?.year ? String(existingProject.year) : undefined,
-    }).catch(() => {});
+    });
+    await flushProjectSummarySync(projectId);
   } catch (error) {
     console.error(`Error syncing computed dates for project ${projectId}:`, error);
   }

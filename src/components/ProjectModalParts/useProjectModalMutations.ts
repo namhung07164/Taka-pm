@@ -109,6 +109,7 @@ export function useProjectModalMutations({
         year: yearNum,
         code: String(formData.code).trim(),
         linkCodes: formData.linkCodes ? String(formData.linkCodes).trim() : String(formData.code).trim(),
+        shopType: formData.shopType ? String(formData.shopType).trim() : undefined,
         sizeM2: (formData.sizeM2 !== undefined && formData.sizeM2 !== null && (formData.sizeM2 as any) !== '' && !isNaN(Number(formData.sizeM2)))
           ? Number(formData.sizeM2)
           : undefined,

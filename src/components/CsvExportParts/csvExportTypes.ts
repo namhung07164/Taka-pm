@@ -11,7 +11,7 @@ export const TAB_CONFIG: Record<string, CsvTabConfigItem> = {
   project: {
     id: 'project',
     label: 'Xuất Project',
-    columns: ['store', 'location', 'year', 'code', 'name'],
+    columns: ['store', 'location', 'year', 'code', 'name', 'shopType', 'sizeM2'],
     fileNamePrefix: 'taka_projects_exported',
     icon: 'ph-file-csv',
     exportType: 'csv',
