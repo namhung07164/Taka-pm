@@ -19139,40 +19139,42 @@ export function DetailTab({
       />
       )}
 
-      <DetailMobileView
-        filteredProjects={filteredProjects}
-        expandedCodes={expandedCodes}
-        setExpandedCodes={setExpandedCodes}
-        visibleCount={visibleCount}
-        setVisibleCount={setVisibleCount}
-        projectInfoMap={projectInfoMap}
-        getProjectInfo={getProjectInfo}
-        sortConfig={sortConfig}
-        delegationGroupByParentKey={delegationGroupByParentKey}
-        initialFocusTaskId={initialFocusTaskId}
-        canWrite={canWrite}
-        tasks={tasks}
-        projects={projects}
-        lowerSearchTerm={lowerSearchTerm}
-        delegationGroups={delegationGroups}
-        toggleGroup={toggleGroup}
-        onEditProject={onEditProject}
-        onAddTask={onAddTask}
-        onEditTask={onEditTask}
-        handleUpdateProject={handleUpdateProject}
-        handleMoveTask={handleMoveTask}
-        handleUpdateTask={handleUpdateTask}
-        handleDeleteTask={handleDeleteTask}
-        taskCodeMap={taskCodeMap}
-        taskActualStatusMap={taskActualStatusMap}
-        onSortSubTasks={handleSortSubTasks}
-        childTasksCountMap={childTasksCountMap}
-        expandedModularTasks={expandedModularTasks}
-        onToggleModularParent={handleToggleModularParent}
-        isAllModularExpanded={isAllModularExpanded}
-        onToggleExpandAllModular={handleToggleExpandAllModular}
-        totalChildTasksCount={modularParentsCount > 0 ? modularParentsCount : totalChildTasksCount}
-      />
+      {!isDesktop && !useAppStore.getState().isPrintPreview && !useAppStore.getState().isExportingPDF && (
+        <DetailMobileView
+          filteredProjects={filteredProjects}
+          expandedCodes={expandedCodes}
+          setExpandedCodes={setExpandedCodes}
+          visibleCount={visibleCount}
+          setVisibleCount={setVisibleCount}
+          projectInfoMap={projectInfoMap}
+          getProjectInfo={getProjectInfo}
+          sortConfig={sortConfig}
+          delegationGroupByParentKey={delegationGroupByParentKey}
+          initialFocusTaskId={initialFocusTaskId}
+          canWrite={canWrite}
+          tasks={tasks}
+          projects={projects}
+          lowerSearchTerm={lowerSearchTerm}
+          delegationGroups={delegationGroups}
+          toggleGroup={toggleGroup}
+          onEditProject={onEditProject}
+          onAddTask={onAddTask}
+          onEditTask={onEditTask}
+          handleUpdateProject={handleUpdateProject}
+          handleMoveTask={handleMoveTask}
+          handleUpdateTask={handleUpdateTask}
+          handleDeleteTask={handleDeleteTask}
+          taskCodeMap={taskCodeMap}
+          taskActualStatusMap={taskActualStatusMap}
+          onSortSubTasks={handleSortSubTasks}
+          childTasksCountMap={childTasksCountMap}
+          expandedModularTasks={expandedModularTasks}
+          onToggleModularParent={handleToggleModularParent}
+          isAllModularExpanded={isAllModularExpanded}
+          onToggleExpandAllModular={handleToggleExpandAllModular}
+          totalChildTasksCount={modularParentsCount > 0 ? modularParentsCount : totalChildTasksCount}
+        />
+      )}
 
       <DetailFocusControls 
         initialFocusTaskId={initialFocusTaskId}
@@ -20573,20 +20575,6 @@ export const DetailMobileView = memo(function DetailMobileView({
     }
   }, [visibleCount, filteredProjects.length, setVisibleCount]);
 
-  useEffect(() => {
-    if (!filteredProjects || filteredProjects.length === 0) return;
-    const visibleSlice = filteredProjects.slice(0, visibleCount);
-    const visibleIds = new Set<string>();
-    for (const p of visibleSlice) {
-      if (p.id) visibleIds.add(String(p.id));
-      if (p.code) visibleIds.add(String(p.code));
-    }
-    const arr = Array.from(visibleIds).filter(Boolean);
-    if (arr.length > 0) {
-      useAppStore.getState().setVisibleActiveProjectIds(arr);
-    }
-  }, [filteredProjects, visibleCount]);
-
   return (
     <>
       <div className="xl:hidden flex justify-between items-center px-2 pb-2">
@@ -20819,7 +20807,7 @@ export const DetailProjectRow = React.memo(function DetailProjectRow({
       data-project-year={p.year || ''}
       data-project-store={p.store || ''}
       className={cn(
-        "table-row-optimized border-b-2 border-slate-200 dark:border-[#444446] transition-all duration-700",
+        "table-row-optimized h-[46px] border-b-2 border-slate-200 dark:border-[#444446] transition-colors duration-500",
         item.projectIndex % 2 === 0 ? "bg-slate-100/80 dark:bg-[#1e1e20]/80" : "bg-blue-50/50 dark:bg-[#28282a]",
         isFlashed && "ring-2 ring-emerald-500/80 bg-emerald-50/90 dark:bg-emerald-950/70 z-10 shadow-sm"
       )}
@@ -21536,12 +21524,12 @@ export const DetailTableView = memo(function DetailTableView({
       <div 
         ref={tableContainerRef}
         onScroll={handleTableScroll}
-        className="overflow-auto border border-slate-200 dark:border-[#444446] rounded-xl shadow-xs bg-white dark:bg-[#1e1e20]"
-        style={{ height: "calc(100vh - 210px)", minHeight: "520px" }}
+        className="overflow-auto [overflow-anchor:none] border border-slate-200 dark:border-[#444446] rounded-xl shadow-xs bg-white dark:bg-[#1e1e20]"
+        style={{ height: "calc(100vh - 210px)", minHeight: "520px", overflowAnchor: "none" }}
       >
         <table 
-          className="text-sm text-left text-slate-600 dark:text-[#a3a3a3] table-fixed min-w-full"
-          style={{ width: `${totalTableWidth}px` }}
+          className="text-sm text-left text-slate-600 dark:text-[#a3a3a3] table-fixed min-w-full [overflow-anchor:none]"
+          style={{ width: `${totalTableWidth}px`, overflowAnchor: "none" }}
         >
           <DetailTableHeader
             visibleColumns={effectiveVisibleColumns}
@@ -21570,8 +21558,8 @@ export const DetailTableView = memo(function DetailTableView({
           />
           <tbody>
             {paddingTop > 0 && (
-              <tr style={{ height: `${paddingTop}px` }}>
-                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none' }} />
+              <tr style={{ height: `${paddingTop}px`, overflowAnchor: 'none' }} className="[overflow-anchor:none] pointer-events-none select-none">
+                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none', height: `${paddingTop}px` }} />
               </tr>
             )}
             {flatTableRows.slice(startIndex, endIndex).map((item) => {
@@ -21641,8 +21629,8 @@ export const DetailTableView = memo(function DetailTableView({
               );
             })}
             {paddingBottom > 0 && (
-              <tr style={{ height: `${paddingBottom}px` }}>
-                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none' }} />
+              <tr style={{ height: `${paddingBottom}px`, overflowAnchor: 'none' }} className="[overflow-anchor:none] pointer-events-none select-none">
+                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none', height: `${paddingBottom}px` }} />
               </tr>
             )}
             {visibleCount < filteredProjects.length && (
@@ -21753,7 +21741,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
       onDragEnd={onDragEnd}
       onDrop={(e) => onDrop(e, t, p)}
       className={cn(
-        "table-row-optimized border-b border-slate-100 dark:border-[#333336] transition-all duration-700 relative",
+        "table-row-optimized h-[42px] border-b border-slate-100 dark:border-[#333336] transition-colors duration-500 relative",
         item.taskIndex % 2 === 0 ? "bg-white dark:bg-[#1e1e20]" : "bg-slate-50/50 dark:bg-[#252528]",
         isSelected && "bg-blue-50/80 dark:bg-blue-900/20",
         isDragging && "opacity-40",
@@ -24543,7 +24531,14 @@ export function useDetailData({
     return map;
   }, [delegationGroups]);
 
-  useEffect(() => { setVisibleCount(20); }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
+  const isFirstMountVisibleCountRef = useRef(true);
+  useEffect(() => {
+    if (isFirstMountVisibleCountRef.current) {
+      isFirstMountVisibleCountRef.current = false;
+      return;
+    }
+    setVisibleCount(30);
+  }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
 
   const effectiveLocationFilter = useMemo(() => {
     if (globalLocationFilter.length === 0) return globalLocationFilter;
@@ -27528,7 +27523,9 @@ export interface UseDetailVirtualizationParams {
   filteredProjectsLength: number;
 }
 
-const OVERSCAN = 10;
+const OVERSCAN = 25;
+const PROJECT_ROW_HEIGHT = 46;
+const TASK_ROW_HEIGHT = 42;
 
 export function useDetailVirtualization({
   flatTableRows,
@@ -27554,7 +27551,7 @@ export function useDetailVirtualization({
     let sum = 0;
     for (let i = 0; i < totalRows; i++) {
       offsets[i] = sum;
-      sum += (flatTableRows[i].type === 'project' ? 42 : 36);
+      sum += (flatTableRows[i].type === 'project' ? PROJECT_ROW_HEIGHT : TASK_ROW_HEIGHT);
     }
     offsets[totalRows] = sum;
     return { totalHeight: sum, rowOffsets: offsets };
@@ -27683,29 +27680,10 @@ export function useDetailVirtualization({
 
     if (targetIdx >= 0 && rowOffsets[targetIdx] !== undefined) {
       const targetScroll = Math.max(0, rowOffsets[targetIdx] - offsetAdjustment);
-      tableContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+      tableContainerRef.current.scrollTo({ top: targetScroll, behavior: 'auto' });
       lastScrolledTargetRef.current = targetKey;
     }
   }, [initialFocusTaskId, initialFilterCode, flatTableRows, rowOffsets]);
-
-  useEffect(() => {
-    if (!flatTableRows || flatTableRows.length === 0) return;
-    const visibleSlice = flatTableRows.slice(startIndex, endIndex);
-    const visibleIds = new Set<string>();
-    for (const row of visibleSlice) {
-      if (row.type === 'project' && row.project) {
-        if (row.project.id) visibleIds.add(String(row.project.id));
-        if (row.project.code) visibleIds.add(String(row.project.code));
-      } else if (row.type === 'task' && row.task) {
-        if (row.task.projectId) visibleIds.add(String(row.task.projectId));
-        if (row.task.projectCode) visibleIds.add(String(row.task.projectCode));
-      }
-    }
-    const arr = Array.from(visibleIds).filter(Boolean);
-    if (arr.length > 0) {
-      useAppStore.getState().setVisibleActiveProjectIds(arr);
-    }
-  }, [flatTableRows, startIndex, endIndex]);
 
   return {
     tableContainerRef,
@@ -118154,63 +118132,49 @@ export function parseCSVFull(text: string) {
 
 export function scrollToElement(el: HTMLElement) {
   if (!el) return;
-  const isIOS =
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (typeof navigator !== "undefined" &&
-      navigator.userAgent.includes("Mac") &&
-      "ontouchend" in document);
-
-  if (isIOS) {
-    try {
-      const rect = el.getBoundingClientRect();
-      const st = window.pageYOffset || document.documentElement.scrollTop;
-
-      let scrollParent = el.parentElement;
-      let handledInnerScroll = false;
-
-      while (
-        scrollParent &&
-        scrollParent !== document.body &&
-        scrollParent !== document.documentElement
-      ) {
-        const style = window.getComputedStyle(scrollParent);
-        if (
-          (style.overflowY === "auto" ||
-            style.overflowY === "scroll" ||
-            style.overflow === "auto" ||
-            style.overflow === "scroll") &&
-          scrollParent.scrollHeight > scrollParent.clientHeight + 5
-        ) {
-          const parentRect = scrollParent.getBoundingClientRect();
-          const childTargetY =
-            rect.top -
-            parentRect.top +
-            scrollParent.scrollTop -
-            scrollParent.clientHeight / 2 +
-            rect.height / 2;
-          scrollParent.scrollTop = childTargetY;
-          handledInnerScroll = true;
-          break;
-        }
-        scrollParent = scrollParent.parentElement;
-      }
-
-      if (!handledInnerScroll) {
-        const targetY =
-          rect.top + st - window.innerHeight / 2 + rect.height / 2;
-        window.scrollTo(0, targetY);
-      }
-      return;
-    } catch (e) {
-      el.scrollIntoView(true);
-      return;
-    }
-  }
-
   try {
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const rect = el.getBoundingClientRect();
+    const st = window.pageYOffset || document.documentElement.scrollTop;
+
+    let scrollParent = el.parentElement;
+    let handledInnerScroll = false;
+
+    while (
+      scrollParent &&
+      scrollParent !== document.body &&
+      scrollParent !== document.documentElement
+    ) {
+      const style = window.getComputedStyle(scrollParent);
+      if (
+        (style.overflowY === "auto" ||
+          style.overflowY === "scroll" ||
+          style.overflow === "auto" ||
+          style.overflow === "scroll") &&
+        scrollParent.scrollHeight > scrollParent.clientHeight + 5
+      ) {
+        const parentRect = scrollParent.getBoundingClientRect();
+        const childTargetY =
+          rect.top -
+          parentRect.top +
+          scrollParent.scrollTop -
+          scrollParent.clientHeight / 2 +
+          rect.height / 2;
+        scrollParent.scrollTop = childTargetY;
+        handledInnerScroll = true;
+        break;
+      }
+      scrollParent = scrollParent.parentElement;
+    }
+
+    if (!handledInnerScroll) {
+      const targetY =
+        rect.top + st - window.innerHeight / 2 + rect.height / 2;
+      window.scrollTo(0, targetY);
+    }
   } catch (e) {
-    el.scrollIntoView(true);
+    try {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch {}
   }
 }
 

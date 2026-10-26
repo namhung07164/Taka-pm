@@ -87,20 +87,6 @@ export const DetailMobileView = memo(function DetailMobileView({
     }
   }, [visibleCount, filteredProjects.length, setVisibleCount]);
 
-  useEffect(() => {
-    if (!filteredProjects || filteredProjects.length === 0) return;
-    const visibleSlice = filteredProjects.slice(0, visibleCount);
-    const visibleIds = new Set<string>();
-    for (const p of visibleSlice) {
-      if (p.id) visibleIds.add(String(p.id));
-      if (p.code) visibleIds.add(String(p.code));
-    }
-    const arr = Array.from(visibleIds).filter(Boolean);
-    if (arr.length > 0) {
-      useAppStore.getState().setVisibleActiveProjectIds(arr);
-    }
-  }, [filteredProjects, visibleCount]);
-
   return (
     <>
       <div className="xl:hidden flex justify-between items-center px-2 pb-2">

@@ -423,40 +423,42 @@ export function DetailTab({
       />
       )}
 
-      <DetailMobileView
-        filteredProjects={filteredProjects}
-        expandedCodes={expandedCodes}
-        setExpandedCodes={setExpandedCodes}
-        visibleCount={visibleCount}
-        setVisibleCount={setVisibleCount}
-        projectInfoMap={projectInfoMap}
-        getProjectInfo={getProjectInfo}
-        sortConfig={sortConfig}
-        delegationGroupByParentKey={delegationGroupByParentKey}
-        initialFocusTaskId={initialFocusTaskId}
-        canWrite={canWrite}
-        tasks={tasks}
-        projects={projects}
-        lowerSearchTerm={lowerSearchTerm}
-        delegationGroups={delegationGroups}
-        toggleGroup={toggleGroup}
-        onEditProject={onEditProject}
-        onAddTask={onAddTask}
-        onEditTask={onEditTask}
-        handleUpdateProject={handleUpdateProject}
-        handleMoveTask={handleMoveTask}
-        handleUpdateTask={handleUpdateTask}
-        handleDeleteTask={handleDeleteTask}
-        taskCodeMap={taskCodeMap}
-        taskActualStatusMap={taskActualStatusMap}
-        onSortSubTasks={handleSortSubTasks}
-        childTasksCountMap={childTasksCountMap}
-        expandedModularTasks={expandedModularTasks}
-        onToggleModularParent={handleToggleModularParent}
-        isAllModularExpanded={isAllModularExpanded}
-        onToggleExpandAllModular={handleToggleExpandAllModular}
-        totalChildTasksCount={modularParentsCount > 0 ? modularParentsCount : totalChildTasksCount}
-      />
+      {!isDesktop && !useAppStore.getState().isPrintPreview && !useAppStore.getState().isExportingPDF && (
+        <DetailMobileView
+          filteredProjects={filteredProjects}
+          expandedCodes={expandedCodes}
+          setExpandedCodes={setExpandedCodes}
+          visibleCount={visibleCount}
+          setVisibleCount={setVisibleCount}
+          projectInfoMap={projectInfoMap}
+          getProjectInfo={getProjectInfo}
+          sortConfig={sortConfig}
+          delegationGroupByParentKey={delegationGroupByParentKey}
+          initialFocusTaskId={initialFocusTaskId}
+          canWrite={canWrite}
+          tasks={tasks}
+          projects={projects}
+          lowerSearchTerm={lowerSearchTerm}
+          delegationGroups={delegationGroups}
+          toggleGroup={toggleGroup}
+          onEditProject={onEditProject}
+          onAddTask={onAddTask}
+          onEditTask={onEditTask}
+          handleUpdateProject={handleUpdateProject}
+          handleMoveTask={handleMoveTask}
+          handleUpdateTask={handleUpdateTask}
+          handleDeleteTask={handleDeleteTask}
+          taskCodeMap={taskCodeMap}
+          taskActualStatusMap={taskActualStatusMap}
+          onSortSubTasks={handleSortSubTasks}
+          childTasksCountMap={childTasksCountMap}
+          expandedModularTasks={expandedModularTasks}
+          onToggleModularParent={handleToggleModularParent}
+          isAllModularExpanded={isAllModularExpanded}
+          onToggleExpandAllModular={handleToggleExpandAllModular}
+          totalChildTasksCount={modularParentsCount > 0 ? modularParentsCount : totalChildTasksCount}
+        />
+      )}
 
       <DetailFocusControls 
         initialFocusTaskId={initialFocusTaskId}

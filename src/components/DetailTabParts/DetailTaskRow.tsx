@@ -88,7 +88,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
       onDragEnd={onDragEnd}
       onDrop={(e) => onDrop(e, t, p)}
       className={cn(
-        "table-row-optimized border-b border-slate-100 dark:border-[#333336] transition-all duration-700 relative",
+        "table-row-optimized h-[42px] border-b border-slate-100 dark:border-[#333336] transition-colors duration-500 relative",
         item.taskIndex % 2 === 0 ? "bg-white dark:bg-[#1e1e20]" : "bg-slate-50/50 dark:bg-[#252528]",
         isSelected && "bg-blue-50/80 dark:bg-blue-900/20",
         isDragging && "opacity-40",

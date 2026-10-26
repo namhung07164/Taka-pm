@@ -158,7 +158,14 @@ export function useDetailData({
     return map;
   }, [delegationGroups]);
 
-  useEffect(() => { setVisibleCount(20); }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
+  const isFirstMountVisibleCountRef = useRef(true);
+  useEffect(() => {
+    if (isFirstMountVisibleCountRef.current) {
+      isFirstMountVisibleCountRef.current = false;
+      return;
+    }
+    setVisibleCount(30);
+  }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
 
   const effectiveLocationFilter = useMemo(() => {
     if (globalLocationFilter.length === 0) return globalLocationFilter;

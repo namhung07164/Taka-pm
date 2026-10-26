@@ -11,7 +11,9 @@ export interface UseDetailVirtualizationParams {
   filteredProjectsLength: number;
 }
 
-const OVERSCAN = 10;
+const OVERSCAN = 25;
+const PROJECT_ROW_HEIGHT = 46;
+const TASK_ROW_HEIGHT = 42;
 
 export function useDetailVirtualization({
   flatTableRows,
@@ -37,7 +39,7 @@ export function useDetailVirtualization({
     let sum = 0;
     for (let i = 0; i < totalRows; i++) {
       offsets[i] = sum;
-      sum += (flatTableRows[i].type === 'project' ? 42 : 36);
+      sum += (flatTableRows[i].type === 'project' ? PROJECT_ROW_HEIGHT : TASK_ROW_HEIGHT);
     }
     offsets[totalRows] = sum;
     return { totalHeight: sum, rowOffsets: offsets };
@@ -166,29 +168,10 @@ export function useDetailVirtualization({
 
     if (targetIdx >= 0 && rowOffsets[targetIdx] !== undefined) {
       const targetScroll = Math.max(0, rowOffsets[targetIdx] - offsetAdjustment);
-      tableContainerRef.current.scrollTo({ top: targetScroll, behavior: 'smooth' });
+      tableContainerRef.current.scrollTo({ top: targetScroll, behavior: 'auto' });
       lastScrolledTargetRef.current = targetKey;
     }
   }, [initialFocusTaskId, initialFilterCode, flatTableRows, rowOffsets]);
-
-  useEffect(() => {
-    if (!flatTableRows || flatTableRows.length === 0) return;
-    const visibleSlice = flatTableRows.slice(startIndex, endIndex);
-    const visibleIds = new Set<string>();
-    for (const row of visibleSlice) {
-      if (row.type === 'project' && row.project) {
-        if (row.project.id) visibleIds.add(String(row.project.id));
-        if (row.project.code) visibleIds.add(String(row.project.code));
-      } else if (row.type === 'task' && row.task) {
-        if (row.task.projectId) visibleIds.add(String(row.task.projectId));
-        if (row.task.projectCode) visibleIds.add(String(row.task.projectCode));
-      }
-    }
-    const arr = Array.from(visibleIds).filter(Boolean);
-    if (arr.length > 0) {
-      useAppStore.getState().setVisibleActiveProjectIds(arr);
-    }
-  }, [flatTableRows, startIndex, endIndex]);
 
   return {
     tableContainerRef,

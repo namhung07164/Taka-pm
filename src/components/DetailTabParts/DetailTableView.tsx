@@ -133,12 +133,12 @@ export const DetailTableView = memo(function DetailTableView({
       <div 
         ref={tableContainerRef}
         onScroll={handleTableScroll}
-        className="overflow-auto border border-slate-200 dark:border-[#444446] rounded-xl shadow-xs bg-white dark:bg-[#1e1e20]"
-        style={{ height: "calc(100vh - 210px)", minHeight: "520px" }}
+        className="overflow-auto [overflow-anchor:none] border border-slate-200 dark:border-[#444446] rounded-xl shadow-xs bg-white dark:bg-[#1e1e20]"
+        style={{ height: "calc(100vh - 210px)", minHeight: "520px", overflowAnchor: "none" }}
       >
         <table 
-          className="text-sm text-left text-slate-600 dark:text-[#a3a3a3] table-fixed min-w-full"
-          style={{ width: `${totalTableWidth}px` }}
+          className="text-sm text-left text-slate-600 dark:text-[#a3a3a3] table-fixed min-w-full [overflow-anchor:none]"
+          style={{ width: `${totalTableWidth}px`, overflowAnchor: "none" }}
         >
           <DetailTableHeader
             visibleColumns={effectiveVisibleColumns}
@@ -167,8 +167,8 @@ export const DetailTableView = memo(function DetailTableView({
           />
           <tbody>
             {paddingTop > 0 && (
-              <tr style={{ height: `${paddingTop}px` }}>
-                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none' }} />
+              <tr style={{ height: `${paddingTop}px`, overflowAnchor: 'none' }} className="[overflow-anchor:none] pointer-events-none select-none">
+                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none', height: `${paddingTop}px` }} />
               </tr>
             )}
             {flatTableRows.slice(startIndex, endIndex).map((item) => {
@@ -238,8 +238,8 @@ export const DetailTableView = memo(function DetailTableView({
               );
             })}
             {paddingBottom > 0 && (
-              <tr style={{ height: `${paddingBottom}px` }}>
-                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none' }} />
+              <tr style={{ height: `${paddingBottom}px`, overflowAnchor: 'none' }} className="[overflow-anchor:none] pointer-events-none select-none">
+                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none', height: `${paddingBottom}px` }} />
               </tr>
             )}
             {visibleCount < filteredProjects.length && (

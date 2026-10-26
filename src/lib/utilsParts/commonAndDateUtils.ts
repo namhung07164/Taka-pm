@@ -345,63 +345,49 @@ export function parseCSVFull(text: string) {
 
 export function scrollToElement(el: HTMLElement) {
   if (!el) return;
-  const isIOS =
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (typeof navigator !== "undefined" &&
-      navigator.userAgent.includes("Mac") &&
-      "ontouchend" in document);
-
-  if (isIOS) {
-    try {
-      const rect = el.getBoundingClientRect();
-      const st = window.pageYOffset || document.documentElement.scrollTop;
-
-      let scrollParent = el.parentElement;
-      let handledInnerScroll = false;
-
-      while (
-        scrollParent &&
-        scrollParent !== document.body &&
-        scrollParent !== document.documentElement
-      ) {
-        const style = window.getComputedStyle(scrollParent);
-        if (
-          (style.overflowY === "auto" ||
-            style.overflowY === "scroll" ||
-            style.overflow === "auto" ||
-            style.overflow === "scroll") &&
-          scrollParent.scrollHeight > scrollParent.clientHeight + 5
-        ) {
-          const parentRect = scrollParent.getBoundingClientRect();
-          const childTargetY =
-            rect.top -
-            parentRect.top +
-            scrollParent.scrollTop -
-            scrollParent.clientHeight / 2 +
-            rect.height / 2;
-          scrollParent.scrollTop = childTargetY;
-          handledInnerScroll = true;
-          break;
-        }
-        scrollParent = scrollParent.parentElement;
-      }
-
-      if (!handledInnerScroll) {
-        const targetY =
-          rect.top + st - window.innerHeight / 2 + rect.height / 2;
-        window.scrollTo(0, targetY);
-      }
-      return;
-    } catch (e) {
-      el.scrollIntoView(true);
-      return;
-    }
-  }
-
   try {
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const rect = el.getBoundingClientRect();
+    const st = window.pageYOffset || document.documentElement.scrollTop;
+
+    let scrollParent = el.parentElement;
+    let handledInnerScroll = false;
+
+    while (
+      scrollParent &&
+      scrollParent !== document.body &&
+      scrollParent !== document.documentElement
+    ) {
+      const style = window.getComputedStyle(scrollParent);
+      if (
+        (style.overflowY === "auto" ||
+          style.overflowY === "scroll" ||
+          style.overflow === "auto" ||
+          style.overflow === "scroll") &&
+        scrollParent.scrollHeight > scrollParent.clientHeight + 5
+      ) {
+        const parentRect = scrollParent.getBoundingClientRect();
+        const childTargetY =
+          rect.top -
+          parentRect.top +
+          scrollParent.scrollTop -
+          scrollParent.clientHeight / 2 +
+          rect.height / 2;
+        scrollParent.scrollTop = childTargetY;
+        handledInnerScroll = true;
+        break;
+      }
+      scrollParent = scrollParent.parentElement;
+    }
+
+    if (!handledInnerScroll) {
+      const targetY =
+        rect.top + st - window.innerHeight / 2 + rect.height / 2;
+      window.scrollTo(0, targetY);
+    }
   } catch (e) {
-    el.scrollIntoView(true);
+    try {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch {}
   }
 }
 
