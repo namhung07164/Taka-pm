@@ -106,7 +106,7 @@ export function startDeltaRealtimeListener(): () => void {
           const nextCursor = Math.max(getLastDeltaSyncTime(), maxSeenServerMs);
           safeSetItemLocal(LAST_SYNC_KEY, String(nextCursor));
         }
-        if (buffer.length > 0 && !flushTimer) flushTimer = setTimeout(flush, 20);
+        if (buffer.length > 0 && !flushTimer) flushTimer = setTimeout(flush, 8);
       },
       (err) => {
         console.warn('[deltaRealtime] listener error, retrying:', err);
@@ -134,7 +134,7 @@ export function startDeltaRealtimeListener(): () => void {
       if (stopped || document.visibilityState !== 'visible') return;
       detach();
       attach();
-    }, 120);
+    }, 50);
   };
 
   if (signedIn) attach();

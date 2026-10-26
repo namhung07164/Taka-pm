@@ -26,7 +26,7 @@ export const LOGICAL_TO_FS: Record<Logical, string> = {
   taka_delegations: 'taka_delegation_groups',
 };
 
-const FLUSH_DELAY_MS = 1200;
+const FLUSH_DELAY_MS = 320;
 const MAX_ITEMS_PER_DELTA = 300;
 const EXPLICIT_BEFORE_MS = 30000;
 const EXPLICIT_AFTER_MS = 30000;
