@@ -1,9 +1,30 @@
+import { doc } from 'firebase/firestore';
 import { Task, Project, DelegationGroup } from '../../types';
+import { db, APP_ID } from '../../lib/firebase';
+import { writeBatch } from '../../lib/firestoreWrites';
 import { isTaskBelongsToProject, matchProjectCode } from '../../lib/utils';
 import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../../lib/projectDatesService';
 import { bulkPersistProjects } from '../../lib/localDb';
 
 export { matchProjectCode };
+
+/**
+ * Permanently deletes duplicate task docs from Firestore when deduplicated during server snapshot hydration.
+ */
+export function purgeRemovedDuplicateTasksFromFirestore(removedIds: string[], fromCache: boolean): void {
+  if (fromCache || !removedIds || removedIds.length === 0 || getAppBootAgeMs() < BOOT_SYNC_GUARD_MS) return;
+  const realIds = removedIds.filter((id) => id && !String(id).startsWith('ts_'));
+  if (realIds.length === 0) return;
+  setTimeout(async () => {
+    try {
+      const batch = writeBatch(db);
+      realIds.slice(0, 400).forEach((id) => {
+        batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', String(id)));
+      });
+      await batch.commit();
+    } catch {}
+  }, 500);
+}
 
 export const tsOf = (v: any): number => {
   if (!v) return 0;
@@ -29,9 +50,7 @@ export function extractKeysToHydrate(
 ): Set<string> {
   const keys = new Set<string>();
   if (!Array.isArray(activeProjectIds) || activeProjectIds.length === 0) return keys;
-
   const idSet = new Set(activeProjectIds.map((id) => String(id)));
-
   (projects || []).forEach((p) => {
     if (!p) return;
     const pId = String(p.id || '');
@@ -54,14 +73,10 @@ export function extractKeysToHydrate(
       }
     }
   });
-
   activeProjectIds.forEach((id) => keys.add(String(id)));
   return keys;
 }
 
-/**
- * Groups active projects by year string.
- */
 export function groupActiveProjectsByYear(
   activeProjectIds: string[],
   projects: Project[],
@@ -69,9 +84,7 @@ export function groupActiveProjectsByYear(
 ): Map<string, Project[]> {
   const map = new Map<string, Project[]>();
   if (!Array.isArray(projects)) return map;
-
   const activeIdSet = new Set(activeProjectIds.map((id) => String(id)));
-
   projects.forEach((p) => {
     if (!p) return;
     const pId = String(p.id || '');
@@ -84,7 +97,6 @@ export function groupActiveProjectsByYear(
         globalYearFilter === 'all' ||
         !p.year ||
         String(p.year).trim() === String(globalYearFilter).trim());
-
     if (matchesById || matchesByCode) {
       const fallbackYear =
         globalYearFilter && String(globalYearFilter).toLowerCase() !== 'all'
@@ -99,55 +111,27 @@ export function groupActiveProjectsByYear(
       map.set(year, list);
     }
   });
-
   return map;
 }
 
-/**
- * Checks if a task belongs to a specific project by ID or (code + store + year).
- */
 export function doesTaskBelongToProject(t: Task, p: Project): boolean {
   return isTaskBelongsToProject(t, p);
 }
 
-/**
- * Filters snapshot.docChanges() from a projectCode query so only tasks belonging to project `p` are applied.
- */
 export function filterCompatibleProjectChanges(docChanges: any[], p: Project): any[] {
   return docChanges.filter((ch) => {
     const dt: any = ch.doc.data();
     if (!dt) return false;
     const pIdStr = p.id ? String(p.id).trim() : '';
     const dtProjId = dt.projectId ? String(dt.projectId).trim() : '';
-    if (dtProjId && pIdStr) {
-      return dtProjId === pIdStr;
-    }
-    if (
-      dt &&
-      dt.projectStore &&
-      p.store &&
-      String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()
-    ) {
-      return false;
-    }
+    if (dtProjId && pIdStr) return dtProjId === pIdStr;
+    if (dt && dt.projectStore && p.store && String(dt.projectStore).trim().toLowerCase() !== String(p.store).trim().toLowerCase()) return false;
     const dy = dt?.projectYear;
-    if (
-      dy !== undefined &&
-      dy !== null &&
-      dy !== '' &&
-      p.year !== undefined &&
-      p.year !== null &&
-      String(dy).trim() !== String(p.year).trim()
-    ) {
-      return false;
-    }
+    if (dy !== undefined && dy !== null && dy !== '' && p.year !== undefined && p.year !== null && String(dy).trim() !== String(p.year).trim()) return false;
     return true;
   });
 }
 
-/**
- * Builds synthetic "removed" docChanges for any local task in `year` that no longer exists in a server snapshot.
- */
 export function buildZombieTaskRemovalsForYear(
   snapshotDocs: any[],
   currentTasks: Task[],
@@ -159,77 +143,40 @@ export function buildZombieTaskRemovalsForYear(
   snapshotDocs.forEach((d) => serverIds.add(d.id));
   const nowMs = Date.now();
   const allowedLower = allowedStores.map((s) => s.toLowerCase());
-  const isStoreRestricted =
-    userRole !== 'admin' && allowedLower.length > 0 && !allowedLower.includes('all');
+  const isStoreRestricted = userRole !== 'admin' && allowedLower.length > 0 && !allowedLower.includes('all');
   const zombieRemovals: any[] = [];
-
   currentTasks.forEach((t) => {
-    if (
-      t?.id &&
-      !(t as any)._isVirtualSummary &&
-      String(t.projectYear ?? '').trim() === String(year).trim() &&
-      !serverIds.has(t.id)
-    ) {
-      if (
-        isStoreRestricted &&
-        t.projectStore &&
-        !allowedLower.includes(String(t.projectStore).trim().toLowerCase())
-      ) {
-        return;
-      }
+    if (t?.id && !(t as any)._isVirtualSummary && String(t.projectYear ?? '').trim() === String(year).trim() && !serverIds.has(t.id)) {
+      if (isStoreRestricted && t.projectStore && !allowedLower.includes(String(t.projectStore).trim().toLowerCase())) return;
       const updatedMs = tsOf(t.updatedAt);
       if (!updatedMs || nowMs - updatedMs > 30000) {
-        zombieRemovals.push({
-          type: 'removed',
-          doc: { id: t.id, data: () => ({ ...t, isDeleted: true }) },
-        });
+        zombieRemovals.push({ type: 'removed', doc: { id: t.id, data: () => ({ ...t, isDeleted: true }) } });
       }
     }
   });
-
   return zombieRemovals;
 }
 
-/**
- * Builds synthetic "removed" docChanges for any local task of project `p` that no longer exists in a server snapshot.
- */
 export function buildZombieTaskRemovalsForProject(
   snapshotDocs: any[],
   currentTasks: Task[],
   p: Project
 ): any[] {
   const serverIds = new Set<string>();
-  (snapshotDocs || []).forEach((d) => {
-    if (d?.id) serverIds.add(d.id);
-  });
-
+  (snapshotDocs || []).forEach((d) => { if (d?.id) serverIds.add(d.id); });
   const nowMs = Date.now();
   const zombieRemovals: any[] = [];
-
   currentTasks.forEach((t) => {
-    if (
-      t?.id &&
-      !(t as any)._isVirtualSummary &&
-      doesTaskBelongToProject(t, p) &&
-      !serverIds.has(t.id)
-    ) {
+    if (t?.id && !(t as any)._isVirtualSummary && doesTaskBelongToProject(t, p) && !serverIds.has(t.id)) {
       const updatedMs = tsOf(t.updatedAt);
       if (!updatedMs || nowMs - updatedMs > 30000) {
-        zombieRemovals.push({
-          type: 'removed',
-          doc: { id: t.id, data: () => ({ ...t, isDeleted: true }) },
-        });
+        zombieRemovals.push({ type: 'removed', doc: { id: t.id, data: () => ({ ...t, isDeleted: true }) } });
       }
     }
   });
-
   return zombieRemovals;
 }
 
-/**
- * Reconciles and heals project summaries and taskCount after a batch of task changes/removals.
- * Pre-groups finalTasks by projectId and projectCode in O(T) to eliminate O(P * T) filtering.
- */
 export function healProjectsAfterTasksBatch(params: {
   currentProjects: Project[];
   finalTasks: Task[];
@@ -292,7 +239,6 @@ export function healProjectsAfterTasksBatch(params: {
       knownHydratedProjectCodes.size > 0 ||
       tasksPool.size > 0);
 
-  // Pre-index finalTasks by projectId and projectCode parts in O(T)
   const tasksByProjectId = new Map<string, Task[]>();
   const tasksByCodePart = new Map<string, Task[]>();
   if (canRunServerSelfHeal && Array.isArray(finalTasks)) {
@@ -310,10 +256,7 @@ export function healProjectsAfterTasksBatch(params: {
       }
       if (t.projectCode) {
         const rawCode = String(t.projectCode).trim().toLowerCase();
-        const parts = rawCode
-          .split(/[,;/]+/)
-          .map((s) => s.trim())
-          .filter(Boolean);
+        const parts = rawCode.split(/[,;/]+/).map((s) => s.trim()).filter(Boolean);
         const codes = parts.length > 0 ? parts : [rawCode];
         for (let j = 0; j < codes.length; j++) {
           const c = codes[j];
@@ -363,11 +306,7 @@ export function healProjectsAfterTasksBatch(params: {
     const rawCodeCombined = workingProj.linkCodes
       ? `${workingProj.code || ''}, ${workingProj.linkCodes}`
       : String(workingProj.code || '');
-    const pCodeParts = rawCodeCombined
-      .toLowerCase()
-      .split(/[,;/]+/)
-      .map((s: string) => s.trim())
-      .filter(Boolean);
+    const pCodeParts = rawCodeCombined.toLowerCase().split(/[,;/]+/).map((s: string) => s.trim()).filter(Boolean);
     const pStoreKey = workingProj.store ? String(workingProj.store).trim().toLowerCase() : '*';
     const pYearKey = workingProj.year !== undefined && workingProj.year !== null ? String(workingProj.year).trim() : '*';
     const isInitialHydrationPass = changedTasks.size === 0 && removedTasks.size === 0;
@@ -386,7 +325,6 @@ export function healProjectsAfterTasksBatch(params: {
     if (!isProjectTouched) return workingProj;
     if (getAppBootAgeMs() < BOOT_SYNC_GUARD_MS && !isFullyHydratedProject) return workingProj;
 
-    // O(K) lookup of project tasks via pre-built index
     const pTasks: Task[] = [];
     const seenIds = new Set<string>();
     const pIdStr = workingProj.id ? String(workingProj.id).trim() : '';
@@ -420,7 +358,6 @@ export function healProjectsAfterTasksBatch(params: {
       workingProj.taskCount || 0,
       Array.isArray(workingProj.taskSummaries) ? workingProj.taskSummaries.length : 0
     );
-    // Never shrink a project's taskSummaries from partial in-memory tasks unless tasks of this project were explicitly deleted or authoritatively hydrated from server
     if (!summaryRemoved && !isAuthoritativelyHydrated && (pTasks.length === 0 || pTasks.length < existingMaxCount)) {
       return workingProj;
     }
@@ -455,15 +392,10 @@ export function healProjectsAfterTasksBatch(params: {
       (workingProj.computedPlanProgress ?? 0) !== (computed.computedPlanProgress ?? 0) ||
       (workingProj.computedActProgress ?? 0) !== (computed.computedActProgress ?? 0);
 
-    const hasDiscrepancy = hasStructuralChange || hasProgressDiscrepancy;
-
-    if (!hasDiscrepancy) return workingProj;
+    if (!hasStructuralChange && !hasProgressDiscrepancy) return workingProj;
 
     projectsNeedUpdate = true;
-    const healedProj = {
-      ...workingProj,
-      ...computed,
-    };
+    const healedProj = { ...workingProj, ...computed };
     if (!fromCache && hasStructuralChange) {
       bulkPersistProjects([healedProj]).catch(() => {});
       if (isFullyHydratedProject && workingProj.id) {

@@ -7,14 +7,15 @@ import { useAppStore } from '../store/useAppStore';
 import { usePerformanceStore } from '../store/usePerformanceStore';
 import { pullAndApplyDeltas } from './deltaSyncService';
 import { TakaDelta, Project, Task, Cost, DelegationGroup } from '../types';
-import { deduplicateTasks } from './taskDeduplicationService';
+import { deduplicateTasksInMemory } from './taskDeduplicationService';
+import { rollupTaskSummaries } from './taskRollupHelpers';
 import { initBroadcastSyncListener } from './broadcastSyncService';
 import { purgeOldDeltas } from './deltaPurgeService';
 import { enforceStorageBudget } from './storageBudgetService';
 import { isTaskBelongsToProject } from './utils';
 import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from './projectDatesService';
 import {
-  tsOf, buildZombieProjectIndex, isZombieTaskAgainstProjects,
+  tsOf, buildZombieProjectIndex, isZombieTaskAgainstProjects, reconcileAndDeduplicateLocalStore,
   hydrateCostsFromLocal, hydrateDelegationsFromLocal, hydrateDelegationsForProjects, hydrateDelegationsForTasks,
 } from './backgroundSyncParts/localHydrationHelpers';
 import { isProjectDeletedInTracker } from './taskDeletedTracker';
@@ -71,24 +72,41 @@ export function bootstrapLocalStore(): Promise<{
       ]);
 
       const validProjects = projects.filter((p) => p && !p.isDeleted && !isProjectDeletedInTracker(p.id));
-      if (validProjects.length > 0 && (!store.projects || store.projects.length === 0)) {
-        const normalizedProjects = validProjects
-          .map((p) => ({
+      const normalizedProjects = validProjects
+        .map((p) => {
+          const dedupedSummaries =
+            Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
+              ? rollupTaskSummaries(p.taskSummaries)
+              : p.taskSummaries;
+          return {
             ...p,
+            taskSummaries: dedupedSummaries,
             taskCount:
-              Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
-                ? p.taskSummaries.length
+              Array.isArray(dedupedSummaries) && dedupedSummaries.length > 0
+                ? dedupedSummaries.length
                 : (p.taskCount ?? 0),
-          }))
-          .sort((a, b) => (a.no || 0) - (b.no || 0));
+          };
+        })
+        .sort((a, b) => (a.no || 0) - (b.no || 0));
+
+      if (normalizedProjects.length > 0 && (!store.projects || store.projects.length === 0)) {
         store.setProjects(normalizedProjects);
       }
       if (tasks.length > 0 && store.isTasksRequested && (!store.tasks || store.tasks.length === 0)) {
-        const zombieIndex = buildZombieProjectIndex(validProjects);
-        const cleanTasks = tasks.filter(
-          (t) => !isZombieTaskAgainstProjects(t, validProjects, zombieIndex)
-        );
-        store.setTasks(deduplicateTasks(cleanTasks, validProjects));
+        const zombieIndex = buildZombieProjectIndex(normalizedProjects, tasks);
+        const cleanTasks: Task[] = [];
+        tasks.forEach((t) => {
+          if (isZombieTaskAgainstProjects(t, normalizedProjects, zombieIndex)) {
+            if (t?.id) deleteLocalRecord('taka_tasks', t.id).catch(() => {});
+          } else {
+            cleanTasks.push(t);
+          }
+        });
+        const { dedupedTasks, removedTaskIds } = deduplicateTasksInMemory(cleanTasks, normalizedProjects);
+        removedTaskIds.forEach((id) => {
+          deleteLocalRecord('taka_tasks', id).catch(() => {});
+        });
+        store.setTasks(dedupedTasks);
       }
       if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
         store.setCosts(costs);
@@ -157,17 +175,21 @@ export async function hydrateProjectsFromLocal(
         if (p && p.id && !p.isDeleted && !isProjectDeletedInTracker(p.id)) {
           const pIdStr = String(p.id);
           const existing = mergedMap.get(pIdStr);
-          // Do not resurrect a project that was in memory before getLocalProjects and removed concurrently by a delta
           if (!existing && preHydrateIds.has(pIdStr)) return;
           if (!existing || tsOf(p.updatedAt) > tsOf(existing.updatedAt)) {
+            const rawSummaries = p.taskSummaries || existing?.taskSummaries;
+            const dedupedSummaries =
+              Array.isArray(rawSummaries) && rawSummaries.length > 0
+                ? rollupTaskSummaries(rawSummaries)
+                : rawSummaries;
             mergedMap.set(pIdStr, {
               ...(existing || {}),
               ...p,
               taskCount:
-                Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0
-                  ? p.taskSummaries.length
+                Array.isArray(dedupedSummaries) && dedupedSummaries.length > 0
+                  ? dedupedSummaries.length
                   : (p.taskCount ?? existing?.taskCount ?? 0),
-              taskSummaries: p.taskSummaries || existing?.taskSummaries,
+              taskSummaries: dedupedSummaries,
             });
           }
         }
@@ -208,8 +230,8 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
       const currentStore = useAppStore.getState();
       const projectsNow = currentStore.projects || [];
       const existing = currentStore.tasks || [];
-      const zombieIdsToDelete: string[] = [];
-      const zombieIndex = buildZombieProjectIndex(projectsNow);
+      const zombieIdsToDelete = new Set<string>();
+      const zombieIndex = buildZombieProjectIndex(projectsNow, [...existing, ...localTasks]);
 
       const tMap = new Map<string, Task>();
       let existingZombieCount = 0;
@@ -218,13 +240,14 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
           tMap.set(t.id, t);
         } else {
           existingZombieCount++;
+          if (t?.id) zombieIdsToDelete.add(t.id);
         }
       });
 
       let anyNewOrUpdated = false;
       localTasks.forEach((t) => {
         if (isZombieTaskAgainstProjects(t, projectsNow, zombieIndex)) {
-          if (t?.id) zombieIdsToDelete.push(t.id);
+          if (t?.id) zombieIdsToDelete.add(t.id);
           return;
         }
         const prev = tMap.get(t.id);
@@ -234,27 +257,22 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
         }
       });
 
-      if (zombieIdsToDelete.length > 0) {
-        zombieIdsToDelete.forEach((id) => {
-          deleteLocalRecord('taka_tasks', id).catch(() => {});
-        });
+      const { dedupedTasks: deduped, removedTaskIds } = deduplicateTasksInMemory(
+        Array.from(tMap.values()),
+        projectsNow
+      );
+      removedTaskIds.forEach((id) => zombieIdsToDelete.add(id));
+
+      if (zombieIdsToDelete.size > 0) {
+        zombieIdsToDelete.forEach((id) => { deleteLocalRecord('taka_tasks', id).catch(() => {}); });
       }
 
-      if (!anyNewOrUpdated && tMap.size === existing.length && existingZombieCount === 0) {
+      if (!anyNewOrUpdated && deduped.length === existing.length && existingZombieCount === 0 && removedTaskIds.length === 0) {
         return existing.length;
       }
 
-      const deduped = deduplicateTasks(Array.from(tMap.values()), projectsNow);
       currentStore.setTasks(deduped);
-
-      usePerformanceStore
-        .getState()
-        .trackGetDoc(
-          'dexie_tasks_hydration',
-          true,
-          deduped.length,
-          'Instant Local-First Tasks Hydration (0ms)'
-        );
+      usePerformanceStore.getState().trackGetDoc('dexie_tasks_hydration', true, deduped.length, 'Instant Local-First Tasks Hydration (0ms)');
       return deduped.length;
     }
     return store.tasks?.length || 0;
@@ -264,9 +282,6 @@ export async function hydrateTasksFromLocal(year?: string): Promise<number> {
   }
 }
 
-/**
- * Nạp tức thì Tasks của các dự án cụ thể từ Dexie vào Zustand (0ms UI, không chờ Firestore)
- */
 export async function hydrateTasksForProjects(
   projectIdsOrCodes: string[],
   year?: string | number | null,
@@ -276,20 +291,10 @@ export async function hydrateTasksForProjects(
   try {
     const store = useAppStore.getState();
     const currentProjects = store.projects || [];
-    const normYear =
-      year !== undefined && year !== null && String(year).toLowerCase() !== 'all'
-        ? String(year).trim()
-        : '';
-    const normStore =
-      storeFilter && String(storeFilter).toLowerCase() !== 'all'
-        ? String(storeFilter).trim().toUpperCase()
-        : '';
-
+    const normYear = year !== undefined && year !== null && String(year).toLowerCase() !== 'all' ? String(year).trim() : '';
+    const normStore = storeFilter && String(storeFilter).toLowerCase() !== 'all' ? String(storeFilter).trim().toUpperCase() : '';
     const keySet = new Set(projectIdsOrCodes.map((k) => String(k).trim()).filter(Boolean));
-    const lowerKeySet = new Set(
-      projectIdsOrCodes.map((k) => String(k).trim().toLowerCase()).filter(Boolean)
-    );
-
+    const lowerKeySet = new Set(projectIdsOrCodes.map((k) => String(k).trim().toLowerCase()).filter(Boolean));
     const codesCoveredByIdMatch = new Set<string>();
     currentProjects.forEach((p) => {
       if (p && !p.isDeleted && p.id && keySet.has(String(p.id).trim()) && p.code) {
@@ -303,8 +308,7 @@ export async function hydrateTasksForProjects(
       const pCode = String(p.code || '').trim().toLowerCase();
       if (pCode && lowerKeySet.has(pCode) && !codesCoveredByIdMatch.has(pCode)) {
         if (normYear && p.year && String(p.year).trim() !== normYear) return false;
-        if (normStore && p.store && String(p.store).trim().toUpperCase() !== normStore)
-          return false;
+        if (normStore && p.store && String(p.store).trim().toUpperCase() !== normStore) return false;
         return true;
       }
       return false;
@@ -315,11 +319,7 @@ export async function hydrateTasksForProjects(
       if (p.id) expandedKeys.add(String(p.id).trim());
       if (p.code) expandedKeys.add(String(p.code).trim());
       if (p.linkCodes) {
-        String(p.linkCodes)
-          .split(/[,;/]+/)
-          .forEach((c) => {
-            if (c.trim()) expandedKeys.add(c.trim());
-          });
+        String(p.linkCodes).split(/[,;/]+/).forEach((c) => { if (c.trim()) expandedKeys.add(c.trim()); });
       }
     });
 
@@ -331,16 +331,14 @@ export async function hydrateTasksForProjects(
     const existingTasks = latestStore.tasks || [];
     const taskMap = new Map<string, Task>(existingTasks.map((t) => [t.id, t]));
     let changedCount = 0;
-    const zombieIndex = buildZombieProjectIndex(currentProjects);
+    const zombieIndex = buildZombieProjectIndex(currentProjects, [...existingTasks, ...localTasks]);
 
     for (const t of localTasks) {
       if (isZombieTaskAgainstProjects(t, currentProjects, zombieIndex)) {
         if (t?.id) deleteLocalRecord('taka_tasks', t.id).catch(() => {});
         continue;
       }
-      if (targetProjects.length > 0 && !targetProjects.some((p) => isTaskBelongsToProject(t, p))) {
-        continue;
-      }
+      if (targetProjects.length > 0 && !targetProjects.some((p) => isTaskBelongsToProject(t, p))) continue;
       const prev = taskMap.get(t.id);
       if (!prev || tsOf(t.updatedAt) > tsOf(prev.updatedAt)) {
         taskMap.set(t.id, prev ? { ...prev, ...t } : t);
@@ -348,18 +346,15 @@ export async function hydrateTasksForProjects(
       }
     }
 
-    if (changedCount > 0) {
-      const merged = deduplicateTasks(Array.from(taskMap.values()), latestStore.projects);
+    const { dedupedTasks: merged, removedTaskIds } = deduplicateTasksInMemory(Array.from(taskMap.values()), latestStore.projects);
+    if (removedTaskIds.length > 0) {
+      removedTaskIds.forEach((id) => { deleteLocalRecord('taka_tasks', id).catch(() => {}); });
+    }
+
+    if (changedCount > 0 || removedTaskIds.length > 0) {
       latestStore.setTasks(merged);
-      usePerformanceStore
-        .getState()
-        .trackGetDoc(
-          'dexie_tasks_partial_hydration',
-          true,
-          changedCount,
-          `Local-First Hydration for ${projectIdsOrCodes.length} projects (0ms)`
-        );
-      return changedCount;
+      usePerformanceStore.getState().trackGetDoc('dexie_tasks_partial_hydration', true, changedCount, `Local-First Hydration for ${projectIdsOrCodes.length} projects (0ms)`);
+      return changedCount || removedTaskIds.length;
     }
     return 0;
   } catch (err) {
@@ -368,9 +363,6 @@ export async function hydrateTasksForProjects(
   }
 }
 
-/**
- * Ghi nhận các Delta nhận được từ server vào Dexie Local Database ngầm
- */
 export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<void> {
   if (!deltas || deltas.length === 0) return;
 
@@ -433,9 +425,6 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
   return writeJob;
 }
 
-/**
- * Lưu snapshot từ Firestore vào Dexie Local Database mà không làm nghẽn Main Thread
- */
 export function offloadPersistSnapshot(
   collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
   items: any[]
@@ -459,10 +448,14 @@ export function startBackgroundSyncCoordinator(intervalMs: number = 5 * 60 * 100
   if (typeof window === 'undefined') return () => {};
   bootstrapLocalStore().catch(() => {});
   const cleanupBroadcast = initBroadcastSyncListener();
-  setTimeout(() => { purgeOldDeltas(48).catch(() => {}); }, 5000);
+  setTimeout(() => {
+    reconcileAndDeduplicateLocalStore().catch(() => {});
+    purgeOldDeltas(48).catch(() => {});
+  }, 2000);
   const runSync = async () => {
     try {
       await pullAndApplyDeltas(useAppStore.getState().globalYearFilter);
+      await reconcileAndDeduplicateLocalStore();
     } catch (err) {
       console.warn('[backgroundSyncWorker] runSync error:', err);
     }

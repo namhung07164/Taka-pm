@@ -62,19 +62,144 @@ function calcInclusiveDays(startStr: string, finishStr: string): string {
 }
 
 /**
+ * Deduplicates task summary entries within a single project:
+ * - Removes duplicate summary IDs
+ * - Collapses duplicate summaries that share the same normalized name + start + finish
+ *   (unless both point to two distinct valid parent summaries in the project),
+ *   preferring the summary that has a valid existing parentTaskId and real task ID.
+ */
+export function deduplicateTaskSummaries(summaries: any[]): any[] {
+  if (!Array.isArray(summaries) || summaries.length <= 1) return summaries || [];
+
+  const validList = summaries.filter((s) => s && (s.name || s.start || s.finish || s.taskCodePhu));
+  if (validList.length <= 1) return validList;
+
+  const byIdLower = new Map<string, any>();
+  const byCodeLower = new Map<string, any>();
+  const byIndexNum = new Map<number, any>();
+  const byNameLower = new Map<string, any>();
+
+  for (let i = 0; i < validList.length; i++) {
+    const s = validList[i];
+    if (s.id) byIdLower.set(String(s.id).trim().toLowerCase(), s);
+    if (s.taskCodePhu) {
+      const cNorm = normalizeDashes(String(s.taskCodePhu)).trim().toLowerCase();
+      byCodeLower.set(cNorm, s);
+      const num = extractNumericSuffix(cNorm);
+      if (num !== null && !byIndexNum.has(num)) byIndexNum.set(num, s);
+    }
+    const ord = s.orderIndex !== undefined && s.orderIndex !== null ? Number(s.orderIndex) + 1 : i + 1;
+    if (!byIndexNum.has(ord)) byIndexNum.set(ord, s);
+    if (s.name) {
+      const nLower = String(s.name).trim().toLowerCase().replace(/\s+/g, ' ');
+      if (nLower && (!byNameLower.has(nLower) || s.isModularParent)) byNameLower.set(nLower, s);
+    }
+  }
+
+  const validParentByItem = new Map<any, any>();
+  const activeParents = new Set<any>();
+
+  for (let i = 0; i < validList.length; i++) {
+    const s = validList[i];
+    const rawP = s.parentTaskId || s.parentId;
+    if (!rawP) continue;
+    const pNorm = normalizeDashes(String(rawP)).trim();
+    const pLower = pNorm.toLowerCase();
+    let par = byIdLower.get(pLower) || byCodeLower.get(pLower);
+    if (!par) {
+      const mIdx = pNorm.match(/#\s*(\d+)$/) || pNorm.match(/^(\d+)$/);
+      if (mIdx) par = byIndexNum.get(parseInt(mIdx[1], 10));
+    }
+    if (!par) par = byNameLower.get(pLower.replace(/\s+/g, ' '));
+    if (par && par !== s && (!s.id || !par.id || String(par.id).trim().toLowerCase() !== String(s.id).trim().toLowerCase())) {
+      validParentByItem.set(s, par);
+      activeParents.add(par);
+    }
+  }
+
+  const sorted = [...validList].sort((a, b) => {
+    const aRealId = Boolean(a.id && !String(a.id).startsWith('ts_'));
+    const bRealId = Boolean(b.id && !String(b.id).startsWith('ts_'));
+    if (aRealId !== bRealId) return aRealId ? -1 : 1;
+    const aIsPar = activeParents.has(a);
+    const bIsPar = activeParents.has(b);
+    if (aIsPar !== bIsPar) return aIsPar ? -1 : 1;
+    const aHasPar = validParentByItem.has(a);
+    const bHasPar = validParentByItem.has(b);
+    if (aHasPar !== bHasPar) return aHasPar ? -1 : 1;
+    const aOrd = a.orderIndex !== undefined ? Number(a.orderIndex) : 999999;
+    const bOrd = b.orderIndex !== undefined ? Number(b.orderIndex) : 999999;
+    if (aOrd !== bOrd) return aOrd - bOrd;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+
+  const seenIds = new Set<string>();
+  const seenNameDates = new Map<string, any>();
+  const idRedirect = new Map<string, string>();
+  const keptSet = new Set<any>();
+
+  for (let i = 0; i < sorted.length; i++) {
+    const s = sorted[i];
+    const sIdLower = s.id ? String(s.id).trim().toLowerCase() : '';
+    if (sIdLower && seenIds.has(sIdLower)) continue;
+
+    const normName = String(s.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const startStr = String(s.start || '').trim();
+    const finishStr = String(s.finish || '').trim();
+    const sig = normName ? `${normName}__${startStr}__${finishStr}` : '';
+
+    const existing = sig ? seenNameDates.get(sig) : undefined;
+    if (existing) {
+      const sPar = validParentByItem.get(s);
+      const ePar = validParentByItem.get(existing);
+      const sParId = sPar?.id ? (idRedirect.get(String(sPar.id).trim().toLowerCase()) || String(sPar.id).trim().toLowerCase()) : '';
+      const eParId = ePar?.id ? (idRedirect.get(String(ePar.id).trim().toLowerCase()) || String(ePar.id).trim().toLowerCase()) : '';
+      const sParName = sPar?.name ? String(sPar.name).trim().toLowerCase().replace(/\s+/g, ' ') : '';
+      const eParName = ePar?.name ? String(ePar.name).trim().toLowerCase().replace(/\s+/g, ' ') : '';
+      const existingIdLower = existing.id ? String(existing.id).trim().toLowerCase() : '';
+
+      const isChildOfExisting =
+        (sParId && existingIdLower && sParId === existingIdLower) ||
+        (eParId && sIdLower && eParId === sIdLower);
+      const hasDistinctValidParents =
+        Boolean(sPar && ePar) &&
+        sParId !== eParId &&
+        (!sParName || !eParName || sParName !== eParName);
+
+      if (!isChildOfExisting && !hasDistinctValidParents && !activeParents.has(s)) {
+        if (sIdLower && existingIdLower) idRedirect.set(sIdLower, existingIdLower);
+        if (!existing.parentTaskId && s.parentTaskId && sPar) existing.parentTaskId = s.parentTaskId;
+        if (!existing.taskCodePhu && s.taskCodePhu) existing.taskCodePhu = s.taskCodePhu;
+        if (!existing.party && s.party) existing.party = s.party;
+        if (!existing.predecessor && s.predecessor) existing.predecessor = s.predecessor;
+        if (!existing.delegation && s.delegation) existing.delegation = s.delegation;
+        continue;
+      }
+    }
+
+    if (sIdLower) seenIds.add(sIdLower);
+    if (sig) seenNameDates.set(sig, s);
+    keptSet.add(s);
+  }
+
+  return validList.filter((s) => keptSet.has(s));
+}
+
+/**
  * Rolls up task summaries for project computed summaries in O(N), including
  * parent dates, duration, runningStatus, isModularParent, and predecessor links.
  */
 export function rollupTaskSummaries(summaries: any[]): any[] {
   if (!Array.isArray(summaries) || summaries.length === 0) return summaries || [];
 
+  const dedupedInput = deduplicateTaskSummaries(summaries);
   const summaryByIdLower = new Map<string, any>();
   const summaryByCodeLower = new Map<string, any>();
   const summaryByIndexNum = new Map<number, any>();
   const summaryByNameLower = new Map<string, any>();
 
-  for (let i = 0; i < summaries.length; i++) {
-    const s = summaries[i];
+  for (let i = 0; i < dedupedInput.length; i++) {
+    const s = dedupedInput[i];
     if (!s) continue;
     if (s.id) summaryByIdLower.set(String(s.id).trim().toLowerCase(), s);
     if (s.taskCodePhu) {
@@ -94,7 +219,7 @@ export function rollupTaskSummaries(summaries: any[]): any[] {
   // First pass: resolve canonical parent IDs
   const resolvedParentByIdx = new Map<number, string>();
   const parentSet = new Set<string>();
-  const result = summaries.map((s) => (s ? { ...s } : s));
+  const result = dedupedInput.map((s) => (s ? { ...s } : s));
 
   for (let i = 0; i < result.length; i++) {
     const s = result[i];
@@ -105,8 +230,8 @@ export function rollupTaskSummaries(summaries: any[]): any[] {
     const pLower = pNorm.toLowerCase();
     let matchedParent = summaryByIdLower.get(pLower) || summaryByCodeLower.get(pLower);
     if (!matchedParent) {
-      const num = extractNumericSuffix(pNorm);
-      if (num !== null) matchedParent = summaryByIndexNum.get(num);
+      const mIdx = pNorm.match(/#\s*(\d+)$/) || pNorm.match(/^(\d+)$/);
+      if (mIdx) matchedParent = summaryByIndexNum.get(parseInt(mIdx[1], 10));
     }
     if (!matchedParent) matchedParent = summaryByNameLower.get(pLower);
 

@@ -5,6 +5,7 @@ import { markTasksDeleted } from '../../lib/taskDeletedTracker';
 import { isTaskBelongsToProject } from '../../lib/taskStateService';
 import { resolveInvalidations } from '../../lib/deltaInvalidateService';
 import { applyIncomingDeltas } from '../../lib/deltaSyncService';
+import { rollupTaskSummaries } from '../../lib/taskRollupHelpers';
 
 // Chuyển updatedAt (ISO string / Firestore Timestamp / plain {seconds} / number) về ms
 export const tsOf = (v: any): number => {
@@ -160,26 +161,25 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     expandedSet,
     nowMs,
     pendingDeletedTaskIds,
-    pendingInvalidatedTaskIds,
   } = params;
 
   if (!Array.isArray(data.taskSummaries)) return;
+  const authoritativeSummaries =
+    data.taskSummaries.length > 0 ? rollupTaskSummaries(data.taskSummaries) : data.taskSummaries;
 
   const serverSummaryIds = new Set(
-    data.taskSummaries.map((s: any) => String(s?.id || '').trim().toLowerCase()).filter(Boolean)
+    authoritativeSummaries.map((s: any) => String(s?.id || '').trim().toLowerCase()).filter(Boolean)
   );
-  const isZeroTaskServer = data.taskSummaries.length === 0 && (data.taskCount ?? 0) === 0;
+  const isZeroTaskServer = authoritativeSummaries.length === 0 && (data.taskCount ?? 0) === 0;
   const allSummariesHaveIds =
     isZeroTaskServer ||
-    (data.taskSummaries.length > 0 &&
-      data.taskSummaries.every((s: any) => Boolean(s?.id && !String(s.id).startsWith('ts_'))));
+    (authoritativeSummaries.length > 0 &&
+      authoritativeSummaries.every((s: any) => Boolean(s?.id && !String(s.id).startsWith('ts_'))));
 
   if (serverSummaryIds.size === 0 && !isZeroTaskServer) return;
 
-  // 1. Any task ID that was in existing.taskSummaries but is no longer in server data.taskSummaries was deleted on another device
-  // (Only mark deleted if its name+start also disappeared from server data.taskSummaries, avoiding false deletion on ID drift)
   const serverSummaryNameStarts = new Set(
-    data.taskSummaries
+    authoritativeSummaries
       .map((s: any) => `${String(s?.name || '').trim().toLowerCase()}|${String(s?.start || '').trim()}`)
       .filter((k) => k !== '|')
   );
@@ -194,9 +194,6 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     });
   }
 
-  // 2. Any in-memory task belonging to this project that is not in serverSummaryIds:
-  // Reconcile purely in memory (0 Firestore reads) when allSummariesHaveIds is authoritative
-  const projUpdatedMs = tsOf(data.updatedAt);
   const localProjTasks = getLocalProjectTasksFromIndex(resolvedData, tasksIndex);
   const localProjTasksById = new Map<string, any>();
   localProjTasks.forEach((t) => {
@@ -204,9 +201,8 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     localProjTasksById.set(String(t.id).trim().toLowerCase(), t);
   });
 
-  // Track summary entries whose ID is not yet present in localProjTasksById (potential ID-drifted summaries)
   const unmatchedSummaryNameStarts = new Set<string>();
-  data.taskSummaries.forEach((s: any) => {
+  authoritativeSummaries.forEach((s: any) => {
     const sIdLower = String(s?.id || '').trim().toLowerCase();
     if (!sIdLower || !localProjTasksById.has(sIdLower)) {
       const sName = String(s?.name || '').trim().toLowerCase();
@@ -225,22 +221,20 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
         return;
       }
       const updatedMs = tsOf(t.updatedAt);
-      const isOlderOrEqualToProj = !projUpdatedMs || !updatedMs || projUpdatedMs >= updatedMs;
-      if (isOlderOrEqualToProj && (!updatedMs || nowMs - updatedMs > 60000)) {
+      if (!updatedMs || nowMs - updatedMs > 60000) {
         markTasksDeleted([t.id], id);
         pendingDeletedTaskIds.add(t.id);
       }
     }
   });
 
-  // 3. Patch summary fields in-place for already-loaded local tasks (0 Firestore reads; unhydrated tasks are synthesized or loaded by useTasksHydration)
   const isProjectExpandedOrLoaded =
     localProjTasksById.size > 0 ||
     expandedSet.has(String(id)) ||
     (Boolean(data.code) && expandedSet.has(String(data.code).trim()));
 
   if (serverSummaryIds.size > 0 && isProjectExpandedOrLoaded) {
-    data.taskSummaries.forEach((s: any) => {
+    authoritativeSummaries.forEach((s: any) => {
       const sId = String(s?.id || '').trim();
       if (!sId || sId.startsWith('ts_')) return;
       const sIdLower = sId.toLowerCase();
@@ -305,19 +299,20 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
 
       for (const p of changed) {
         if (!p?.id || !Array.isArray(p.taskSummaries)) continue;
+        const summaries =
+          p.taskSummaries.length > 0 ? rollupTaskSummaries(p.taskSummaries) : p.taskSummaries;
         const summaryIds = new Set(
-          p.taskSummaries.map((s: any) => String(s?.id || '').trim().toLowerCase()).filter(Boolean)
+          summaries.map((s: any) => String(s?.id || '').trim().toLowerCase()).filter(Boolean)
         );
-        const isZeroTask = p.taskSummaries.length === 0 && (p.taskCount ?? 0) === 0;
+        const isZeroTask = summaries.length === 0 && (p.taskCount ?? 0) === 0;
         const allSummariesHaveIds =
           isZeroTask ||
-          (p.taskSummaries.length > 0 &&
-            p.taskSummaries.every((s: any) => Boolean(s?.id && !String(s.id).startsWith('ts_'))));
+          (summaries.length > 0 &&
+            summaries.every((s: any) => Boolean(s?.id && !String(s.id).startsWith('ts_'))));
         if (summaryIds.size === 0 && !isZeroTask) continue;
-        const projUpdatedMs = tsOf(p.updatedAt);
 
         const summaryById = new Map<string, any>();
-        p.taskSummaries.forEach((s: any) => {
+        summaries.forEach((s: any) => {
           if (s?.id) summaryById.set(String(s.id).trim().toLowerCase(), s);
         });
 
@@ -358,7 +353,7 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           Array.from(candidateMap.keys()).map((k) => String(k).trim().toLowerCase())
         );
         const unmatchedSummaryNameStarts = new Set<string>();
-        p.taskSummaries.forEach((s: any) => {
+        summaries.forEach((s: any) => {
           const sIdLower = String(s?.id || '').trim().toLowerCase();
           if (!sIdLower || !candidateIdsLower.has(sIdLower)) {
             const sName = String(s?.name || '').trim().toLowerCase();
@@ -371,7 +366,6 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           const tidLower = String(tid).trim().toLowerCase();
           const tUpdatedMs = tsOf(t.updatedAt);
           if (tUpdatedMs > 0 && nowBg - tUpdatedMs <= 60000) continue;
-          if (tUpdatedMs > 0 && projUpdatedMs > 0 && tUpdatedMs > projUpdatedMs) continue;
 
           if (!summaryIds.has(tidLower)) {
             const tNameStart = `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`;

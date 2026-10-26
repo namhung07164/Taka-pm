@@ -144,14 +144,49 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
   const removedTaskIds: string[] = [];
   let duplicateCount = 0;
 
-  // Pre-compute updatedAt numeric timestamps and task names by ID in O(N)
+  // Pre-compute updatedAt numeric timestamps, canonical project keys, and parent lookup maps in O(N)
   const updatedTimeCache = new WeakMap<Task, number>();
+  const projKeyCache = new WeakMap<Task, string>();
+  const taskByIdLower = new Map<string, Task>();
+  const taskByScopedCode = new Map<string, Task>();
   const taskNameByIdMap = new Map<string, string>();
+
   for (let i = 0; i < tasks.length; i++) {
     const t = tasks[i];
-    if (!t) continue;
-    if (t.id && t.name) {
-      taskNameByIdMap.set(String(t.id).trim().toLowerCase(), normalizeTaskNameForComparison(t.name));
+    if (!t || t.isDeleted) continue;
+    const tProjIdStr = t.projectId ? String(t.projectId).trim().toLowerCase() : '';
+    const pKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects, projectLookupMap, tProjIdStr);
+    projKeyCache.set(t, pKey);
+
+    if (t.id) {
+      const idL = String(t.id).trim().toLowerCase();
+      if (!taskByIdLower.has(idL) || !(t as any)._isVirtualSummary) {
+        taskByIdLower.set(idL, t);
+      }
+      if (t.name) {
+        taskNameByIdMap.set(idL, normalizeTaskNameForComparison(t.name));
+      }
+    }
+    if (pKey) {
+      if (t.taskCodePhu) {
+        const rawC = String(t.taskCodePhu).trim().toLowerCase().replace(/^\d+\s+/, '');
+        if (rawC) {
+          taskByScopedCode.set(`${pKey}:::${rawC}`, t);
+          if (rawC.includes('-')) {
+            taskByScopedCode.set(`${pKey}:::${rawC.replace(/-(\d+)$/, '#$1')}`, t);
+          }
+          const m = rawC.match(/#(\d+)$/) || rawC.match(/-(\d+)$/) || rawC.match(/^(\d+)$/);
+          if (m) {
+            taskByScopedCode.set(`${pKey}:::#${m[1]}`, t);
+            taskByScopedCode.set(`${pKey}:::${m[1]}`, t);
+          }
+        }
+      }
+      if (t.orderIndex !== undefined && t.orderIndex !== null && !Number.isNaN(Number(t.orderIndex))) {
+        const ordNum = Number(t.orderIndex) + 1;
+        if (!taskByScopedCode.has(`${pKey}:::#${ordNum}`)) taskByScopedCode.set(`${pKey}:::#${ordNum}`, t);
+        if (!taskByScopedCode.has(`${pKey}:::${ordNum}`)) taskByScopedCode.set(`${pKey}:::${ordNum}`, t);
+      }
     }
     if (t.updatedAt) {
       const parsed = Date.parse(t.updatedAt);
@@ -159,46 +194,74 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
     }
   }
 
-  // Sort tasks so the most recently updated, non-deleted, non-virtual, or feature-rich task comes first
+  // Identify valid parent references and active parent tasks in O(N)
+  const validParentByTask = new WeakMap<Task, Task>();
+  const activeParentIdsLower = new Set<string>();
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (!t || t.isDeleted) continue;
+    const rawPar = t.parentTaskId || (t as any).parentId;
+    if (!rawPar) continue;
+    const parLower = String(rawPar).trim().toLowerCase();
+    if (!parLower) continue;
+    const pKey = projKeyCache.get(t) || '';
+    let matchedPar = taskByIdLower.get(parLower);
+    if (matchedPar && pKey && projKeyCache.get(matchedPar) && projKeyCache.get(matchedPar) !== pKey) {
+      matchedPar = undefined;
+    }
+    if (!matchedPar && pKey) {
+      matchedPar =
+        taskByScopedCode.get(`${pKey}:::${parLower}`) ||
+        taskByScopedCode.get(`${pKey}:::${parLower.replace(/-(\d+)$/, '#$1')}`);
+      if (!matchedPar) {
+        const m = parLower.match(/#\s*(\d+)$/) || parLower.match(/^(\d+)$/);
+        if (m) {
+          matchedPar = taskByScopedCode.get(`${pKey}:::#${m[1]}`) || taskByScopedCode.get(`${pKey}:::${m[1]}`);
+        }
+      }
+    }
+    if (matchedPar && matchedPar.id && String(matchedPar.id).trim().toLowerCase() !== String(t.id || '').trim().toLowerCase()) {
+      validParentByTask.set(t, matchedPar);
+      activeParentIdsLower.add(String(matchedPar.id).trim().toLowerCase());
+    }
+  }
+
+  // Sort tasks so parents are deduplicated before subtasks, and subtasks with valid parents win over orphaned duplicates
   const sorted = [...tasks].sort((a, b) => {
-    // Prefer non-deleted
     if (a.isDeleted && !b.isDeleted) return 1;
     if (!a.isDeleted && b.isDeleted) return -1;
-    // Prefer real task over virtual summary task
     const aVirt = Boolean((a as any)._isVirtualSummary);
     const bVirt = Boolean((b as any)._isVirtualSummary);
     if (aVirt !== bVirt) return aVirt ? 1 : -1;
-    // Prefer task with more comments
+    const aIdL = String(a.id || '').trim().toLowerCase();
+    const bIdL = String(b.id || '').trim().toLowerCase();
+    const aIsParent = activeParentIdsLower.has(aIdL);
+    const bIsParent = activeParentIdsLower.has(bIdL);
+    if (aIsParent !== bIsParent) return aIsParent ? -1 : 1;
+    const aHasValidParent = validParentByTask.has(a);
+    const bHasValidParent = validParentByTask.has(b);
+    if (aHasValidParent !== bHasValidParent) return aHasValidParent ? -1 : 1;
     const aComments = a.comments?.length || 0;
     const bComments = b.comments?.length || 0;
     if (aComments !== bComments) return bComments - aComments;
-    // Prefer task with notes
     const aNotes = a.notes?.length || 0;
     const bNotes = b.notes?.length || 0;
     if (aNotes !== bNotes) return bNotes - aNotes;
-    // Prefer task with delegation
     if (a.delegation && !b.delegation) return -1;
     if (!a.delegation && b.delegation) return 1;
-    // Prefer task with predecessor
     if (a.predecessor && !b.predecessor) return -1;
     if (!a.predecessor && b.predecessor) return 1;
-    // Prefer task with party
     if (a.party && !b.party) return -1;
     if (!a.party && b.party) return 1;
-    // Prefer latest updatedAt (O(1) cached lookup)
     const aTime = updatedTimeCache.get(a) || 0;
     const bTime = updatedTimeCache.get(b) || 0;
     if (bTime !== aTime) return bTime - aTime;
-    // Tie-break: use ID to ensure all devices pick the same task, independent of load order
     return String(a.id).localeCompare(String(b.id));
   });
 
   sorted.forEach(task => {
-    if (task.isDeleted) {
-      return;
-    }
+    if (task.isDeleted) return;
 
-    // Filter out completely empty/corrupt ghost tasks (no name, no start, no finish)
     if ((!task.name || !String(task.name).trim()) && (!task.start || !String(task.start).trim()) && (!task.finish || !String(task.finish).trim())) {
       duplicateCount++;
       if (task.id) removedTaskIds.push(task.id);
@@ -211,47 +274,47 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
       return;
     }
 
-    // Check by exact task ID first
     if (seenMap.has(taskIdStr)) {
       duplicateCount++;
       removedTaskIds.push(task.id);
       return;
     }
 
-    const taskProjIdStr = task.projectId ? String(task.projectId).trim().toLowerCase() : '';
-    const projKey = buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects, projectLookupMap, taskProjIdStr);
-    const codePhu = String(task.taskCodePhu || '').trim().toLowerCase();
+    const projKey = projKeyCache.get(task) || buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects, projectLookupMap, task.projectId ? String(task.projectId).trim().toLowerCase() : '');
+    const cleanCodePhu = String(task.taskCodePhu || '').trim().toLowerCase().replace(/^\d+\s+/, '');
     const exactName = normalizeTaskNameForComparison(task.name);
     const startStr = String(task.start || '').trim();
     const finishStr = String(task.finish || '').trim();
-    const partyStr = String(task.party || '').trim().toLowerCase();
-    const rawParentLower = task.parentTaskId ? String(task.parentTaskId).trim().toLowerCase() : '';
-    const resolvedParentLower = rawParentLower ? (idRedirectMap.get(rawParentLower) || rawParentLower) : '';
+
+    const validPar = validParentByTask.get(task);
+    const rawParLower = validPar?.id ? String(validPar.id).trim().toLowerCase() : '';
+    const resolvedParentLower = rawParLower ? (idRedirectMap.get(rawParLower) || rawParLower) : '';
     const parentIdentity = resolvedParentLower
-      ? (taskNameByIdMap.get(resolvedParentLower) || taskNameByIdMap.get(rawParentLower) || resolvedParentLower)
+      ? (taskNameByIdMap.get(resolvedParentLower) || taskNameByIdMap.get(rawParLower) || resolvedParentLower)
       : 'root';
 
-    const taskUniqueSignature = `${projKey}__${codePhu || 'nocode'}__${exactName}__${startStr}__${finishStr}__${partyStr}`;
-    const taskContentSignature = `${projKey}__parent:${parentIdentity}__${exactName}__${startStr}__${finishStr}__${partyStr}`;
+    const taskUniqueSignature = `${projKey}__${cleanCodePhu || 'nocode'}__${exactName}__${startStr}__${finishStr}`;
+    const taskContentSignature = `${projKey}__parent:${parentIdentity}__${exactName}__${startStr}__${finishStr}`;
+    const taskNameDatesSignature = `${projKey}__namedates:${exactName}__${startStr}__${finishStr}`;
 
     const matchedExistingId = (projKey && exactName)
-      ? (seenNormMap.get(taskUniqueSignature) || seenNormMap.get(taskContentSignature))
+      ? ((cleanCodePhu ? seenNormMap.get(taskUniqueSignature) : undefined) ||
+         seenNormMap.get(taskContentSignature) ||
+         seenNormMap.get(taskNameDatesSignature))
       : undefined;
 
     if (matchedExistingId && seenMap.has(matchedExistingId)) {
       const existing = seenMap.get(matchedExistingId)!;
-      // Absolute guard 1: If both tasks have explicit projectIds that do NOT match, they are NEVER duplicates!
       if (task.projectId && existing.projectId && String(task.projectId) !== String(existing.projectId)) {
         seenMap.set(task.id, task);
         return;
       }
 
-      // Absolute guard 2: Strict 4-key isolation if IDs are missing but other keys differ
       const tYear = task.projectYear !== undefined && task.projectYear !== null ? String(task.projectYear).trim() : '';
       const eYear = existing.projectYear !== undefined && existing.projectYear !== null ? String(existing.projectYear).trim() : '';
       const tStore = task.projectStore ? String(task.projectStore).trim().toUpperCase() : '';
       const eStore = existing.projectStore ? String(existing.projectStore).trim().toUpperCase() : '';
-      
+
       if (tYear && eYear && tYear !== eYear) {
         seenMap.set(task.id, task);
         return;
@@ -261,19 +324,30 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
         return;
       }
 
-      // Absolute guard 3: Check parentTaskId identity (allowing duplicate parent tasks that share the same normalized parent name)
-      if (task.parentTaskId && existing.parentTaskId) {
-        const tParLower = idRedirectMap.get(String(task.parentTaskId).trim().toLowerCase()) || String(task.parentTaskId).trim().toLowerCase();
-        const eParLower = idRedirectMap.get(String(existing.parentTaskId).trim().toLowerCase()) || String(existing.parentTaskId).trim().toLowerCase();
-        if (tParLower !== eParLower) {
-          const tParName = taskNameByIdMap.get(tParLower) || taskNameByIdMap.get(String(task.parentTaskId).trim().toLowerCase());
-          const eParName = taskNameByIdMap.get(eParLower) || taskNameByIdMap.get(String(existing.parentTaskId).trim().toLowerCase());
-          if (!tParName || !eParName || tParName !== eParName) {
-            seenMap.set(task.id, task);
-            return;
-          }
+      const existingIdLower = String(existing.id || '').trim().toLowerCase();
+      const taskIdLower = taskIdStr.toLowerCase();
+      const existingValidPar = validParentByTask.get(existing);
+      const eRawParLower = existingValidPar?.id ? String(existingValidPar.id).trim().toLowerCase() : '';
+      const eResolvedParLower = eRawParLower ? (idRedirectMap.get(eRawParLower) || eRawParLower) : '';
+
+      // Never merge a child task into its own parent task
+      if (resolvedParentLower === existingIdLower || eResolvedParLower === taskIdLower) {
+        seenMap.set(task.id, task);
+        return;
+      }
+
+      // If BOTH tasks have valid existing parents in the project, only keep both if their parents are genuinely distinct tasks
+      if (resolvedParentLower && eResolvedParLower && resolvedParentLower !== eResolvedParLower) {
+        const tParName = taskNameByIdMap.get(resolvedParentLower) || taskNameByIdMap.get(rawParLower);
+        const eParName = taskNameByIdMap.get(eResolvedParLower) || taskNameByIdMap.get(eRawParLower);
+        if (!tParName || !eParName || tParName !== eParName) {
+          seenMap.set(task.id, task);
+          return;
         }
-      } else if (Boolean(task.parentTaskId) !== Boolean(existing.parentTaskId)) {
+      }
+
+      // If one task is an active parent of subtasks and the other is a subtask with a valid parent, do not merge them
+      if (activeParentIdsLower.has(taskIdLower) && Boolean(eResolvedParLower) !== Boolean(resolvedParentLower)) {
         seenMap.set(task.id, task);
         return;
       }
@@ -281,49 +355,48 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
       // Duplicate task found!
       duplicateCount++;
       removedTaskIds.push(task.id);
-      idRedirectMap.set(taskIdStr.toLowerCase(), String(existing.id).trim().toLowerCase());
+      idRedirectMap.set(taskIdLower, existingIdLower);
       idRedirectMap.set(taskIdStr, String(existing.id).trim());
-      
-      // Merge comments, notes, delegation, party, predecessor, attachments from duplicate into surviving task
+
       if ((!existing.comments || existing.comments.length === 0) && task.comments && task.comments.length > 0) {
         existing.comments = task.comments;
       }
       if ((!existing.notes || existing.notes.length === 0) && task.notes && task.notes.length > 0) {
         existing.notes = task.notes;
       }
-      if (!existing.party && task.party) {
-        existing.party = task.party;
-      }
-      if (!existing.predecessor && task.predecessor) {
-        existing.predecessor = task.predecessor;
-      }
-      if (!existing.delegation && task.delegation) {
-        existing.delegation = task.delegation;
-      }
-      if (!existing.taskCodePhu && task.taskCodePhu) {
-        existing.taskCodePhu = task.taskCodePhu;
-      }
-      if (!existing.parentTaskId && task.parentTaskId) {
-        existing.parentTaskId = task.parentTaskId;
+      if (!existing.party && task.party) existing.party = task.party;
+      if (!existing.predecessor && task.predecessor) existing.predecessor = task.predecessor;
+      if (!existing.delegation && task.delegation) existing.delegation = task.delegation;
+      if (!existing.taskCodePhu && task.taskCodePhu) existing.taskCodePhu = task.taskCodePhu;
+      if (!existingValidPar && validPar && validPar.id) {
+        existing.parentTaskId = validPar.id;
+        validParentByTask.set(existing, validPar);
       }
     } else {
       seenMap.set(task.id, task);
       if (projKey && exactName) {
-        seenNormMap.set(taskUniqueSignature, task.id);
+        if (cleanCodePhu) seenNormMap.set(taskUniqueSignature, task.id);
         seenNormMap.set(taskContentSignature, task.id);
+        if (!seenNormMap.has(taskNameDatesSignature)) {
+          seenNormMap.set(taskNameDatesSignature, task.id);
+        }
       }
     }
   });
 
   const dedupedTasks = Array.from(seenMap.values());
-  if (idRedirectMap.size > 0) {
-    for (let i = 0; i < dedupedTasks.length; i++) {
-      const t = dedupedTasks[i];
-      if (t.parentTaskId) {
-        const redirected = idRedirectMap.get(String(t.parentTaskId).trim());
-        if (redirected && redirected !== t.parentTaskId) {
-          dedupedTasks[i] = { ...t, parentTaskId: redirected };
-        }
+  for (let i = 0; i < dedupedTasks.length; i++) {
+    const t = dedupedTasks[i];
+    const validPar = validParentByTask.get(t);
+    if (validPar && validPar.id) {
+      const redirected = idRedirectMap.get(String(validPar.id).trim()) || String(validPar.id).trim();
+      if (t.parentTaskId !== redirected) {
+        dedupedTasks[i] = { ...t, parentTaskId: redirected };
+      }
+    } else if (t.parentTaskId) {
+      const redirected = idRedirectMap.get(String(t.parentTaskId).trim());
+      if (redirected && redirected !== t.parentTaskId) {
+        dedupedTasks[i] = { ...t, parentTaskId: redirected };
       }
     }
   }

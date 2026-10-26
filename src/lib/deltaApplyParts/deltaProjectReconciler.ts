@@ -148,9 +148,7 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
     }
     const tIdLower = String(t.id).trim().toLowerCase();
     const updatedMs = tsOf(t.updatedAt);
-    const projUpdatedMs = tsOf(nextProj.updatedAt);
-    const isNewerThanProj = Boolean(updatedMs > 0 && projUpdatedMs > 0 && updatedMs > projUpdatedMs);
-    const isRecentLocal = Boolean((updatedMs && nowMs - updatedMs <= 60000) || isNewerThanProj);
+    const isRecentLocal = Boolean(updatedMs && nowMs - updatedMs <= 60000);
 
     if (validIdsLower.has(tIdLower)) {
       const s = summaryByIdLower.get(tIdLower);

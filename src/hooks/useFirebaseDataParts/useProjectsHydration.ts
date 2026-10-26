@@ -11,6 +11,8 @@ import {
   offloadPersistSnapshot,
   hydrateProjectsFromLocal,
 } from '../../lib/backgroundSyncWorker';
+import { reconcileAndDeduplicateLocalStore } from '../../lib/backgroundSyncParts/localHydrationHelpers';
+import { rollupTaskSummaries } from '../../lib/taskRollupHelpers';
 import { deleteLocalRecord } from '../../lib/localDb';
 import {
   startDeltaSyncService,
@@ -79,8 +81,6 @@ export function useProjectsHydration({
     );
     const nowMs = Date.now();
 
-    // O(T) Pre-indexing of currentTasks by projectId and projectCode before docChanges.forEach
-    // Reduces complexity from O(Delta_P * T) down to O(Delta_P + T)
     const tasksIndex = !fromCache ? buildProjectTasksLookupIndex(currentTasks) : null;
 
     docChanges.forEach((change) => {
@@ -98,11 +98,15 @@ export function useProjectsHydration({
         const existing = pendingProjectsMap.current!.get(id);
         const hasPendingWrites = Boolean(change.doc?.metadata?.hasPendingWrites);
 
-        const resolvedSummaries =
+        const rawSummaries =
           data.taskSummaries !== undefined ? data.taskSummaries : existing?.taskSummaries || [];
+        const resolvedSummaries =
+          Array.isArray(rawSummaries) && rawSummaries.length > 0
+            ? rollupTaskSummaries(rawSummaries)
+            : rawSummaries;
         const resolvedCount =
-          Array.isArray(data.taskSummaries) && data.taskSummaries.length > 0
-            ? data.taskSummaries.length
+          Array.isArray(resolvedSummaries) && resolvedSummaries.length > 0
+            ? resolvedSummaries.length
             : data.taskCount !== undefined
               ? data.taskCount
               : (existing?.taskCount ?? 0);
@@ -224,7 +228,6 @@ export function useProjectsHydration({
   useEffect(() => {
     const handleSleepWakeRecovery = (e?: Event) => {
       const elapsedSleepMs = Number((e as CustomEvent)?.detail?.elapsedSleepMs || 0);
-      // Only reset pool if device slept longer than the 24h marker TTL; normal sleep/wake is handled by pullAndApplyDeltas
       if (elapsedSleepMs > 24 * 60 * 60 * 1000) {
         serverVerifiedProjectYearsInSession.clear();
         projectsPool.current.forEach((u, key) => {
@@ -287,7 +290,6 @@ export function useProjectsHydration({
         return;
       }
 
-      // Reserve slot synchronously before awaiting IndexedDB to prevent duplicate listener attachment
       const tempNoop = () => {};
       (tempNoop as any).__isDeltaNoop = true;
       projectsPool.current.set(year, tempNoop);
@@ -322,6 +324,13 @@ export function useProjectsHydration({
       if (deltaManaged) {
         serverVerifiedProjectYearsInSession.add(sessionYearKey);
         setCloudStatus('online');
+        const yearProjs = (useAppStore.getState().projects || []).filter(
+          (p) => !p.isDeleted && String(p.year || '').trim() === String(year).trim()
+        );
+        if (yearProjs.length > 0) {
+          runBackgroundDexieProjectTaskReconciliation(yearProjs);
+        }
+        reconcileAndDeduplicateLocalStore().catch(() => {});
         usePerformanceStore
           .getState()
           .trackGetDoc(

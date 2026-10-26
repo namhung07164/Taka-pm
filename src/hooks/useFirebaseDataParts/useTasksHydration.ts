@@ -12,7 +12,7 @@ import { pullAndApplyDeltas } from '../../lib/deltaSyncService';
 import { getLoadedMarkers, hasFreshMarker, markLoaded } from '../../lib/loadedMarkers';
 import { markProjectTasksHydrated } from '../../lib/utils';
 import { markTasksDeleted, unmarkTaskDeleted, clearDeletedTasksTracker } from '../../lib/taskDeletedTracker';
-import { isStaleCacheDoc, extractKeysToHydrate, groupActiveProjectsByYear, healProjectsAfterTasksBatch } from './tasksHydrationHelpers';
+import { isStaleCacheDoc, extractKeysToHydrate, groupActiveProjectsByYear, healProjectsAfterTasksBatch, purgeRemovedDuplicateTasksFromFirestore } from './tasksHydrationHelpers';
 import { buildProjectTasksLookupIndex, getLocalProjectTasksFromIndex } from './projectsHydrationHelpers';
 import { attachYearTasksListener, attachProjectTasksListener, computeActiveProjectsSummarySig, evaluateProjectTaskHydrationState } from './tasksListenerAttachHelpers';
 
@@ -121,6 +121,7 @@ export function useTasksHydration({
                 pendingTasksRemoved.current.set(dupId, dupTask);
               }
             });
+            purgeRemovedDuplicateTasksFromFirestore(removedTaskIds, fromCache);
           }
           const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
           const rolledUpTasks = rollupParentTaskDatesAndStatus(
