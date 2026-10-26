@@ -109,6 +109,22 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
   const patchedTasksForDexie: Task[] = [];
   let anyTaskPatched = false;
 
+  // Identify which summary IDs already exist in updatedTasks so we only preserve ID-drifted tasks for unmatched summaries
+  const localProjectTaskIdsLower = new Set<string>();
+  for (let i = 0; i < updatedTasks.length; i++) {
+    const ut = updatedTasks[i];
+    if (ut?.id) localProjectTaskIdsLower.add(String(ut.id).trim().toLowerCase());
+  }
+  const unmatchedSummaryNameStarts = new Set<string>();
+  rawTaskSummaries.forEach((s: any) => {
+    const sIdLower = String(s?.id || '').trim().toLowerCase();
+    if (!sIdLower || !localProjectTaskIdsLower.has(sIdLower)) {
+      const sName = String(s?.name || '').trim().toLowerCase();
+      const sStart = String(s?.start || '').trim();
+      if (sName) unmatchedSummaryNameStarts.add(`${sName}|${sStart}`);
+    }
+  });
+
   const nextTasks: Task[] = [];
   for (let i = 0; i < updatedTasks.length; i++) {
     const t = updatedTasks[i];
@@ -192,7 +208,9 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
       continue;
     }
 
-    if (isRecentLocal || rawTaskSummaries.length > 0) {
+    const tNameStart = `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`;
+    if (isRecentLocal || (t.name && unmatchedSummaryNameStarts.has(tNameStart))) {
+      unmatchedSummaryNameStarts.delete(tNameStart);
       nextTasks.push(t);
       continue;
     }
@@ -285,7 +303,7 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
     const currentSummaries = Array.isArray(p.taskSummaries) ? [...p.taskSummaries] : [];
     const sIdx = currentSummaries.findIndex((s: any) => {
       const sId = String(s?.id || '').trim().toLowerCase();
-      if (sId && !sId.startsWith('ts_')) return sId === docIdLower;
+      if (sId && !sId.startsWith('ts_') && sId === docIdLower) return true;
       const sCode = String(s?.taskCodePhu || '').trim().toLowerCase();
       if (sCode && mCodeLower && sCode === mCodeLower) return true;
       return (
@@ -417,12 +435,18 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
       const realCodeSet = new Set(
         realProjTasks.map((t) => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean)
       );
+      const realNameStartSet = new Set(
+        realProjTasks.map((t) => `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`)
+      );
       const summaryTasks = existingSummaries
         .filter((s: any) => {
           const sId = String(s?.id || '').trim().toLowerCase();
           const sCode = String(s?.taskCodePhu || '').trim().toLowerCase();
+          const sName = String(s?.name || '').trim().toLowerCase();
+          const sStart = String(s?.start || '').trim();
           if (sId && !sId.startsWith('ts_') && realIdSet.has(sId)) return false;
           if (sCode && realCodeSet.has(sCode)) return false;
+          if (sName && realNameStartSet.has(`${sName}|${sStart}`)) return false;
           return true;
         })
         .map(

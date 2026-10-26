@@ -31,15 +31,24 @@ export function useDetailTaskReorder({
   const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
   const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
 
+  const realTasks = useMemo(
+    () => tasks.filter((t) => t && !(t as any)._isVirtualSummary && !String(t.id || '').startsWith('ts_')),
+    [tasks]
+  );
+
   const draggingTaskNames = useMemo(() => {
     if (draggingTaskIds.length === 0) return '';
-    return tasks.filter(tk => draggingTaskIds.includes(tk.id)).map(tk => tk.name).join(', ');
-  }, [draggingTaskIds, tasks]);
+    return realTasks.filter(tk => draggingTaskIds.includes(tk.id)).map(tk => tk.name).join(', ');
+  }, [draggingTaskIds, realTasks]);
 
   const handleSortSubTasks = useCallback(async (p: Project, groupTasks: Task[]) => {
     try {
-      const oldTaskNoMap = buildTaskNoMap(projects, tasks);
-      const sorted = sortTasksByPredecessorsAndDates(groupTasks, projects, tasks);
+      const realGroupTasks = groupTasks.filter(
+        (gt) => gt && !(gt as any)._isVirtualSummary && !String(gt.id || '').startsWith('ts_')
+      );
+      if (realGroupTasks.length === 0) return;
+      const oldTaskNoMap = buildTaskNoMap(projects, realTasks);
+      const sorted = sortTasksByPredecessorsAndDates(realGroupTasks, projects, realTasks);
 
       const batch = writeBatch(db);
       const updatesPerTask = new Map<string, any>();
@@ -47,7 +56,7 @@ export function useDetailTaskReorder({
 
       sorted.forEach((t, index) => {
         const newCode = `${p.code}#${index + 1}`;
-        const origTask = groupTasks.find(gt => gt.id === t.id) || t;
+        const origTask = realGroupTasks.find(gt => gt.id === t.id) || t;
         const parentChanged = t.parentTaskId !== origTask.parentTaskId;
         if (t.orderIndex !== index || t.taskCodePhu !== newCode || parentChanged) {
           updatesPerTask.set(t.id, { 
@@ -59,7 +68,7 @@ export function useDetailTaskReorder({
         }
       });
 
-      let allUpdatedTasks = tasks.map(t => {
+      let allUpdatedTasks = realTasks.map(t => {
         const up = updatesPerTask.get(t.id);
         return up ? { ...t, ...up } : t;
       });
@@ -128,15 +137,20 @@ export function useDetailTaskReorder({
     } catch (error) {
       console.error(error);
     }
-  }, [tasks, projects]);
+  }, [realTasks, projects]);
 
   const handleMoveTask = useCallback(async (p: Project, groupTasks: Task[], index: number, direction: 'up' | 'down') => {
     if ((direction === 'up' && index === 0) || (direction === 'down' && index === groupTasks.length - 1)) return;
 
     try {
-      const oldTaskNoMap = buildTaskNoMap(projects, tasks);
-      const sorted = [...groupTasks];
+      const realGroupTasks = groupTasks.filter(
+        (gt) => gt && !(gt as any)._isVirtualSummary && !String(gt.id || '').startsWith('ts_')
+      );
+      if (realGroupTasks.length === 0) return;
+      const oldTaskNoMap = buildTaskNoMap(projects, realTasks);
+      const sorted = [...realGroupTasks];
       const targetIndex = direction === 'up' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= sorted.length) return;
       const [movedTask] = sorted.splice(index, 1);
       sorted.splice(targetIndex, 0, movedTask);
 
@@ -155,7 +169,7 @@ export function useDetailTaskReorder({
         }
       });
 
-      let allUpdatedTasks = tasks.map(t => {
+      let allUpdatedTasks = realTasks.map(t => {
         const up = updatesPerTask.get(t.id);
         return up ? { ...t, ...up } : t;
       });
@@ -218,7 +232,7 @@ export function useDetailTaskReorder({
     } catch (error) {
       console.error(error);
     }
-  }, [tasks, projects]);
+  }, [realTasks, projects]);
 
   const handleDetailTaskDragStart = useCallback((e: React.DragEvent, taskId: string) => {
     const tasksToMove = selectedTaskIds.has(taskId)
@@ -280,6 +294,7 @@ export function useDetailTaskReorder({
     setDraggingTaskIds([]);
 
     try {
+      if ((targetTask as any)?._isVirtualSummary || String(targetTask?.id || '').startsWith('ts_')) return;
       let payloadStr = e.dataTransfer.getData("application/json");
       if (!payloadStr) {
         const textPlain = e.dataTransfer.getData("text/plain");
@@ -294,12 +309,12 @@ export function useDetailTaskReorder({
       const data = JSON.parse(payloadStr);
       if (data.type !== "task-reorder" || !data.tasks || !Array.isArray(data.tasks)) return;
 
-      const tasksToMoveIds: string[] = data.tasks;
+      const tasksToMoveIds: string[] = data.tasks.filter((id: string) => !String(id).startsWith('ts_'));
       if (tasksToMoveIds.length === 0) return;
       if (tasksToMoveIds.includes(targetTask.id)) return;
 
       const result = reorderAndCalculateTasks(
-        tasks,
+        realTasks,
         projects,
         targetProject,
         tasksToMoveIds,

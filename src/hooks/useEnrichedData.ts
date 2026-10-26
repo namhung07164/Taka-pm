@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { enrichProjects, getUserAllowedStores } from '../lib/utils';
+import { enrichProjects, getUserAllowedStores, isProjectTasksHydrated } from '../lib/utils';
 import { Task } from '../types';
 import { deduplicateTasks } from '../lib/taskDeduplicationService';
 import { rollupParentTaskDatesAndStatus, filterNonOrphanTasks } from '../lib/taskRollupService';
@@ -84,13 +84,17 @@ export function useEnrichedData() {
       const ftCodePhuLower = ft.taskCodePhu ? String(ft.taskCodePhu).trim().toLowerCase() : '';
       const ftNameLower = ft.name ? String(ft.name).trim().toLowerCase() : '';
       const ftOrd = ft.orderIndex !== undefined && ft.orderIndex !== null ? String(ft.orderIndex) : '';
+      const ftStart = ft.start ? String(ft.start).trim() : '';
 
       if (ftProjId) {
         realTaskCountByProjectId.set(ftProjId, (realTaskCountByProjectId.get(ftProjId) || 0) + 1);
         const pidKey = `pid:${ftProjId}`;
         if (ftIdLower) addProjectIdentity(pidKey, `id:${ftIdLower}`);
         if (ftCodePhuLower) addProjectIdentity(pidKey, `code:${ftCodePhuLower}`);
-        if (ftNameLower) addProjectIdentity(pidKey, `name_ord:${ftNameLower}|${ftOrd}`);
+        if (ftNameLower) {
+          addProjectIdentity(pidKey, `name_ord:${ftNameLower}|${ftOrd}`);
+          addProjectIdentity(pidKey, `name_start:${ftNameLower}|${ftStart}`);
+        }
       }
 
       if (ftCode) {
@@ -102,7 +106,10 @@ export function useEnrichedData() {
         const cKey = `scope:${scopeKey}`;
         if (ftIdLower) addProjectIdentity(cKey, `id:${ftIdLower}`);
         if (ftCodePhuLower) addProjectIdentity(cKey, `code:${ftCodePhuLower}`);
-        if (ftNameLower) addProjectIdentity(cKey, `name_ord:${ftNameLower}|${ftOrd}`);
+        if (ftNameLower) {
+          addProjectIdentity(cKey, `name_ord:${ftNameLower}|${ftOrd}`);
+          addProjectIdentity(cKey, `name_start:${ftNameLower}|${ftStart}`);
+        }
       }
     }
 
@@ -113,6 +120,8 @@ export function useEnrichedData() {
       if (!p.taskSummaries || !Array.isArray(p.taskSummaries) || p.taskSummaries.length === 0) continue;
 
       const pIdStr = p.id ? String(p.id).trim() : '';
+      if (isProjectTasksHydrated(pIdStr)) continue;
+
       const pStore = String(p.store || '').trim().toLowerCase();
       const pYear = String(p.year || '').trim().toLowerCase();
       const rawCodeStr = p.linkCodes ? `${p.code || ''}, ${p.linkCodes}` : String(p.code || '');
@@ -154,12 +163,13 @@ export function useEnrichedData() {
         const tsCodeLower = String(ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : '')).trim().toLowerCase();
         const tsNameLower = ts.name ? String(ts.name).trim().toLowerCase() : '';
         const tsOrd = ts.orderIndex !== undefined && ts.orderIndex !== null ? String(ts.orderIndex) : String(idx);
+        const tsStart = ts.start ? String(ts.start).trim() : '';
 
         const isMatchedInProject = (idSet?: Set<string>) => {
           if (!idSet) return false;
           if (rawTsId && idSet.has(`id:${tsIdLower}`)) return true;
           if (tsCodeLower && idSet.has(`code:${tsCodeLower}`)) return true;
-          if (!rawTsId && tsNameLower && idSet.has(`name_ord:${tsNameLower}|${tsOrd}`)) return true;
+          if (tsNameLower && (idSet.has(`name_ord:${tsNameLower}|${tsOrd}`) || idSet.has(`name_start:${tsNameLower}|${tsStart}`))) return true;
           return false;
         };
 

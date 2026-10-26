@@ -177,10 +177,17 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
   if (serverSummaryIds.size === 0 && !isZeroTaskServer) return;
 
   // 1. Any task ID that was in existing.taskSummaries but is no longer in server data.taskSummaries was deleted on another device
+  // (Only mark deleted if its name+start also disappeared from server data.taskSummaries, avoiding false deletion on ID drift)
+  const serverSummaryNameStarts = new Set(
+    data.taskSummaries
+      .map((s: any) => `${String(s?.name || '').trim().toLowerCase()}|${String(s?.start || '').trim()}`)
+      .filter((k) => k !== '|')
+  );
   if (allSummariesHaveIds && existing && Array.isArray(existing.taskSummaries)) {
     existing.taskSummaries.forEach((oldS: any) => {
       const oldId = String(oldS?.id || '').trim();
-      if (oldId && !serverSummaryIds.has(oldId.toLowerCase())) {
+      const oldNameStart = `${String(oldS?.name || '').trim().toLowerCase()}|${String(oldS?.start || '').trim()}`;
+      if (oldId && !serverSummaryIds.has(oldId.toLowerCase()) && !serverSummaryNameStarts.has(oldNameStart)) {
         markTasksDeleted([oldId], id);
         pendingDeletedTaskIds.add(oldId);
       }
@@ -194,9 +201,29 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
   const localProjTasksById = new Map<string, any>();
   localProjTasks.forEach((t) => {
     if (!t?.id || String(t.id).startsWith('ts_')) return;
+    localProjTasksById.set(String(t.id).trim().toLowerCase(), t);
+  });
+
+  // Track summary entries whose ID is not yet present in localProjTasksById (potential ID-drifted summaries)
+  const unmatchedSummaryNameStarts = new Set<string>();
+  data.taskSummaries.forEach((s: any) => {
+    const sIdLower = String(s?.id || '').trim().toLowerCase();
+    if (!sIdLower || !localProjTasksById.has(sIdLower)) {
+      const sName = String(s?.name || '').trim().toLowerCase();
+      const sStart = String(s?.start || '').trim();
+      if (sName) unmatchedSummaryNameStarts.add(`${sName}|${sStart}`);
+    }
+  });
+
+  localProjTasks.forEach((t) => {
+    if (!t?.id || String(t.id).startsWith('ts_')) return;
     const tIdLower = String(t.id).trim().toLowerCase();
-    localProjTasksById.set(tIdLower, t);
     if (allSummariesHaveIds && !serverSummaryIds.has(tIdLower)) {
+      const tNameStart = `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`;
+      if (!isZeroTaskServer && t.name && unmatchedSummaryNameStarts.has(tNameStart)) {
+        unmatchedSummaryNameStarts.delete(tNameStart);
+        return;
+      }
       const updatedMs = tsOf(t.updatedAt);
       const isOlderOrEqualToProj = !projUpdatedMs || !updatedMs || projUpdatedMs >= updatedMs;
       if (isOlderOrEqualToProj && (!updatedMs || nowMs - updatedMs > 60000)) {
@@ -327,6 +354,19 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           }
         });
 
+        const candidateIdsLower = new Set(
+          Array.from(candidateMap.keys()).map((k) => String(k).trim().toLowerCase())
+        );
+        const unmatchedSummaryNameStarts = new Set<string>();
+        p.taskSummaries.forEach((s: any) => {
+          const sIdLower = String(s?.id || '').trim().toLowerCase();
+          if (!sIdLower || !candidateIdsLower.has(sIdLower)) {
+            const sName = String(s?.name || '').trim().toLowerCase();
+            const sStart = String(s?.start || '').trim();
+            if (sName) unmatchedSummaryNameStarts.add(`${sName}|${sStart}`);
+          }
+        });
+
         for (const [tid, t] of candidateMap.entries()) {
           const tidLower = String(tid).trim().toLowerCase();
           const tUpdatedMs = tsOf(t.updatedAt);
@@ -334,6 +374,11 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           if (tUpdatedMs > 0 && projUpdatedMs > 0 && tUpdatedMs > projUpdatedMs) continue;
 
           if (!summaryIds.has(tidLower)) {
+            const tNameStart = `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`;
+            if (!isZeroTask && t.name && unmatchedSummaryNameStarts.has(tNameStart)) {
+              unmatchedSummaryNameStarts.delete(tNameStart);
+              continue;
+            }
             if (isZeroTask || allSummariesHaveIds) {
               markTasksDeleted([tid], p.id);
               await deleteLocalRecord('taka_tasks', tid);

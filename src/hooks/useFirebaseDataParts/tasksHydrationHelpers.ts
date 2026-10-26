@@ -198,21 +198,10 @@ export function buildZombieTaskRemovalsForProject(
   currentTasks: Task[],
   p: Project
 ): any[] {
-  if (!snapshotDocs || snapshotDocs.length === 0) {
-    return [];
-  }
   const serverIds = new Set<string>();
-  snapshotDocs.forEach((d) => {
-    serverIds.add(d.id);
+  (snapshotDocs || []).forEach((d) => {
+    if (d?.id) serverIds.add(d.id);
   });
-
-  const summaryIdsLower = new Set<string>();
-  if (Array.isArray(p.taskSummaries)) {
-    p.taskSummaries.forEach((s: any) => {
-      const sId = s?.id ? String(s.id).trim().toLowerCase() : '';
-      if (sId) summaryIdsLower.add(sId);
-    });
-  }
 
   const nowMs = Date.now();
   const zombieRemovals: any[] = [];
@@ -222,8 +211,7 @@ export function buildZombieTaskRemovalsForProject(
       t?.id &&
       !(t as any)._isVirtualSummary &&
       doesTaskBelongToProject(t, p) &&
-      !serverIds.has(t.id) &&
-      !summaryIdsLower.has(String(t.id).trim().toLowerCase())
+      !serverIds.has(t.id)
     ) {
       const updatedMs = tsOf(t.updatedAt);
       if (!updatedMs || nowMs - updatedMs > 30000) {
@@ -366,8 +354,9 @@ export function healProjectsAfterTasksBatch(params: {
 
     if (!canRunServerSelfHeal) return workingProj;
 
+    const isAuthoritativelyHydrated = knownHydratedProjectCodes.has(String(workingProj.id));
     const isFullyHydratedProject =
-      knownHydratedProjectCodes.has(String(workingProj.id)) ||
+      isAuthoritativelyHydrated ||
       tasksPool.has(`proj_${workingProj.id}`) ||
       tasksPool.has(`year_${workingProj.year}`);
 
@@ -431,14 +420,17 @@ export function healProjectsAfterTasksBatch(params: {
       workingProj.taskCount || 0,
       Array.isArray(workingProj.taskSummaries) ? workingProj.taskSummaries.length : 0
     );
-    // Never shrink a project's taskSummaries from partial in-memory tasks unless tasks of this project were explicitly deleted
-    if (!summaryRemoved && (pTasks.length === 0 || pTasks.length < existingMaxCount)) {
+    // Never shrink a project's taskSummaries from partial in-memory tasks unless tasks of this project were explicitly deleted or authoritatively hydrated from server
+    if (!summaryRemoved && !isAuthoritativelyHydrated && (pTasks.length === 0 || pTasks.length < existingMaxCount)) {
+      return workingProj;
+    }
+    if (!summaryRemoved && isAuthoritativelyHydrated && pTasks.length === 0 && existingMaxCount > 0) {
       return workingProj;
     }
 
     const baseProjForCalc =
-      summaryRemoved && pTasks.length === 0
-        ? { ...workingProj, taskSummaries: [], taskCount: 0 }
+      (isAuthoritativelyHydrated && pTasks.length > 0) || (summaryRemoved && pTasks.length === 0)
+        ? { ...workingProj, taskSummaries: [], taskCount: pTasks.length }
         : workingProj;
 
     const computed = calculateProjectComputedDates(baseProjForCalc, pTasks, delegationGroups);

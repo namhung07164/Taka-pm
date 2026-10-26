@@ -168,14 +168,18 @@ export function calculateProjectComputedDates(
     const realIdSet = new Set(realOnlyTasks.map(t => String(t.id || '').trim().toLowerCase()).filter(Boolean));
     const realCodeSet = new Set(realOnlyTasks.map(t => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean));
     const realNameSet = new Set(realOnlyTasks.map(t => String(t.name || '').trim().toLowerCase()).filter(Boolean));
+    const realNameStartSet = new Set(
+      realOnlyTasks.map(t => `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`)
+    );
 
     activeExistingSummaries.forEach((ts: any, idx: number) => {
       const tsId = String(ts?.id || '').trim().toLowerCase();
       const tsCode = String(ts?.taskCodePhu || '').trim().toLowerCase();
       const tsName = String(ts?.name || '').trim().toLowerCase();
+      const tsStart = String(ts?.start || '').trim();
       if (tsId && !tsId.startsWith('ts_') && realIdSet.has(tsId)) return;
       if (tsCode && realCodeSet.has(tsCode)) return;
-      if (!tsId && !tsCode && tsName && realNameSet.has(tsName)) return;
+      if (tsName && (realNameStartSet.has(`${tsName}|${tsStart}`) || (!tsId && !tsCode && realNameSet.has(tsName)))) return;
 
       mergedList.push({
         id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,

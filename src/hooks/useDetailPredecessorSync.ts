@@ -41,7 +41,10 @@ export function useDetailPredecessorSync({
       isSyncingPredecessorsRef.current = true;
       setIsSyncingPredecessors(true);
 
-      const healed = healAllTasksPredecessors(tasks, projects);
+      const realTasks = tasks.filter(
+        (t) => t && !(t as any)._isVirtualSummary && !String(t.id || '').startsWith('ts_')
+      );
+      const healed = healAllTasksPredecessors(realTasks, projects);
       if (healed.changedCount > 0) {
         // Zero-delay optimistic UI update (0ms)
         useAppStore.getState().setTasks(healed.updatedTasks);
@@ -70,7 +73,7 @@ export function useDetailPredecessorSync({
                 taskCodePhu: u.taskCodePhu,
                 updatedAt: u.updatedAt,
               },
-              year: (tasks.find((t) => t.id === u.id)?.projectYear) ? String(tasks.find((t) => t.id === u.id)!.projectYear) : undefined,
+              year: (realTasks.find((t) => t.id === u.id)?.projectYear) ? String(realTasks.find((t) => t.id === u.id)!.projectYear) : undefined,
             }));
             recordBatchDeltas(deltaItems, 'predecessor_heal').catch(() => {});
           }
@@ -123,7 +126,10 @@ export function useDetailPredecessorSync({
       isConvertingToHashRef.current = true;
       setIsConvertingToHash(true);
 
-      const result = convertAllSubtaskCodesAndPredecessorsToHash(tasks, projects);
+      const realTasks = tasks.filter(
+        (t) => t && !(t as any)._isVirtualSummary && !String(t.id || '').startsWith('ts_')
+      );
+      const result = convertAllSubtaskCodesAndPredecessorsToHash(realTasks, projects);
       if (result.changedCount > 0) {
         // Zero-delay optimistic UI update (0ms)
         useAppStore.getState().setTasks(result.updatedTasks);

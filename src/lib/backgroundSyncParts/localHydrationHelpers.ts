@@ -32,6 +32,7 @@ export interface IndexedProjectSummaryEntry {
   allSummariesHaveIds: boolean;
   isZeroTaskProject: boolean;
   summaryIds: Set<string>;
+  summaryNames: Set<string>;
 }
 
 export interface ZombieProjectIndex {
@@ -60,15 +61,22 @@ export function buildZombieProjectIndex(projects: Project[]): ZombieProjectIndex
       summaries && summaries.length === 0 && (p.taskCount ?? 0) === 0
     );
     const allSummariesHaveIds = Boolean(
-      summaries && summaries.length > 0 && summaries.every((s: any) => Boolean(s?.id))
+      summaries &&
+        summaries.length > 0 &&
+        summaries.every((s: any) => Boolean(s?.id && !String(s.id).startsWith('ts_')))
     );
     const summaryIds = new Set<string>();
-    if (allSummariesHaveIds && summaries) {
+    const summaryNames = new Set<string>();
+    if (summaries) {
       for (let j = 0; j < summaries.length; j++) {
         const sId = String(summaries[j]?.id || '')
           .trim()
           .toLowerCase();
         if (sId) summaryIds.add(sId);
+        const sName = String(summaries[j]?.name || '')
+          .trim()
+          .toLowerCase();
+        if (sName) summaryNames.add(sName);
       }
     }
 
@@ -77,6 +85,7 @@ export function buildZombieProjectIndex(projects: Project[]): ZombieProjectIndex
       allSummariesHaveIds,
       isZeroTaskProject,
       summaryIds,
+      summaryNames,
     };
 
     if (p.id) {
@@ -155,6 +164,15 @@ export function isZombieTaskAgainstProjects(
   const projUpdatedMs = tsOf(matchedEntry.project.updatedAt);
   if (updatedMs > 0 && projUpdatedMs > 0 && updatedMs > projUpdatedMs) return false;
   if (matchedEntry.isZeroTaskProject) return true;
+  if (matchedEntry.allSummariesHaveIds) {
+    const tIdLower = String(t.id).trim().toLowerCase();
+    if (!matchedEntry.summaryIds.has(tIdLower)) {
+      const tNameLower = String(t.name || '').trim().toLowerCase();
+      if (!tNameLower || !matchedEntry.summaryNames.has(tNameLower)) {
+        return true;
+      }
+    }
+  }
 
   return false;
 }

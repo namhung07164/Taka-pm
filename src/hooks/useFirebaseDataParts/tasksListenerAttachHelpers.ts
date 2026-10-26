@@ -83,7 +83,7 @@ export function evaluateProjectTaskHydrationState(params: {
   });
   const coversAllSummaries =
     expectedSummaryCount > 0 &&
-    localProjTasks.length >= expectedSummaryCount &&
+    localProjTasks.length === expectedSummaryCount &&
     (!Array.isArray(p.taskSummaries) ||
       p.taskSummaries.every((s: any) => {
         const sId = String(s?.id || '').trim().toLowerCase();
@@ -103,7 +103,7 @@ export function evaluateProjectTaskHydrationState(params: {
   if (
     isNoop &&
     (!coversAllSummaries ||
-      expectedSummaryCount > localProjTasks.length ||
+      expectedSummaryCount !== localProjTasks.length ||
       (localProjTasks.length === 0 && expectedSummaryCount > 0))
   ) {
     tasksPool.delete(projKey);
@@ -123,8 +123,9 @@ export function evaluateProjectTaskHydrationState(params: {
   const hasLocalProjTasks =
     coversAllSummaries ||
     (!hasTaskSummaryArray &&
-      ((isVerifiedInSession && localProjTasks.length >= expectedSummaryCount) ||
-        (isProjMarkerFresh && localProjTasks.length >= expectedSummaryCount)));
+      expectedSummaryCount > 0 &&
+      ((isVerifiedInSession && localProjTasks.length === expectedSummaryCount) ||
+        (isProjMarkerFresh && localProjTasks.length === expectedSummaryCount)));
 
   const isZeroTaskProject =
     (p.taskCount || 0) === 0 &&

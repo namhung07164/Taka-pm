@@ -111,7 +111,17 @@ export function useTasksHydration({
         if (pendingTasksMap.current) {
           const rawList = Array.from(pendingTasksMap.current.values());
           const projects = useAppStore.getState().projects || [];
-          const { dedupedTasks } = deduplicateTasksInMemory(rawList, projects);
+          const { dedupedTasks, removedTaskIds } = deduplicateTasksInMemory(rawList, projects);
+          if (removedTaskIds.length > 0) {
+            removedTaskIds.forEach((dupId) => {
+              const dupTask = pendingTasksMap.current?.get(dupId);
+              pendingTasksMap.current?.delete(dupId);
+              pendingTasksChanged.current.delete(dupId);
+              if (dupTask) {
+                pendingTasksRemoved.current.set(dupId, dupTask);
+              }
+            });
+          }
           const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
           const rolledUpTasks = rollupParentTaskDatesAndStatus(
             unrolledTasks,
