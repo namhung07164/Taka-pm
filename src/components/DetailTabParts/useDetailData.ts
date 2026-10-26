@@ -265,7 +265,7 @@ export function useDetailData({
     });
   }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo]);
 
-  const lowerSearchTerm = searchTerm.toLowerCase().trim();
+  const lowerSearchTerm = deferredSearchTerm.toLowerCase().trim();
 
   // Task code & status maps
   const taskCodeMap = useMemo(() => {

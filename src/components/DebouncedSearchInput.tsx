@@ -25,7 +25,7 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
   placeholder = 'Search...',
   className,
   inputClassName,
-  delay = 300,
+  delay = 400,
   debounceMs,
   onFocus,
   onBlur,
@@ -36,24 +36,39 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
   'data-global-search-input': dataGlobalSearch,
 }) => {
   const effectiveDelay = debounceMs !== undefined ? debounceMs : delay;
-  const [localValue, setLocalValue] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isComposingRef = useRef(false);
   const isFocusedRef = useRef(false);
-  const lastCommittedValRef = useRef(value);
+  const lastCommittedRef = useRef(value || '');
 
-  // Sync external changes (e.g. clear filters, switching tabs, external reset)
-  // Prevents echo re-render loop if local input is actively focused and matches committed value
+  // hasValue only tracks whether the input has non-empty text (to show/hide the Clear button).
+  // Keystrokes, Vietnamese Telex accents (aa -> â, as -> á), and deletes (Backspace) are handled
+  // directly by the native browser DOM with zero React re-renders, eliminating all input lag.
+  const [hasValue, setHasValue] = useState(() => Boolean(value));
+  const hasValueRef = useRef(hasValue);
+
+  // Sync external changes (e.g. clear filters, tab changes, external reset)
   useEffect(() => {
-    if (isFocusedRef.current && value !== '' && value === lastCommittedValRef.current) {
-      return;
+    const propVal = value || '';
+    if (inputRef.current) {
+      const currentNative = inputRef.current.value;
+      if (currentNative !== propVal) {
+        // Only override native DOM if not actively focused or if externally reset to empty
+        if (!isFocusedRef.current || propVal === '') {
+          inputRef.current.value = propVal;
+          lastCommittedRef.current = propVal;
+          const nextHas = Boolean(propVal);
+          if (hasValueRef.current !== nextHas) {
+            hasValueRef.current = nextHas;
+            setHasValue(nextHas);
+          }
+        }
+      }
     }
-    setLocalValue(value || '');
-    lastCommittedValRef.current = value || '';
   }, [value]);
 
-  // Clean up pending debounce timer on unmount
+  // Clean up pending timer on unmount
   useEffect(() => {
     return () => {
       if (timerRef.current) {
@@ -63,22 +78,31 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
     };
   }, []);
 
-  const triggerDebounce = (nextVal: string) => {
+  const scheduleDebounce = (val: string) => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      lastCommittedValRef.current = nextVal;
-      startTransition(() => {
-        onChange(nextVal);
-      });
+      timerRef.current = null;
+      if (val !== lastCommittedRef.current) {
+        lastCommittedRef.current = val;
+        startTransition(() => {
+          onChange(val);
+        });
+      }
     }, effectiveDelay);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const nextVal = e.target.value;
-    setLocalValue(nextVal);
-    // Don't trigger debounce mid-composition (Vietnamese Telex / accents on iOS)
+    const val = e.target.value;
+    const nextHas = val.length > 0;
+    // Only trigger React state update when switching between empty <-> non-empty
+    if (nextHas !== hasValueRef.current) {
+      hasValueRef.current = nextHas;
+      setHasValue(nextHas);
+    }
+
+    // Do not dispatch debounce mid-composition (Vietnamese Telex / accents)
     if (!isComposingRef.current) {
-      triggerDebounce(nextVal);
+      scheduleDebounce(val);
     }
   };
 
@@ -88,9 +112,8 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
 
   const handleCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
     isComposingRef.current = false;
-    const nextVal = e.currentTarget.value;
-    setLocalValue(nextVal);
-    triggerDebounce(nextVal);
+    const val = e.currentTarget.value;
+    scheduleDebounce(val);
   };
 
   const handleInternalFocus = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -100,31 +123,33 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
 
   const handleInternalBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     isFocusedRef.current = false;
-    // On blur, immediately flush any pending debounced change to sync state without waiting
+    // Flush any pending change immediately on blur
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
-      if (localValue !== lastCommittedValRef.current) {
-        lastCommittedValRef.current = localValue;
-        startTransition(() => {
-          onChange(localValue);
-        });
-      }
+    }
+    const val = inputRef.current?.value || '';
+    if (val !== lastCommittedRef.current) {
+      lastCommittedRef.current = val;
+      startTransition(() => {
+        onChange(val);
+      });
     }
     onBlur?.(e);
   };
 
   const handleInternalKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
-      // Immediate search flush on Enter key press
+      // Immediate flush on Enter key without waiting for debounce timer
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
-      if (localValue !== lastCommittedValRef.current) {
-        lastCommittedValRef.current = localValue;
+      const val = inputRef.current?.value || '';
+      if (val !== lastCommittedRef.current) {
+        lastCommittedRef.current = val;
         startTransition(() => {
-          onChange(localValue);
+          onChange(val);
         });
       }
     }
@@ -138,8 +163,12 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    lastCommittedValRef.current = '';
-    setLocalValue('');
+    if (inputRef.current) {
+      inputRef.current.value = '';
+    }
+    lastCommittedRef.current = '';
+    hasValueRef.current = false;
+    setHasValue(false);
     startTransition(() => {
       onChange('');
     });
@@ -153,12 +182,12 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
         ref={inputRef}
         id={id}
         type="text"
+        defaultValue={value || ''}
         inputMode="search"
         enterKeyHint="search"
         autoCapitalize="none"
         autoCorrect="off"
         spellCheck={false}
-        value={localValue}
         onChange={handleInputChange}
         onCompositionStart={handleCompositionStart}
         onCompositionEnd={handleCompositionEnd}
@@ -176,7 +205,7 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
           inputClassName
         )}
       />
-      {localValue && (
+      {hasValue && (
         <button
           type="button"
           onClick={handleClear}
