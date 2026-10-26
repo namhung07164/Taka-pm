@@ -119,7 +119,10 @@ export function ImportErrorModal({
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Search row, task, project, message..."
-                className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#252528] focus:outline-hidden focus:ring-1 focus:ring-rose-500"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className="w-full pl-9 pr-3 py-1.5 text-[16px] sm:text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#252528] focus:outline-hidden focus:ring-1 focus:ring-rose-500 transition-colors duration-150 [overflow-anchor:none]"
               />
             </div>
 

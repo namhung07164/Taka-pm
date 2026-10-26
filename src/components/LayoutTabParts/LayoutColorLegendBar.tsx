@@ -329,8 +329,10 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
                     type="text"
                     value={groupSearch}
                     onChange={(e) => setGroupSearch(e.target.value)}
-                    placeholder="Search groups..."
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-7 pr-6 py-1 text-[11px] placeholder-slate-400 outline-none focus:ring-1 focus:ring-purple-500"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-7 pr-6 py-1 text-[16px] sm:text-[11px] placeholder-slate-400 outline-none focus:ring-1 focus:ring-purple-500 transition-colors duration-150 [overflow-anchor:none]"
                   />
                   {groupSearch && (
                     <button

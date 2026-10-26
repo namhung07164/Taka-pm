@@ -19,6 +19,7 @@ import {
   NotificationAssigneeFilter,
   NotificationCategoryFilter,
 } from './notificationTypes';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
 
 interface NotificationFilterToolbarProps {
   filterId?: string | null;
@@ -115,24 +116,13 @@ export const NotificationFilterToolbar: React.FC<NotificationFilterToolbarProps>
               Clear Filter <RotateCcw className="w-3 h-3" />
             </button>
           )}
-          <div className="relative flex-grow sm:flex-grow-0 sm:w-64 print:hidden hide-on-actual-print">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
+          <div className="flex-grow sm:flex-grow-0 sm:w-64 print:hidden hide-on-actual-print">
+            <DebouncedSearchInput
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={setSearchQuery}
               placeholder="Search code, project, task, PIC..."
-              className="w-full pl-8 pr-7 py-1 text-xs rounded-lg border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] text-slate-700 dark:text-[#e3e3e3] placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full"
             />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
           </div>
         </div>
 

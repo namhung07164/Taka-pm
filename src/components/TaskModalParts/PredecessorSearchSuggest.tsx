@@ -392,8 +392,10 @@ export const PredecessorSearchSuggest: React.FC<PredecessorSearchSuggestProps> =
                 onFocus={() => setOpen(true)}
                 onKeyDown={handleKeyDown}
                 placeholder="Type task name or code..."
-                autoComplete="off"
-                className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-8 pr-7 text-xs font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white dark:border-[#38383a] dark:bg-[#1a1a1c] dark:text-white dark:focus:bg-[#202023] transition-all shadow-2xs"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50/50 pl-8 pr-7 text-[16px] sm:text-xs font-medium text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:bg-white dark:border-[#38383a] dark:bg-[#1a1a1c] dark:text-white dark:focus:bg-[#202023] transition-colors duration-150 shadow-2xs [overflow-anchor:none]"
               />
               {query && (
                 <button
