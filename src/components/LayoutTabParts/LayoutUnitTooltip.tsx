@@ -230,6 +230,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     detail: true,
     description: true,
     progressBars: true,
+    shopType: true,
     area: true,
   };
 
@@ -415,6 +416,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             p={p}
             canWrite={canWrite}
             floorValue={floorValue}
+            shopTypeValue={p?.shopType || (p as any)?.shop_type || (data as any)?.shopType || (data as any)?.shop_type || ''}
             dataSize={p?.sizeM2 ?? (p as any)?.size ?? (p as any)?.area ?? data.sizeM2 ?? data.size ?? data.area ?? 0}
             commentsCount={commentsCount}
             computedTakStart={computedTakStart}

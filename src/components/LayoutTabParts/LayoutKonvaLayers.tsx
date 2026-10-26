@@ -1,5 +1,6 @@
 import React, { FC, Fragment, memo } from 'react';
 import { FastLayer, Layer, Image as KonvaImage, Rect, Circle, Path, Line, Text, Group } from 'react-konva';
+import { getHatchPatternCanvas } from './layoutPatternUtils';
 
 export interface LayoutKonvaLayersProps {
   bgImage: HTMLImageElement | null;
@@ -83,9 +84,16 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
                 ? 0.2 
                 : Math.max(0.82, unit.targetOpacity ?? 0.85));
           
+          const patternCanvas = (isLegendColorOn && hasColor && unit.targetHatchPattern && unit.targetHatchPattern !== 'none')
+            ? getHatchPatternCanvas(fillColor, unit.targetHatchPattern)
+            : null;
+          
           const commonProps = {
             id: unit.id,
-            fill: fillColor,
+            fill: patternCanvas ? undefined : fillColor,
+            fillPatternImage: (patternCanvas as any) || undefined,
+            fillPatternRepeat: patternCanvas ? 'repeat' : undefined,
+            fillPriority: patternCanvas ? 'pattern' : 'color',
             opacity: displayOpacity,
             stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : contrast.shapeStroke),
             strokeWidth: isFocused ? 3 : (hasColor ? 1.5 : 1),
@@ -178,7 +186,7 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
 
               {hasColor && unit.name && showTextAndBadge && (
                 <Text 
-                  text={unit.name}
+                  text={unit.targetSymbol ? `${unit.targetSymbol} ${unit.name}` : unit.name}
                   x={unit.textX}
                   y={unit.textY}
                   width={unit.textWidth}
@@ -196,6 +204,41 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
                   ellipsis={true}
                   listening={false}
                 />
+              )}
+
+              {/* Group Symbol Marker Badge */}
+              {hasColor && unit.targetSymbol && showTextAndBadge && (
+                <Group 
+                  x={unit.type === 'circle' ? (unit.x || 0) - (unit.radius || 20) * 0.55 : (unit.textX || unit.x || 0) + 7} 
+                  y={unit.type === 'circle' ? (unit.y || 0) + (unit.radius || 20) * 0.55 : (unit.textY || unit.y || 0) + (unit.textHeight || unit.height || 30) - 7} 
+                  listening={false}
+                >
+                  <Circle
+                    radius={badgeRadius}
+                    fill={contrast.shapeStroke || "#1e293b"}
+                    stroke="#ffffff"
+                    strokeWidth={Math.max(1, 1.2 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    listening={false}
+                  />
+                  <Text
+                    text={unit.targetSymbol}
+                    x={-badgeRadius}
+                    y={-badgeRadius + 0.5}
+                    width={badgeRadius * 2}
+                    height={badgeRadius * 2}
+                    align="center"
+                    verticalAlign="middle"
+                    fontSize={badgeFontSize * 0.95}
+                    fontStyle="bold"
+                    fill="#ffffff"
+                    fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    listening={false}
+                  />
+                </Group>
               )}
 
               {/* Smart Alert Badge (Rendered ONLY when unit is colored, has real alerts, and LOD permits) */}

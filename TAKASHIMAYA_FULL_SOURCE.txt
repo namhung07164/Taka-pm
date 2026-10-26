@@ -41951,7 +41951,6 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
 
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutColorLegendBar.tsx
-================================================================================
 import React, { Dispatch, FC, SetStateAction, memo, useEffect, useMemo, useRef, useState } from 'react';
 import Draggable from 'react-draggable';
 import {
@@ -41970,6 +41969,7 @@ import {
   Layers
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { getHatchCssStyle } from './layoutPatternUtils';
 
 export type LegendDockPosition = 'top-right' | 'bottom-right' | 'bottom-left';
 
@@ -42283,8 +42283,10 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
                     type="text"
                     value={groupSearch}
                     onChange={(e) => setGroupSearch(e.target.value)}
-                    placeholder="Search groups..."
-                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-7 pr-6 py-1 text-[11px] placeholder-slate-400 outline-none focus:ring-1 focus:ring-purple-500"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-7 pr-6 py-1 text-[16px] sm:text-[11px] placeholder-slate-400 outline-none focus:ring-1 focus:ring-purple-500 transition-colors duration-150 [overflow-anchor:none]"
                   />
                   {groupSearch && (
                     <button
@@ -42344,11 +42346,21 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span
-                              className="w-3.5 h-3.5 rounded-full shrink-0 shadow-2xs border border-black/15 ring-1 ring-white/50"
-                              style={{ backgroundColor: g.color }}
-                            />
-                            <span className="truncate text-[11px] font-semibold">
-                              {g.name}
+                              className="w-4 h-4 rounded shrink-0 shadow-2xs border border-black/25 ring-1 ring-white/50 relative overflow-hidden flex items-center justify-center"
+                              style={{
+                                backgroundColor: g.color,
+                                ...getHatchCssStyle(g.color, g.hatchPattern),
+                              }}
+                            >
+                              {g.symbol && (
+                                <span className="text-[10px] font-black text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)] leading-none select-none">
+                                  {g.symbol}
+                                </span>
+                              )}
+                            </span>
+                            <span className="truncate text-[11px] font-semibold flex items-center gap-1">
+                              {g.symbol && <span className="text-amber-500 dark:text-amber-400 font-mono text-[10px] font-bold">[{g.symbol}]</span>}
+                              <span>{g.name}</span>
                             </span>
                           </div>
                           <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 shrink-0">
@@ -42367,8 +42379,6 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
     </Draggable>
   );
 });
-
-
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutColorLegendModal.tsx
 ================================================================================
@@ -42755,6 +42765,7 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
                     detail: true,
                     description: true,
                     progressBars: true,
+                    shopType: true,
                     area: true,
                   });
                 }}
@@ -42787,6 +42798,7 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
               { key: 'detail', label: 'Detail', desc: 'Work breakdown summary' },
               { key: 'description', label: 'Description', desc: 'Notes & Descriptions' },
               { key: 'progressBars', label: 'Progress Bars', desc: 'Plan & Actual progress' },
+              { key: 'shopType', label: 'Shop Type', desc: 'Store layout & format' },
               { key: 'area', label: 'Area (m²)', desc: 'Floor surface area' },
             ].map((item) => {
               const isActive = (layoutTooltipVisibility as any)?.[item.key] !== false;
@@ -42883,8 +42895,6 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
   }
   return content;
 };
-
-
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutFloorVersionSelector.tsx
 ================================================================================
@@ -42987,9 +42997,9 @@ export const LayoutFocusBanner: React.FC<LayoutFocusBannerProps> = ({
 
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutKonvaLayers.tsx
-================================================================================
 import React, { FC, Fragment, memo } from 'react';
 import { FastLayer, Layer, Image as KonvaImage, Rect, Circle, Path, Line, Text, Group } from 'react-konva';
+import { getHatchPatternCanvas } from './layoutPatternUtils';
 
 export interface LayoutKonvaLayersProps {
   bgImage: HTMLImageElement | null;
@@ -43073,9 +43083,16 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
                 ? 0.2 
                 : Math.max(0.82, unit.targetOpacity ?? 0.85));
           
+          const patternCanvas = (isLegendColorOn && hasColor && unit.targetHatchPattern && unit.targetHatchPattern !== 'none')
+            ? getHatchPatternCanvas(fillColor, unit.targetHatchPattern)
+            : null;
+          
           const commonProps = {
             id: unit.id,
-            fill: fillColor,
+            fill: patternCanvas ? undefined : fillColor,
+            fillPatternImage: (patternCanvas as any) || undefined,
+            fillPatternRepeat: patternCanvas ? 'repeat' : undefined,
+            fillPriority: patternCanvas ? 'pattern' : 'color',
             opacity: displayOpacity,
             stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : contrast.shapeStroke),
             strokeWidth: isFocused ? 3 : (hasColor ? 1.5 : 1),
@@ -43168,7 +43185,7 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
 
               {hasColor && unit.name && showTextAndBadge && (
                 <Text 
-                  text={unit.name}
+                  text={unit.targetSymbol ? `${unit.targetSymbol} ${unit.name}` : unit.name}
                   x={unit.textX}
                   y={unit.textY}
                   width={unit.textWidth}
@@ -43186,6 +43203,41 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
                   ellipsis={true}
                   listening={false}
                 />
+              )}
+
+              {/* Group Symbol Marker Badge */}
+              {hasColor && unit.targetSymbol && showTextAndBadge && (
+                <Group 
+                  x={unit.type === 'circle' ? (unit.x || 0) - (unit.radius || 20) * 0.55 : (unit.textX || unit.x || 0) + 7} 
+                  y={unit.type === 'circle' ? (unit.y || 0) + (unit.radius || 20) * 0.55 : (unit.textY || unit.y || 0) + (unit.textHeight || unit.height || 30) - 7} 
+                  listening={false}
+                >
+                  <Circle
+                    radius={badgeRadius}
+                    fill={contrast.shapeStroke || "#1e293b"}
+                    stroke="#ffffff"
+                    strokeWidth={Math.max(1, 1.2 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    listening={false}
+                  />
+                  <Text
+                    text={unit.targetSymbol}
+                    x={-badgeRadius}
+                    y={-badgeRadius + 0.5}
+                    width={badgeRadius * 2}
+                    height={badgeRadius * 2}
+                    align="center"
+                    verticalAlign="middle"
+                    fontSize={badgeFontSize * 0.95}
+                    fontStyle="bold"
+                    fill="#ffffff"
+                    fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    listening={false}
+                  />
+                </Group>
               )}
 
               {/* Smart Alert Badge (Rendered ONLY when unit is colored, has real alerts, and LOD permits) */}
@@ -43310,8 +43362,6 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
     </>
   );
 });
-
-
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutMiniGanttModal.tsx
 ================================================================================
@@ -45288,6 +45338,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
     detail: true,
     description: true,
     progressBars: true,
+    shopType: true,
     area: true,
   };
 
@@ -45473,6 +45524,7 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             p={p}
             canWrite={canWrite}
             floorValue={floorValue}
+            shopTypeValue={p?.shopType || (p as any)?.shop_type || (data as any)?.shopType || (data as any)?.shop_type || ''}
             dataSize={p?.sizeM2 ?? (p as any)?.size ?? (p as any)?.area ?? data.sizeM2 ?? data.size ?? data.area ?? 0}
             commentsCount={commentsCount}
             computedTakStart={computedTakStart}
@@ -48506,6 +48558,7 @@ interface TooltipMetaRowProps {
   p?: Project;
   canWrite?: boolean;
   floorValue?: any;
+  shopTypeValue?: string;
   dataSize?: number;
   commentsCount: number;
   computedTakStart?: string;
@@ -48519,6 +48572,7 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
   p,
   canWrite = false,
   floorValue,
+  shopTypeValue,
   dataSize = 0,
   commentsCount,
   computedTakStart,
@@ -48527,14 +48581,15 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
   onOpenMiniGantt,
 }) => {
   const effectiveSize = p?.sizeM2 ?? (p as any)?.size ?? (p as any)?.area ?? dataSize ?? 0;
+  const effectiveShopType = shopTypeValue || p?.shopType || (p as any)?.shop_type || '';
 
-  if (!v.floor && !v.area && !v.startDate && !v.endDate && commentsCount === 0 && !onOpenMiniGantt && effectiveSize === 0) {
+  if (!v.floor && !v.area && !v.shopType && !v.startDate && !v.endDate && commentsCount === 0 && !onOpenMiniGantt && effectiveSize === 0 && !effectiveShopType) {
     return null;
   }
 
   return (
     <div className="flex items-center justify-between gap-1.5 px-0.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 flex-nowrap min-w-0">
-      {/* Left Side: Floor, Mini Gantt & Area/Size */}
+      {/* Left Side: Floor, Mini Gantt, Shop Type & Area/Size */}
       <div className="flex items-center gap-1 shrink min-w-0 flex-nowrap">
         {/* Floor Badge */}
         {v.floor && floorValue && (
@@ -48560,7 +48615,20 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
           </button>
         )}
 
-        {/* Area / Size (m²) Badge - Displayed right next to mini gantt */}
+        {/* Shop Type Badge - Displayed right before Area / Size (m²) */}
+        {(v.shopType !== false) && effectiveShopType && (
+          <div 
+            className="bg-purple-50 dark:bg-purple-950/70 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800/80 flex items-center gap-0.5 shrink-0"
+            title={`Shop Type: ${effectiveShopType}`}
+          >
+            <span className="text-[7.5px] text-purple-600 dark:text-purple-400 font-semibold uppercase tracking-tight">Type:</span>
+            <span className="font-bold text-[9.5px] text-purple-700 dark:text-purple-300 font-mono truncate max-w-[105px]">
+              {effectiveShopType}
+            </span>
+          </div>
+        )}
+
+        {/* Area / Size (m²) Badge - Displayed right next to mini gantt / shop type */}
         {(v.area !== false) && effectiveSize > 0 && (
           <div 
             className="bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700/80 flex items-center gap-0.5 shrink-0"
@@ -50579,9 +50647,11 @@ import {
   computePlanProgressPercent,
   computeActProgressPercent
 } from '../../lib/utils';
+import { getUnitEffectiveSizeM2 } from '../../lib/unitSizeResolver';
 
 export interface BuildAggregatedUnitDataParams {
   units: any[];
+  version?: any;
   summaryData: any[];
   enrichedProjects: Project[];
   tasks: any[];
@@ -50598,6 +50668,7 @@ export interface BuildAggregatedUnitDataParams {
 
 export function buildAggregatedUnitData({
   units,
+  version,
   summaryData,
   enrichedProjects,
   tasks,
@@ -50617,6 +50688,7 @@ export function buildAggregatedUnitData({
     const uName = (u?.name || '').toLowerCase().trim();
     if (!uName) return;
     const isRestricted = restrictedProjectCodes.has(uName);
+    const initialUnitSize = getUnitEffectiveSizeM2(u, version);
     dataMap[uName] = {
       name: u.name || '',
       id: u.id,
@@ -50624,10 +50696,10 @@ export function buildAggregatedUnitData({
       isRestricted,
       hasImage: Boolean(u.imageUrl || u.thumbnail || u.image),
       year: effectiveLayoutYear,
-      size: 0, sales: 0, salesByCp: 0, salesByHcmcate: 0,
+      size: initialUnitSize, sizeM2: initialUnitSize, sales: 0, salesByCp: 0, salesByHcmcate: 0,
       profit: 0, profitByCp: 0, profitByHcmcate: 0,
       margin: 0, marginByCp: 0, hcmSalesEffi: 0, hcmMargin: 0,
-      mdStatus: "", task: "", projectStatus: "", actStatus: "",
+      mdStatus: "", task: "", projectStatus: "", actStatus: "", shopType: "",
       endDate: "", status: "", vendorCode: "",
       brandCode: "", brandName: "", classCode: "", floor: u.location || locationFilter || "",
       appProjectStatus: "", appProjectBudget: 0, appProjectActual: 0, appProjectCode: "", appProjectYear: "", projectName: "", startDate: "", handoverDate: "", openingDate: "", detail: "", party: "",
@@ -50642,8 +50714,10 @@ export function buildAggregatedUnitData({
         dataMap[key].isRestricted = true;
         return;
       }
+      const resolvedSize = dataMap[key].sizeM2 || dataMap[key].size || sumData.size || 0;
       Object.assign(dataMap[key], {
-          size: sumData.size || 0,
+          size: resolvedSize,
+          sizeM2: resolvedSize,
           sales: sumData.salesAmount || 0,
           profit: sumData.profitAmount || 0,
           margin: sumData.margin || 0,
@@ -50653,6 +50727,7 @@ export function buildAggregatedUnitData({
           status: sumData.status || "",
           brandName: sumData.brandName || "",
           floor: dataMap[key].floor || (sumData as any).floor || "",
+          shopType: (sumData as any).shopType || (sumData as any).shop_type || dataMap[key].shopType || "",
       });
     }
   });
@@ -50877,6 +50952,8 @@ export function buildAggregatedUnitData({
           if (p.sizeM2 && !dataMap[code].size) {
             dataMap[code].size = p.sizeM2;
           }
+          dataMap[code].shopType = p.shopType || (p as any).shop_type || dataMap[code].shopType || '';
+          dataMap[code].appProjectShopType = p.shopType || (p as any).shop_type || '';
 
           dataMap[code].matchedTasks = allMatchedTasks;
           dataMap[code].subTasks = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
@@ -51945,7 +52022,6 @@ export interface HoverInfo {
 
 ================================================================================
 FILE: src/components/LayoutTabParts/useLayoutAggregates.ts
-================================================================================
 import React, { useMemo, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
@@ -52077,6 +52153,7 @@ export function useLayoutAggregates({
     const projectLinkData = useDataStore.getState().projectLink || [];
     return buildAggregatedUnitData({
       units,
+      version,
       summaryData,
       enrichedProjects,
       tasks,
@@ -52090,7 +52167,7 @@ export function useLayoutAggregates({
       restrictedProjectCodes,
       hasStoredUnitImages,
     });
-  }, [units, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, targetLoc, effectiveLayoutYear, delegationGroups, layoutTooltipVisibility, restrictedProjectCodes, hasStoredUnitImages, unitImagesRev]);
+  }, [units, version, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, targetLoc, effectiveLayoutYear, delegationGroups, layoutTooltipVisibility, restrictedProjectCodes, hasStoredUnitImages, unitImagesRev]);
 
   const { summaryMap: dynamicSummaryMap } = useDynamicUnitSummary({
     units,
@@ -52101,13 +52178,15 @@ export function useLayoutAggregates({
   });
 
   // Evaluate rules on the fly: STRICTLY depends ONLY on Task Summaries & Projects in active Year, Store, Location!
-  const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {
+  const { unitColorMap, unitGroupMap, unitOpacityMap, unitHatchMap, unitSymbolMap, activeGroups } = useMemo(() => {
     const colorMap: Record<string, string> = {};
     const groupMap: Record<string, string> = {};
     const opacityMap: Record<string, number> = {};
+    const hatchMap: Record<string, string> = {};
+    const symbolMap: Record<string, string> = {};
     const groupsInUseMap = new Map<string, any>();
     
-    if (!version || !version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: [] };
+    if (!version || !version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, unitHatchMap: hatchMap, unitSymbolMap: symbolMap, activeGroups: [] };
 
     units.forEach((u: any) => {
       const uName = String(u.name || '').toLowerCase().trim();
@@ -52122,6 +52201,9 @@ export function useLayoutAggregates({
         colorMap[u.id] = dynamicItem.color;
         groupMap[u.id] = dynamicItem.matchedGroupId;
         opacityMap[u.id] = dynamicItem.opacity ?? 0.85;
+        const matchedG = version.groups.find((g: any) => g.id === dynamicItem.matchedGroupId);
+        hatchMap[u.id] = matchedG?.hatchPattern || dynamicItem.hatchPattern || 'none';
+        symbolMap[u.id] = matchedG?.symbol || dynamicItem.symbol || '';
       }
     });
 
@@ -52145,7 +52227,14 @@ export function useLayoutAggregates({
       }
     });
 
-    return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: Array.from(groupsInUseMap.values()) };
+    return { 
+      unitColorMap: colorMap, 
+      unitGroupMap: groupMap, 
+      unitOpacityMap: opacityMap, 
+      unitHatchMap: hatchMap, 
+      unitSymbolMap: symbolMap, 
+      activeGroups: Array.from(groupsInUseMap.values()) 
+    };
   }, [version?.groups, units, aggregatedData, dynamicSummaryMap, restrictedProjectCodes]);
 
   // Total count of units with alerts on this floor
@@ -52198,6 +52287,8 @@ export function useLayoutAggregates({
       .map((unit: any) => {
         const targetColor = unitColorMap[unit.id] || null;
         const targetOpacity = unitOpacityMap[unit.id] ?? 0.85;
+        const targetHatchPattern = unitHatchMap[unit.id] || 'none';
+        const targetSymbol = unitSymbolMap[unit.id] || '';
         
         let minX = 0;
         let maxX = 0;
@@ -52264,6 +52355,8 @@ export function useLayoutAggregates({
           ...unit,
           targetColor,
           targetOpacity,
+          targetHatchPattern,
+          targetSymbol,
           targetGroupId: unitGroupMap[unit.id],
           minX,
           maxX,
@@ -52276,7 +52369,7 @@ export function useLayoutAggregates({
           textHeight,
         };
       });
-  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, deferredSearchQuery, aggregatedData, dynamicSummaryMap, focusedUnitId, filterOnlyAlerts]);
+  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, unitHatchMap, unitSymbolMap, deferredSearchQuery, aggregatedData, dynamicSummaryMap, focusedUnitId, filterOnlyAlerts]);
 
   // Focused unit object for Isolated Overlay Highlight Layer
   const focusedUnit = useMemo(() => {
@@ -52319,7 +52412,7 @@ export function useLayoutAggregates({
       return displayedUnits;
     }
 
-    const key = `${effectiveLayoutYear}_${storeFilter}_${targetLoc}_` + filtered.map((u: any) => `${u.id}:${u.targetColor || ''}:${u.targetGroupId || ''}:${u.targetOpacity ?? ''}`).join('|');
+    const key = `${effectiveLayoutYear}_${storeFilter}_${targetLoc}_` + filtered.map((u: any) => `${u.id}:${u.targetColor || ''}:${u.targetGroupId || ''}:${u.targetOpacity ?? ''}:${u.targetHatchPattern || ''}:${u.targetSymbol || ''}`).join('|');
     if (key === prevVisibleUnitsKeyRef.current) {
       return prevVisibleUnitsRef.current;
     }
@@ -52392,7 +52485,6 @@ export function useLayoutAggregates({
     restrictedProjectCodes,
   };
 }
-
 ================================================================================
 FILE: src/components/LayoutTabParts/useLayoutFloorData.ts
 ================================================================================
@@ -60753,7 +60845,6 @@ export default ColorPicker;
 
 ================================================================================
 FILE: src/components/PictureMapping/components/DataMapping/DynamicHierarchyTab.tsx
-================================================================================
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UnitShape, Group, GroupRule, MapVersion } from "./types";
 import { v4 as uuidv4 } from "uuid";
@@ -60788,6 +60879,9 @@ import {
   BackgroundSyncStatus,
 } from "../../lib/dynamicExportService";
 import { useDynamicRules } from "../../hooks/useDynamicRules";
+import { GroupHatchPatternPicker } from "./GroupHatchPatternPicker";
+import { GroupSymbolPicker } from "./GroupSymbolPicker";
+import { HatchPatternType, getHatchCssStyle } from "../../../LayoutTabParts/layoutPatternUtils";
 
 interface DynamicHierarchyTabProps {
   units: UnitShape[];
@@ -61474,6 +61568,38 @@ function DynamicHierarchyTab({
     );
   };
 
+  const updateGroupHatchPattern = (groupId: string, hatchPattern: HatchPatternType) => {
+    updateVersions(
+      versions.map((v) => {
+        if (v.id === viewVersionId) {
+          return {
+            ...v,
+            groups: v.groups.map((g) =>
+              g.id === groupId ? { ...g, hatchPattern } : g,
+            ),
+          };
+        }
+        return v;
+      }),
+    );
+  };
+
+  const updateGroupSymbol = (groupId: string, symbol: string) => {
+    updateVersions(
+      versions.map((v) => {
+        if (v.id === viewVersionId) {
+          return {
+            ...v,
+            groups: v.groups.map((g) =>
+              g.id === groupId ? { ...g, symbol } : g,
+            ),
+          };
+        }
+        return v;
+      }),
+    );
+  };
+
   const addRuleToGroup = (groupId: string) => {
     updateVersions(
       versions.map((v) => {
@@ -61774,12 +61900,25 @@ function DynamicHierarchyTab({
                       className="border border-slate-700 rounded-xl overflow-hidden bg-slate-900/80 hover:border-brand-500/50 transition-colors"
                     >
                       <div className="px-4 py-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <ColorPicker
-                            color={group.color}
-                            onChange={(color) => updateGroupColor(group.id, color)}
-                            className="shrink-0"
-                          />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="relative flex items-center justify-center shrink-0">
+                            <ColorPicker
+                              color={group.color}
+                              onChange={(color) => updateGroupColor(group.id, color)}
+                              className="shrink-0"
+                            />
+                            {group.hatchPattern && group.hatchPattern !== 'none' && (
+                              <span
+                                className="absolute inset-0 rounded pointer-events-none"
+                                style={getHatchCssStyle(group.color, group.hatchPattern)}
+                              />
+                            )}
+                            {group.symbol && (
+                              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-white pointer-events-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
+                                {group.symbol}
+                              </span>
+                            )}
+                          </div>
                           <input
                             type="range"
                             min="0"
@@ -61795,11 +61934,27 @@ function DynamicHierarchyTab({
                             }
                             className="w-12 h-1 accent-brand-500 shrink-0 cursor-pointer"
                           />
+                          {/* Hatching Pattern Selector */}
+                          <GroupHatchPatternPicker
+                            color={group.color}
+                            pattern={group.hatchPattern || 'none'}
+                            onChange={(pat) => updateGroupHatchPattern(group.id, pat)}
+                          />
+                          {/* Symbol / Marker Selector */}
+                          <GroupSymbolPicker
+                            symbol={group.symbol || ''}
+                            onChange={(sym) => updateGroupSymbol(group.id, sym)}
+                          />
                           <span 
-                            className="text-sm font-bold text-white ml-2 cursor-pointer hover:text-brand-400 transition-colors flex items-center gap-2 group/title"
+                            className="text-sm font-bold text-white ml-1 cursor-pointer hover:text-brand-400 transition-colors flex items-center gap-1.5 group/title"
                             onClick={(e) => renameGroup(group.id, e)}
                           >
-                            {group.name}
+                            {group.symbol && (
+                              <span className="text-amber-400 font-mono text-xs px-1 py-0.2 rounded bg-amber-950/60 border border-amber-800/80">
+                                {group.symbol}
+                              </span>
+                            )}
+                            <span>{group.name}</span>
                             <Edit2 size={10} className="opacity-0 group-hover/title:opacity-100" />
                           </span>
                         </div>
@@ -67020,7 +67175,6 @@ export default React.memo(ReviewTab);
 
 ================================================================================
 FILE: src/components/PictureMapping/components/DataMapping/types.ts
-================================================================================
 export type ShapeType = 'rect' | 'circle' | 'polygon';
 
 export interface Point {
@@ -67045,7 +67199,18 @@ export interface UnitShape {
   locked?: boolean;
   store?: string;
   location?: string;
+  size?: number;
+  sizeM2?: number;
 }
+
+export type HatchPatternType = 
+  | 'none' 
+  | 'diagonal-right' 
+  | 'diagonal-left' 
+  | 'cross' 
+  | 'dots' 
+  | 'horizontal' 
+  | 'vertical';
 
 export interface GroupRule {
   field: string;
@@ -67058,6 +67223,8 @@ export interface Group {
   name: string;
   color: string;
   opacity?: number;
+  hatchPattern?: HatchPatternType;
+  symbol?: string;
   rules?: GroupRule[];
 }
 
@@ -67077,9 +67244,8 @@ export interface MapVersion {
   location?: string;
   year?: string;
   mapUnits?: UnitShape[];
+  unitSizes?: Record<string, number>; // unitId or normalized unitName -> sizeM2
 }
-
-
 ================================================================================
 FILE: src/components/PictureMapping/components/DataMappingTab.tsx
 ================================================================================
@@ -69596,7 +69762,6 @@ export async function executeTriggerExportProcess(
 
 ================================================================================
 FILE: src/components/PictureMapping/lib/dynamicSummaryEngine.ts
-================================================================================
 import { useMemo } from "react";
 import { UnitShape, MapVersion } from '../components/DataMapping/types';
 import { useAppStore } from '../../../store/useAppStore';
@@ -69605,6 +69770,7 @@ import { useDataStore } from '../DataContext';
 import { getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
 import { calculateSummaryData, SummaryDataItem } from './summaryData';
 import { DynamicUnitSummaryItem, matchSingleRule } from './dynamicRuleMatcher';
+import { getUnitEffectiveSizeM2 } from '../../../lib/unitSizeResolver';
 
 export type { DynamicUnitSummaryItem };
 export { matchSingleRule };
@@ -69799,6 +69965,7 @@ export function useDynamicUnitSummary({
 
       const excelItem = summaryLookup.get(uKey);
       const isRestricted = restrictedProjectCodes.has(uKey);
+      const effectiveUnitSize = getUnitEffectiveSizeM2(u, activeVersion, excelItem?.size);
 
       const item: DynamicUnitSummaryItem = {
         unitId: u.id,
@@ -69823,8 +69990,8 @@ export function useDynamicUnitSummary({
         matchedTasksCount: 0,
         task: '',
         activeTasks: [],
-        size: typeof excelItem?.size === 'number' ? excelItem.size : (Number(excelItem?.size) || 0),
-        sizeM2: typeof excelItem?.size === 'number' ? excelItem.size : (Number(excelItem?.size) || 0),
+        size: effectiveUnitSize,
+        sizeM2: effectiveUnitSize,
         sales: excelItem?.salesAmount || 0,
         salesByCp: excelItem?.salesByCp || 0,
         profit: excelItem?.profitAmount || 0,
@@ -69964,8 +70131,8 @@ export function useDynamicUnitSummary({
           item.appProjectParty = p.party || (p as any).contractor || '';
           item.appProjectBudget = p.budget || 0;
           item.appProjectActual = p.actual || 0;
-          item.appProjectSizeM2 = p.sizeM2 || 0;
-          if (p.sizeM2) {
+          item.appProjectSizeM2 = p.sizeM2 || item.sizeM2 || 0;
+          if (!item.sizeM2 && p.sizeM2) {
             item.sizeM2 = p.sizeM2;
             if (!item.size) item.size = p.sizeM2;
           }
@@ -69999,6 +70166,8 @@ export function useDynamicUnitSummary({
             item.matchedGroupName = group.name;
             item.color = group.color;
             item.opacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
+            item.hatchPattern = group.hatchPattern || 'none';
+            item.symbol = group.symbol || '';
             item.matchedRuleReason = group.rules
               .map((r) => `${r.field} ${r.operator} ${r.value}`)
               .join(' AND ');
@@ -122185,6 +122354,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       detail: true,
       description: true,
       progressBars: true,
+      shopType: true,
       area: true,
       notifications: true,
       alertOverdue: true,
@@ -122219,6 +122389,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       detail: true,
       description: true,
       progressBars: true,
+      shopType: true,
       area: true,
       notifications: true,
       alertOverdue: true,
@@ -122233,8 +122404,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   zoomableImageSrc: null,
   setZoomableImageSrc: (zoomableImageSrc) => set({ zoomableImageSrc }),
 });
-
-
 ================================================================================
 FILE: src/store/storeSelectors.ts
 ================================================================================
@@ -122450,6 +122619,7 @@ export interface LayoutTooltipVisibility {
   detail: boolean;
   description: boolean;
   progressBars: boolean;
+  shopType?: boolean;
   area: boolean;
   // Smart Notifications & Alerts Config
   notifications?: boolean;
@@ -122538,8 +122708,6 @@ export interface OptimisticSlice {
 }
 
 export type AppState = UISlice & DataSlice & OptimisticSlice;
-
-
 ================================================================================
 FILE: src/store/useAppStore.ts
 ================================================================================
@@ -129599,7 +129767,6 @@ export async function syncAffectedProjectsSummaries(
 }
 ================================================================================
 FILE: src/components/PictureMapping/lib/dynamicRuleMatcher.ts
-================================================================================
 import { GroupRule } from '../components/DataMapping/types';
 
 export interface DynamicUnitSummaryItem {
@@ -129650,6 +129817,8 @@ export interface DynamicUnitSummaryItem {
   matchedGroupName: string | null;
   color: string; // Hex color
   opacity: number;
+  hatchPattern?: string;
+  symbol?: string;
   matchedRuleReason: string;
   isRestricted?: boolean;
 }
@@ -159506,3 +159675,434 @@ export function useProjectModalMutations({
   };
 }
 
+
+===========================================
+FILE: src/components/LayoutTabParts/layoutPatternUtils.ts
+import React from 'react';
+
+export type HatchPatternType = 
+  | 'none' 
+  | 'diagonal-right' 
+  | 'diagonal-left' 
+  | 'cross' 
+  | 'dots' 
+  | 'horizontal' 
+  | 'vertical';
+
+export const PRESET_SYMBOLS: { symbol: string; label: string }[] = [
+  { symbol: '★', label: 'Star (VIP / Priority)' },
+  { symbol: '▲', label: 'Triangle (Focus / Attention)' },
+  { symbol: '◆', label: 'Diamond (Flagship / Luxury)' },
+  { symbol: '■', label: 'Square (Anchor Tenant)' },
+  { symbol: '●', label: 'Circle (Core Zone)' },
+  { symbol: '✕', label: 'Cross (Exclude / Restricted)' },
+  { symbol: '⚡', label: 'Bolt (Urgent / Active)' },
+  { symbol: '✓', label: 'Check (Confirmed / Done)' },
+  { symbol: '!', label: 'Alert (Pending Review)' },
+  { symbol: 'P', label: 'P (Process / Planned)' },
+  { symbol: 'H', label: 'H (Handover)' },
+  { symbol: 'O', label: 'O (Opening Soon)' },
+];
+
+export const HATCH_PATTERNS: { id: HatchPatternType; label: string; iconLabel: string; desc: string }[] = [
+  { id: 'none', label: 'Solid Color', iconLabel: 'Solid', desc: 'No hatching' },
+  { id: 'diagonal-right', label: 'Diagonal 45°', iconLabel: '///', desc: 'Stripe 45 deg' },
+  { id: 'diagonal-left', label: 'Diagonal 135°', iconLabel: '\\\\\\', desc: 'Stripe 135 deg' },
+  { id: 'cross', label: 'Cross-hatch', iconLabel: '▨', desc: 'Grid crisscross' },
+  { id: 'dots', label: 'Dots / Stipple', iconLabel: '⁘', desc: 'Polka dots' },
+  { id: 'horizontal', label: 'Horizontal', iconLabel: '═', desc: 'Horizontal lines' },
+  { id: 'vertical', label: 'Vertical', iconLabel: '║', desc: 'Vertical lines' },
+];
+
+// In-RAM Canvas Pattern Cache for Konva
+const patternCanvasCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * Generates or retrieves a cached seamless tile for Konva fillPatternImage
+ */
+export function getHatchPatternCanvas(color: string, pattern?: string | null): HTMLCanvasElement | null {
+  if (!pattern || pattern === 'none') return null;
+
+  const cacheKey = `${color}_${pattern}`;
+  const existing = patternCanvasCache.get(cacheKey);
+  if (existing) return existing;
+
+  if (typeof document === 'undefined') return null;
+
+  const size = 24;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  // 1. Draw base color
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, size, size);
+
+  // 2. High-contrast stroke color based on luminance
+  const isLight = isColorLight(color);
+  const strokeColor = isLight ? 'rgba(15, 23, 42, 0.4)' : 'rgba(255, 255, 255, 0.55)';
+  const fillColor = isLight ? 'rgba(15, 23, 42, 0.5)' : 'rgba(255, 255, 255, 0.7)';
+
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = 'square';
+
+  if (pattern === 'diagonal-right') {
+    ctx.beginPath();
+    ctx.moveTo(0, size); ctx.lineTo(size, 0);
+    ctx.moveTo(-size / 2, size / 2); ctx.lineTo(size / 2, -size / 2);
+    ctx.moveTo(size / 2, size * 1.5); ctx.lineTo(size * 1.5, size / 2);
+    ctx.stroke();
+  } else if (pattern === 'diagonal-left') {
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(size, size);
+    ctx.moveTo(-size / 2, size / 2); ctx.lineTo(size / 2, size * 1.5);
+    ctx.moveTo(size / 2, -size / 2); ctx.lineTo(size * 1.5, size / 2);
+    ctx.stroke();
+  } else if (pattern === 'cross') {
+    ctx.beginPath();
+    ctx.moveTo(0, size); ctx.lineTo(size, 0);
+    ctx.moveTo(0, 0); ctx.lineTo(size, size);
+    ctx.moveTo(-size / 2, size / 2); ctx.lineTo(size / 2, -size / 2);
+    ctx.moveTo(size / 2, size * 1.5); ctx.lineTo(size * 1.5, size / 2);
+    ctx.moveTo(-size / 2, size / 2); ctx.lineTo(size / 2, size * 1.5);
+    ctx.moveTo(size / 2, -size / 2); ctx.lineTo(size * 1.5, size / 2);
+    ctx.stroke();
+  } else if (pattern === 'dots') {
+    ctx.fillStyle = fillColor;
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, 2.5, 0, Math.PI * 2);
+    ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+    ctx.arc(size, 0, 2.5, 0, Math.PI * 2);
+    ctx.arc(0, size, 2.5, 0, Math.PI * 2);
+    ctx.arc(size, size, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (pattern === 'horizontal') {
+    ctx.beginPath();
+    ctx.moveTo(0, 6); ctx.lineTo(size, 6);
+    ctx.moveTo(0, 18); ctx.lineTo(size, 18);
+    ctx.stroke();
+  } else if (pattern === 'vertical') {
+    ctx.beginPath();
+    ctx.moveTo(6, 0); ctx.lineTo(6, size);
+    ctx.moveTo(18, 0); ctx.lineTo(18, size);
+    ctx.stroke();
+  }
+
+  patternCanvasCache.set(cacheKey, canvas);
+  return canvas;
+}
+
+/**
+ * Returns CSS styles for preview swatches and legend bars
+ */
+export function getHatchCssStyle(color: string, pattern?: string | null): React.CSSProperties {
+  if (!pattern || pattern === 'none') {
+    return { backgroundColor: color };
+  }
+
+  const isLight = isColorLight(color);
+  const stripe = isLight ? 'rgba(0, 0, 0, 0.35)' : 'rgba(255, 255, 255, 0.5)';
+  const dotColor = isLight ? 'rgba(0, 0, 0, 0.45)' : 'rgba(255, 255, 255, 0.65)';
+
+  if (pattern === 'diagonal-right') {
+    return {
+      backgroundColor: color,
+      backgroundImage: `repeating-linear-gradient(45deg, ${stripe}, ${stripe} 2px, transparent 2px, transparent 6px)`,
+    };
+  }
+  if (pattern === 'diagonal-left') {
+    return {
+      backgroundColor: color,
+      backgroundImage: `repeating-linear-gradient(-45deg, ${stripe}, ${stripe} 2px, transparent 2px, transparent 6px)`,
+    };
+  }
+  if (pattern === 'cross') {
+    return {
+      backgroundColor: color,
+      backgroundImage: `repeating-linear-gradient(45deg, ${stripe}, ${stripe} 2px, transparent 2px, transparent 6px), repeating-linear-gradient(-45deg, ${stripe}, ${stripe} 2px, transparent 2px, transparent 6px)`,
+    };
+  }
+  if (pattern === 'dots') {
+    return {
+      backgroundColor: color,
+      backgroundImage: `radial-gradient(circle, ${dotColor} 1.5px, transparent 1.5px)`,
+      backgroundSize: '6px 6px',
+    };
+  }
+  if (pattern === 'horizontal') {
+    return {
+      backgroundColor: color,
+      backgroundImage: `repeating-linear-gradient(0deg, ${stripe}, ${stripe} 2px, transparent 2px, transparent 6px)`,
+    };
+  }
+  if (pattern === 'vertical') {
+    return {
+      backgroundColor: color,
+      backgroundImage: `repeating-linear-gradient(90deg, ${stripe}, ${stripe} 2px, transparent 2px, transparent 6px)`,
+    };
+  }
+
+  return { backgroundColor: color };
+}
+
+function isColorLight(hexColor: string): boolean {
+  if (!hexColor || typeof hexColor !== 'string') return false;
+  let c = hexColor.trim().replace('#', '');
+  if (c.length === 3) {
+    c = c.split('').map((char) => char + char).join('');
+  }
+  if (c.length !== 6) return false;
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  // Perceived brightness formula
+  const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+  return brightness > 155;
+}
+
+===========================================
+FILE: src/components/PictureMapping/components/DataMapping/GroupHatchPatternPicker.tsx
+import React, { useState, useRef, useEffect } from 'react';
+import { Layers, Check } from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { HatchPatternType, HATCH_PATTERNS, getHatchCssStyle } from '../../../LayoutTabParts/layoutPatternUtils';
+
+interface GroupHatchPatternPickerProps {
+  color: string;
+  pattern?: HatchPatternType;
+  onChange: (pattern: HatchPatternType) => void;
+  className?: string;
+}
+
+export const GroupHatchPatternPicker: React.FC<GroupHatchPatternPickerProps> = ({
+  color,
+  pattern = 'none',
+  onChange,
+  className,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const currentPattern = HATCH_PATTERNS.find(p => p.id === pattern) || HATCH_PATTERNS[0];
+
+  return (
+    <div className={cn("relative inline-block", className)} ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "flex items-center gap-1.5 px-2 py-1 rounded-md border text-[11px] font-semibold transition-all cursor-pointer active:scale-95 touch-manipulation",
+          pattern && pattern !== 'none'
+            ? "bg-purple-950/60 border-purple-500/80 text-purple-200 shadow-xs"
+            : "bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600"
+        )}
+        title={`Hatching Pattern: ${currentPattern.label}`}
+      >
+        <span
+          className="w-3.5 h-3.5 rounded shrink-0 border border-black/20 shadow-2xs"
+          style={getHatchCssStyle(color, pattern)}
+        />
+        <span className="font-mono text-[10px]">{currentPattern.iconLabel}</span>
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1.5 z-50 w-52 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-100">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1.5 pb-1.5 border-b border-slate-800 flex items-center justify-between">
+            <span>Hatching Pattern</span>
+            <Layers size={11} className="text-purple-400" />
+          </div>
+
+          <div className="space-y-1 mt-1.5 max-h-56 overflow-y-auto">
+            {HATCH_PATTERNS.map((item) => {
+              const isSelected = (pattern || 'none') === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(item.id);
+                    setIsOpen(false);
+                  }}
+                  className={cn(
+                    "w-full flex items-center justify-between p-1.5 rounded-lg text-left transition-all cursor-pointer",
+                    isSelected
+                      ? "bg-purple-900/40 text-purple-200 border border-purple-500/50"
+                      : "hover:bg-slate-800 text-slate-300"
+                  )}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="w-4 h-4 rounded shrink-0 border border-black/30 shadow-2xs"
+                      style={getHatchCssStyle(color, item.id)}
+                    />
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold truncate leading-tight">{item.label}</div>
+                      <div className="text-[9px] text-slate-500 truncate">{item.desc}</div>
+                    </div>
+                  </div>
+                  {isSelected && <Check size={13} className="text-purple-400 shrink-0 ml-1" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+===========================================
+FILE: src/components/PictureMapping/components/DataMapping/GroupSymbolPicker.tsx
+import React, { useState, useRef, useEffect } from 'react';
+import { Tag, Check, X } from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { PRESET_SYMBOLS } from '../../../LayoutTabParts/layoutPatternUtils';
+
+interface GroupSymbolPickerProps {
+  symbol?: string;
+  onChange: (symbol: string) => void;
+  className?: string;
+}
+
+export const GroupSymbolPicker: React.FC<GroupSymbolPickerProps> = ({
+  symbol = '',
+  onChange,
+  className,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [customInput, setCustomInput] = useState(symbol || '');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setCustomInput(symbol || '');
+  }, [symbol]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const hasSymbol = Boolean(symbol && symbol.trim());
+
+  return (
+    <div className={cn("relative inline-block", className)} ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] font-bold transition-all cursor-pointer active:scale-95 touch-manipulation",
+          hasSymbol
+            ? "bg-amber-950/60 border-amber-500/80 text-amber-200 shadow-xs"
+            : "bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600"
+        )}
+        title={hasSymbol ? `Symbol: ${symbol}` : "Set symbol/marker"}
+      >
+        <Tag size={11} className={hasSymbol ? "text-amber-400" : "text-slate-400"} />
+        <span className="font-mono text-[11px]">{hasSymbol ? symbol : "Sym"}</span>
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1.5 z-50 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-2.5 animate-in fade-in zoom-in-95 duration-100">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 pb-1.5 border-b border-slate-800 flex items-center justify-between">
+            <span>Symbol / Marker</span>
+            {hasSymbol && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange('');
+                  setIsOpen(false);
+                }}
+                className="text-[9px] text-rose-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+              >
+                <X size={10} /> Clear
+              </button>
+            )}
+          </div>
+
+          {/* Quick Preset Symbols Grid */}
+          <div className="grid grid-cols-4 gap-1.5 mt-2">
+            {PRESET_SYMBOLS.map((item) => {
+              const isSelected = symbol === item.symbol;
+              return (
+                <button
+                  key={item.symbol}
+                  type="button"
+                  onClick={() => {
+                    onChange(item.symbol);
+                    setIsOpen(false);
+                  }}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-1.5 rounded-lg border text-sm font-bold transition-all cursor-pointer",
+                    isSelected
+                      ? "bg-amber-500/20 text-amber-300 border-amber-500 shadow-xs ring-1 ring-amber-400/50"
+                      : "bg-slate-800/80 text-slate-200 border-slate-700 hover:bg-slate-700 hover:border-slate-600"
+                  )}
+                  title={item.label}
+                >
+                  <span className="text-base leading-none">{item.symbol}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Custom text input */}
+          <div className="mt-2.5 pt-2 border-t border-slate-800">
+            <div className="text-[9px] font-semibold text-slate-400 mb-1">Custom Marker (1-3 chars):</div>
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                maxLength={4}
+                value={customInput}
+                onChange={(e) => setCustomInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    onChange(customInput.trim());
+                    setIsOpen(false);
+                  }
+                }}
+                placeholder="e.g. VIP, A"
+                className="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs text-white placeholder-slate-500 outline-none focus:border-amber-500"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(customInput.trim());
+                  setIsOpen(false);
+                }}
+                className="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-xs font-bold transition-colors cursor-pointer"
+              >
+                <Check size={12} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

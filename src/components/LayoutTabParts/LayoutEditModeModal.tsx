@@ -210,6 +210,7 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
                     detail: true,
                     description: true,
                     progressBars: true,
+                    shopType: true,
                     area: true,
                   });
                 }}
@@ -242,6 +243,7 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
               { key: 'detail', label: 'Detail', desc: 'Work breakdown summary' },
               { key: 'description', label: 'Description', desc: 'Notes & Descriptions' },
               { key: 'progressBars', label: 'Progress Bars', desc: 'Plan & Actual progress' },
+              { key: 'shopType', label: 'Shop Type', desc: 'Store layout & format' },
               { key: 'area', label: 'Area (m²)', desc: 'Floor surface area' },
             ].map((item) => {
               const isActive = (layoutTooltipVisibility as any)?.[item.key] !== false;

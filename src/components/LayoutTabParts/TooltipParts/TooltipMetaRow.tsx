@@ -8,6 +8,7 @@ interface TooltipMetaRowProps {
   p?: Project;
   canWrite?: boolean;
   floorValue?: any;
+  shopTypeValue?: string;
   dataSize?: number;
   commentsCount: number;
   computedTakStart?: string;
@@ -21,6 +22,7 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
   p,
   canWrite = false,
   floorValue,
+  shopTypeValue,
   dataSize = 0,
   commentsCount,
   computedTakStart,
@@ -29,14 +31,15 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
   onOpenMiniGantt,
 }) => {
   const effectiveSize = p?.sizeM2 ?? (p as any)?.size ?? (p as any)?.area ?? dataSize ?? 0;
+  const effectiveShopType = shopTypeValue || p?.shopType || (p as any)?.shop_type || '';
 
-  if (!v.floor && !v.area && !v.startDate && !v.endDate && commentsCount === 0 && !onOpenMiniGantt && effectiveSize === 0) {
+  if (!v.floor && !v.area && !v.shopType && !v.startDate && !v.endDate && commentsCount === 0 && !onOpenMiniGantt && effectiveSize === 0 && !effectiveShopType) {
     return null;
   }
 
   return (
     <div className="flex items-center justify-between gap-1.5 px-0.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 flex-nowrap min-w-0">
-      {/* Left Side: Floor, Mini Gantt & Area/Size */}
+      {/* Left Side: Floor, Mini Gantt, Shop Type & Area/Size */}
       <div className="flex items-center gap-1 shrink min-w-0 flex-nowrap">
         {/* Floor Badge */}
         {v.floor && floorValue && (
@@ -62,7 +65,20 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
           </button>
         )}
 
-        {/* Area / Size (m²) Badge - Displayed right next to mini gantt */}
+        {/* Shop Type Badge - Displayed right before Area / Size (m²) */}
+        {(v.shopType !== false) && effectiveShopType && (
+          <div 
+            className="bg-purple-50 dark:bg-purple-950/70 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800/80 flex items-center gap-0.5 shrink-0"
+            title={`Shop Type: ${effectiveShopType}`}
+          >
+            <span className="text-[7.5px] text-purple-600 dark:text-purple-400 font-semibold uppercase tracking-tight">Type:</span>
+            <span className="font-bold text-[9.5px] text-purple-700 dark:text-purple-300 font-mono truncate max-w-[105px]">
+              {effectiveShopType}
+            </span>
+          </div>
+        )}
+
+        {/* Area / Size (m²) Badge - Displayed right next to mini gantt / shop type */}
         {(v.area !== false) && effectiveSize > 0 && (
           <div 
             className="bg-slate-100 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700/80 flex items-center gap-0.5 shrink-0"

@@ -16,6 +16,7 @@ import {
   Layers
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { getHatchCssStyle } from './layoutPatternUtils';
 
 export type LegendDockPosition = 'top-right' | 'bottom-right' | 'bottom-left';
 
@@ -392,11 +393,21 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span
-                              className="w-3.5 h-3.5 rounded-full shrink-0 shadow-2xs border border-black/15 ring-1 ring-white/50"
-                              style={{ backgroundColor: g.color }}
-                            />
-                            <span className="truncate text-[11px] font-semibold">
-                              {g.name}
+                              className="w-4 h-4 rounded shrink-0 shadow-2xs border border-black/25 ring-1 ring-white/50 relative overflow-hidden flex items-center justify-center"
+                              style={{
+                                backgroundColor: g.color,
+                                ...getHatchCssStyle(g.color, g.hatchPattern),
+                              }}
+                            >
+                              {g.symbol && (
+                                <span className="text-[10px] font-black text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)] leading-none select-none">
+                                  {g.symbol}
+                                </span>
+                              )}
+                            </span>
+                            <span className="truncate text-[11px] font-semibold flex items-center gap-1">
+                              {g.symbol && <span className="text-amber-500 dark:text-amber-400 font-mono text-[10px] font-bold">[{g.symbol}]</span>}
+                              <span>{g.name}</span>
                             </span>
                           </div>
                           <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 shrink-0">

@@ -48,6 +48,8 @@ export interface DynamicUnitSummaryItem {
   matchedGroupName: string | null;
   color: string; // Hex color
   opacity: number;
+  hatchPattern?: string;
+  symbol?: string;
   matchedRuleReason: string;
   isRestricted?: boolean;
 }

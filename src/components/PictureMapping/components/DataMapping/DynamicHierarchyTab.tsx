@@ -32,6 +32,9 @@ import {
   BackgroundSyncStatus,
 } from "../../lib/dynamicExportService";
 import { useDynamicRules } from "../../hooks/useDynamicRules";
+import { GroupHatchPatternPicker } from "./GroupHatchPatternPicker";
+import { GroupSymbolPicker } from "./GroupSymbolPicker";
+import { HatchPatternType, getHatchCssStyle } from "../../../LayoutTabParts/layoutPatternUtils";
 
 interface DynamicHierarchyTabProps {
   units: UnitShape[];
@@ -718,6 +721,38 @@ function DynamicHierarchyTab({
     );
   };
 
+  const updateGroupHatchPattern = (groupId: string, hatchPattern: HatchPatternType) => {
+    updateVersions(
+      versions.map((v) => {
+        if (v.id === viewVersionId) {
+          return {
+            ...v,
+            groups: v.groups.map((g) =>
+              g.id === groupId ? { ...g, hatchPattern } : g,
+            ),
+          };
+        }
+        return v;
+      }),
+    );
+  };
+
+  const updateGroupSymbol = (groupId: string, symbol: string) => {
+    updateVersions(
+      versions.map((v) => {
+        if (v.id === viewVersionId) {
+          return {
+            ...v,
+            groups: v.groups.map((g) =>
+              g.id === groupId ? { ...g, symbol } : g,
+            ),
+          };
+        }
+        return v;
+      }),
+    );
+  };
+
   const addRuleToGroup = (groupId: string) => {
     updateVersions(
       versions.map((v) => {
@@ -1018,12 +1053,25 @@ function DynamicHierarchyTab({
                       className="border border-slate-700 rounded-xl overflow-hidden bg-slate-900/80 hover:border-brand-500/50 transition-colors"
                     >
                       <div className="px-4 py-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <ColorPicker
-                            color={group.color}
-                            onChange={(color) => updateGroupColor(group.id, color)}
-                            className="shrink-0"
-                          />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="relative flex items-center justify-center shrink-0">
+                            <ColorPicker
+                              color={group.color}
+                              onChange={(color) => updateGroupColor(group.id, color)}
+                              className="shrink-0"
+                            />
+                            {group.hatchPattern && group.hatchPattern !== 'none' && (
+                              <span
+                                className="absolute inset-0 rounded pointer-events-none"
+                                style={getHatchCssStyle(group.color, group.hatchPattern)}
+                              />
+                            )}
+                            {group.symbol && (
+                              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-white pointer-events-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
+                                {group.symbol}
+                              </span>
+                            )}
+                          </div>
                           <input
                             type="range"
                             min="0"
@@ -1039,11 +1087,27 @@ function DynamicHierarchyTab({
                             }
                             className="w-12 h-1 accent-brand-500 shrink-0 cursor-pointer"
                           />
+                          {/* Hatching Pattern Selector */}
+                          <GroupHatchPatternPicker
+                            color={group.color}
+                            pattern={group.hatchPattern || 'none'}
+                            onChange={(pat) => updateGroupHatchPattern(group.id, pat)}
+                          />
+                          {/* Symbol / Marker Selector */}
+                          <GroupSymbolPicker
+                            symbol={group.symbol || ''}
+                            onChange={(sym) => updateGroupSymbol(group.id, sym)}
+                          />
                           <span 
-                            className="text-sm font-bold text-white ml-2 cursor-pointer hover:text-brand-400 transition-colors flex items-center gap-2 group/title"
+                            className="text-sm font-bold text-white ml-1 cursor-pointer hover:text-brand-400 transition-colors flex items-center gap-1.5 group/title"
                             onClick={(e) => renameGroup(group.id, e)}
                           >
-                            {group.name}
+                            {group.symbol && (
+                              <span className="text-amber-400 font-mono text-xs px-1 py-0.2 rounded bg-amber-950/60 border border-amber-800/80">
+                                {group.symbol}
+                              </span>
+                            )}
+                            <span>{group.name}</span>
                             <Edit2 size={10} className="opacity-0 group-hover/title:opacity-100" />
                           </span>
                         </div>

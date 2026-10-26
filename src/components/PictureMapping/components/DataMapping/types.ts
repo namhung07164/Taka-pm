@@ -26,6 +26,15 @@ export interface UnitShape {
   sizeM2?: number;
 }
 
+export type HatchPatternType = 
+  | 'none' 
+  | 'diagonal-right' 
+  | 'diagonal-left' 
+  | 'cross' 
+  | 'dots' 
+  | 'horizontal' 
+  | 'vertical';
+
 export interface GroupRule {
   field: string;
   operator: string;
@@ -37,6 +46,8 @@ export interface Group {
   name: string;
   color: string;
   opacity?: number;
+  hatchPattern?: HatchPatternType;
+  symbol?: string;
   rules?: GroupRule[];
 }
 

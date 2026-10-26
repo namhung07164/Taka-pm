@@ -402,6 +402,8 @@ export function useDynamicUnitSummary({
             item.matchedGroupName = group.name;
             item.color = group.color;
             item.opacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
+            item.hatchPattern = group.hatchPattern || 'none';
+            item.symbol = group.symbol || '';
             item.matchedRuleReason = group.rules
               .map((r) => `${r.field} ${r.operator} ${r.value}`)
               .join(' AND ');

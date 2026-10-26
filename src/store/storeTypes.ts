@@ -172,6 +172,7 @@ export interface LayoutTooltipVisibility {
   detail: boolean;
   description: boolean;
   progressBars: boolean;
+  shopType?: boolean;
   area: boolean;
   // Smart Notifications & Alerts Config
   notifications?: boolean;

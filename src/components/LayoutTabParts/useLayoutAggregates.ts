@@ -154,13 +154,15 @@ export function useLayoutAggregates({
   });
 
   // Evaluate rules on the fly: STRICTLY depends ONLY on Task Summaries & Projects in active Year, Store, Location!
-  const { unitColorMap, unitGroupMap, unitOpacityMap, activeGroups } = useMemo(() => {
+  const { unitColorMap, unitGroupMap, unitOpacityMap, unitHatchMap, unitSymbolMap, activeGroups } = useMemo(() => {
     const colorMap: Record<string, string> = {};
     const groupMap: Record<string, string> = {};
     const opacityMap: Record<string, number> = {};
+    const hatchMap: Record<string, string> = {};
+    const symbolMap: Record<string, string> = {};
     const groupsInUseMap = new Map<string, any>();
     
-    if (!version || !version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: [] };
+    if (!version || !version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, unitHatchMap: hatchMap, unitSymbolMap: symbolMap, activeGroups: [] };
 
     units.forEach((u: any) => {
       const uName = String(u.name || '').toLowerCase().trim();
@@ -175,6 +177,9 @@ export function useLayoutAggregates({
         colorMap[u.id] = dynamicItem.color;
         groupMap[u.id] = dynamicItem.matchedGroupId;
         opacityMap[u.id] = dynamicItem.opacity ?? 0.85;
+        const matchedG = version.groups.find((g: any) => g.id === dynamicItem.matchedGroupId);
+        hatchMap[u.id] = matchedG?.hatchPattern || dynamicItem.hatchPattern || 'none';
+        symbolMap[u.id] = matchedG?.symbol || dynamicItem.symbol || '';
       }
     });
 
@@ -198,7 +203,14 @@ export function useLayoutAggregates({
       }
     });
 
-    return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, activeGroups: Array.from(groupsInUseMap.values()) };
+    return { 
+      unitColorMap: colorMap, 
+      unitGroupMap: groupMap, 
+      unitOpacityMap: opacityMap, 
+      unitHatchMap: hatchMap, 
+      unitSymbolMap: symbolMap, 
+      activeGroups: Array.from(groupsInUseMap.values()) 
+    };
   }, [version?.groups, units, aggregatedData, dynamicSummaryMap, restrictedProjectCodes]);
 
   // Total count of units with alerts on this floor
@@ -251,6 +263,8 @@ export function useLayoutAggregates({
       .map((unit: any) => {
         const targetColor = unitColorMap[unit.id] || null;
         const targetOpacity = unitOpacityMap[unit.id] ?? 0.85;
+        const targetHatchPattern = unitHatchMap[unit.id] || 'none';
+        const targetSymbol = unitSymbolMap[unit.id] || '';
         
         let minX = 0;
         let maxX = 0;
@@ -317,6 +331,8 @@ export function useLayoutAggregates({
           ...unit,
           targetColor,
           targetOpacity,
+          targetHatchPattern,
+          targetSymbol,
           targetGroupId: unitGroupMap[unit.id],
           minX,
           maxX,
@@ -329,7 +345,7 @@ export function useLayoutAggregates({
           textHeight,
         };
       });
-  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, deferredSearchQuery, aggregatedData, dynamicSummaryMap, focusedUnitId, filterOnlyAlerts]);
+  }, [units, unitColorMap, unitGroupMap, unitOpacityMap, unitHatchMap, unitSymbolMap, deferredSearchQuery, aggregatedData, dynamicSummaryMap, focusedUnitId, filterOnlyAlerts]);
 
   // Focused unit object for Isolated Overlay Highlight Layer
   const focusedUnit = useMemo(() => {
@@ -372,7 +388,7 @@ export function useLayoutAggregates({
       return displayedUnits;
     }
 
-    const key = `${effectiveLayoutYear}_${storeFilter}_${targetLoc}_` + filtered.map((u: any) => `${u.id}:${u.targetColor || ''}:${u.targetGroupId || ''}:${u.targetOpacity ?? ''}`).join('|');
+    const key = `${effectiveLayoutYear}_${storeFilter}_${targetLoc}_` + filtered.map((u: any) => `${u.id}:${u.targetColor || ''}:${u.targetGroupId || ''}:${u.targetOpacity ?? ''}:${u.targetHatchPattern || ''}:${u.targetSymbol || ''}`).join('|');
     if (key === prevVisibleUnitsKeyRef.current) {
       return prevVisibleUnitsRef.current;
     }

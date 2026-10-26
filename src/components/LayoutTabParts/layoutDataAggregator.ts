@@ -63,7 +63,7 @@ export function buildAggregatedUnitData({
       size: initialUnitSize, sizeM2: initialUnitSize, sales: 0, salesByCp: 0, salesByHcmcate: 0,
       profit: 0, profitByCp: 0, profitByHcmcate: 0,
       margin: 0, marginByCp: 0, hcmSalesEffi: 0, hcmMargin: 0,
-      mdStatus: "", task: "", projectStatus: "", actStatus: "",
+      mdStatus: "", task: "", projectStatus: "", actStatus: "", shopType: "",
       endDate: "", status: "", vendorCode: "",
       brandCode: "", brandName: "", classCode: "", floor: u.location || locationFilter || "",
       appProjectStatus: "", appProjectBudget: 0, appProjectActual: 0, appProjectCode: "", appProjectYear: "", projectName: "", startDate: "", handoverDate: "", openingDate: "", detail: "", party: "",
@@ -91,6 +91,7 @@ export function buildAggregatedUnitData({
           status: sumData.status || "",
           brandName: sumData.brandName || "",
           floor: dataMap[key].floor || (sumData as any).floor || "",
+          shopType: (sumData as any).shopType || (sumData as any).shop_type || dataMap[key].shopType || "",
       });
     }
   });
@@ -315,6 +316,8 @@ export function buildAggregatedUnitData({
           if (p.sizeM2 && !dataMap[code].size) {
             dataMap[code].size = p.sizeM2;
           }
+          dataMap[code].shopType = p.shopType || (p as any).shop_type || dataMap[code].shopType || '';
+          dataMap[code].appProjectShopType = p.shopType || (p as any).shop_type || '';
 
           dataMap[code].matchedTasks = allMatchedTasks;
           dataMap[code].subTasks = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
