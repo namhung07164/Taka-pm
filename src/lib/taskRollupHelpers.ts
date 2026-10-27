@@ -154,19 +154,32 @@ export function deduplicateTaskSummaries(summaries: any[]): any[] {
       const ePar = validParentByItem.get(existing);
       const sParId = sPar?.id ? (idRedirect.get(String(sPar.id).trim().toLowerCase()) || String(sPar.id).trim().toLowerCase()) : '';
       const eParId = ePar?.id ? (idRedirect.get(String(ePar.id).trim().toLowerCase()) || String(ePar.id).trim().toLowerCase()) : '';
-      const sParName = sPar?.name ? String(sPar.name).trim().toLowerCase().replace(/\s+/g, ' ') : '';
-      const eParName = ePar?.name ? String(ePar.name).trim().toLowerCase().replace(/\s+/g, ' ') : '';
       const existingIdLower = existing.id ? String(existing.id).trim().toLowerCase() : '';
-
+      const sHasRealId = Boolean(sIdLower && !sIdLower.startsWith('ts_'));
+      const eHasRealId = Boolean(existingIdLower && !existingIdLower.startsWith('ts_'));
+      const sCode = s.taskCodePhu ? normalizeDashes(String(s.taskCodePhu)).trim().toLowerCase() : '';
+      const eCode = existing.taskCodePhu ? normalizeDashes(String(existing.taskCodePhu)).trim().toLowerCase() : '';
+      const hasDistinctRealIds = sHasRealId && eHasRealId && sIdLower !== existingIdLower;
+      const hasConflictingCode = Boolean(sCode && eCode && sCode !== eCode);
+      const hasConflictingOrder =
+        s.orderIndex !== undefined &&
+        existing.orderIndex !== undefined &&
+        Number(s.orderIndex) !== Number(existing.orderIndex) &&
+        (!sCode || !eCode || sCode !== eCode);
       const isChildOfExisting =
         (sParId && existingIdLower && sParId === existingIdLower) ||
         (eParId && sIdLower && eParId === sIdLower);
-      const hasDistinctValidParents =
-        Boolean(sPar && ePar) &&
-        sParId !== eParId &&
-        (!sParName || !eParName || sParName !== eParName);
+      const hasDifferentParent = sParId !== eParId;
 
-      if (!isChildOfExisting && !hasDistinctValidParents && !activeParents.has(s)) {
+      if (
+        !hasDistinctRealIds &&
+        !hasConflictingCode &&
+        !hasConflictingOrder &&
+        !isChildOfExisting &&
+        !hasDifferentParent &&
+        !activeParents.has(s) &&
+        !activeParents.has(existing)
+      ) {
         if (sIdLower && existingIdLower) idRedirect.set(sIdLower, existingIdLower);
         if (!existing.parentTaskId && s.parentTaskId && sPar) existing.parentTaskId = s.parentTaskId;
         if (!existing.taskCodePhu && s.taskCodePhu) existing.taskCodePhu = s.taskCodePhu;

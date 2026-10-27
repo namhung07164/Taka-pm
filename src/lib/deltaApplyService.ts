@@ -31,18 +31,9 @@ import {
 } from './deltaApplyParts/deltaProjectReconciler';
 import { rollupParentTaskDatesAndStatus } from './taskRollupService';
 
-/**
- * Applies a list of (already de-duplicated) deltas to Zustand + Dexie. Shared by the real-time listener and the
- * safety poll. Returns the number of deltas processed.
- * Pre-indexes projects in O(P) and detects authoritative project summaries (including multi-chunk imports via
- * `skipSummaryRollup`) to avoid redundant per-task rollups across 500+ task imports.
- */
 export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   if (!deltas || deltas.length === 0) return 0;
-
-  usePerformanceStore
-    .getState()
-    .trackGetDoc(DELTA_COLLECTION, false, deltas.length, `Pulled ${deltas.length} deltas`);
+  usePerformanceStore.getState().trackGetDoc(DELTA_COLLECTION, false, deltas.length, `Pulled ${deltas.length} deltas`);
 
   const lastSyncTime = getLastDeltaSyncTime();
   let maxTime = lastSyncTime;
@@ -52,47 +43,30 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   let updatedTasks = [...(store.tasks || [])];
   let updatedCosts = [...(store.costs || [])];
   let updatedDelegations = [...(store.delegationGroups || [])];
-
   let projectsIndex = buildDeltaProjectsIndex(updatedProjects);
 
-  // Pre-collect projects that have an authoritative taskSummaries payload or skipSummaryRollup flag in this batch
   const authoritativeSummaryProjectIds = new Set<string>();
   const batchTaskCountsByProj = new Map<string, number>();
   deltas.forEach((d) => {
     if (d.sessionId && d.sessionId === CLIENT_SESSION_ID) return;
     if (d.action === 'batch_update' && Array.isArray(d.batchItems)) {
       d.batchItems.forEach((item) => {
-        if (
-          item.collectionName === 'taka_projects' &&
-          item.action !== 'delete' &&
-          !item.data?.isDeleted &&
-          Array.isArray(item.data?.taskSummaries) &&
-          item.docId
-        ) {
+        if (item.collectionName === 'taka_projects' && item.action !== 'delete' && !item.data?.isDeleted && Array.isArray(item.data?.taskSummaries) && item.docId) {
           authoritativeSummaryProjectIds.add(String(item.docId).trim());
         } else if (item.collectionName === 'taka_tasks' && item.action !== 'delete') {
           const pid = (item as any).projectId || item.data?.projectId || d.projectId;
           if (pid) {
             const pidStr = String(pid).trim();
             batchTaskCountsByProj.set(pidStr, (batchTaskCountsByProj.get(pidStr) || 0) + 1);
-            if ((item as any).skipSummaryRollup) {
-              authoritativeSummaryProjectIds.add(pidStr);
-            }
+            if ((item as any).skipSummaryRollup) authoritativeSummaryProjectIds.add(pidStr);
           }
         }
       });
-    } else if (
-      d.collectionName === 'taka_projects' &&
-      d.action !== 'delete' &&
-      !d.data?.isDeleted &&
-      Array.isArray(d.data?.taskSummaries) &&
-      d.docId
-    ) {
+    } else if (d.collectionName === 'taka_projects' && d.action !== 'delete' && !d.data?.isDeleted && Array.isArray(d.data?.taskSummaries) && d.docId) {
       authoritativeSummaryProjectIds.add(String(d.docId).trim());
     }
   });
 
-  // O(T) pre-index of projects that currently have real tasks loaded in memory
   const inMemoryProjectIds = new Set<string>();
   const inMemoryProjectCompositeKeys = new Set<string>();
   for (let i = 0; i < updatedTasks.length; i++) {
@@ -108,14 +82,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     }
   }
 
-  const expandedSet = new Set(
-    [...(store.expandedProjectIds || []), ...(store.searchActiveProjectIds || [])].map(String)
-  );
-
-  let projectsChanged = false;
-  let tasksChanged = false;
-  let costsChanged = false;
-  let delegationsChanged = false;
+  const expandedSet = new Set([...(store.expandedProjectIds || []), ...(store.searchActiveProjectIds || [])].map(String));
+  let projectsChanged = false, tasksChanged = false, costsChanged = false, delegationsChanged = false;
 
   const invalidations: TakaDeltaItem[] = [];
   const touchedProjectIds = new Set<string>();
@@ -124,14 +92,11 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     if (!t) return;
     if (t.projectId) {
       const pid = String(t.projectId).trim();
-      if (!authoritativeSummaryProjectIds.has(pid)) {
-        touchedProjectIds.add(pid);
-      }
+      if (!authoritativeSummaryProjectIds.has(pid)) touchedProjectIds.add(pid);
     } else if (t.projectCode) {
       const codeKey = String(t.projectCode).trim().toLowerCase();
       const storeKey = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '*';
-      const yearKey =
-        t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '*';
+      const yearKey = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '*';
       touchedProjectCodes.add(`${codeKey}|${storeKey}|${yearKey}`);
     }
   };
@@ -160,8 +125,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     const isStaleVsLocal = (existing: any): boolean => {
       if (isDelete || !data) return false;
       const incoming = tsOf(data.updatedAt);
-      if (!incoming) return false;
-      return tsOf(existing?.updatedAt) > incoming;
+      return Boolean(incoming && tsOf(existing?.updatedAt) > incoming);
     };
 
     switch (collectionName) {
@@ -186,9 +150,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         let nextProj: Project | null = null;
         if (idx !== -1) {
           nextProj = applyFieldPatch(updatedProjects[idx], data) as Project;
-          if (Array.isArray(data?.taskSummaries)) {
-            nextProj.taskCount = data.taskSummaries.length;
-          }
+          if (Array.isArray(data?.taskSummaries)) nextProj.taskCount = data.taskSummaries.length;
           updatedProjects[idx] = nextProj;
         } else if (action === 'create' || (action === 'update' && data?.code && data?.name)) {
           nextProj = { id: docId, ...data } as Project;
@@ -235,12 +197,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           noteTouchedProject(existingTask);
           noteTouchedProject(enrichedData);
           const pIdHint = enrichedData?.projectId || existingTask?.projectId;
-          const delProjCodeLower = String(enrichedData?.projectCode || existingTask?.projectCode || '')
-            .trim()
-            .toLowerCase();
-          const delProjStoreLower = String(enrichedData?.projectStore || existingTask?.projectStore || '')
-            .trim()
-            .toLowerCase();
+          const delProjCodeLower = String(enrichedData?.projectCode || existingTask?.projectCode || '').trim().toLowerCase();
+          const delProjStoreLower = String(enrichedData?.projectStore || existingTask?.projectStore || '').trim().toLowerCase();
           const delProjYearStr = String(enrichedData?.projectYear ?? existingTask?.projectYear ?? '').trim();
 
           markTasksDeleted([docId], pIdHint ? String(pIdHint) : undefined);
@@ -288,7 +246,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           meta?.skipSummaryRollup || (tProjId && authoritativeSummaryProjectIds.has(tProjId))
         );
 
-        // Only run per-task summary upsert & recalculation if the import did NOT carry an authoritative project summary
         if (!hasAuthoritativeProjectDelta) {
           noteTouchedProject(existingTask);
           noteTouchedProject(enrichedData);
@@ -317,9 +274,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         ) {
           if (store.isTasksRequested || updatedTasks.length > 0) {
             const tCode = mergedTask.projectCode ? String(mergedTask.projectCode).trim() : '';
-            const tStoreLower = mergedTask.projectStore
-              ? String(mergedTask.projectStore).trim().toLowerCase()
-              : '';
+            const tStoreLower = mergedTask.projectStore ? String(mergedTask.projectStore).trim().toLowerCase() : '';
             const tYearStr =
               mergedTask.projectYear !== undefined && mergedTask.projectYear !== null
                 ? String(mergedTask.projectYear).trim()
@@ -327,17 +282,11 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
             const activeYearFilter = store.globalYearFilter ? String(store.globalYearFilter).trim() : '';
             const matchesActiveYear =
-              !activeYearFilter ||
-              activeYearFilter.toLowerCase() === 'all' ||
-              !tYearStr ||
-              tYearStr === activeYearFilter;
+              !activeYearFilter || activeYearFilter.toLowerCase() === 'all' || !tYearStr || tYearStr === activeYearFilter;
 
             const projInMemory = tProjId
               ? inMemoryProjectIds.has(tProjId)
-              : Boolean(
-                  tCode &&
-                    inMemoryProjectCompositeKeys.has(`${tCode.toLowerCase()}|${tStoreLower}|${tYearStr}`)
-                );
+              : Boolean(tCode && inMemoryProjectCompositeKeys.has(`${tCode.toLowerCase()}|${tStoreLower}|${tYearStr}`));
 
             let matchingIdx = tProjId ? projectsIndex.byId.get(tProjId) : undefined;
             if (matchingIdx === undefined && !tProjId && tCode) {
@@ -388,11 +337,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         if (idx !== -1 && isStaleVsLocal(updatedCosts[idx])) return;
 
         costsChanged = true;
-        if (idx !== -1) {
-          updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
-        } else if (action === 'create') {
-          updatedCosts.push({ id: docId, ...data } as Cost);
-        }
+        if (idx !== -1) updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
+        else if (action === 'create') updatedCosts.push({ id: docId, ...data } as Cost);
         break;
       }
 
@@ -410,11 +356,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         if (idx !== -1 && isStaleVsLocal(updatedDelegations[idx])) return;
 
         delegationsChanged = true;
-        if (idx !== -1) {
-          updatedDelegations[idx] = applyFieldPatch(updatedDelegations[idx], data) as DelegationGroup;
-        } else if (action === 'create') {
-          updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
-        }
+        if (idx !== -1) updatedDelegations[idx] = applyFieldPatch(updatedDelegations[idx], data) as DelegationGroup;
+        else if (action === 'create') updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
         break;
       }
     }
@@ -441,6 +384,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
       delta.batchItems.forEach((item) => {
         if (item.invalidate) {
+          if (item.docId) directlyAppliedDocIds.delete(item.docId);
           invalidations.push(item);
           return;
         }
@@ -458,6 +402,19 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         }
       });
     } else if (delta.docId && delta.collectionName) {
+      if ((delta as any).invalidate) {
+        directlyAppliedDocIds.delete(delta.docId);
+        invalidations.push({
+          docId: delta.docId,
+          collectionName: delta.collectionName,
+          action: delta.action as any,
+          data: delta.data || {},
+          isPatch: delta.isPatch,
+          invalidate: true,
+          year: delta.year,
+        });
+        return;
+      }
       try {
         applyItem(delta.docId, delta.collectionName, delta.action as any, delta.data, {
           year: delta.year,
@@ -472,12 +429,10 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     }
   });
 
-  // Mark projects as hydrated in localDb when the batch delivered their full task set
   authoritativeSummaryProjectIds.forEach((pid) => {
     const receivedCount = batchTaskCountsByProj.get(pid) || 0;
     const pIdx = projectsIndex.byId.get(pid);
-    const expectedCount =
-      pIdx !== undefined ? updatedProjects[pIdx]?.taskSummaries?.length || 0 : 0;
+    const expectedCount = pIdx !== undefined ? updatedProjects[pIdx]?.taskSummaries?.length || 0 : 0;
     if (receivedCount > 0 && receivedCount >= expectedCount) {
       markLoaded('tasks_proj', pid).catch(() => {});
       markProjectTasksHydrated(pid);
@@ -489,16 +444,15 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   }
 
   let touchedProjectsToPersist: Project[] = [];
-  if (
-    (tasksChanged || projectsChanged) &&
-    (touchedProjectIds.size > 0 || touchedProjectCodes.size > 0)
-  ) {
+  if ((tasksChanged || projectsChanged) && (touchedProjectIds.size > 0 || touchedProjectCodes.size > 0)) {
+    const isResolvedInvalidationBatch = deltas.some((d) => d.sessionId === '__resolved__');
     const recalculated = recalculateTouchedProjectsAfterDeltas({
       updatedProjects,
       updatedTasks,
       delegationGroups: updatedDelegations,
       touchedProjectIds,
       touchedProjectCodes,
+      syncRecoveredSummariesToServer: isResolvedInvalidationBatch,
     });
     updatedProjects = recalculated.nextProjects;
     touchedProjectsToPersist = recalculated.touchedProjectsToPersist;
@@ -509,10 +463,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   if (tasksChanged) store.setTasks(updatedTasks);
   if (costsChanged) store.setCosts(updatedCosts);
   if (delegationsChanged) store.setDelegationGroups(updatedDelegations);
-
-  if (touchedProjectsToPersist.length > 0) {
-    localDb.projects.bulkPut(touchedProjectsToPersist).catch(() => {});
-  }
+  if (touchedProjectsToPersist.length > 0) localDb.projects.bulkPut(touchedProjectsToPersist).catch(() => {});
 
   const flashEntries: Array<{ docId: string; collectionName: any; updatedBy?: string }> = [];
   deltas.forEach((d) => {
@@ -530,9 +481,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
   applyDeltasToLocalDatabase(deltas).catch(() => {});
   broadcastAppliedDeltas(deltas);
-  if (maxTime > lastSyncTime) {
-    safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
-  }
+  if (maxTime > lastSyncTime) safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
 
   const pendingInvalidations = invalidations.filter((item) => !directlyAppliedDocIds.has(item.docId));
   if (pendingInvalidations.length > 0) {

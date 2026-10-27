@@ -3,6 +3,7 @@ import { Task, Project, DelegationGroup } from '../../types';
 import { db, APP_ID } from '../../lib/firebase';
 import { writeBatch } from '../../lib/firestoreWrites';
 import { isTaskBelongsToProject, matchProjectCode } from '../../lib/utils';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../../lib/projectDatesService';
 import { bulkPersistProjects } from '../../lib/localDb';
 
@@ -298,10 +299,7 @@ export function healProjectsAfterTasksBatch(params: {
     if (!canRunServerSelfHeal) return workingProj;
 
     const isAuthoritativelyHydrated = knownHydratedProjectCodes.has(String(workingProj.id));
-    const isFullyHydratedProject =
-      isAuthoritativelyHydrated ||
-      tasksPool.has(`proj_${workingProj.id}`) ||
-      tasksPool.has(`year_${workingProj.year}`);
+    const isFullyHydratedProject = isAuthoritativelyHydrated;
 
     const rawCodeCombined = workingProj.linkCodes
       ? `${workingProj.code || ''}, ${workingProj.linkCodes}`
@@ -354,11 +352,28 @@ export function healProjectsAfterTasksBatch(params: {
       }
     }
 
+    const pTaskIdsLower = new Set(
+      pTasks.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const hasUnloadedServerSummaries =
+      Array.isArray(workingProj.taskSummaries) &&
+      workingProj.taskSummaries.some((s: any) => {
+        const sId = String(s?.id || '').trim().toLowerCase();
+        if (!sId || sId.startsWith('ts_')) return false;
+        if (removedIdsLower.has(sId)) return false;
+        if (isTaskDeletedInTracker(sId, pIdStr || undefined)) return false;
+        return !pTaskIdsLower.has(sId);
+      });
+
     const existingMaxCount = Math.max(
       workingProj.taskCount || 0,
       Array.isArray(workingProj.taskSummaries) ? workingProj.taskSummaries.length : 0
     );
-    if (!summaryRemoved && !isAuthoritativelyHydrated && (pTasks.length === 0 || pTasks.length < existingMaxCount)) {
+    if (
+      !summaryRemoved &&
+      (hasUnloadedServerSummaries || !isAuthoritativelyHydrated) &&
+      (pTasks.length === 0 || pTasks.length < existingMaxCount)
+    ) {
       return workingProj;
     }
     if (!summaryRemoved && isAuthoritativelyHydrated && pTasks.length === 0 && existingMaxCount > 0) {
@@ -366,7 +381,8 @@ export function healProjectsAfterTasksBatch(params: {
     }
 
     const baseProjForCalc =
-      (isAuthoritativelyHydrated && pTasks.length > 0) || (summaryRemoved && pTasks.length === 0)
+      (isAuthoritativelyHydrated && !hasUnloadedServerSummaries && pTasks.length > 0) ||
+      (summaryRemoved && pTasks.length === 0 && !hasUnloadedServerSummaries)
         ? { ...workingProj, taskSummaries: [], taskCount: pTasks.length }
         : workingProj;
 
@@ -396,7 +412,11 @@ export function healProjectsAfterTasksBatch(params: {
 
     projectsNeedUpdate = true;
     const healedProj = { ...workingProj, ...computed };
-    if (!fromCache && hasStructuralChange) {
+    const wouldShrinkUnloadedServerSummary =
+      !summaryRemoved &&
+      hasUnloadedServerSummaries &&
+      (computed.taskSummaries?.length || 0) < (workingProj.taskSummaries?.length || 0);
+    if (!fromCache && hasStructuralChange && !wouldShrinkUnloadedServerSummary) {
       bulkPersistProjects([healedProj]).catch(() => {});
       if (isFullyHydratedProject && workingProj.id) {
         syncProjectDatesToFirestore(String(workingProj.id), computed).catch(() => {});

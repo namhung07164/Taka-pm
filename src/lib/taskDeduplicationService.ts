@@ -313,10 +313,21 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
          seenNormMap.get(taskNameDatesSignature))
       : undefined;
 
+    const keepAsDistinctTask = () => {
+      seenMap.set(task.id, task);
+      if (projKey && exactName) {
+        if (cleanCodePhu) seenNormMap.set(taskUniqueSignature, task.id);
+        seenNormMap.set(taskContentSignature, task.id);
+        if (!seenNormMap.has(taskNameDatesSignature)) {
+          seenNormMap.set(taskNameDatesSignature, task.id);
+        }
+      }
+    };
+
     if (matchedExistingId && seenMap.has(matchedExistingId)) {
       const existing = seenMap.get(matchedExistingId)!;
       if (task.projectId && existing.projectId && String(task.projectId) !== String(existing.projectId)) {
-        seenMap.set(task.id, task);
+        keepAsDistinctTask();
         return;
       }
 
@@ -324,41 +335,57 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
       const eYear = existing.projectYear !== undefined && existing.projectYear !== null ? String(existing.projectYear).trim() : '';
       const tStore = task.projectStore ? String(task.projectStore).trim().toUpperCase() : '';
       const eStore = existing.projectStore ? String(existing.projectStore).trim().toUpperCase() : '';
-
-      if (tYear && eYear && tYear !== eYear) {
-        seenMap.set(task.id, task);
-        return;
-      }
-      if (tStore && eStore && tStore !== eStore) {
-        seenMap.set(task.id, task);
+      if ((tYear && eYear && tYear !== eYear) || (tStore && eStore && tStore !== eStore)) {
+        keepAsDistinctTask();
         return;
       }
 
       const existingIdLower = String(existing.id || '').trim().toLowerCase();
       const taskIdLower = taskIdStr.toLowerCase();
+      const existingCleanCodePhu = String(existing.taskCodePhu || '').trim().toLowerCase().replace(/^\d+\s+/, '');
+
+      // Never merge two tasks that have distinct non-empty taskCodePhu (e.g. B1-B105#10 vs B1-B105#25)
+      if (cleanCodePhu && existingCleanCodePhu && cleanCodePhu !== existingCleanCodePhu) {
+        keepAsDistinctTask();
+        return;
+      }
+
+      // Never merge two tasks that have distinct real Firestore IDs when one is a virtual summary or they have different orderIndex
+      const hasDistinctRealIds =
+        Boolean(taskIdLower && !taskIdLower.startsWith('ts_')) &&
+        Boolean(existingIdLower && !existingIdLower.startsWith('ts_')) &&
+        taskIdLower !== existingIdLower;
+      const isEitherVirtual = Boolean((task as any)._isVirtualSummary || (existing as any)._isVirtualSummary);
+      if (hasDistinctRealIds && isEitherVirtual) {
+        keepAsDistinctTask();
+        return;
+      }
+      if (
+        hasDistinctRealIds &&
+        task.orderIndex !== undefined &&
+        task.orderIndex !== null &&
+        existing.orderIndex !== undefined &&
+        existing.orderIndex !== null &&
+        Number(task.orderIndex) !== Number(existing.orderIndex) &&
+        (!cleanCodePhu || !existingCleanCodePhu || cleanCodePhu !== existingCleanCodePhu)
+      ) {
+        keepAsDistinctTask();
+        return;
+      }
+
       const existingValidPar = validParentByTask.get(existing);
       const eRawParLower = existingValidPar?.id ? String(existingValidPar.id).trim().toLowerCase() : '';
       const eResolvedParLower = eRawParLower ? (idRedirectMap.get(eRawParLower) || eRawParLower) : '';
 
-      // Never merge a child task into its own parent task
-      if (resolvedParentLower === existingIdLower || eResolvedParLower === taskIdLower) {
-        seenMap.set(task.id, task);
-        return;
-      }
-
-      // If BOTH tasks have valid existing parents in the project, only keep both if their parents are genuinely distinct tasks
-      if (resolvedParentLower && eResolvedParLower && resolvedParentLower !== eResolvedParLower) {
-        const tParName = taskNameByIdMap.get(resolvedParentLower) || taskNameByIdMap.get(rawParLower);
-        const eParName = taskNameByIdMap.get(eResolvedParLower) || taskNameByIdMap.get(eRawParLower);
-        if (!tParName || !eParName || tParName !== eParName) {
-          seenMap.set(task.id, task);
-          return;
-        }
-      }
-
-      // If one task is an active parent of subtasks and the other is a subtask with a valid parent, do not merge them
-      if (activeParentIdsLower.has(taskIdLower) && Boolean(eResolvedParLower) !== Boolean(resolvedParentLower)) {
-        seenMap.set(task.id, task);
+      // Never merge a child task into its own parent, or tasks under different parent hierarchy nodes, or active parents
+      if (
+        resolvedParentLower === existingIdLower ||
+        eResolvedParLower === taskIdLower ||
+        resolvedParentLower !== eResolvedParLower ||
+        activeParentIdsLower.has(taskIdLower) ||
+        activeParentIdsLower.has(existingIdLower)
+      ) {
+        keepAsDistinctTask();
         return;
       }
 
@@ -383,14 +410,7 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
         validParentByTask.set(existing, validPar);
       }
     } else {
-      seenMap.set(task.id, task);
-      if (projKey && exactName) {
-        if (cleanCodePhu) seenNormMap.set(taskUniqueSignature, task.id);
-        seenNormMap.set(taskContentSignature, task.id);
-        if (!seenNormMap.has(taskNameDatesSignature)) {
-          seenNormMap.set(taskNameDatesSignature, task.id);
-        }
-      }
+      keepAsDistinctTask();
     }
   });
 
@@ -400,22 +420,14 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
     const validPar = validParentByTask.get(t);
     if (validPar && validPar.id) {
       const redirected = idRedirectMap.get(String(validPar.id).trim()) || String(validPar.id).trim();
-      if (t.parentTaskId !== redirected) {
-        dedupedTasks[i] = { ...t, parentTaskId: redirected };
-      }
+      if (t.parentTaskId !== redirected) dedupedTasks[i] = { ...t, parentTaskId: redirected };
     } else if (t.parentTaskId) {
       const redirected = idRedirectMap.get(String(t.parentTaskId).trim());
-      if (redirected && redirected !== t.parentTaskId) {
-        dedupedTasks[i] = { ...t, parentTaskId: redirected };
-      }
+      if (redirected && redirected !== t.parentTaskId) dedupedTasks[i] = { ...t, parentTaskId: redirected };
     }
   }
 
-  const result = {
-    dedupedTasks,
-    duplicateCount,
-    removedTaskIds
-  };
+  const result = { dedupedTasks, duplicateCount, removedTaskIds };
   _dedupWeakCache.set(tasks, result);
   _dedupWeakCache.set(dedupedTasks, { dedupedTasks, duplicateCount: 0, removedTaskIds: [] });
   return result;
@@ -425,20 +437,13 @@ let _lastDedupInputTasksRef: Task[] | null = null;
 let _lastDedupInputProjectsRef: Project[] | null = null;
 let _cachedDedupTasksResult: Task[] = [];
 
-/**
- * Convenient helper returning just the deduplicated array of tasks.
- * Includes reference-equality caching to prevent redundant sorting and map allocations.
- */
 export function deduplicateTasks(tasks: Task[], projects: Project[] = EMPTY_PROJECTS): Task[] {
   if (!tasks || tasks.length === 0) return [];
   if (tasks.length === 1) return tasks;
-
   const normalizedProjects = projects && projects.length > 0 ? projects : EMPTY_PROJECTS;
-
   if (_lastDedupInputTasksRef === tasks && _lastDedupInputProjectsRef === normalizedProjects && _lastDedupInputTasksRef !== null) {
     return _cachedDedupTasksResult;
   }
-
   _lastDedupInputTasksRef = tasks;
   _lastDedupInputProjectsRef = normalizedProjects;
   _cachedDedupTasksResult = deduplicateTasksInMemory(tasks, normalizedProjects).dedupedTasks;

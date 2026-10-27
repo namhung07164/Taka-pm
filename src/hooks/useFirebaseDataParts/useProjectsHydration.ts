@@ -184,7 +184,8 @@ export function useProjectsHydration({
               isPatch: true,
               invalidate: true,
               year: yr,
-            });
+              forceResolve: true,
+            } as any);
           });
           pendingInvalidatedTaskIds.current.clear();
           resolveInvalidations(itemsToResolve)

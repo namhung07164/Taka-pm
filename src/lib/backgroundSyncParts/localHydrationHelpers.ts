@@ -179,27 +179,12 @@ export function isZombieTaskAgainstProjects(
 
   if (!matchedEntry) return false;
   if (matchedEntry.isZeroTaskProject) return true;
-  if (matchedEntry.allSummariesHaveIds) {
-    const tIdLower = String(t.id).trim().toLowerCase();
-    if (!matchedEntry.summaryIds.has(tIdLower)) {
-      const tNameLower = String(t.name || '').trim().toLowerCase();
-      const tStart = String(t.start || '').trim();
-      const key = `${tNameLower}|${tStart}`;
-      const rem = tNameLower ? (matchedEntry.unmatchedSummaryNameStarts.get(key) || 0) : 0;
-      if (rem > 0) {
-        matchedEntry.unmatchedSummaryNameStarts.set(key, rem - 1);
-        return false;
-      }
-      return true;
-    }
-  }
-
   return false;
 }
 
 /**
- * Background Self-Healing Pass: deduplicates project taskSummaries and purges zombie/duplicate tasks
- * in Zustand + Dexie without requiring manual cache clear or project expansion.
+ * Background Self-Healing Pass: normalizes local project taskSummaries and deduplicates local tasks
+ * in Zustand + Dexie without overwriting Firestore `taka_projects` from stale/partial local state.
  */
 export async function reconcileAndDeduplicateLocalStore(): Promise<void> {
   try {
@@ -216,17 +201,6 @@ export async function reconcileAndDeduplicateLocalStore(): Promise<void> {
         projectsChanged = true;
         const nextP: Project = { ...p, taskSummaries: rolled, taskCount: rolled.length };
         healedProjectsToPersist.push(nextP);
-        if (p.id && rolled.length < p.taskSummaries.length) {
-          syncProjectDatesToFirestore(String(p.id), {
-            computedTakStart: nextP.computedTakStart,
-            computedTakCompl: nextP.computedTakCompl,
-            computedOpening: nextP.computedOpening,
-            computedPlanProgress: nextP.computedPlanProgress,
-            computedActProgress: nextP.computedActProgress,
-            taskCount: rolled.length,
-            taskSummaries: rolled,
-          }).catch(() => {});
-        }
         return nextP;
       }
       return p;
@@ -256,10 +230,7 @@ export async function reconcileAndDeduplicateLocalStore(): Promise<void> {
     for (let i = 0; i < allCandidateTasks.length; i++) {
       const t = allCandidateTasks[i];
       if (isZombieTaskAgainstProjects(t, activeProjects, zombieIndex)) {
-        if (t?.id) {
-          idsToPurge.add(t.id);
-          markTasksDeleted([t.id], t.projectId ? String(t.projectId) : undefined);
-        }
+        if (t?.id) idsToPurge.add(t.id);
       } else {
         nonZombieTasks.push(t);
       }
@@ -268,55 +239,12 @@ export async function reconcileAndDeduplicateLocalStore(): Promise<void> {
     const { dedupedTasks, removedTaskIds } = deduplicateTasksInMemory(nonZombieTasks, activeProjects);
     removedTaskIds.forEach((id) => idsToPurge.add(id));
 
-    if (removedTaskIds.length > 0) {
-      import('../../hooks/useFirebaseDataParts/tasksHydrationHelpers')
-        .then(({ purgeRemovedDuplicateTasksFromFirestore }) => {
-          purgeRemovedDuplicateTasksFromFirestore(removedTaskIds, false);
-        })
-        .catch(() => {});
-    }
-
     if (idsToPurge.size > 0) {
-      const purgeLower = new Set(Array.from(idsToPurge).map((id) => String(id).trim().toLowerCase()));
       idsToPurge.forEach((id) => {
         deleteLocalRecord('taka_tasks', id).catch(() => {});
       });
       if (ramTasks.length > 0 || useAppStore.getState().isTasksRequested) {
         useAppStore.getState().setTasks(dedupedTasks);
-      }
-
-      const latestProjects = useAppStore.getState().projects || activeProjects;
-      let summaryPurged = false;
-      const purgedProjectsToPersist: Project[] = [];
-      const updatedProjectsAfterPurge = latestProjects.map((p) => {
-        if (!p || p.isDeleted || !Array.isArray(p.taskSummaries) || p.taskSummaries.length === 0) return p;
-        const filtered = p.taskSummaries.filter((s: any) => {
-          const sid = s?.id ? String(s.id).trim().toLowerCase() : '';
-          return !sid || !purgeLower.has(sid);
-        });
-        const rolled = rollupTaskSummaries(filtered);
-        if (rolled.length !== p.taskSummaries.length || p.taskCount !== rolled.length) {
-          summaryPurged = true;
-          const nextP: Project = { ...p, taskSummaries: rolled, taskCount: rolled.length };
-          purgedProjectsToPersist.push(nextP);
-          if (p.id) {
-            syncProjectDatesToFirestore(String(p.id), {
-              computedTakStart: nextP.computedTakStart,
-              computedTakCompl: nextP.computedTakCompl,
-              computedOpening: nextP.computedOpening,
-              computedPlanProgress: nextP.computedPlanProgress,
-              computedActProgress: nextP.computedActProgress,
-              taskCount: rolled.length,
-              taskSummaries: rolled,
-            }).catch(() => {});
-          }
-          return nextP;
-        }
-        return p;
-      });
-      if (summaryPurged) {
-        useAppStore.getState().setProjects(updatedProjectsAfterPurge);
-        bulkPersistProjects(purgedProjectsToPersist).catch(() => {});
       }
     }
   } catch (err) {

@@ -12,10 +12,10 @@ import { safeGetItemLocal, safeSetItemLocal } from './storage';
 const LAST_PURGE_KEY = 'taka_last_delta_purge_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
 const PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000; // Run at most once every 6 hours
-const DEFAULT_RETENTION_HOURS = 48; // Retain deltas for 48 hours
+const DEFAULT_RETENTION_HOURS = 168; // Retain deltas for 7 days (168h) to cover 6-day STALE_RESYNC_MS window
 
 /**
- * Automatically purges expired delta records older than `retentionHours` (default 48h).
+ * Automatically purges expired delta records older than `retentionHours` (default 168h / 7 days).
  * Throttled via localStorage to run at most once every 6 hours per client,
  * ensuring `taka_deltas` never accumulates indefinitely even if GCP TTL is not enabled.
  */

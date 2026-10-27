@@ -88,22 +88,35 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
     });
   };
 
-  const handleRepairServer = () => {
+  const handleRepairServer = (targetProjectIds?: string[]) => {
     if (!report) return;
+    const isSingle = targetProjectIds && targetProjectIds.length === 1;
+    const row = isSingle ? report.issues.find((r) => r.projectId === targetProjectIds[0]) : null;
     const missingInFirestoreCount = summaryIssues.reduce((acc, r) => acc + r.ghostInSummary.length, 0);
+    const title = isSingle && row
+      ? `Cập nhật Summary dự án ${row.code} theo Firestore (${row.serverTaskCount} task)`
+      : 'Đồng bộ nhanh Summary ⇄ Firestore';
+    const msg = isSingle && row
+      ? `Hệ thống sẽ cập nhật bảng Summary của dự án ${row.code} khớp 100% với ${row.serverTaskCount} task trên Firestore (không xóa bất kỳ task nào), đồng thời chuẩn hóa bộ đếm & ngày rollup cha-con trên mọi thiết bị. Tiếp tục?`
+      : `Hệ thống sẽ đồng bộ song song (Mass Batch) cho ${summaryIssues.length} dự án: cập nhật Summary khớp với toàn bộ task trên Firestore${missingInFirestoreCount > 0 ? `, khôi phục ${missingInFirestoreCount} task bị thiếu` : ''}, đồng thời chuẩn hóa lại bộ đếm & ngày rollup cha-con. Tiếp tục?`;
     onConfirmAction(
-      'Đồng bộ nhanh Summary ⇄ Firestore',
-      `Hệ thống sẽ đồng bộ song song (Mass Batch) cho ${summaryIssues.length} dự án: khôi phục ${missingInFirestoreCount} task đang có trong Summary nhưng bị thiếu trên bảng taka_tasks của Firestore, đồng thời chuẩn hóa lại bộ đếm & ngày rollup cha-con. Tiếp tục?`,
+      title,
+      msg,
       async () => {
         setRunning(true);
         try {
-          const res = await repairServerSummaries(report, (d, t) => setProgress(`Đang đồng bộ nhanh ${d}/${t}...`));
+          const res = await repairServerSummaries(
+            report,
+            (d, t) => setProgress(`Đang đồng bộ nhanh ${d}/${t}...`),
+            targetProjectIds
+          );
           toast(
             'Đã đồng bộ Summary ⇄ Firestore',
             `Đã đồng bộ ${res.fixed} dự án${res.backfilledTasks ? ` và khôi phục ${res.backfilledTasks} task thiếu lên Firestore` : ''}. Hãy bấm Kiểm tra chéo để xác nhận.`,
             'success'
           );
           setReport(null);
+          setExpandedProjectId(null);
         } catch (e: any) {
           console.error('Repair server summaries error:', e);
           toast('Sửa thất bại', e?.message || 'Lỗi khi ghi lên Firestore', 'error');
@@ -156,6 +169,18 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
           {running ? 'Đang chạy...' : 'Kiểm tra chéo với Firestore'}
         </button>
 
+        {report && summaryIssues.length > 0 && (
+          <button
+            onClick={() => handleRepairServer()}
+            disabled={running}
+            title="Cập nhật bảng Summary khớp với toàn bộ task trên Firestore và khôi phục task thiếu"
+            className={`${btn} border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20`}
+          >
+            <Wrench className="w-4 h-4 text-amber-500" />
+            Cập nhật Summary ⇄ Firestore ({summaryIssues.length})
+          </button>
+        )}
+
         {report && totalExcessTasks > 0 && (
           <button
             onClick={() => handlePurgeExcess()}
@@ -165,18 +190,6 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
           >
             <Trash2 className="w-4 h-4 text-rose-500" />
             Xóa task thừa trên Firestore ({excessRows.length} dự án - {totalExcessTasks} task)
-          </button>
-        )}
-
-        {report && summaryIssues.length > 0 && (
-          <button
-            onClick={handleRepairServer}
-            disabled={running}
-            title="Khôi phục các task bị thiếu trên Firestore từ Summary và đồng bộ lại toàn bộ Summary"
-            className={`${btn} border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20`}
-          >
-            <Wrench className="w-4 h-4 text-amber-500" />
-            Cập nhật Summary ⇄ Firestore ({summaryIssues.length})
           </button>
         )}
 
@@ -202,8 +215,8 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
               {report.orphanCount}. Task khớp nhiều dự án: {report.ambiguousCount}.
             </span>
             {totalExcessTasks > 0 && (
-              <span className="text-rose-600 dark:text-rose-400 font-semibold">
-                ⚠️ Có {totalExcessTasks} task thừa trên Firestore ngoài bảng Summary (bấm vào dòng dự án để xem chi tiết hoặc bấm nút đỏ để xóa).
+              <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                ⚠️ Có {totalExcessTasks} task trên Firestore chưa có trong Summary (bấm &quot;Cập nhật Summary&quot; để đồng bộ đủ task, hoặc &quot;Xóa task thừa&quot; nếu muốn xóa).
               </span>
             )}
           </div>
@@ -218,7 +231,7 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                   <tr>
                     <th className="px-2 py-1.5">Dự án</th>
                     <th className="px-2 py-1.5">Task Firestore</th>
-                    <th className="px-2 py-1.5">Summary chuẩn</th>
+                    <th className="px-2 py-1.5">Summary hiện tại</th>
                     <th className="px-2 py-1.5 text-rose-600 dark:text-rose-400">Lệch Firestore vs Summary</th>
                     <th className="px-2 py-1.5">Thiết bị (thiếu / thừa)</th>
                     <th className="px-2 py-1.5 text-right">Thao tác</th>
@@ -262,8 +275,8 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                           <td className="px-2 py-1">
                             <div className="flex flex-wrap items-center gap-1">
                               {hasExcess && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-                                  +{r.missingInSummary.length} task thừa
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  Summary thiếu {r.missingInSummary.length} task (+{r.missingInSummary.length} trên Firestore)
                                 </span>
                               )}
                               {hasMissingInFirestore && (
@@ -291,19 +304,34 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                               : '-'}
                           </td>
                           <td className="px-2 py-1 text-right">
-                            {hasExcess && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handlePurgeExcess([r.projectId]);
-                                }}
-                                disabled={running}
-                                title="Xóa các task thừa của dự án này trên Firestore"
-                                className="px-2 py-0.5 text-[11px] rounded border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                              >
-                                Xóa {r.missingInSummary.length} task thừa
-                              </button>
-                            )}
+                            <div className="inline-flex items-center gap-1.5">
+                              {r.summaryIssue && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRepairServer([r.projectId]);
+                                  }}
+                                  disabled={running}
+                                  title="Cập nhật bảng Summary của dự án này khớp đủ số task trên Firestore"
+                                  className="px-2 py-0.5 text-[11px] rounded border border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors cursor-pointer"
+                                >
+                                  Đồng bộ Summary ({r.serverTaskCount})
+                                </button>
+                              )}
+                              {hasExcess && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePurgeExcess([r.projectId]);
+                                  }}
+                                  disabled={running}
+                                  title="Xóa các task thừa của dự án này trên Firestore"
+                                  className="px-2 py-0.5 text-[11px] rounded border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                                >
+                                  Xóa {r.missingInSummary.length} task thừa
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
 
@@ -311,20 +339,33 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                           <tr className="bg-rose-50/30 dark:bg-rose-950/10 border-t border-rose-100 dark:border-rose-900/30">
                             <td colSpan={6} className="px-4 py-2.5">
                               <div className="flex items-center justify-between mb-2">
-                                <span className="font-semibold text-rose-700 dark:text-rose-300">
-                                  Danh sách {r.missingInSummary.length} task thừa trên Firestore (không có trong Summary của {r.code}):
+                                <span className="font-semibold text-amber-700 dark:text-amber-300">
+                                  Danh sách {r.missingInSummary.length} task đang có trên Firestore nhưng thiếu trong Summary của {r.code}:
                                 </span>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handlePurgeExcess([r.projectId]);
-                                  }}
-                                  disabled={running}
-                                  className="px-2.5 py-1 text-xs rounded bg-rose-600 hover:bg-rose-700 text-white font-medium flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  Xóa ngay {r.missingInSummary.length} task này
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRepairServer([r.projectId]);
+                                    }}
+                                    disabled={running}
+                                    className="px-2.5 py-1 text-xs rounded bg-amber-600 hover:bg-amber-700 text-white font-medium flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                                  >
+                                    <Wrench className="w-3.5 h-3.5" />
+                                    Đồng bộ đủ {r.serverTaskCount} task vào Summary
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handlePurgeExcess([r.projectId]);
+                                    }}
+                                    disabled={running}
+                                    className="px-2.5 py-1 text-xs rounded bg-rose-600 hover:bg-rose-700 text-white font-medium flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    Xóa {r.missingInSummary.length} task này
+                                  </button>
+                                </div>
                               </div>
                               <div className="max-h-40 overflow-y-auto border border-rose-200/60 dark:border-rose-900/40 rounded bg-white dark:bg-[#1a1a1c] p-2 space-y-1">
                                 {excessTasks.map((t, idx) => (

@@ -472,7 +472,7 @@ export function startBackgroundSyncCoordinator(intervalMs: number = 5 * 60 * 100
   const cleanupBroadcast = initBroadcastSyncListener();
   setTimeout(() => {
     reconcileAndDeduplicateLocalStore().catch(() => {});
-    purgeOldDeltas(48).catch(() => {});
+    purgeOldDeltas(168).catch(() => {});
   }, 2000);
   const runSync = async () => {
     try {

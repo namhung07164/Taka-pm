@@ -8,7 +8,8 @@ import { deduplicateTasksInMemory } from '../../lib/taskDeduplicationService';
 import { cleanOrphanTasks } from '../../lib/taskStateService';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { deleteLocalRecord } from '../../lib/localDb';
-import { pullAndApplyDeltas } from '../../lib/deltaSyncService';
+import { pullAndApplyDeltas, applyIncomingDeltas } from '../../lib/deltaSyncService';
+import { flushDeferredInvalidations } from '../../lib/deltaInvalidateService';
 import { getLoadedMarkers, hasFreshMarker, markLoaded } from '../../lib/loadedMarkers';
 import { markProjectTasksHydrated } from '../../lib/utils';
 import { markTasksDeleted, unmarkTaskDeleted, clearDeletedTasksTracker } from '../../lib/taskDeletedTracker';
@@ -117,24 +118,16 @@ export function useTasksHydration({
               const dupTask = pendingTasksMap.current?.get(dupId);
               pendingTasksMap.current?.delete(dupId);
               pendingTasksChanged.current.delete(dupId);
-              if (dupTask) {
-                pendingTasksRemoved.current.set(dupId, dupTask);
-              }
+              if (dupTask) pendingTasksRemoved.current.set(dupId, dupTask);
             });
-            purgeRemovedDuplicateTasksFromFirestore(removedTaskIds, fromCache);
           }
           const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
-          const rolledUpTasks = rollupParentTaskDatesAndStatus(
-            unrolledTasks,
-            useAppStore.getState().delegationGroups
+          const finalTasks = rollupParentTaskDatesAndStatus(unrolledTasks, useAppStore.getState().delegationGroups);
+          finalTasks.sort((a, b) =>
+            a.projectCode !== b.projectCode
+              ? (a.projectCode || '').localeCompare(b.projectCode || '')
+              : (a.orderIndex || 0) - (b.orderIndex || 0)
           );
-          rolledUpTasks.sort((a, b) => {
-            if (a.projectCode !== b.projectCode) {
-              return (a.projectCode || '').localeCompare(b.projectCode || '');
-            }
-            return (a.orderIndex || 0) - (b.orderIndex || 0);
-          });
-          const finalTasks = rolledUpTasks;
           useAppStore.getState().setTasks(finalTasks);
 
           const healedProjects = healProjectsAfterTasksBatch({
@@ -147,22 +140,15 @@ export function useTasksHydration({
             knownHydratedProjectCodes: knownHydratedProjectCodes.current,
             tasksPool: tasksPool.current,
           });
-
-          if (healedProjects) {
-            useAppStore.getState().setProjects(healedProjects);
-          }
+          if (healedProjects) useAppStore.getState().setProjects(healedProjects);
 
           const finalIds = new Set(finalTasks.map((t) => t.id));
-          const changed = Array.from(pendingTasksChanged.current.values()).filter((t) =>
-            finalIds.has(t.id)
-          );
+          const changed = Array.from(pendingTasksChanged.current.values()).filter((t) => finalIds.has(t.id));
           const removedIds = Array.from(pendingTasksRemoved.current.keys());
           pendingTasksChanged.current.clear();
           pendingTasksRemoved.current.clear();
           if (changed.length > 0) offloadPersistSnapshot('taka_tasks', changed);
-          removedIds.forEach((id) => {
-            deleteLocalRecord('taka_tasks', id).catch(() => {});
-          });
+          removedIds.forEach((id) => deleteLocalRecord('taka_tasks', id).catch(() => {}));
 
           const setNotifs = useAppStore.getState().setAllTasksForNotifs;
           if (setNotifs) setNotifs(finalTasks);
@@ -188,25 +174,19 @@ export function useTasksHydration({
   useEffect(() => {
     let isCancelled = false;
     let intervalId: NodeJS.Timeout | null = null;
-
-    if (!querySignature || isTasksRequested) {
-      return;
-    }
+    if (!querySignature || isTasksRequested) return;
 
     const fetchNotifs = async () => {
       if (isCancelled) return;
       try {
         const loadedNotifTasks = await loadNotificationTasks({ skipFirestoreFallback: true });
-        if (isCancelled) return;
-        setAllTasksForNotifs(loadedNotifTasks);
+        if (!isCancelled) setAllTasksForNotifs(loadedNotifTasks);
       } catch (e) {
         console.warn('[useTasksHydration] Notification lightweight tasks query error:', e);
       }
     };
-
     fetchNotifs();
     intervalId = setInterval(fetchNotifs, 4 * 60 * 60 * 1000);
-
     return () => {
       isCancelled = true;
       if (intervalId) clearInterval(intervalId);
@@ -216,6 +196,13 @@ export function useTasksHydration({
   // Main Tasks Sync Logic
   useEffect(() => {
     if (!querySignature) return;
+    if (isTasksRequested) {
+      flushDeferredInvalidations('taka_tasks')
+        .then((synthetic) => {
+          if (synthetic.length > 0) applyIncomingDeltas(synthetic);
+        })
+        .catch(() => {});
+    }
 
     const activeProjectIds = isTasksRequested
       ? [...new Set([...expandedProjectIds, ...searchActiveProjectIds])]
@@ -339,10 +326,9 @@ export function useTasksHydration({
           if (alreadyActiveInPool) return;
 
           if (deltaManaged) {
-            knownHydratedProjectCodes.current.add(String(p.id));
-            markProjectTasksHydrated(p.id);
-            if (coversAllSummaries && p.id) {
-              markLoaded('tasks_proj', p.id).catch(() => {});
+            if (coversAllSummaries || isZeroTaskProject) {
+              knownHydratedProjectCodes.current.add(String(p.id));
+              markProjectTasksHydrated(p.id);
             }
             const noop = () => {};
             (noop as any).__isNoop = true;

@@ -5,7 +5,7 @@ import { db, APP_ID } from '../../lib/firebase';
 import { Project, Task, TakaDeltaItem } from '../../types';
 import { buildStoreAndYearQuery } from './firebaseQueryHelpers';
 import { hasFreshMarker, markLoaded } from '../../lib/loadedMarkers';
-import { markProjectTasksHydrated } from '../../lib/utils';
+import { markProjectTasksHydrated, unmarkProjectTasksHydrated } from '../../lib/utils';
 import { resolveInvalidations } from '../../lib/deltaInvalidateService';
 import { applyIncomingDeltas } from '../../lib/deltaSyncService';
 import {
@@ -108,6 +108,7 @@ export function evaluateProjectTaskHydrationState(params: {
   ) {
     tasksPool.delete(projKey);
     knownHydratedProjectCodes.delete(String(p.id));
+    unmarkProjectTasksHydrated(p.id);
   }
 
   if (tasksPool.has(projKey)) {
@@ -133,12 +134,18 @@ export function evaluateProjectTaskHydrationState(params: {
     p.taskSummaries.length === 0 &&
     localProjTasks.length === 0;
 
+  // CRITICAL MULTI-DEVICE GUARD:
+  // Never bypass Firestore verification if markers are expired (>24h offline) or when the user
+  // explicitly expands/searches a project (`isTargetedExpansion`) that has not yet been verified from the server in this session.
+  const isFreshOrVerified = isTargetedExpansion
+    ? isVerifiedInSession
+    : isProjMarkerFresh || isVerifiedInSession;
+
   const deltaManaged =
-    (isZeroTaskProject && (!isTargetedExpansion || isVerifiedInSession || isProjMarkerFresh)) ||
-    (hasLocalProjTasks && isArchivedPastYear) ||
-    (deltaFirstTasks &&
-      (coversAllSummaries ||
-        (hasLocalProjTasks && (isProjMarkerFresh || isVerifiedInSession))));
+    isFreshOrVerified &&
+    ((isZeroTaskProject && !isTargetedExpansion) ||
+      (hasLocalProjTasks && isArchivedPastYear) ||
+      (deltaFirstTasks && (coversAllSummaries || hasLocalProjTasks)));
 
   return { alreadyActiveInPool: false, deltaManaged, isZeroTaskProject, coversAllSummaries };
 }
@@ -342,13 +349,6 @@ export function attachProjectTasksListener(params: {
       const fromCache = snapshot.metadata.fromCache;
       const latestProj =
         (useAppStore.getState().projects || []).find((proj) => proj.id === p.id) || p;
-      const expectedCount = Array.isArray(latestProj.taskSummaries)
-        ? latestProj.taskSummaries.length
-        : latestProj.taskCount || 0;
-      if (!fromCache || snapshot.docs.length >= expectedCount) {
-        knownHydratedProjectCodes.add(String(p.id));
-        markProjectTasksHydrated(p.id);
-      }
 
       let compatibleChanges = filterCompatibleProjectChanges(snapshot.docChanges(), latestProj);
 
@@ -358,6 +358,47 @@ export function attachProjectTasksListener(params: {
           snapshot.docs,
           latestProj
         );
+
+        const serverDocIdsLower = new Set(
+          compatibleServerDocs.map((d) => String(d.id || '').trim().toLowerCase())
+        );
+        const missingSummaryIds = Array.isArray(latestProj.taskSummaries)
+          ? latestProj.taskSummaries
+              .map((s: any) => String(s?.id || '').trim())
+              .filter((id: string) => id && !id.startsWith('ts_') && !serverDocIdsLower.has(id.toLowerCase()))
+          : [];
+
+        if (missingSummaryIds.length > 0) {
+          // Some taskSummaries may be linked by projectId or another code variation; fetch them by ID before reconciling
+          const fakeDeltas: TakaDeltaItem[] = missingSummaryIds.map((id) => ({
+            docId: id,
+            collectionName: 'taka_tasks',
+            action: 'update',
+            data: {},
+            isPatch: true,
+            invalidate: true,
+            projectId: String(latestProj.id),
+            projectCode: latestProj.code,
+            year: String(latestProj.year || ''),
+            projectStore: latestProj.store,
+          }));
+          resolveInvalidations(fakeDeltas)
+            .then((resolved) => {
+              if (resolved.length > 0) {
+                applyIncomingDeltas(resolved);
+              }
+              knownHydratedProjectCodes.add(String(p.id));
+              markProjectTasksHydrated(p.id);
+              if (deltaFirstTasks) {
+                markLoaded('tasks_proj', p.id).catch(() => {});
+              }
+            })
+            .catch(() => {});
+        } else {
+          knownHydratedProjectCodes.add(String(p.id));
+          markProjectTasksHydrated(p.id);
+        }
+
         const zombieRemovals = buildZombieTaskRemovalsForProject(
           compatibleServerDocs,
           currentTasksNow,
@@ -366,6 +407,9 @@ export function attachProjectTasksListener(params: {
         if (zombieRemovals.length > 0) {
           compatibleChanges = [...compatibleChanges, ...zombieRemovals];
         }
+      } else if (!fromCache) {
+        knownHydratedProjectCodes.add(String(p.id));
+        markProjectTasksHydrated(p.id);
       }
 
       batchTasksUpdate(compatibleChanges, fromCache);

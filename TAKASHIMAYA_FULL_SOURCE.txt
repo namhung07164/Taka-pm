@@ -78681,7 +78681,6 @@ export const SettingNotificationRules: React.FC<SettingNotificationRulesProps> =
 
 ================================================================================
 FILE: src/components/SettingTabParts/SummaryAuditPanel.tsx
-================================================================================
 import React, { FC, useState } from 'react';
 import { ShieldCheck, Wrench, RefreshCw, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
@@ -78772,22 +78771,35 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
     });
   };
 
-  const handleRepairServer = () => {
+  const handleRepairServer = (targetProjectIds?: string[]) => {
     if (!report) return;
+    const isSingle = targetProjectIds && targetProjectIds.length === 1;
+    const row = isSingle ? report.issues.find((r) => r.projectId === targetProjectIds[0]) : null;
     const missingInFirestoreCount = summaryIssues.reduce((acc, r) => acc + r.ghostInSummary.length, 0);
+    const title = isSingle && row
+      ? `Cập nhật Summary dự án ${row.code} theo Firestore (${row.serverTaskCount} task)`
+      : 'Đồng bộ nhanh Summary ⇄ Firestore';
+    const msg = isSingle && row
+      ? `Hệ thống sẽ cập nhật bảng Summary của dự án ${row.code} khớp 100% với ${row.serverTaskCount} task trên Firestore (không xóa bất kỳ task nào), đồng thời chuẩn hóa bộ đếm & ngày rollup cha-con trên mọi thiết bị. Tiếp tục?`
+      : `Hệ thống sẽ đồng bộ song song (Mass Batch) cho ${summaryIssues.length} dự án: cập nhật Summary khớp với toàn bộ task trên Firestore${missingInFirestoreCount > 0 ? `, khôi phục ${missingInFirestoreCount} task bị thiếu` : ''}, đồng thời chuẩn hóa lại bộ đếm & ngày rollup cha-con. Tiếp tục?`;
     onConfirmAction(
-      'Đồng bộ nhanh Summary ⇄ Firestore',
-      `Hệ thống sẽ đồng bộ song song (Mass Batch) cho ${summaryIssues.length} dự án: khôi phục ${missingInFirestoreCount} task đang có trong Summary nhưng bị thiếu trên bảng taka_tasks của Firestore, đồng thời chuẩn hóa lại bộ đếm & ngày rollup cha-con. Tiếp tục?`,
+      title,
+      msg,
       async () => {
         setRunning(true);
         try {
-          const res = await repairServerSummaries(report, (d, t) => setProgress(`Đang đồng bộ nhanh ${d}/${t}...`));
+          const res = await repairServerSummaries(
+            report,
+            (d, t) => setProgress(`Đang đồng bộ nhanh ${d}/${t}...`),
+            targetProjectIds
+          );
           toast(
             'Đã đồng bộ Summary ⇄ Firestore',
             `Đã đồng bộ ${res.fixed} dự án${res.backfilledTasks ? ` và khôi phục ${res.backfilledTasks} task thiếu lên Firestore` : ''}. Hãy bấm Kiểm tra chéo để xác nhận.`,
             'success'
           );
           setReport(null);
+          setExpandedProjectId(null);
         } catch (e: any) {
           console.error('Repair server summaries error:', e);
           toast('Sửa thất bại', e?.message || 'Lỗi khi ghi lên Firestore', 'error');
@@ -78840,6 +78852,18 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
           {running ? 'Đang chạy...' : 'Kiểm tra chéo với Firestore'}
         </button>
 
+        {report && summaryIssues.length > 0 && (
+          <button
+            onClick={() => handleRepairServer()}
+            disabled={running}
+            title="Cập nhật bảng Summary khớp với toàn bộ task trên Firestore và khôi phục task thiếu"
+            className={`${btn} border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20`}
+          >
+            <Wrench className="w-4 h-4 text-amber-500" />
+            Cập nhật Summary ⇄ Firestore ({summaryIssues.length})
+          </button>
+        )}
+
         {report && totalExcessTasks > 0 && (
           <button
             onClick={() => handlePurgeExcess()}
@@ -78849,18 +78873,6 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
           >
             <Trash2 className="w-4 h-4 text-rose-500" />
             Xóa task thừa trên Firestore ({excessRows.length} dự án - {totalExcessTasks} task)
-          </button>
-        )}
-
-        {report && summaryIssues.length > 0 && (
-          <button
-            onClick={handleRepairServer}
-            disabled={running}
-            title="Khôi phục các task bị thiếu trên Firestore từ Summary và đồng bộ lại toàn bộ Summary"
-            className={`${btn} border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/20`}
-          >
-            <Wrench className="w-4 h-4 text-amber-500" />
-            Cập nhật Summary ⇄ Firestore ({summaryIssues.length})
           </button>
         )}
 
@@ -78886,8 +78898,8 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
               {report.orphanCount}. Task khớp nhiều dự án: {report.ambiguousCount}.
             </span>
             {totalExcessTasks > 0 && (
-              <span className="text-rose-600 dark:text-rose-400 font-semibold">
-                ⚠️ Có {totalExcessTasks} task thừa trên Firestore ngoài bảng Summary (bấm vào dòng dự án để xem chi tiết hoặc bấm nút đỏ để xóa).
+              <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                ⚠️ Có {totalExcessTasks} task trên Firestore chưa có trong Summary (bấm &quot;Cập nhật Summary&quot; để đồng bộ đủ task, hoặc &quot;Xóa task thừa&quot; nếu muốn xóa).
               </span>
             )}
           </div>
@@ -78902,7 +78914,7 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                   <tr>
                     <th className="px-2 py-1.5">Dự án</th>
                     <th className="px-2 py-1.5">Task Firestore</th>
-                    <th className="px-2 py-1.5">Summary chuẩn</th>
+                    <th className="px-2 py-1.5">Summary hiện tại</th>
                     <th className="px-2 py-1.5 text-rose-600 dark:text-rose-400">Lệch Firestore vs Summary</th>
                     <th className="px-2 py-1.5">Thiết bị (thiếu / thừa)</th>
                     <th className="px-2 py-1.5 text-right">Thao tác</th>
@@ -78946,8 +78958,8 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                           <td className="px-2 py-1">
                             <div className="flex flex-wrap items-center gap-1">
                               {hasExcess && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-                                  +{r.missingInSummary.length} task thừa
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                                  Summary thiếu {r.missingInSummary.length} task (+{r.missingInSummary.length} trên Firestore)
                                 </span>
                               )}
                               {hasMissingInFirestore && (
@@ -78975,19 +78987,34 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                               : '-'}
                           </td>
                           <td className="px-2 py-1 text-right">
-                            {hasExcess && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handlePurgeExcess([r.projectId]);
-                                }}
-                                disabled={running}
-                                title="Xóa các task thừa của dự án này trên Firestore"
-                                className="px-2 py-0.5 text-[11px] rounded border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
-                              >
-                                Xóa {r.missingInSummary.length} task thừa
-                              </button>
-                            )}
+                            <div className="inline-flex items-center gap-1.5">
+                              {r.summaryIssue && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRepairServer([r.projectId]);
+                                  }}
+                                  disabled={running}
+                                  title="Cập nhật bảng Summary của dự án này khớp đủ số task trên Firestore"
+                                  className="px-2 py-0.5 text-[11px] rounded border border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors cursor-pointer"
+                                >
+                                  Đồng bộ Summary ({r.serverTaskCount})
+                                </button>
+                              )}
+                              {hasExcess && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePurgeExcess([r.projectId]);
+                                  }}
+                                  disabled={running}
+                                  title="Xóa các task thừa của dự án này trên Firestore"
+                                  className="px-2 py-0.5 text-[11px] rounded border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
+                                >
+                                  Xóa {r.missingInSummary.length} task thừa
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
 
@@ -78995,20 +79022,33 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
                           <tr className="bg-rose-50/30 dark:bg-rose-950/10 border-t border-rose-100 dark:border-rose-900/30">
                             <td colSpan={6} className="px-4 py-2.5">
                               <div className="flex items-center justify-between mb-2">
-                                <span className="font-semibold text-rose-700 dark:text-rose-300">
-                                  Danh sách {r.missingInSummary.length} task thừa trên Firestore (không có trong Summary của {r.code}):
+                                <span className="font-semibold text-amber-700 dark:text-amber-300">
+                                  Danh sách {r.missingInSummary.length} task đang có trên Firestore nhưng thiếu trong Summary của {r.code}:
                                 </span>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handlePurgeExcess([r.projectId]);
-                                  }}
-                                  disabled={running}
-                                  className="px-2.5 py-1 text-xs rounded bg-rose-600 hover:bg-rose-700 text-white font-medium flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  Xóa ngay {r.missingInSummary.length} task này
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRepairServer([r.projectId]);
+                                    }}
+                                    disabled={running}
+                                    className="px-2.5 py-1 text-xs rounded bg-amber-600 hover:bg-amber-700 text-white font-medium flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                                  >
+                                    <Wrench className="w-3.5 h-3.5" />
+                                    Đồng bộ đủ {r.serverTaskCount} task vào Summary
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handlePurgeExcess([r.projectId]);
+                                    }}
+                                    disabled={running}
+                                    className="px-2.5 py-1 text-xs rounded bg-rose-600 hover:bg-rose-700 text-white font-medium flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    Xóa {r.missingInSummary.length} task này
+                                  </button>
+                                </div>
                               </div>
                               <div className="max-h-40 overflow-y-auto border border-rose-200/60 dark:border-rose-900/40 rounded bg-white dark:bg-[#1a1a1c] p-2 space-y-1">
                                 {excessTasks.map((t, idx) => (
@@ -79049,8 +79089,6 @@ export const SummaryAuditPanel: FC<SummaryAuditPanelProps> = ({ isAdmin, onConfi
 export default SummaryAuditPanel;
 
 
-
-================================================================================
 FILE: src/components/SettingTabParts/maintenanceHelpers.ts
 ================================================================================
 import { doc, collection, query, where, getDocs } from 'firebase/firestore';
@@ -93666,12 +93704,12 @@ export function buildStoreAndYearQuery(
 
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/projectsHydrationHelpers.ts
-================================================================================
 import { Project, Task, TakaDeltaItem } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { localDb, deleteLocalRecord, patchLocalRecord } from '../../lib/localDb';
-import { markTasksDeleted } from '../../lib/taskDeletedTracker';
+import { localDb, patchLocalRecord } from '../../lib/localDb';
 import { isTaskBelongsToProject } from '../../lib/taskStateService';
+import { unmarkProjectTasksHydrated } from '../../lib/utils';
+import { unmarkLoaded } from '../../lib/loadedMarkers';
 import { resolveInvalidations } from '../../lib/deltaInvalidateService';
 import { applyIncomingDeltas } from '../../lib/deltaSyncService';
 import { rollupTaskSummaries } from '../../lib/taskRollupHelpers';
@@ -93679,27 +93717,16 @@ import { rollupTaskSummaries } from '../../lib/taskRollupHelpers';
 // Chuyển updatedAt (ISO string / Firestore Timestamp / plain {seconds} / number) về ms
 export const tsOf = (v: any): number => {
   if (!v) return 0;
-  if (typeof v === 'string') {
-    const n = Date.parse(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.toMillis === 'function') {
-    const n = v.toMillis();
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.seconds === 'number') {
-    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
-  }
+  if (typeof v === 'string') { const n = Date.parse(v); return Number.isFinite(n) ? n : 0; }
+  if (typeof v?.toMillis === 'function') { const n = v.toMillis(); return Number.isFinite(n) ? n : 0; }
+  if (typeof v?.seconds === 'number') return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
-// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
-// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
 export const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
   if (!existing) return false;
-  const e = tsOf(existing.updatedAt);
-  const i = tsOf(incoming?.updatedAt);
+  const e = tsOf(existing.updatedAt), i = tsOf(incoming?.updatedAt);
   return e > 0 && i > 0 && i < e;
 };
 
@@ -93708,17 +93735,10 @@ export interface ProjectTasksLookupIndex {
   byCodePart: Map<string, Task[]>;
 }
 
-/**
- * Pre-groups currentTasks by projectId and projectCode parts in O(T) before iterating docChanges,
- * reducing reconciliation from O(Delta_P * T) down to O(Delta_P + T).
- */
 export function buildProjectTasksLookupIndex(currentTasks: Task[]): ProjectTasksLookupIndex {
   const byProjectId = new Map<string, Task[]>();
   const byCodePart = new Map<string, Task[]>();
-
-  if (!Array.isArray(currentTasks) || currentTasks.length === 0) {
-    return { byProjectId, byCodePart };
-  }
+  if (!Array.isArray(currentTasks) || currentTasks.length === 0) return { byProjectId, byCodePart };
 
   for (let i = 0; i < currentTasks.length; i++) {
     const t = currentTasks[i];
@@ -93727,39 +93747,26 @@ export function buildProjectTasksLookupIndex(currentTasks: Task[]): ProjectTasks
       const pid = String(t.projectId).trim();
       if (pid) {
         let list = byProjectId.get(pid);
-        if (!list) {
-          list = [];
-          byProjectId.set(pid, list);
-        }
+        if (!list) { list = []; byProjectId.set(pid, list); }
         list.push(t);
       }
     }
     if (t.projectCode) {
       const rawCode = String(t.projectCode).trim().toLowerCase();
-      const parts = rawCode
-        .split(/[,;/]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
+      const parts = rawCode.split(/[,;/]+/).map((s) => s.trim()).filter(Boolean);
       const codes = parts.length > 0 ? parts : [rawCode];
       for (let j = 0; j < codes.length; j++) {
         const c = codes[j];
         if (!c) continue;
         let list = byCodePart.get(c);
-        if (!list) {
-          list = [];
-          byCodePart.set(c, list);
-        }
+        if (!list) { list = []; byCodePart.set(c, list); }
         list.push(t);
       }
     }
   }
-
   return { byProjectId, byCodePart };
 }
 
-/**
- * Retrieves local in-memory tasks belonging to `project` in O(K) using the pre-built lookup index.
- */
 export function getLocalProjectTasksFromIndex(
   project: Project,
   index: ProjectTasksLookupIndex
@@ -93809,6 +93816,7 @@ export function getLocalProjectTasksFromIndex(
 
 /**
  * Server-to-Device Task Summary Reconciliation for a single project docChange.
+ * Verifies missing/extra tasks via Firestore `resolveInvalidations` rather than blindly deleting valid tasks.
  */
 export function reconcileProjectSummaryWithLocalTasks(params: {
   id: string;
@@ -93829,7 +93837,7 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     tasksIndex,
     expandedSet,
     nowMs,
-    pendingDeletedTaskIds,
+    pendingInvalidatedTaskIds,
   } = params;
 
   if (!Array.isArray(data.taskSummaries)) return;
@@ -93847,6 +93855,7 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
 
   if (serverSummaryIds.size === 0 && !isZeroTaskServer) return;
 
+  const projYearStr = String(resolvedData.year || data.year || '');
   const serverSummaryNameStarts = new Set(
     authoritativeSummaries
       .map((s: any) => `${String(s?.name || '').trim().toLowerCase()}|${String(s?.start || '').trim()}`)
@@ -93856,9 +93865,13 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     existing.taskSummaries.forEach((oldS: any) => {
       const oldId = String(oldS?.id || '').trim();
       const oldNameStart = `${String(oldS?.name || '').trim().toLowerCase()}|${String(oldS?.start || '').trim()}`;
-      if (oldId && !serverSummaryIds.has(oldId.toLowerCase()) && !serverSummaryNameStarts.has(oldNameStart)) {
-        markTasksDeleted([oldId], id);
-        pendingDeletedTaskIds.add(oldId);
+      if (
+        oldId &&
+        !oldId.startsWith('ts_') &&
+        !serverSummaryIds.has(oldId.toLowerCase()) &&
+        !serverSummaryNameStarts.has(oldNameStart)
+      ) {
+        pendingInvalidatedTaskIds.set(oldId, projYearStr);
       }
     });
   }
@@ -93870,15 +93883,33 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     localProjTasksById.set(String(t.id).trim().toLowerCase(), t);
   });
 
+  const isProjectExpandedOrLoaded =
+    localProjTasksById.size > 0 ||
+    expandedSet.has(String(id)) ||
+    (Boolean(data.code) && expandedSet.has(String(data.code).trim()));
+
+  let hasMissingLocalTasks = false;
   const unmatchedSummaryNameStarts = new Set<string>();
   authoritativeSummaries.forEach((s: any) => {
-    const sIdLower = String(s?.id || '').trim().toLowerCase();
+    const sId = String(s?.id || '').trim();
+    const sIdLower = sId.toLowerCase();
     if (!sIdLower || !localProjTasksById.has(sIdLower)) {
+      if (sId && !sId.startsWith('ts_')) {
+        hasMissingLocalTasks = true;
+        if (isProjectExpandedOrLoaded) {
+          pendingInvalidatedTaskIds.set(sId, projYearStr);
+        }
+      }
       const sName = String(s?.name || '').trim().toLowerCase();
       const sStart = String(s?.start || '').trim();
       if (sName) unmatchedSummaryNameStarts.add(`${sName}|${sStart}`);
     }
   });
+
+  if (hasMissingLocalTasks) {
+    unmarkProjectTasksHydrated(id);
+    unmarkLoaded('tasks_proj', id).catch(() => {});
+  }
 
   localProjTasks.forEach((t) => {
     if (!t?.id || String(t.id).startsWith('ts_')) return;
@@ -93891,27 +93922,19 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
       }
       const updatedMs = tsOf(t.updatedAt);
       if (!updatedMs || nowMs - updatedMs > 60000) {
-        markTasksDeleted([t.id], id);
-        pendingDeletedTaskIds.add(t.id);
+        pendingInvalidatedTaskIds.set(t.id, projYearStr);
       }
     }
   });
-
-  const isProjectExpandedOrLoaded =
-    localProjTasksById.size > 0 ||
-    expandedSet.has(String(id)) ||
-    (Boolean(data.code) && expandedSet.has(String(data.code).trim()));
 
   if (serverSummaryIds.size > 0 && isProjectExpandedOrLoaded) {
     authoritativeSummaries.forEach((s: any) => {
       const sId = String(s?.id || '').trim();
       if (!sId || sId.startsWith('ts_')) return;
-      const sIdLower = sId.toLowerCase();
-      const localT = localProjTasksById.get(sIdLower);
+      const localT = localProjTasksById.get(sId.toLowerCase());
       if (localT) {
         const localUpdatedMs = tsOf(localT.updatedAt);
-        const isRecentlyEditedLocally = localUpdatedMs > 0 && nowMs - localUpdatedMs <= 60000;
-        if (!isRecentlyEditedLocally) {
+        if (!(localUpdatedMs > 0 && nowMs - localUpdatedMs <= 60000)) {
           const localParent = localT.parentTaskId || undefined;
           const localParentLower = localParent ? String(localParent).trim().toLowerCase() : '';
           const isModernSummary =
@@ -93958,13 +93981,14 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
 }
 
 /**
- * Background Dexie Task Reconciliation: purges zombie tasks and patches stale fields in localDb.tasks
- * according to authoritative server project.taskSummaries (0 Firestore reads).
+ * Background Dexie Task Reconciliation: reconciles localDb.tasks with server project.taskSummaries,
+ * fetching missing summary tasks and verifying candidate deletions against Firestore taka_tasks.
  */
 export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]): void {
   setTimeout(async () => {
     try {
       const nowBg = Date.now();
+      const itemsToVerify: TakaDeltaItem[] = [];
 
       for (const p of changed) {
         if (!p?.id || !Array.isArray(p.taskSummaries)) continue;
@@ -93995,41 +94019,54 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
             });
         }
         const [byId, byCode] = await Promise.all([
-          localDb.tasks
-            .where('projectId')
-            .equals(String(p.id))
-            .toArray()
-            .catch(() => []),
-          localDb.tasks
-            .where('projectCode')
-            .anyOf(keys)
-            .toArray()
-            .catch(() => []),
+          localDb.tasks.where('projectId').equals(String(p.id)).toArray().catch(() => []),
+          localDb.tasks.where('projectCode').anyOf(keys).toArray().catch(() => []),
         ]);
         const candidateMap = new Map<string, any>();
         byId.forEach((t) => {
-          if (t?.id) {
-            candidateMap.set(t.id, t);
-          }
+          if (t?.id) candidateMap.set(t.id, t);
         });
         byCode.forEach((t) => {
-          if (t?.id && isTaskBelongsToProject(t, p)) {
-            candidateMap.set(t.id, t);
-          }
+          if (t?.id && isTaskBelongsToProject(t, p)) candidateMap.set(t.id, t);
         });
 
         const candidateIdsLower = new Set(
           Array.from(candidateMap.keys()).map((k) => String(k).trim().toLowerCase())
         );
+        let missingInDexie = false;
         const unmatchedSummaryNameStarts = new Set<string>();
         summaries.forEach((s: any) => {
-          const sIdLower = String(s?.id || '').trim().toLowerCase();
+          const sId = String(s?.id || '').trim();
+          const sIdLower = sId.toLowerCase();
           if (!sIdLower || !candidateIdsLower.has(sIdLower)) {
+            if (sId && !sId.startsWith('ts_')) {
+              missingInDexie = true;
+              if (candidateMap.size > 0) {
+                itemsToVerify.push({
+                  docId: sId,
+                  collectionName: 'taka_tasks',
+                  action: 'update',
+                  data: {},
+                  isPatch: true,
+                  invalidate: true,
+                  year: String(p.year || ''),
+                  projectId: String(p.id),
+                  projectCode: p.code,
+                  projectStore: p.store,
+                  forceResolve: true,
+                } as any);
+              }
+            }
             const sName = String(s?.name || '').trim().toLowerCase();
             const sStart = String(s?.start || '').trim();
             if (sName) unmatchedSummaryNameStarts.add(`${sName}|${sStart}`);
           }
         });
+
+        if (missingInDexie) {
+          unmarkProjectTasksHydrated(p.id);
+          unmarkLoaded('tasks_proj', p.id).catch(() => {});
+        }
 
         for (const [tid, t] of candidateMap.entries()) {
           const tidLower = String(tid).trim().toLowerCase();
@@ -94043,14 +94080,19 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
               continue;
             }
             if (isZeroTask || allSummariesHaveIds) {
-              markTasksDeleted([tid], p.id);
-              await deleteLocalRecord('taka_tasks', tid);
-              const curTasks = useAppStore.getState().tasks || [];
-              if (curTasks.some((ct) => String(ct.id).trim().toLowerCase() === tidLower)) {
-                useAppStore
-                  .getState()
-                  .setTasks(curTasks.filter((ct) => String(ct.id).trim().toLowerCase() !== tidLower));
-              }
+              itemsToVerify.push({
+                docId: tid,
+                collectionName: 'taka_tasks',
+                action: 'update',
+                data: {},
+                isPatch: true,
+                invalidate: true,
+                year: String(p.year || t.projectYear || ''),
+                projectId: String(p.id),
+                projectCode: p.code || t.projectCode,
+                projectStore: p.store || t.projectStore,
+                forceResolve: true,
+              } as any);
             }
           } else {
             const s = summaryById.get(tidLower);
@@ -94067,7 +94109,7 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
                   ? s.parentTaskId
                   : isModernSummary
                     ? undefined
-                    : tParentLower && summaryIds.has(tParentLower)
+                    : tParentLower && summaryIds.has(localParentOrSelf(tParentLower))
                       ? tParent
                       : undefined;
               const needsPatch =
@@ -94097,8 +94139,19 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           }
         }
       }
+
+      if (itemsToVerify.length > 0) {
+        const resolved = await resolveInvalidations(itemsToVerify);
+        if (resolved.length > 0) {
+          applyIncomingDeltas(resolved);
+        }
+      }
     } catch {}
   }, 60);
+}
+
+function localParentOrSelf(pLower: string): string {
+  return pLower;
 }
 
 /**
@@ -94145,7 +94198,6 @@ export function buildZombieProjectRemovalsForYear(
   return zombieRemovals;
 }
 
-================================================================================
 FILE: src/hooks/useFirebaseDataParts/tasksHydrationHelpers.ts
 ================================================================================
 import { doc } from 'firebase/firestore';
@@ -94560,7 +94612,6 @@ export function healProjectsAfterTasksBatch(params: {
 
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/tasksListenerAttachHelpers.ts
-================================================================================
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { useAppStore } from '../../store/useAppStore';
 import { usePerformanceStore } from '../../store/usePerformanceStore';
@@ -94568,7 +94619,7 @@ import { db, APP_ID } from '../../lib/firebase';
 import { Project, Task, TakaDeltaItem } from '../../types';
 import { buildStoreAndYearQuery } from './firebaseQueryHelpers';
 import { hasFreshMarker, markLoaded } from '../../lib/loadedMarkers';
-import { markProjectTasksHydrated } from '../../lib/utils';
+import { markProjectTasksHydrated, unmarkProjectTasksHydrated } from '../../lib/utils';
 import { resolveInvalidations } from '../../lib/deltaInvalidateService';
 import { applyIncomingDeltas } from '../../lib/deltaSyncService';
 import {
@@ -94671,6 +94722,7 @@ export function evaluateProjectTaskHydrationState(params: {
   ) {
     tasksPool.delete(projKey);
     knownHydratedProjectCodes.delete(String(p.id));
+    unmarkProjectTasksHydrated(p.id);
   }
 
   if (tasksPool.has(projKey)) {
@@ -94696,12 +94748,18 @@ export function evaluateProjectTaskHydrationState(params: {
     p.taskSummaries.length === 0 &&
     localProjTasks.length === 0;
 
+  // CRITICAL MULTI-DEVICE GUARD:
+  // Never bypass Firestore verification if markers are expired (>24h offline) or when the user
+  // explicitly expands/searches a project (`isTargetedExpansion`) that has not yet been verified from the server in this session.
+  const isFreshOrVerified = isTargetedExpansion
+    ? isVerifiedInSession
+    : isProjMarkerFresh || isVerifiedInSession;
+
   const deltaManaged =
-    (isZeroTaskProject && (!isTargetedExpansion || isVerifiedInSession || isProjMarkerFresh)) ||
-    (hasLocalProjTasks && isArchivedPastYear) ||
-    (deltaFirstTasks &&
-      (coversAllSummaries ||
-        (hasLocalProjTasks && (isProjMarkerFresh || isVerifiedInSession))));
+    isFreshOrVerified &&
+    ((isZeroTaskProject && !isTargetedExpansion) ||
+      (hasLocalProjTasks && isArchivedPastYear) ||
+      (deltaFirstTasks && (coversAllSummaries || hasLocalProjTasks)));
 
   return { alreadyActiveInPool: false, deltaManaged, isZeroTaskProject, coversAllSummaries };
 }
@@ -94905,13 +94963,6 @@ export function attachProjectTasksListener(params: {
       const fromCache = snapshot.metadata.fromCache;
       const latestProj =
         (useAppStore.getState().projects || []).find((proj) => proj.id === p.id) || p;
-      const expectedCount = Array.isArray(latestProj.taskSummaries)
-        ? latestProj.taskSummaries.length
-        : latestProj.taskCount || 0;
-      if (!fromCache || snapshot.docs.length >= expectedCount) {
-        knownHydratedProjectCodes.add(String(p.id));
-        markProjectTasksHydrated(p.id);
-      }
 
       let compatibleChanges = filterCompatibleProjectChanges(snapshot.docChanges(), latestProj);
 
@@ -94921,6 +94972,47 @@ export function attachProjectTasksListener(params: {
           snapshot.docs,
           latestProj
         );
+
+        const serverDocIdsLower = new Set(
+          compatibleServerDocs.map((d) => String(d.id || '').trim().toLowerCase())
+        );
+        const missingSummaryIds = Array.isArray(latestProj.taskSummaries)
+          ? latestProj.taskSummaries
+              .map((s: any) => String(s?.id || '').trim())
+              .filter((id: string) => id && !id.startsWith('ts_') && !serverDocIdsLower.has(id.toLowerCase()))
+          : [];
+
+        if (missingSummaryIds.length > 0) {
+          // Some taskSummaries may be linked by projectId or another code variation; fetch them by ID before reconciling
+          const fakeDeltas: TakaDeltaItem[] = missingSummaryIds.map((id) => ({
+            docId: id,
+            collectionName: 'taka_tasks',
+            action: 'update',
+            data: {},
+            isPatch: true,
+            invalidate: true,
+            projectId: String(latestProj.id),
+            projectCode: latestProj.code,
+            year: String(latestProj.year || ''),
+            projectStore: latestProj.store,
+          }));
+          resolveInvalidations(fakeDeltas)
+            .then((resolved) => {
+              if (resolved.length > 0) {
+                applyIncomingDeltas(resolved);
+              }
+              knownHydratedProjectCodes.add(String(p.id));
+              markProjectTasksHydrated(p.id);
+              if (deltaFirstTasks) {
+                markLoaded('tasks_proj', p.id).catch(() => {});
+              }
+            })
+            .catch(() => {});
+        } else {
+          knownHydratedProjectCodes.add(String(p.id));
+          markProjectTasksHydrated(p.id);
+        }
+
         const zombieRemovals = buildZombieTaskRemovalsForProject(
           compatibleServerDocs,
           currentTasksNow,
@@ -94929,6 +95021,9 @@ export function attachProjectTasksListener(params: {
         if (zombieRemovals.length > 0) {
           compatibleChanges = [...compatibleChanges, ...zombieRemovals];
         }
+      } else if (!fromCache) {
+        knownHydratedProjectCodes.add(String(p.id));
+        markProjectTasksHydrated(p.id);
       }
 
       batchTasksUpdate(compatibleChanges, fromCache);
@@ -94955,7 +95050,6 @@ export function attachProjectTasksListener(params: {
   tasksPool.set(projKey, unsub);
 }
 
-================================================================================
 FILE: src/hooks/useFirebaseDataParts/useCostsHydration.ts
 ================================================================================
 import { useEffect, useRef, useCallback } from "react";
@@ -96607,7 +96701,6 @@ export function useStaticAndAuthHydration() {
 
 ================================================================================
 FILE: src/hooks/useFirebaseDataParts/useTasksHydration.ts
-================================================================================
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { usePerformanceStore } from '../../store/usePerformanceStore';
@@ -96618,7 +96711,8 @@ import { deduplicateTasksInMemory } from '../../lib/taskDeduplicationService';
 import { cleanOrphanTasks } from '../../lib/taskStateService';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { deleteLocalRecord } from '../../lib/localDb';
-import { pullAndApplyDeltas } from '../../lib/deltaSyncService';
+import { pullAndApplyDeltas, applyIncomingDeltas } from '../../lib/deltaSyncService';
+import { flushDeferredInvalidations } from '../../lib/deltaInvalidateService';
 import { getLoadedMarkers, hasFreshMarker, markLoaded } from '../../lib/loadedMarkers';
 import { markProjectTasksHydrated } from '../../lib/utils';
 import { markTasksDeleted, unmarkTaskDeleted, clearDeletedTasksTracker } from '../../lib/taskDeletedTracker';
@@ -96727,24 +96821,16 @@ export function useTasksHydration({
               const dupTask = pendingTasksMap.current?.get(dupId);
               pendingTasksMap.current?.delete(dupId);
               pendingTasksChanged.current.delete(dupId);
-              if (dupTask) {
-                pendingTasksRemoved.current.set(dupId, dupTask);
-              }
+              if (dupTask) pendingTasksRemoved.current.set(dupId, dupTask);
             });
-            purgeRemovedDuplicateTasksFromFirestore(removedTaskIds, fromCache);
           }
           const { cleaned: unrolledTasks } = cleanOrphanTasks(dedupedTasks);
-          const rolledUpTasks = rollupParentTaskDatesAndStatus(
-            unrolledTasks,
-            useAppStore.getState().delegationGroups
+          const finalTasks = rollupParentTaskDatesAndStatus(unrolledTasks, useAppStore.getState().delegationGroups);
+          finalTasks.sort((a, b) =>
+            a.projectCode !== b.projectCode
+              ? (a.projectCode || '').localeCompare(b.projectCode || '')
+              : (a.orderIndex || 0) - (b.orderIndex || 0)
           );
-          rolledUpTasks.sort((a, b) => {
-            if (a.projectCode !== b.projectCode) {
-              return (a.projectCode || '').localeCompare(b.projectCode || '');
-            }
-            return (a.orderIndex || 0) - (b.orderIndex || 0);
-          });
-          const finalTasks = rolledUpTasks;
           useAppStore.getState().setTasks(finalTasks);
 
           const healedProjects = healProjectsAfterTasksBatch({
@@ -96757,22 +96843,15 @@ export function useTasksHydration({
             knownHydratedProjectCodes: knownHydratedProjectCodes.current,
             tasksPool: tasksPool.current,
           });
-
-          if (healedProjects) {
-            useAppStore.getState().setProjects(healedProjects);
-          }
+          if (healedProjects) useAppStore.getState().setProjects(healedProjects);
 
           const finalIds = new Set(finalTasks.map((t) => t.id));
-          const changed = Array.from(pendingTasksChanged.current.values()).filter((t) =>
-            finalIds.has(t.id)
-          );
+          const changed = Array.from(pendingTasksChanged.current.values()).filter((t) => finalIds.has(t.id));
           const removedIds = Array.from(pendingTasksRemoved.current.keys());
           pendingTasksChanged.current.clear();
           pendingTasksRemoved.current.clear();
           if (changed.length > 0) offloadPersistSnapshot('taka_tasks', changed);
-          removedIds.forEach((id) => {
-            deleteLocalRecord('taka_tasks', id).catch(() => {});
-          });
+          removedIds.forEach((id) => deleteLocalRecord('taka_tasks', id).catch(() => {}));
 
           const setNotifs = useAppStore.getState().setAllTasksForNotifs;
           if (setNotifs) setNotifs(finalTasks);
@@ -96798,25 +96877,19 @@ export function useTasksHydration({
   useEffect(() => {
     let isCancelled = false;
     let intervalId: NodeJS.Timeout | null = null;
-
-    if (!querySignature || isTasksRequested) {
-      return;
-    }
+    if (!querySignature || isTasksRequested) return;
 
     const fetchNotifs = async () => {
       if (isCancelled) return;
       try {
         const loadedNotifTasks = await loadNotificationTasks({ skipFirestoreFallback: true });
-        if (isCancelled) return;
-        setAllTasksForNotifs(loadedNotifTasks);
+        if (!isCancelled) setAllTasksForNotifs(loadedNotifTasks);
       } catch (e) {
         console.warn('[useTasksHydration] Notification lightweight tasks query error:', e);
       }
     };
-
     fetchNotifs();
     intervalId = setInterval(fetchNotifs, 4 * 60 * 60 * 1000);
-
     return () => {
       isCancelled = true;
       if (intervalId) clearInterval(intervalId);
@@ -96826,6 +96899,13 @@ export function useTasksHydration({
   // Main Tasks Sync Logic
   useEffect(() => {
     if (!querySignature) return;
+    if (isTasksRequested) {
+      flushDeferredInvalidations('taka_tasks')
+        .then((synthetic) => {
+          if (synthetic.length > 0) applyIncomingDeltas(synthetic);
+        })
+        .catch(() => {});
+    }
 
     const activeProjectIds = isTasksRequested
       ? [...new Set([...expandedProjectIds, ...searchActiveProjectIds])]
@@ -96949,10 +97029,9 @@ export function useTasksHydration({
           if (alreadyActiveInPool) return;
 
           if (deltaManaged) {
-            knownHydratedProjectCodes.current.add(String(p.id));
-            markProjectTasksHydrated(p.id);
-            if (coversAllSummaries && p.id) {
-              markLoaded('tasks_proj', p.id).catch(() => {});
+            if (coversAllSummaries || isZeroTaskProject) {
+              knownHydratedProjectCodes.current.add(String(p.id));
+              markProjectTasksHydrated(p.id);
             }
             const noop = () => {};
             (noop as any).__isNoop = true;
@@ -97103,7 +97182,6 @@ export function useTasksHydration({
   ]);
 }
 
-================================================================================
 FILE: src/hooks/useGanttDragDrop.ts
 ================================================================================
 import React, { useCallback, useRef, useState } from 'react';
@@ -99917,7 +99995,6 @@ async function flushAutoDeltas(): Promise<void> {
 
 ================================================================================
 FILE: src/lib/backgroundSyncParts/localHydrationHelpers.ts
-================================================================================
 import {
   getLocalCosts,
   getLocalDelegations,
@@ -100099,27 +100176,12 @@ export function isZombieTaskAgainstProjects(
 
   if (!matchedEntry) return false;
   if (matchedEntry.isZeroTaskProject) return true;
-  if (matchedEntry.allSummariesHaveIds) {
-    const tIdLower = String(t.id).trim().toLowerCase();
-    if (!matchedEntry.summaryIds.has(tIdLower)) {
-      const tNameLower = String(t.name || '').trim().toLowerCase();
-      const tStart = String(t.start || '').trim();
-      const key = `${tNameLower}|${tStart}`;
-      const rem = tNameLower ? (matchedEntry.unmatchedSummaryNameStarts.get(key) || 0) : 0;
-      if (rem > 0) {
-        matchedEntry.unmatchedSummaryNameStarts.set(key, rem - 1);
-        return false;
-      }
-      return true;
-    }
-  }
-
   return false;
 }
 
 /**
- * Background Self-Healing Pass: deduplicates project taskSummaries and purges zombie/duplicate tasks
- * in Zustand + Dexie without requiring manual cache clear or project expansion.
+ * Background Self-Healing Pass: normalizes local project taskSummaries and deduplicates local tasks
+ * in Zustand + Dexie without overwriting Firestore `taka_projects` from stale/partial local state.
  */
 export async function reconcileAndDeduplicateLocalStore(): Promise<void> {
   try {
@@ -100136,17 +100198,6 @@ export async function reconcileAndDeduplicateLocalStore(): Promise<void> {
         projectsChanged = true;
         const nextP: Project = { ...p, taskSummaries: rolled, taskCount: rolled.length };
         healedProjectsToPersist.push(nextP);
-        if (p.id && rolled.length < p.taskSummaries.length) {
-          syncProjectDatesToFirestore(String(p.id), {
-            computedTakStart: nextP.computedTakStart,
-            computedTakCompl: nextP.computedTakCompl,
-            computedOpening: nextP.computedOpening,
-            computedPlanProgress: nextP.computedPlanProgress,
-            computedActProgress: nextP.computedActProgress,
-            taskCount: rolled.length,
-            taskSummaries: rolled,
-          }).catch(() => {});
-        }
         return nextP;
       }
       return p;
@@ -100176,10 +100227,7 @@ export async function reconcileAndDeduplicateLocalStore(): Promise<void> {
     for (let i = 0; i < allCandidateTasks.length; i++) {
       const t = allCandidateTasks[i];
       if (isZombieTaskAgainstProjects(t, activeProjects, zombieIndex)) {
-        if (t?.id) {
-          idsToPurge.add(t.id);
-          markTasksDeleted([t.id], t.projectId ? String(t.projectId) : undefined);
-        }
+        if (t?.id) idsToPurge.add(t.id);
       } else {
         nonZombieTasks.push(t);
       }
@@ -100188,55 +100236,12 @@ export async function reconcileAndDeduplicateLocalStore(): Promise<void> {
     const { dedupedTasks, removedTaskIds } = deduplicateTasksInMemory(nonZombieTasks, activeProjects);
     removedTaskIds.forEach((id) => idsToPurge.add(id));
 
-    if (removedTaskIds.length > 0) {
-      import('../../hooks/useFirebaseDataParts/tasksHydrationHelpers')
-        .then(({ purgeRemovedDuplicateTasksFromFirestore }) => {
-          purgeRemovedDuplicateTasksFromFirestore(removedTaskIds, false);
-        })
-        .catch(() => {});
-    }
-
     if (idsToPurge.size > 0) {
-      const purgeLower = new Set(Array.from(idsToPurge).map((id) => String(id).trim().toLowerCase()));
       idsToPurge.forEach((id) => {
         deleteLocalRecord('taka_tasks', id).catch(() => {});
       });
       if (ramTasks.length > 0 || useAppStore.getState().isTasksRequested) {
         useAppStore.getState().setTasks(dedupedTasks);
-      }
-
-      const latestProjects = useAppStore.getState().projects || activeProjects;
-      let summaryPurged = false;
-      const purgedProjectsToPersist: Project[] = [];
-      const updatedProjectsAfterPurge = latestProjects.map((p) => {
-        if (!p || p.isDeleted || !Array.isArray(p.taskSummaries) || p.taskSummaries.length === 0) return p;
-        const filtered = p.taskSummaries.filter((s: any) => {
-          const sid = s?.id ? String(s.id).trim().toLowerCase() : '';
-          return !sid || !purgeLower.has(sid);
-        });
-        const rolled = rollupTaskSummaries(filtered);
-        if (rolled.length !== p.taskSummaries.length || p.taskCount !== rolled.length) {
-          summaryPurged = true;
-          const nextP: Project = { ...p, taskSummaries: rolled, taskCount: rolled.length };
-          purgedProjectsToPersist.push(nextP);
-          if (p.id) {
-            syncProjectDatesToFirestore(String(p.id), {
-              computedTakStart: nextP.computedTakStart,
-              computedTakCompl: nextP.computedTakCompl,
-              computedOpening: nextP.computedOpening,
-              computedPlanProgress: nextP.computedPlanProgress,
-              computedActProgress: nextP.computedActProgress,
-              taskCount: rolled.length,
-              taskSummaries: rolled,
-            }).catch(() => {});
-          }
-          return nextP;
-        }
-        return p;
-      });
-      if (summaryPurged) {
-        useAppStore.getState().setProjects(updatedProjectsAfterPurge);
-        bulkPersistProjects(purgedProjectsToPersist).catch(() => {});
       }
     }
   } catch (err) {
@@ -100408,9 +100413,7 @@ export async function hydrateDelegationsForTasks(taskIds: string[]): Promise<num
   }
 }
 
-================================================================================
 FILE: src/lib/backgroundSyncWorker.ts
-================================================================================
 import {
   localDb, bulkPersistProjects, bulkPersistTasks, bulkPersistCosts, bulkPersistDelegations,
   upsertLocalRecord, patchLocalRecord, deleteLocalRecord,
@@ -100783,6 +100786,11 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
     setTimeout(async () => {
       try {
         await localDb.transaction('rw', [localDb.projects, localDb.tasks, localDb.costs, localDb.delegations], async () => {
+          const bulkProjects: Project[] = [];
+          const bulkTasks: Task[] = [];
+          const bulkCosts: Cost[] = [];
+          const bulkDelegations: DelegationGroup[] = [];
+
           const processDeltaItem = async (
             docId?: string, collectionName?: any, action?: string, data?: any, isPatch?: boolean,
             meta?: { year?: string; projectId?: string; projectCode?: string; projectStore?: string }
@@ -100798,13 +100806,23 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
                   ...data,
                 }
               : data || {};
-            const hasFullIdentity = !isPatch && Boolean(enriched?.name && (enriched?.code || enriched?.projectCode || enriched?.projectId));
+            const hasFullIdentity =
+              !isPatch &&
+              Boolean(
+                enriched?.name &&
+                  (enriched?.code || enriched?.projectCode || enriched?.projectId || enriched?.subTasks)
+              );
             if (action === 'delete' || enriched?.isDeleted === true) {
               await deleteLocalRecord(collectionName, docId);
             } else if (isPatch === true || (action === 'update' && !hasFullIdentity)) {
               await patchLocalRecord(collectionName, docId, enriched);
             } else {
-              await upsertLocalRecord(collectionName, { id: docId, ...enriched });
+              const fullObj = { id: docId, ...enriched };
+              if (collectionName === 'taka_projects') bulkProjects.push(fullObj as Project);
+              else if (collectionName === 'taka_tasks') bulkTasks.push(fullObj as Task);
+              else if (collectionName === 'taka_costs') bulkCosts.push(fullObj as Cost);
+              else if (collectionName === 'taka_delegations') bulkDelegations.push(fullObj as DelegationGroup);
+              else await upsertLocalRecord(collectionName, fullObj);
             }
           };
 
@@ -100825,6 +100843,13 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
               });
             }
           }
+
+          await Promise.all([
+            bulkProjects.length > 0 ? localDb.projects.bulkPut(bulkProjects) : Promise.resolve(),
+            bulkTasks.length > 0 ? localDb.tasks.bulkPut(bulkTasks) : Promise.resolve(),
+            bulkCosts.length > 0 ? localDb.costs.bulkPut(bulkCosts) : Promise.resolve(),
+            bulkDelegations.length > 0 ? localDb.delegations.bulkPut(bulkDelegations) : Promise.resolve(),
+          ]);
         });
       } catch (err) {
         console.warn('[backgroundSyncWorker] applyDeltasToLocalDatabase error:', err);
@@ -100863,7 +100888,7 @@ export function startBackgroundSyncCoordinator(intervalMs: number = 5 * 60 * 100
   const cleanupBroadcast = initBroadcastSyncListener();
   setTimeout(() => {
     reconcileAndDeduplicateLocalStore().catch(() => {});
-    purgeOldDeltas(48).catch(() => {});
+    purgeOldDeltas(168).catch(() => {});
   }, 2000);
   const runSync = async () => {
     try {
@@ -100884,7 +100909,6 @@ export function startBackgroundSyncCoordinator(intervalMs: number = 5 * 60 * 100
   };
 }
 
-================================================================================
 FILE: src/lib/broadcastSyncService.test.ts
 ================================================================================
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -102534,12 +102558,11 @@ export async function pruneEmptyDelegations(
 
 ================================================================================
 FILE: src/lib/deltaApplyParts/deltaProjectReconciler.ts
-================================================================================
 import { Project, Task, DelegationGroup } from '../../types';
 import { localDb } from '../localDb';
-import { getTasksForProject, calculateProjectComputedDates } from '../projectDatesService';
+import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../projectDatesService';
 import { rollupTaskSummaries } from '../taskRollupHelpers';
-import { markTasksDeleted } from '../taskDeletedTracker';
+import { unmarkProjectTasksHydrated } from '../utils';
 import { runBackgroundDexieProjectTaskReconciliation } from '../../hooks/useFirebaseDataParts/projectsHydrationHelpers';
 
 export {
@@ -102652,15 +102675,23 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
     const ut = updatedTasks[i];
     if (ut?.id) localProjectTaskIdsLower.add(String(ut.id).trim().toLowerCase());
   }
+  let hasMissingInMemory = false;
   const unmatchedSummaryNameStarts = new Set<string>();
   rawTaskSummaries.forEach((s: any) => {
-    const sIdLower = String(s?.id || '').trim().toLowerCase();
+    const sId = String(s?.id || '').trim();
+    const sIdLower = sId.toLowerCase();
     if (!sIdLower || !localProjectTaskIdsLower.has(sIdLower)) {
+      if (sId && !sId.startsWith('ts_')) {
+        hasMissingInMemory = true;
+      }
       const sName = String(s?.name || '').trim().toLowerCase();
       const sStart = String(s?.start || '').trim();
       if (sName) unmatchedSummaryNameStarts.add(`${sName}|${sStart}`);
     }
   });
+  if (hasMissingInMemory) {
+    unmarkProjectTasksHydrated(pIdStr);
+  }
 
   const nextTasks: Task[] = [];
   for (let i = 0; i < updatedTasks.length; i++) {
@@ -102749,19 +102780,12 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
       nextTasks.push(t);
       continue;
     }
-    zombieIds.push(t.id);
+    // Keep task in memory while runBackgroundDexieProjectTaskReconciliation verifies against Firestore taka_tasks
+    nextTasks.push(t);
   }
 
   if (patchedTasksForDexie.length > 0) {
     localDb.tasks.bulkPut(patchedTasksForDexie).catch(() => {});
-  }
-
-  if (zombieIds.length > 0) {
-    markTasksDeleted(zombieIds, pIdStr);
-    zombieIds.forEach((zId) => {
-      localDb.tasks.delete(zId).catch(() => {});
-    });
-    return { nextTasks, tasksChanged: true };
   }
 
   return { nextTasks: anyTaskPatched ? nextTasks : updatedTasks, tasksChanged: anyTaskPatched };
@@ -102838,7 +102862,9 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
     const currentSummaries = Array.isArray(p.taskSummaries) ? [...p.taskSummaries] : [];
     const sIdx = currentSummaries.findIndex((s: any) => {
       const sId = String(s?.id || '').trim().toLowerCase();
-      if (sId && !sId.startsWith('ts_') && sId === docIdLower) return true;
+      if (sId && !sId.startsWith('ts_')) {
+        return sId === docIdLower;
+      }
       const sCode = String(s?.taskCodePhu || '').trim().toLowerCase();
       if (sCode && mCodeLower && sCode === mCodeLower) return true;
       return (
@@ -102852,7 +102878,6 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
     const effName = mergedTask.name ?? existingSummary?.name;
     const effStart = mergedTask.start ?? existingSummary?.start;
     const effFinish = mergedTask.finish ?? existingSummary?.finish;
-
     if (!effName || !effStart || !effFinish) return;
 
     const summaryItem: any = {
@@ -102861,9 +102886,7 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
       name: effName,
       start: effStart,
       finish: effFinish,
-      orderIndex:
-        mergedTask.orderIndex ??
-        (existingSummary ? existingSummary.orderIndex : currentSummaries.length),
+      orderIndex: mergedTask.orderIndex ?? (existingSummary ? existingSummary.orderIndex : currentSummaries.length),
       ...(mergedTask.baselineStart ? { baselineStart: mergedTask.baselineStart } : {}),
       ...(mergedTask.baselineFinish ? { baselineFinish: mergedTask.baselineFinish } : {}),
       ...(mergedTask.approval !== undefined ? { approval: mergedTask.approval } : {}),
@@ -102877,8 +102900,7 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
       ...(mergedTask.predecessorTaskIds !== undefined ? { predecessorTaskIds: mergedTask.predecessorTaskIds } : {}),
     };
     const explicitParentUnset =
-      (mergedTask as any).parentTaskId === null ||
-      ('parentTaskId' in mergedTask && !mergedTask.parentTaskId);
+      (mergedTask as any).parentTaskId === null || ('parentTaskId' in mergedTask && !mergedTask.parentTaskId);
     const effectiveParentId = mergedTask.parentTaskId
       ? mergedTask.parentTaskId
       : explicitParentUnset
@@ -102891,26 +102913,13 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
       delete summaryItem.parentId;
     }
 
-    if (sIdx !== -1) {
-      currentSummaries[sIdx] = summaryItem;
+    if (sIdx !== -1 || action === 'create' || action === 'update') {
+      if (sIdx !== -1) currentSummaries[sIdx] = summaryItem;
+      else currentSummaries.push(summaryItem);
       const rolledSummaries = rollupTaskSummaries(currentSummaries);
       anyProjectChanged = true;
       if (p.id && touchedProjectIds) touchedProjectIds.add(String(p.id));
-      updatedProjects[pIdx] = {
-        ...p,
-        taskSummaries: rolledSummaries,
-        taskCount: rolledSummaries.length,
-      };
-    } else if (action === 'create' || action === 'update') {
-      currentSummaries.push(summaryItem);
-      const rolledSummaries = rollupTaskSummaries(currentSummaries);
-      anyProjectChanged = true;
-      if (p.id && touchedProjectIds) touchedProjectIds.add(String(p.id));
-      updatedProjects[pIdx] = {
-        ...p,
-        taskSummaries: rolledSummaries,
-        taskCount: rolledSummaries.length,
-      };
+      updatedProjects[pIdx] = { ...p, taskSummaries: rolledSummaries, taskCount: rolledSummaries.length };
     }
   });
 
@@ -102926,16 +102935,11 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
   delegationGroups: DelegationGroup[];
   touchedProjectIds: Set<string>;
   touchedProjectCodes: Set<string>;
+  syncRecoveredSummariesToServer?: boolean;
 }): { nextProjects: Project[]; touchedProjectsToPersist: Project[] } {
-  const {
-    updatedProjects,
-    updatedTasks,
-    delegationGroups,
-    touchedProjectIds,
-    touchedProjectCodes,
-  } = params;
-
+  const { updatedProjects, updatedTasks, delegationGroups, touchedProjectIds, touchedProjectCodes, syncRecoveredSummariesToServer } = params;
   const touchedProjectsToPersist: Project[] = [];
+
   const nextProjects = updatedProjects.map((p) => {
     const codeParts = `${p.code || ''},${(p as any).linkCodes || ''}`
       .toLowerCase()
@@ -102959,27 +102963,29 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
 
     const realProjTasks = getTasksForProject(p, updatedTasks, { realTasksOnly: true });
     const existingSummaries = Array.isArray(p.taskSummaries) ? p.taskSummaries : [];
+    const realIdSet = new Set(realProjTasks.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean));
+    const hasUnloadedRealSummary = existingSummaries.some((s: any) => {
+      const sId = String(s?.id || '').trim().toLowerCase();
+      return Boolean(sId && !sId.startsWith('ts_') && !realIdSet.has(sId));
+    });
 
     let sourceTasksForCalc: Task[];
-    if (realProjTasks.length > 0 && realProjTasks.length >= existingSummaries.length) {
+    if (realProjTasks.length > 0 && !hasUnloadedRealSummary && realProjTasks.length >= existingSummaries.length) {
       sourceTasksForCalc = realProjTasks;
     } else {
-      const realIdSet = new Set(
-        realProjTasks.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean)
-      );
-      const realCodeSet = new Set(
-        realProjTasks.map((t) => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean)
-      );
+      const realCodeSet = new Set(realProjTasks.map((t) => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean));
       const realNameStartSet = new Set(
         realProjTasks.map((t) => `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`)
       );
       const summaryTasks = existingSummaries
         .filter((s: any) => {
           const sId = String(s?.id || '').trim().toLowerCase();
+          if (sId && !sId.startsWith('ts_')) {
+            return !realIdSet.has(sId);
+          }
           const sCode = String(s?.taskCodePhu || '').trim().toLowerCase();
           const sName = String(s?.name || '').trim().toLowerCase();
           const sStart = String(s?.start || '').trim();
-          if (sId && !sId.startsWith('ts_') && realIdSet.has(sId)) return false;
           if (sCode && realCodeSet.has(sCode)) return false;
           if (sName && realNameStartSet.has(`${sName}|${sStart}`)) return false;
           return true;
@@ -103017,21 +103023,24 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
     const nextProj: Project = {
       ...p,
       ...computedDates,
-      taskCount:
-        computedDates.taskCount !== undefined ? computedDates.taskCount : existingSummaries.length,
-      taskSummaries:
-        computedDates.taskSummaries !== undefined ? computedDates.taskSummaries : existingSummaries,
+      taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : existingSummaries.length,
+      taskSummaries: computedDates.taskSummaries !== undefined ? computedDates.taskSummaries : existingSummaries,
     };
     touchedProjectsToPersist.push(nextProj);
+    if (
+      syncRecoveredSummariesToServer &&
+      p.id &&
+      (nextProj.taskSummaries?.length || 0) > existingSummaries.length
+    ) {
+      syncProjectDatesToFirestore(String(p.id), computedDates).catch(() => {});
+    }
     return nextProj;
   });
 
   return { nextProjects, touchedProjectsToPersist };
 }
 
-================================================================================
 FILE: src/lib/deltaApplyService.ts
-================================================================================
 import { useAppStore } from '../store/useAppStore';
 import { usePerformanceStore } from '../store/usePerformanceStore';
 import { TakaDelta, TakaDeltaItem, Project, Task, Cost, DelegationGroup } from '../types';
@@ -103051,6 +103060,8 @@ import {
 import { CLIENT_SESSION_ID, DELTA_COLLECTION, LAST_SYNC_KEY } from './deltaConstants';
 import { safeSetItemLocal } from './storage';
 import { markTasksDeleted } from './taskDeletedTracker';
+import { markLoaded } from './loadedMarkers';
+import { markProjectTasksHydrated } from './utils';
 import {
   tsOf,
   buildDeltaProjectsIndex,
@@ -103063,17 +103074,9 @@ import {
 } from './deltaApplyParts/deltaProjectReconciler';
 import { rollupParentTaskDatesAndStatus } from './taskRollupService';
 
-/**
- * Applies a list of (already de-duplicated) deltas to Zustand + Dexie. Shared by the real-time listener and the
- * safety poll. Returns the number of deltas processed.
- * Pre-indexes projects in O(P) to eliminate linear scans per task delta.
- */
 export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   if (!deltas || deltas.length === 0) return 0;
-
-  usePerformanceStore
-    .getState()
-    .trackGetDoc(DELTA_COLLECTION, false, deltas.length, `Pulled ${deltas.length} deltas`);
+  usePerformanceStore.getState().trackGetDoc(DELTA_COLLECTION, false, deltas.length, `Pulled ${deltas.length} deltas`);
 
   const lastSyncTime = getLastDeltaSyncTime();
   let maxTime = lastSyncTime;
@@ -103083,30 +103086,60 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   let updatedTasks = [...(store.tasks || [])];
   let updatedCosts = [...(store.costs || [])];
   let updatedDelegations = [...(store.delegationGroups || [])];
-
-  // Pre-index projects by ID and Code in O(P) (rebuilt only when projects array length changes)
   let projectsIndex = buildDeltaProjectsIndex(updatedProjects);
 
-  let projectsChanged = false;
-  let tasksChanged = false;
-  let costsChanged = false;
-  let delegationsChanged = false;
+  const authoritativeSummaryProjectIds = new Set<string>();
+  const batchTaskCountsByProj = new Map<string, number>();
+  deltas.forEach((d) => {
+    if (d.sessionId && d.sessionId === CLIENT_SESSION_ID) return;
+    if (d.action === 'batch_update' && Array.isArray(d.batchItems)) {
+      d.batchItems.forEach((item) => {
+        if (item.collectionName === 'taka_projects' && item.action !== 'delete' && !item.data?.isDeleted && Array.isArray(item.data?.taskSummaries) && item.docId) {
+          authoritativeSummaryProjectIds.add(String(item.docId).trim());
+        } else if (item.collectionName === 'taka_tasks' && item.action !== 'delete') {
+          const pid = (item as any).projectId || item.data?.projectId || d.projectId;
+          if (pid) {
+            const pidStr = String(pid).trim();
+            batchTaskCountsByProj.set(pidStr, (batchTaskCountsByProj.get(pidStr) || 0) + 1);
+            if ((item as any).skipSummaryRollup) authoritativeSummaryProjectIds.add(pidStr);
+          }
+        }
+      });
+    } else if (d.collectionName === 'taka_projects' && d.action !== 'delete' && !d.data?.isDeleted && Array.isArray(d.data?.taskSummaries) && d.docId) {
+      authoritativeSummaryProjectIds.add(String(d.docId).trim());
+    }
+  });
+
+  const inMemoryProjectIds = new Set<string>();
+  const inMemoryProjectCompositeKeys = new Set<string>();
+  for (let i = 0; i < updatedTasks.length; i++) {
+    const t = updatedTasks[i];
+    if (!t || t.isDeleted) continue;
+    if (t.projectId) {
+      inMemoryProjectIds.add(String(t.projectId).trim());
+    } else if (t.projectCode) {
+      const c = String(t.projectCode).trim().toLowerCase();
+      const s = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+      const y = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+      inMemoryProjectCompositeKeys.add(`${c}|${s}|${y}`);
+    }
+  }
+
+  const expandedSet = new Set([...(store.expandedProjectIds || []), ...(store.searchActiveProjectIds || [])].map(String));
+  let projectsChanged = false, tasksChanged = false, costsChanged = false, delegationsChanged = false;
 
   const invalidations: TakaDeltaItem[] = [];
-
   const touchedProjectIds = new Set<string>();
   const touchedProjectCodes = new Set<string>();
   const noteTouchedProject = (t: any) => {
     if (!t) return;
     if (t.projectId) {
-      touchedProjectIds.add(String(t.projectId));
+      const pid = String(t.projectId).trim();
+      if (!authoritativeSummaryProjectIds.has(pid)) touchedProjectIds.add(pid);
     } else if (t.projectCode) {
       const codeKey = String(t.projectCode).trim().toLowerCase();
       const storeKey = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '*';
-      const yearKey =
-        t.projectYear !== undefined && t.projectYear !== null
-          ? String(t.projectYear).trim()
-          : '*';
+      const yearKey = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '*';
       touchedProjectCodes.add(`${codeKey}|${storeKey}|${yearKey}`);
     }
   };
@@ -103118,19 +103151,24 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     collectionNameRaw: string,
     action: 'create' | 'update' | 'delete',
     data: any,
-    meta?: { year?: string; projectId?: string; projectCode?: string; projectStore?: string; isPatch?: boolean }
+    meta?: {
+      year?: string;
+      projectId?: string;
+      projectCode?: string;
+      projectStore?: string;
+      isPatch?: boolean;
+      skipSummaryRollup?: boolean;
+    }
   ) => {
     if (docId) directlyAppliedDocIds.add(docId);
     const collectionName =
       collectionNameRaw === 'taka_delegation_groups' ? 'taka_delegations' : collectionNameRaw;
-
     const isDelete = action === 'delete' || data?.isDeleted === true;
 
     const isStaleVsLocal = (existing: any): boolean => {
       if (isDelete || !data) return false;
       const incoming = tsOf(data.updatedAt);
-      if (!incoming) return false;
-      return tsOf(existing?.updatedAt) > incoming;
+      return Boolean(incoming && tsOf(existing?.updatedAt) > incoming);
     };
 
     switch (collectionName) {
@@ -103154,11 +103192,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         projectsChanged = true;
         let nextProj: Project | null = null;
         if (idx !== -1) {
-          const prevProj = updatedProjects[idx];
-          nextProj = applyFieldPatch(prevProj, data) as Project;
-          if (Array.isArray(data?.taskSummaries)) {
-            nextProj.taskCount = data.taskSummaries.length;
-          }
+          nextProj = applyFieldPatch(updatedProjects[idx], data) as Project;
+          if (Array.isArray(data?.taskSummaries)) nextProj.taskCount = data.taskSummaries.length;
           updatedProjects[idx] = nextProj;
         } else if (action === 'create' || (action === 'update' && data?.code && data?.name)) {
           nextProj = { id: docId, ...data } as Project;
@@ -103201,16 +103236,12 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           ...(meta?.year ? { projectYear: meta.year } : {}),
           ...(data || {}),
         };
-        noteTouchedProject(existingTask);
-        noteTouchedProject(enrichedData);
         if (isDelete || data?.isDeleted) {
+          noteTouchedProject(existingTask);
+          noteTouchedProject(enrichedData);
           const pIdHint = enrichedData?.projectId || existingTask?.projectId;
-          const delProjCodeLower = String(enrichedData?.projectCode || existingTask?.projectCode || '')
-            .trim()
-            .toLowerCase();
-          const delProjStoreLower = String(enrichedData?.projectStore || existingTask?.projectStore || '')
-            .trim()
-            .toLowerCase();
+          const delProjCodeLower = String(enrichedData?.projectCode || existingTask?.projectCode || '').trim().toLowerCase();
+          const delProjStoreLower = String(enrichedData?.projectStore || existingTask?.projectStore || '').trim().toLowerCase();
           const delProjYearStr = String(enrichedData?.projectYear ?? existingTask?.projectYear ?? '').trim();
 
           markTasksDeleted([docId], pIdHint ? String(pIdHint) : undefined);
@@ -103220,12 +103251,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             updatedTasks = updatedTasks.filter((t) => t.id !== docId);
           }
           const docIdLower = String(docId).trim().toLowerCase();
-          const delNameLower = String(data?.name || existingTask?.name || '')
-            .trim()
-            .toLowerCase();
-          const delCodeLower = String(data?.taskCodePhu || existingTask?.taskCodePhu || '')
-            .trim()
-            .toLowerCase();
+          const delNameLower = String(data?.name || existingTask?.name || '').trim().toLowerCase();
+          const delCodeLower = String(data?.taskCodePhu || existingTask?.taskCodePhu || '').trim().toLowerCase();
 
           const unlinkedRes = unlinkChildTasksOnTaskDeleteDelta(docIdLower, delCodeLower, pIdHint, updatedTasks);
           if (unlinkedRes.tasksChanged) {
@@ -103257,18 +103284,26 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           idx !== -1 ? applyFieldPatch(updatedTasks[idx], enrichedData) : { id: docId, ...enrichedData }
         ) as Task;
 
-        // O(1) upsert into matching project's taskSummaries via pre-built projectsIndex
-        if (
-          upsertTaskSummaryIntoMatchingProjects({
-            docId,
-            action,
-            mergedTask,
-            updatedProjects,
-            projectsIndex,
-            touchedProjectIds,
-          })
-        ) {
-          projectsChanged = true;
+        const tProjId = mergedTask.projectId ? String(mergedTask.projectId).trim() : '';
+        const hasAuthoritativeProjectDelta = Boolean(
+          meta?.skipSummaryRollup || (tProjId && authoritativeSummaryProjectIds.has(tProjId))
+        );
+
+        if (!hasAuthoritativeProjectDelta) {
+          noteTouchedProject(existingTask);
+          noteTouchedProject(enrichedData);
+          if (
+            upsertTaskSummaryIntoMatchingProjects({
+              docId,
+              action,
+              mergedTask,
+              updatedProjects,
+              projectsIndex,
+              touchedProjectIds,
+            })
+          ) {
+            projectsChanged = true;
+          }
         }
 
         if (idx !== -1) {
@@ -103281,46 +103316,20 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             Boolean(enrichedData?.name && (enrichedData?.projectCode || enrichedData?.projectId)))
         ) {
           if (store.isTasksRequested || updatedTasks.length > 0) {
-            const expandedSet = new Set(
-              [...(store.expandedProjectIds || []), ...(store.searchActiveProjectIds || [])].map(
-                String
-              )
-            );
-            const tProjId = mergedTask.projectId ? String(mergedTask.projectId).trim() : '';
             const tCode = mergedTask.projectCode ? String(mergedTask.projectCode).trim() : '';
-            const tStoreLower = mergedTask.projectStore
-              ? String(mergedTask.projectStore).trim().toLowerCase()
-              : '';
+            const tStoreLower = mergedTask.projectStore ? String(mergedTask.projectStore).trim().toLowerCase() : '';
             const tYearStr =
               mergedTask.projectYear !== undefined && mergedTask.projectYear !== null
                 ? String(mergedTask.projectYear).trim()
                 : '';
 
-            const activeYearFilter = store.globalYearFilter
-              ? String(store.globalYearFilter).trim()
-              : '';
+            const activeYearFilter = store.globalYearFilter ? String(store.globalYearFilter).trim() : '';
             const matchesActiveYear =
-              !activeYearFilter ||
-              activeYearFilter.toLowerCase() === 'all' ||
-              !tYearStr ||
-              tYearStr === activeYearFilter;
+              !activeYearFilter || activeYearFilter.toLowerCase() === 'all' || !tYearStr || tYearStr === activeYearFilter;
 
-            const projInMemory = updatedTasks.some((t) => {
-              if (tProjId && t.projectId) {
-                return String(t.projectId).trim() === tProjId;
-              }
-              if (tProjId || t.projectId) return false;
-              if (!tCode || String(t.projectCode || '').trim().toLowerCase() !== tCode.toLowerCase()) {
-                return false;
-              }
-              if (tStoreLower && t.projectStore && String(t.projectStore).trim().toLowerCase() !== tStoreLower) {
-                return false;
-              }
-              if (tYearStr && t.projectYear !== undefined && String(t.projectYear).trim() !== tYearStr) {
-                return false;
-              }
-              return true;
-            });
+            const projInMemory = tProjId
+              ? inMemoryProjectIds.has(tProjId)
+              : Boolean(tCode && inMemoryProjectCompositeKeys.has(`${tCode.toLowerCase()}|${tStoreLower}|${tYearStr}`));
 
             let matchingIdx = tProjId ? projectsIndex.byId.get(tProjId) : undefined;
             if (matchingIdx === undefined && !tProjId && tCode) {
@@ -103334,19 +103343,23 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
               });
             }
 
-            const matchingProj =
-              matchingIdx !== undefined ? updatedProjects[matchingIdx] : undefined;
-            const isProjExpandedOrEmpty =
+            const matchingProj = matchingIdx !== undefined ? updatedProjects[matchingIdx] : undefined;
+            const isExplicitlyExpanded =
               projInMemory ||
               (tProjId && expandedSet.has(tProjId)) ||
               (matchingProj?.id && expandedSet.has(String(matchingProj.id))) ||
-              (!tProjId && tCode && expandedSet.has(tCode)) ||
-              (store.isTasksRequested &&
+              (!tProjId && tCode && expandedSet.has(tCode));
+
+            const isProjExpandedOrEmpty =
+              isExplicitlyExpanded ||
+              (!hasAuthoritativeProjectDelta &&
+                store.isTasksRequested &&
                 (matchesActiveYear || !matchingProj || (matchingProj.taskSummaries?.length || 0) <= 1));
 
             if (isProjExpandedOrEmpty) {
               tasksChanged = true;
               updatedTasks.push(mergedTask);
+              if (tProjId) inMemoryProjectIds.add(tProjId);
             }
           }
         }
@@ -103367,11 +103380,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         if (idx !== -1 && isStaleVsLocal(updatedCosts[idx])) return;
 
         costsChanged = true;
-        if (idx !== -1) {
-          updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
-        } else if (action === 'create') {
-          updatedCosts.push({ id: docId, ...data } as Cost);
-        }
+        if (idx !== -1) updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
+        else if (action === 'create') updatedCosts.push({ id: docId, ...data } as Cost);
         break;
       }
 
@@ -103389,14 +103399,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         if (idx !== -1 && isStaleVsLocal(updatedDelegations[idx])) return;
 
         delegationsChanged = true;
-        if (idx !== -1) {
-          updatedDelegations[idx] = applyFieldPatch(
-            updatedDelegations[idx],
-            data
-          ) as DelegationGroup;
-        } else if (action === 'create') {
-          updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
-        }
+        if (idx !== -1) updatedDelegations[idx] = applyFieldPatch(updatedDelegations[idx], data) as DelegationGroup;
+        else if (action === 'create') updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
         break;
       }
     }
@@ -103404,9 +103408,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
   deltas.forEach((delta) => {
     const srvMs = serverDeltaTime(delta);
-    if (srvMs > maxTime) {
-      maxTime = srvMs;
-    }
+    if (srvMs > maxTime) maxTime = srvMs;
 
     if (delta.docId === 'sys_restore_signal' || delta.data?.type === 'VERSION_RESTORE') {
       const cutoff = delta.data?.restoreCutoff || deltaTime(delta);
@@ -103420,13 +103422,12 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       return;
     }
 
-    if (delta.sessionId && delta.sessionId === CLIENT_SESSION_ID) {
-      return;
-    }
+    if (delta.sessionId && delta.sessionId === CLIENT_SESSION_ID) return;
 
     if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
       delta.batchItems.forEach((item) => {
         if (item.invalidate) {
+          if (item.docId) directlyAppliedDocIds.delete(item.docId);
           invalidations.push(item);
           return;
         }
@@ -103437,12 +103438,26 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             projectCode: (item as any).projectCode || delta.projectCode,
             projectStore: (item as any).projectStore || delta.projectStore,
             isPatch: item.isPatch,
+            skipSummaryRollup: Boolean((item as any).skipSummaryRollup),
           });
         } catch (err) {
           console.warn('[deltaSync] applyItem failed (batch item skipped):', item.docId, err);
         }
       });
     } else if (delta.docId && delta.collectionName) {
+      if ((delta as any).invalidate) {
+        directlyAppliedDocIds.delete(delta.docId);
+        invalidations.push({
+          docId: delta.docId,
+          collectionName: delta.collectionName,
+          action: delta.action as any,
+          data: delta.data || {},
+          isPatch: delta.isPatch,
+          invalidate: true,
+          year: delta.year,
+        });
+        return;
+      }
       try {
         applyItem(delta.docId, delta.collectionName, delta.action as any, delta.data, {
           year: delta.year,
@@ -103457,21 +103472,30 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     }
   });
 
+  authoritativeSummaryProjectIds.forEach((pid) => {
+    const receivedCount = batchTaskCountsByProj.get(pid) || 0;
+    const pIdx = projectsIndex.byId.get(pid);
+    const expectedCount = pIdx !== undefined ? updatedProjects[pIdx]?.taskSummaries?.length || 0 : 0;
+    if (receivedCount > 0 && receivedCount >= expectedCount) {
+      markLoaded('tasks_proj', pid).catch(() => {});
+      markProjectTasksHydrated(pid);
+    }
+  });
+
   if (tasksChanged && updatedTasks.length > 0) {
     updatedTasks = rollupParentTaskDatesAndStatus(updatedTasks, updatedDelegations);
   }
 
   let touchedProjectsToPersist: Project[] = [];
-  if (
-    (tasksChanged || projectsChanged) &&
-    (touchedProjectIds.size > 0 || touchedProjectCodes.size > 0)
-  ) {
+  if ((tasksChanged || projectsChanged) && (touchedProjectIds.size > 0 || touchedProjectCodes.size > 0)) {
+    const isResolvedInvalidationBatch = deltas.some((d) => d.sessionId === '__resolved__');
     const recalculated = recalculateTouchedProjectsAfterDeltas({
       updatedProjects,
       updatedTasks,
       delegationGroups: updatedDelegations,
       touchedProjectIds,
       touchedProjectCodes,
+      syncRecoveredSummariesToServer: isResolvedInvalidationBatch,
     });
     updatedProjects = recalculated.nextProjects;
     touchedProjectsToPersist = recalculated.touchedProjectsToPersist;
@@ -103482,10 +103506,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   if (tasksChanged) store.setTasks(updatedTasks);
   if (costsChanged) store.setCosts(updatedCosts);
   if (delegationsChanged) store.setDelegationGroups(updatedDelegations);
-
-  if (touchedProjectsToPersist.length > 0) {
-    localDb.projects.bulkPut(touchedProjectsToPersist).catch(() => {});
-  }
+  if (touchedProjectsToPersist.length > 0) localDb.projects.bulkPut(touchedProjectsToPersist).catch(() => {});
 
   const flashEntries: Array<{ docId: string; collectionName: any; updatedBy?: string }> = [];
   deltas.forEach((d) => {
@@ -103503,14 +103524,9 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
   applyDeltasToLocalDatabase(deltas).catch(() => {});
   broadcastAppliedDeltas(deltas);
-  if (maxTime > lastSyncTime) {
-    safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
-  }
+  if (maxTime > lastSyncTime) safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
 
-  const pendingInvalidations = invalidations.filter(
-    (item) => !directlyAppliedDocIds.has(item.docId)
-  );
-
+  const pendingInvalidations = invalidations.filter((item) => !directlyAppliedDocIds.has(item.docId));
   if (pendingInvalidations.length > 0) {
     resolveInvalidations(pendingInvalidations)
       .then((synthetic) => {
@@ -103522,7 +103538,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   return deltas.length;
 }
 
-================================================================================
 FILE: src/lib/deltaBatchSync.test.ts
 ================================================================================
 import { describe, it, expect, vi } from 'vitest';
@@ -104604,14 +104619,12 @@ export async function pullAndApplyDeltas(yearFilter?: string, force: boolean = f
 
 ================================================================================
 FILE: src/lib/deltaPurgeService.ts
-================================================================================
 import {
   collection,
   query,
   where,
   limit,
   getDocs,
-  doc,
   writeBatch,
 } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
@@ -104620,19 +104633,43 @@ import { safeGetItemLocal, safeSetItemLocal } from './storage';
 const LAST_PURGE_KEY = 'taka_last_delta_purge_time_v1';
 const DELTA_COLLECTION = 'taka_deltas';
 const PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000; // Run at most once every 6 hours
-const DEFAULT_RETENTION_HOURS = 48; // Retain deltas for 48 hours
+const DEFAULT_RETENTION_HOURS = 168; // Retain deltas for 7 days (168h) to cover 6-day STALE_RESYNC_MS window
 
 /**
- * B7: Firestore TTL Policy on field `expireAt` automatically deletes expired deltas at 0 read cost.
- * Client-side getDocs purge queries are eliminated to prevent read waste.
+ * Automatically purges expired delta records older than `retentionHours` (default 168h / 7 days).
+ * Throttled via localStorage to run at most once every 6 hours per client,
+ * ensuring `taka_deltas` never accumulates indefinitely even if GCP TTL is not enabled.
  */
-export async function purgeOldDeltas(_retentionHours = DEFAULT_RETENTION_HOURS): Promise<number> {
-  // Managed server-side via Firestore TTL policy on `expireAt`.
-  return 0;
+export async function purgeOldDeltas(
+  retentionHours = DEFAULT_RETENTION_HOURS,
+  force = false
+): Promise<number> {
+  try {
+    const now = Date.now();
+    if (!force) {
+      const lastPurge = Number(safeGetItemLocal(LAST_PURGE_KEY) || 0);
+      if (lastPurge > 0 && now - lastPurge < PURGE_INTERVAL_MS) {
+        return 0;
+      }
+    }
+    safeSetItemLocal(LAST_PURGE_KEY, String(now));
+
+    const cutoffMs = now - retentionHours * 60 * 60 * 1000;
+    const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION);
+    const q = query(colRef, where('numericTime', '<', cutoffMs), limit(400));
+    const snap = await getDocs(q);
+    if (snap.empty) return 0;
+
+    const batch = writeBatch(db);
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    return snap.docs.length;
+  } catch (err) {
+    console.debug('[deltaPurge] Skipped delta purge:', err);
+    return 0;
+  }
 }
 
-
-================================================================================
 FILE: src/lib/deltaRealtimeListener.ts
 ================================================================================
 import { collection, onSnapshot, orderBy, query, where, Timestamp } from 'firebase/firestore';
@@ -114131,7 +114168,6 @@ describe('Kiểm thử tính toán Pre-computed Dates của Project (calculatePr
 
 ================================================================================
 FILE: src/lib/projectDatesService.ts
-================================================================================
 import { setDoc, updateDoc, writeBatch } from "./firestoreWrites";
 import { db, APP_ID } from "./firebase";
 import { doc, collection, getDocs } from 'firebase/firestore';
@@ -114290,16 +114326,20 @@ export function calculateProjectComputedDates(
     Boolean((t.name && String(t.name).trim()) || (t.start && String(t.start).trim()) || (t.finish && String(t.finish).trim()) || t.taskCodePhu)
   );
   const realOnlyTasks = rawTasks.filter(t => !(t as any)._isVirtualSummary);
+  const realIdSet = new Set(realOnlyTasks.map(t => String(t.id || '').trim().toLowerCase()).filter(Boolean));
+  const hasMissingActiveSummaries = activeExistingSummaries.some((es: any) => {
+    const esId = String(es?.id || '').trim().toLowerCase();
+    return Boolean(esId && !esId.startsWith('ts_') && !realIdSet.has(esId));
+  });
   let filteredInputTasks: Task[];
 
   if (realOnlyTasks.length === 0) {
     filteredInputTasks = rawTasks;
-  } else if (isProjectTasksHydrated(pIdStr) || realOnlyTasks.length >= activeExistingSummaries.length) {
+  } else if (!hasMissingActiveSummaries && (isProjectTasksHydrated(pIdStr) || realOnlyTasks.length >= activeExistingSummaries.length)) {
     filteredInputTasks = realOnlyTasks;
   } else {
     // Partial real tasks in memory: merge with remaining activeExistingSummaries so unhydrated tasks are never dropped
     const mergedList: Task[] = [...realOnlyTasks];
-    const realIdSet = new Set(realOnlyTasks.map(t => String(t.id || '').trim().toLowerCase()).filter(Boolean));
     const realCodeSet = new Set(realOnlyTasks.map(t => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean));
     const realNameSet = new Set(realOnlyTasks.map(t => String(t.name || '').trim().toLowerCase()).filter(Boolean));
     const realNameStartSet = new Set(
@@ -114308,12 +114348,15 @@ export function calculateProjectComputedDates(
 
     activeExistingSummaries.forEach((ts: any, idx: number) => {
       const tsId = String(ts?.id || '').trim().toLowerCase();
-      const tsCode = String(ts?.taskCodePhu || '').trim().toLowerCase();
-      const tsName = String(ts?.name || '').trim().toLowerCase();
-      const tsStart = String(ts?.start || '').trim();
-      if (tsId && !tsId.startsWith('ts_') && realIdSet.has(tsId)) return;
-      if (tsCode && realCodeSet.has(tsCode)) return;
-      if (tsName && (realNameStartSet.has(`${tsName}|${tsStart}`) || (!tsId && !tsCode && realNameSet.has(tsName)))) return;
+      if (tsId && !tsId.startsWith('ts_')) {
+        if (realIdSet.has(tsId)) return;
+      } else {
+        const tsCode = String(ts?.taskCodePhu || '').trim().toLowerCase();
+        const tsName = String(ts?.name || '').trim().toLowerCase();
+        const tsStart = String(ts?.start || '').trim();
+        if (tsCode && realCodeSet.has(tsCode)) return;
+        if (tsName && (realNameStartSet.has(`${tsName}|${tsStart}`) || (!tsId && !tsCode && realNameSet.has(tsName)))) return;
+      }
 
       mergedList.push({
         id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,
@@ -114621,7 +114664,6 @@ export {
 
 
 
-================================================================================
 FILE: src/lib/r2StorageUtils.ts
 ================================================================================
 import { getStoredR2Credentials, getS3Sdk, extractR2Key, listR2Objects, deleteR2Object, R2Credentials } from '../components/PictureMapping/lib/r2Upload';
@@ -115413,7 +115455,6 @@ export const deleteStorageFiles = async (urls: string[]) => {
 
 ================================================================================
 FILE: src/lib/summaryAuditService.ts
-================================================================================
 /**
  * summaryAuditService.ts - Kiểm tra chéo 3 lớp dữ liệu: (1) Task Firestore, (2) Summary dự án, (3) Local (Zustand + Dexie).
  */
@@ -115624,12 +115665,19 @@ export async function runSummaryAudit(onProgress?: (msg: string) => void): Promi
  */
 export async function repairServerSummaries(
   report: AuditReport,
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  targetProjectIds?: string[]
 ): Promise<{ fixed: number; skippedEmpty: number; backfilledTasks?: number }> {
   if (Date.now() - report.generatedAt > 10 * 60 * 1000) {
     throw new Error('Báo cáo đã cũ hơn 10 phút. Hãy chạy kiểm tra lại trước khi sửa.');
   }
-  const targets = report.issues.filter((r) => r.summaryIssue);
+  const targetSet =
+    targetProjectIds && targetProjectIds.length > 0
+      ? new Set(targetProjectIds.map(String))
+      : null;
+  const targets = report.issues.filter(
+    (r) => r.summaryIssue && (!targetSet || targetSet.has(String(r.projectId)))
+  );
   if (targets.length === 0) return { fixed: 0, skippedEmpty: 0, backfilledTasks: 0 };
 
   const { doc } = await import('firebase/firestore');
@@ -115655,6 +115703,7 @@ export async function repairServerSummaries(
     if (!serverProject) continue;
 
     const owned = [...(report.internal.ownerTasks.get(row.projectId) || [])];
+    owned.forEach((t) => localTasksToUpsert.push(t));
     const ownedById = new Map<string, Task>(owned.map((t) => [String(t.id), t]));
     const rawSummaries: any[] = Array.isArray(serverProject.taskSummaries)
       ? (serverProject.taskSummaries as any[])
@@ -115845,7 +115894,6 @@ export async function repairServerSummaries(
 
 
 
-================================================================================
 FILE: src/lib/summaryGhostFilter.ts
 ================================================================================
 import type { Project, Task } from '../types';
@@ -116473,7 +116521,6 @@ export const listenerManager = {
 };
 ================================================================================
 FILE: src/lib/taskDeduplicationService.test.ts
-================================================================================
 import { describe, it, expect } from 'vitest';
 import { 
   deduplicateTasksInMemory, 
@@ -116481,6 +116528,7 @@ import {
   normalizeStoreCode,
   normalizeTaskNameForComparison
 } from './taskDeduplicationService';
+import { rollupTaskSummaries } from './taskRollupHelpers';
 import { Task, Project } from '../types';
 
 describe('taskDeduplicationService', () => {
@@ -116569,12 +116617,42 @@ describe('taskDeduplicationService', () => {
     expect(keptGuideline).toBeDefined();
     expect(keptGuideline?.comments?.length).toBe(1);
   });
+
+  it('never collapses distinct project tasks or summaries (e.g. 48 tasks in B1-B105) that share name+dates but have distinct IDs, orderIndex, taskCodePhu, or parent hierarchy', () => {
+    const b105Project: Project = {
+      id: 'proj_b105',
+      code: 'B1-B105',
+      name: 'Nakajima Suisan',
+      year: 2027,
+      store: 'HN',
+      location: 'B1'
+    } as any;
+
+    const tasks48: Task[] = Array.from({ length: 48 }, (_, idx) => ({
+      id: `t_b105_${idx + 1}`,
+      projectId: 'proj_b105',
+      projectCode: 'B1-B105',
+      projectYear: 2027,
+      projectStore: 'HN',
+      name: idx >= 38 ? `Phase Task ${(idx - 38) + 1}` : `Phase Task ${idx + 1}`,
+      taskCodePhu: idx < 20 ? `B1-B105#${idx + 1}` : undefined,
+      orderIndex: idx,
+      parentTaskId: idx >= 38 ? 't_b105_1' : undefined,
+      start: '2026-06-15T22:00',
+      finish: '2027-11-01T00:00',
+      updatedAt: '2026-10-20T10:00:00.000Z'
+    } as any));
+
+    const { dedupedTasks, duplicateCount } = deduplicateTasksInMemory(tasks48, [b105Project]);
+    expect(duplicateCount).toBe(0);
+    expect(dedupedTasks.length).toBe(48);
+
+    const rolledSummaries = rollupTaskSummaries(tasks48.map(t => ({ ...t })));
+    expect(rolledSummaries.length).toBe(48);
+  });
 });
 
-
-================================================================================
 FILE: src/lib/taskDeduplicationService.ts
-================================================================================
 import { Task, Project } from '../types';
 import { doc, collection, getDocs } from 'firebase/firestore';
 import { writeBatch } from './firestoreWrites';
@@ -116760,7 +116838,313 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
         if (rawC) {
           taskByScopedCode.set(`${pKey}:::${rawC}`, t);
           if (rawC.includes('-')) {
-            taskByScopedCode.set(`${pKey}:::${rawC.replace(/-(\d+)$/, '#================================================================================
+            taskByScopedCode.set(`${pKey}:::${rawC.replace(/-(\d+)$/, '#$1')}`, t);
+          }
+          const m = rawC.match(/#(\d+)$/) || rawC.match(/-(\d+)$/) || rawC.match(/^(\d+)$/);
+          if (m) {
+            taskByScopedCode.set(`${pKey}:::#${m[1]}`, t);
+            taskByScopedCode.set(`${pKey}:::${m[1]}`, t);
+          }
+        }
+      }
+      if (t.orderIndex !== undefined && t.orderIndex !== null && !Number.isNaN(Number(t.orderIndex))) {
+        const ordNum = Number(t.orderIndex) + 1;
+        if (!taskByScopedCode.has(`${pKey}:::#${ordNum}`)) taskByScopedCode.set(`${pKey}:::#${ordNum}`, t);
+        if (!taskByScopedCode.has(`${pKey}:::${ordNum}`)) taskByScopedCode.set(`${pKey}:::${ordNum}`, t);
+      }
+    }
+    if (t.updatedAt) {
+      const parsed = Date.parse(t.updatedAt);
+      updatedTimeCache.set(t, Number.isNaN(parsed) ? 0 : parsed);
+    }
+  }
+
+  // Identify valid parent references and active parent tasks in O(N)
+  const validParentByTask = new WeakMap<Task, Task>();
+  const activeParentIdsLower = new Set<string>();
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (!t || t.isDeleted) continue;
+    const rawPar = t.parentTaskId || (t as any).parentId;
+    if (!rawPar) continue;
+    const parLower = String(rawPar).trim().toLowerCase();
+    if (!parLower) continue;
+    const pKey = projKeyCache.get(t) || '';
+    let matchedPar = taskByIdLower.get(parLower);
+    if (matchedPar && pKey && projKeyCache.get(matchedPar) && projKeyCache.get(matchedPar) !== pKey) {
+      matchedPar = undefined;
+    }
+    if (!matchedPar && pKey) {
+      matchedPar =
+        taskByScopedCode.get(`${pKey}:::${parLower}`) ||
+        taskByScopedCode.get(`${pKey}:::${parLower.replace(/-(\d+)$/, '#$1')}`);
+      if (!matchedPar) {
+        const m = parLower.match(/#\s*(\d+)$/) || parLower.match(/^(\d+)$/);
+        if (m) {
+          matchedPar = taskByScopedCode.get(`${pKey}:::#${m[1]}`) || taskByScopedCode.get(`${pKey}:::${m[1]}`);
+        }
+      }
+    }
+    if (matchedPar && matchedPar.id && String(matchedPar.id).trim().toLowerCase() !== String(t.id || '').trim().toLowerCase()) {
+      validParentByTask.set(t, matchedPar);
+      activeParentIdsLower.add(String(matchedPar.id).trim().toLowerCase());
+    }
+  }
+
+  // Sort tasks so parents are deduplicated before subtasks, and subtasks with valid parents win over orphaned duplicates
+  const sorted = [...tasks].sort((a, b) => {
+    if (a.isDeleted && !b.isDeleted) return 1;
+    if (!a.isDeleted && b.isDeleted) return -1;
+    const aVirt = Boolean((a as any)._isVirtualSummary);
+    const bVirt = Boolean((b as any)._isVirtualSummary);
+    if (aVirt !== bVirt) return aVirt ? 1 : -1;
+    const aIdL = String(a.id || '').trim().toLowerCase();
+    const bIdL = String(b.id || '').trim().toLowerCase();
+    const aIsParent = activeParentIdsLower.has(aIdL);
+    const bIsParent = activeParentIdsLower.has(bIdL);
+    if (aIsParent !== bIsParent) return aIsParent ? -1 : 1;
+    const aHasValidParent = validParentByTask.has(a);
+    const bHasValidParent = validParentByTask.has(b);
+    if (aHasValidParent !== bHasValidParent) return aHasValidParent ? -1 : 1;
+    const aComments = a.comments?.length || 0;
+    const bComments = b.comments?.length || 0;
+    if (aComments !== bComments) return bComments - aComments;
+    const aNotes = a.notes?.length || 0;
+    const bNotes = b.notes?.length || 0;
+    if (aNotes !== bNotes) return bNotes - aNotes;
+    if (a.delegation && !b.delegation) return -1;
+    if (!a.delegation && b.delegation) return 1;
+    if (a.predecessor && !b.predecessor) return -1;
+    if (!a.predecessor && b.predecessor) return 1;
+    if (a.party && !b.party) return -1;
+    if (!a.party && b.party) return 1;
+    const aTime = updatedTimeCache.get(a) || 0;
+    const bTime = updatedTimeCache.get(b) || 0;
+    if (bTime !== aTime) return bTime - aTime;
+    return String(a.id).localeCompare(String(b.id));
+  });
+
+  sorted.forEach(task => {
+    if (task.isDeleted) return;
+
+    if ((!task.name || !String(task.name).trim()) && (!task.start || !String(task.start).trim()) && (!task.finish || !String(task.finish).trim())) {
+      duplicateCount++;
+      if (task.id) removedTaskIds.push(task.id);
+      return;
+    }
+
+    const taskIdStr = String(task.id || '').trim();
+    if (!taskIdStr) {
+      duplicateCount++;
+      return;
+    }
+
+    if (seenMap.has(taskIdStr)) {
+      duplicateCount++;
+      removedTaskIds.push(task.id);
+      return;
+    }
+
+    const projKey = projKeyCache.get(task) || buildCanonicalProjectKey(task.projectCode, task.projectYear, task.projectStore, projects, projectLookupMap, task.projectId ? String(task.projectId).trim().toLowerCase() : '');
+    const cleanCodePhu = String(task.taskCodePhu || '').trim().toLowerCase().replace(/^\d+\s+/, '');
+    const exactName = normalizeTaskNameForComparison(task.name);
+    const startStr = String(task.start || '').trim();
+    const finishStr = String(task.finish || '').trim();
+
+    const validPar = validParentByTask.get(task);
+    const rawParLower = validPar?.id ? String(validPar.id).trim().toLowerCase() : '';
+    const resolvedParentLower = rawParLower ? (idRedirectMap.get(rawParLower) || rawParLower) : '';
+    const parentIdentity = resolvedParentLower
+      ? (taskNameByIdMap.get(resolvedParentLower) || taskNameByIdMap.get(rawParLower) || resolvedParentLower)
+      : 'root';
+
+    const taskUniqueSignature = `${projKey}__${cleanCodePhu || 'nocode'}__${exactName}__${startStr}__${finishStr}`;
+    const taskContentSignature = `${projKey}__parent:${parentIdentity}__${exactName}__${startStr}__${finishStr}`;
+    const taskNameDatesSignature = `${projKey}__namedates:${exactName}__${startStr}__${finishStr}`;
+
+    const matchedExistingId = (projKey && exactName)
+      ? ((cleanCodePhu ? seenNormMap.get(taskUniqueSignature) : undefined) ||
+         seenNormMap.get(taskContentSignature) ||
+         seenNormMap.get(taskNameDatesSignature))
+      : undefined;
+
+    const keepAsDistinctTask = () => {
+      seenMap.set(task.id, task);
+      if (projKey && exactName) {
+        if (cleanCodePhu) seenNormMap.set(taskUniqueSignature, task.id);
+        seenNormMap.set(taskContentSignature, task.id);
+        if (!seenNormMap.has(taskNameDatesSignature)) {
+          seenNormMap.set(taskNameDatesSignature, task.id);
+        }
+      }
+    };
+
+    if (matchedExistingId && seenMap.has(matchedExistingId)) {
+      const existing = seenMap.get(matchedExistingId)!;
+      if (task.projectId && existing.projectId && String(task.projectId) !== String(existing.projectId)) {
+        keepAsDistinctTask();
+        return;
+      }
+
+      const tYear = task.projectYear !== undefined && task.projectYear !== null ? String(task.projectYear).trim() : '';
+      const eYear = existing.projectYear !== undefined && existing.projectYear !== null ? String(existing.projectYear).trim() : '';
+      const tStore = task.projectStore ? String(task.projectStore).trim().toUpperCase() : '';
+      const eStore = existing.projectStore ? String(existing.projectStore).trim().toUpperCase() : '';
+      if ((tYear && eYear && tYear !== eYear) || (tStore && eStore && tStore !== eStore)) {
+        keepAsDistinctTask();
+        return;
+      }
+
+      const existingIdLower = String(existing.id || '').trim().toLowerCase();
+      const taskIdLower = taskIdStr.toLowerCase();
+      const existingCleanCodePhu = String(existing.taskCodePhu || '').trim().toLowerCase().replace(/^\d+\s+/, '');
+
+      // Never merge two tasks that have distinct non-empty taskCodePhu (e.g. B1-B105#10 vs B1-B105#25)
+      if (cleanCodePhu && existingCleanCodePhu && cleanCodePhu !== existingCleanCodePhu) {
+        keepAsDistinctTask();
+        return;
+      }
+
+      // Never merge two tasks that have distinct real Firestore IDs when one is a virtual summary or they have different orderIndex
+      const hasDistinctRealIds =
+        Boolean(taskIdLower && !taskIdLower.startsWith('ts_')) &&
+        Boolean(existingIdLower && !existingIdLower.startsWith('ts_')) &&
+        taskIdLower !== existingIdLower;
+      const isEitherVirtual = Boolean((task as any)._isVirtualSummary || (existing as any)._isVirtualSummary);
+      if (hasDistinctRealIds && isEitherVirtual) {
+        keepAsDistinctTask();
+        return;
+      }
+      if (
+        hasDistinctRealIds &&
+        task.orderIndex !== undefined &&
+        task.orderIndex !== null &&
+        existing.orderIndex !== undefined &&
+        existing.orderIndex !== null &&
+        Number(task.orderIndex) !== Number(existing.orderIndex) &&
+        (!cleanCodePhu || !existingCleanCodePhu || cleanCodePhu !== existingCleanCodePhu)
+      ) {
+        keepAsDistinctTask();
+        return;
+      }
+
+      const existingValidPar = validParentByTask.get(existing);
+      const eRawParLower = existingValidPar?.id ? String(existingValidPar.id).trim().toLowerCase() : '';
+      const eResolvedParLower = eRawParLower ? (idRedirectMap.get(eRawParLower) || eRawParLower) : '';
+
+      // Never merge a child task into its own parent, or tasks under different parent hierarchy nodes, or active parents
+      if (
+        resolvedParentLower === existingIdLower ||
+        eResolvedParLower === taskIdLower ||
+        resolvedParentLower !== eResolvedParLower ||
+        activeParentIdsLower.has(taskIdLower) ||
+        activeParentIdsLower.has(existingIdLower)
+      ) {
+        keepAsDistinctTask();
+        return;
+      }
+
+      // Duplicate task found!
+      duplicateCount++;
+      removedTaskIds.push(task.id);
+      idRedirectMap.set(taskIdLower, existingIdLower);
+      idRedirectMap.set(taskIdStr, String(existing.id).trim());
+
+      if ((!existing.comments || existing.comments.length === 0) && task.comments && task.comments.length > 0) {
+        existing.comments = task.comments;
+      }
+      if ((!existing.notes || existing.notes.length === 0) && task.notes && task.notes.length > 0) {
+        existing.notes = task.notes;
+      }
+      if (!existing.party && task.party) existing.party = task.party;
+      if (!existing.predecessor && task.predecessor) existing.predecessor = task.predecessor;
+      if (!existing.delegation && task.delegation) existing.delegation = task.delegation;
+      if (!existing.taskCodePhu && task.taskCodePhu) existing.taskCodePhu = task.taskCodePhu;
+      if (!existingValidPar && validPar && validPar.id) {
+        existing.parentTaskId = validPar.id;
+        validParentByTask.set(existing, validPar);
+      }
+    } else {
+      keepAsDistinctTask();
+    }
+  });
+
+  const dedupedTasks = Array.from(seenMap.values());
+  for (let i = 0; i < dedupedTasks.length; i++) {
+    const t = dedupedTasks[i];
+    const validPar = validParentByTask.get(t);
+    if (validPar && validPar.id) {
+      const redirected = idRedirectMap.get(String(validPar.id).trim()) || String(validPar.id).trim();
+      if (t.parentTaskId !== redirected) dedupedTasks[i] = { ...t, parentTaskId: redirected };
+    } else if (t.parentTaskId) {
+      const redirected = idRedirectMap.get(String(t.parentTaskId).trim());
+      if (redirected && redirected !== t.parentTaskId) dedupedTasks[i] = { ...t, parentTaskId: redirected };
+    }
+  }
+
+  const result = { dedupedTasks, duplicateCount, removedTaskIds };
+  _dedupWeakCache.set(tasks, result);
+  _dedupWeakCache.set(dedupedTasks, { dedupedTasks, duplicateCount: 0, removedTaskIds: [] });
+  return result;
+}
+
+let _lastDedupInputTasksRef: Task[] | null = null;
+let _lastDedupInputProjectsRef: Project[] | null = null;
+let _cachedDedupTasksResult: Task[] = [];
+
+export function deduplicateTasks(tasks: Task[], projects: Project[] = EMPTY_PROJECTS): Task[] {
+  if (!tasks || tasks.length === 0) return [];
+  if (tasks.length === 1) return tasks;
+  const normalizedProjects = projects && projects.length > 0 ? projects : EMPTY_PROJECTS;
+  if (_lastDedupInputTasksRef === tasks && _lastDedupInputProjectsRef === normalizedProjects && _lastDedupInputTasksRef !== null) {
+    return _cachedDedupTasksResult;
+  }
+  _lastDedupInputTasksRef = tasks;
+  _lastDedupInputProjectsRef = normalizedProjects;
+  _cachedDedupTasksResult = deduplicateTasksInMemory(tasks, normalizedProjects).dedupedTasks;
+  return _cachedDedupTasksResult;
+}
+
+/**
+ * Scans Firestore tasks collection and removes duplicate tasks in projects.
+ */
+export async function scanAndRemoveDuplicateTasksOnFirestore(projects: Project[] = []): Promise<{
+  removedCount: number;
+  mergedCount: number;
+}> {
+  try {
+    const tasksCol = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks');
+    const snap = await getDocs(tasksCol);
+    if (snap.empty) return { removedCount: 0, mergedCount: 0 };
+
+    const allTasks: Task[] = [];
+    snap.docs.forEach(d => {
+      allTasks.push({ id: d.id, ...d.data() } as Task);
+    });
+
+    const { duplicateCount, removedTaskIds } = deduplicateTasksInMemory(allTasks, projects);
+    if (duplicateCount === 0 || removedTaskIds.length === 0) {
+      return { removedCount: 0, mergedCount: 0 };
+    }
+
+    const BATCH_LIMIT = 400;
+    for (let i = 0; i < removedTaskIds.length; i += BATCH_LIMIT) {
+      const chunk = removedTaskIds.slice(i, i + BATCH_LIMIT);
+      const batch = writeBatch(db);
+      chunk.forEach(id => {
+        const ref = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id);
+        batch.delete(ref);
+      });
+      await batch.commit();
+    }
+
+    return { removedCount: removedTaskIds.length, mergedCount: duplicateCount };
+  } catch (e) {
+    console.error('Failed to clean duplicate tasks on Firestore:', e);
+    return { removedCount: 0, mergedCount: 0 };
+  }
+}
+
 FILE: src/lib/taskDeduplicationService.ts
 ================================================================================
 ')}`, t);
@@ -153971,7 +154355,6 @@ export { rollupTaskSummaries } from './taskRollupHelpers';
 
 ================================================================================
 FILE: src/lib/taskRollupHelpers.ts
-================================================================================
 import { Task } from '../types';
 import { normalizeDashes } from './utils';
 
@@ -154128,19 +154511,32 @@ export function deduplicateTaskSummaries(summaries: any[]): any[] {
       const ePar = validParentByItem.get(existing);
       const sParId = sPar?.id ? (idRedirect.get(String(sPar.id).trim().toLowerCase()) || String(sPar.id).trim().toLowerCase()) : '';
       const eParId = ePar?.id ? (idRedirect.get(String(ePar.id).trim().toLowerCase()) || String(ePar.id).trim().toLowerCase()) : '';
-      const sParName = sPar?.name ? String(sPar.name).trim().toLowerCase().replace(/\s+/g, ' ') : '';
-      const eParName = ePar?.name ? String(ePar.name).trim().toLowerCase().replace(/\s+/g, ' ') : '';
       const existingIdLower = existing.id ? String(existing.id).trim().toLowerCase() : '';
-
+      const sHasRealId = Boolean(sIdLower && !sIdLower.startsWith('ts_'));
+      const eHasRealId = Boolean(existingIdLower && !existingIdLower.startsWith('ts_'));
+      const sCode = s.taskCodePhu ? normalizeDashes(String(s.taskCodePhu)).trim().toLowerCase() : '';
+      const eCode = existing.taskCodePhu ? normalizeDashes(String(existing.taskCodePhu)).trim().toLowerCase() : '';
+      const hasDistinctRealIds = sHasRealId && eHasRealId && sIdLower !== existingIdLower;
+      const hasConflictingCode = Boolean(sCode && eCode && sCode !== eCode);
+      const hasConflictingOrder =
+        s.orderIndex !== undefined &&
+        existing.orderIndex !== undefined &&
+        Number(s.orderIndex) !== Number(existing.orderIndex) &&
+        (!sCode || !eCode || sCode !== eCode);
       const isChildOfExisting =
         (sParId && existingIdLower && sParId === existingIdLower) ||
         (eParId && sIdLower && eParId === sIdLower);
-      const hasDistinctValidParents =
-        Boolean(sPar && ePar) &&
-        sParId !== eParId &&
-        (!sParName || !eParName || sParName !== eParName);
+      const hasDifferentParent = sParId !== eParId;
 
-      if (!isChildOfExisting && !hasDistinctValidParents && !activeParents.has(s)) {
+      if (
+        !hasDistinctRealIds &&
+        !hasConflictingCode &&
+        !hasConflictingOrder &&
+        !isChildOfExisting &&
+        !hasDifferentParent &&
+        !activeParents.has(s) &&
+        !activeParents.has(existing)
+      ) {
         if (sIdLower && existingIdLower) idRedirect.set(sIdLower, existingIdLower);
         if (!existing.parentTaskId && s.parentTaskId && sPar) existing.parentTaskId = s.parentTaskId;
         if (!existing.taskCodePhu && s.taskCodePhu) existing.taskCodePhu = s.taskCodePhu;
@@ -154362,7 +154758,6 @@ export function rollupTaskSummaries(summaries: any[]): any[] {
   return result;
 }
 
-================================================================================
 FILE: src/components/DetailTabParts/useDetailFlatRows.ts
 ================================================================================
 import React, { useMemo } from 'react';

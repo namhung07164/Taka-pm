@@ -1,8 +1,8 @@
 import { Project, Task, DelegationGroup } from '../../types';
 import { localDb } from '../localDb';
-import { getTasksForProject, calculateProjectComputedDates } from '../projectDatesService';
+import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../projectDatesService';
 import { rollupTaskSummaries } from '../taskRollupHelpers';
-import { markTasksDeleted } from '../taskDeletedTracker';
+import { unmarkProjectTasksHydrated } from '../utils';
 import { runBackgroundDexieProjectTaskReconciliation } from '../../hooks/useFirebaseDataParts/projectsHydrationHelpers';
 
 export {
@@ -115,15 +115,23 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
     const ut = updatedTasks[i];
     if (ut?.id) localProjectTaskIdsLower.add(String(ut.id).trim().toLowerCase());
   }
+  let hasMissingInMemory = false;
   const unmatchedSummaryNameStarts = new Set<string>();
   rawTaskSummaries.forEach((s: any) => {
-    const sIdLower = String(s?.id || '').trim().toLowerCase();
+    const sId = String(s?.id || '').trim();
+    const sIdLower = sId.toLowerCase();
     if (!sIdLower || !localProjectTaskIdsLower.has(sIdLower)) {
+      if (sId && !sId.startsWith('ts_')) {
+        hasMissingInMemory = true;
+      }
       const sName = String(s?.name || '').trim().toLowerCase();
       const sStart = String(s?.start || '').trim();
       if (sName) unmatchedSummaryNameStarts.add(`${sName}|${sStart}`);
     }
   });
+  if (hasMissingInMemory) {
+    unmarkProjectTasksHydrated(pIdStr);
+  }
 
   const nextTasks: Task[] = [];
   for (let i = 0; i < updatedTasks.length; i++) {
@@ -212,19 +220,12 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
       nextTasks.push(t);
       continue;
     }
-    zombieIds.push(t.id);
+    // Keep task in memory while runBackgroundDexieProjectTaskReconciliation verifies against Firestore taka_tasks
+    nextTasks.push(t);
   }
 
   if (patchedTasksForDexie.length > 0) {
     localDb.tasks.bulkPut(patchedTasksForDexie).catch(() => {});
-  }
-
-  if (zombieIds.length > 0) {
-    markTasksDeleted(zombieIds, pIdStr);
-    zombieIds.forEach((zId) => {
-      localDb.tasks.delete(zId).catch(() => {});
-    });
-    return { nextTasks, tasksChanged: true };
   }
 
   return { nextTasks: anyTaskPatched ? nextTasks : updatedTasks, tasksChanged: anyTaskPatched };
@@ -301,7 +302,9 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
     const currentSummaries = Array.isArray(p.taskSummaries) ? [...p.taskSummaries] : [];
     const sIdx = currentSummaries.findIndex((s: any) => {
       const sId = String(s?.id || '').trim().toLowerCase();
-      if (sId && !sId.startsWith('ts_') && sId === docIdLower) return true;
+      if (sId && !sId.startsWith('ts_')) {
+        return sId === docIdLower;
+      }
       const sCode = String(s?.taskCodePhu || '').trim().toLowerCase();
       if (sCode && mCodeLower && sCode === mCodeLower) return true;
       return (
@@ -315,7 +318,6 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
     const effName = mergedTask.name ?? existingSummary?.name;
     const effStart = mergedTask.start ?? existingSummary?.start;
     const effFinish = mergedTask.finish ?? existingSummary?.finish;
-
     if (!effName || !effStart || !effFinish) return;
 
     const summaryItem: any = {
@@ -324,9 +326,7 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
       name: effName,
       start: effStart,
       finish: effFinish,
-      orderIndex:
-        mergedTask.orderIndex ??
-        (existingSummary ? existingSummary.orderIndex : currentSummaries.length),
+      orderIndex: mergedTask.orderIndex ?? (existingSummary ? existingSummary.orderIndex : currentSummaries.length),
       ...(mergedTask.baselineStart ? { baselineStart: mergedTask.baselineStart } : {}),
       ...(mergedTask.baselineFinish ? { baselineFinish: mergedTask.baselineFinish } : {}),
       ...(mergedTask.approval !== undefined ? { approval: mergedTask.approval } : {}),
@@ -340,8 +340,7 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
       ...(mergedTask.predecessorTaskIds !== undefined ? { predecessorTaskIds: mergedTask.predecessorTaskIds } : {}),
     };
     const explicitParentUnset =
-      (mergedTask as any).parentTaskId === null ||
-      ('parentTaskId' in mergedTask && !mergedTask.parentTaskId);
+      (mergedTask as any).parentTaskId === null || ('parentTaskId' in mergedTask && !mergedTask.parentTaskId);
     const effectiveParentId = mergedTask.parentTaskId
       ? mergedTask.parentTaskId
       : explicitParentUnset
@@ -354,26 +353,13 @@ export function upsertTaskSummaryIntoMatchingProjects(params: {
       delete summaryItem.parentId;
     }
 
-    if (sIdx !== -1) {
-      currentSummaries[sIdx] = summaryItem;
+    if (sIdx !== -1 || action === 'create' || action === 'update') {
+      if (sIdx !== -1) currentSummaries[sIdx] = summaryItem;
+      else currentSummaries.push(summaryItem);
       const rolledSummaries = rollupTaskSummaries(currentSummaries);
       anyProjectChanged = true;
       if (p.id && touchedProjectIds) touchedProjectIds.add(String(p.id));
-      updatedProjects[pIdx] = {
-        ...p,
-        taskSummaries: rolledSummaries,
-        taskCount: rolledSummaries.length,
-      };
-    } else if (action === 'create' || action === 'update') {
-      currentSummaries.push(summaryItem);
-      const rolledSummaries = rollupTaskSummaries(currentSummaries);
-      anyProjectChanged = true;
-      if (p.id && touchedProjectIds) touchedProjectIds.add(String(p.id));
-      updatedProjects[pIdx] = {
-        ...p,
-        taskSummaries: rolledSummaries,
-        taskCount: rolledSummaries.length,
-      };
+      updatedProjects[pIdx] = { ...p, taskSummaries: rolledSummaries, taskCount: rolledSummaries.length };
     }
   });
 
@@ -389,16 +375,11 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
   delegationGroups: DelegationGroup[];
   touchedProjectIds: Set<string>;
   touchedProjectCodes: Set<string>;
+  syncRecoveredSummariesToServer?: boolean;
 }): { nextProjects: Project[]; touchedProjectsToPersist: Project[] } {
-  const {
-    updatedProjects,
-    updatedTasks,
-    delegationGroups,
-    touchedProjectIds,
-    touchedProjectCodes,
-  } = params;
-
+  const { updatedProjects, updatedTasks, delegationGroups, touchedProjectIds, touchedProjectCodes, syncRecoveredSummariesToServer } = params;
   const touchedProjectsToPersist: Project[] = [];
+
   const nextProjects = updatedProjects.map((p) => {
     const codeParts = `${p.code || ''},${(p as any).linkCodes || ''}`
       .toLowerCase()
@@ -422,27 +403,29 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
 
     const realProjTasks = getTasksForProject(p, updatedTasks, { realTasksOnly: true });
     const existingSummaries = Array.isArray(p.taskSummaries) ? p.taskSummaries : [];
+    const realIdSet = new Set(realProjTasks.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean));
+    const hasUnloadedRealSummary = existingSummaries.some((s: any) => {
+      const sId = String(s?.id || '').trim().toLowerCase();
+      return Boolean(sId && !sId.startsWith('ts_') && !realIdSet.has(sId));
+    });
 
     let sourceTasksForCalc: Task[];
-    if (realProjTasks.length > 0 && realProjTasks.length >= existingSummaries.length) {
+    if (realProjTasks.length > 0 && !hasUnloadedRealSummary && realProjTasks.length >= existingSummaries.length) {
       sourceTasksForCalc = realProjTasks;
     } else {
-      const realIdSet = new Set(
-        realProjTasks.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean)
-      );
-      const realCodeSet = new Set(
-        realProjTasks.map((t) => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean)
-      );
+      const realCodeSet = new Set(realProjTasks.map((t) => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean));
       const realNameStartSet = new Set(
         realProjTasks.map((t) => `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`)
       );
       const summaryTasks = existingSummaries
         .filter((s: any) => {
           const sId = String(s?.id || '').trim().toLowerCase();
+          if (sId && !sId.startsWith('ts_')) {
+            return !realIdSet.has(sId);
+          }
           const sCode = String(s?.taskCodePhu || '').trim().toLowerCase();
           const sName = String(s?.name || '').trim().toLowerCase();
           const sStart = String(s?.start || '').trim();
-          if (sId && !sId.startsWith('ts_') && realIdSet.has(sId)) return false;
           if (sCode && realCodeSet.has(sCode)) return false;
           if (sName && realNameStartSet.has(`${sName}|${sStart}`)) return false;
           return true;
@@ -480,12 +463,17 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
     const nextProj: Project = {
       ...p,
       ...computedDates,
-      taskCount:
-        computedDates.taskCount !== undefined ? computedDates.taskCount : existingSummaries.length,
-      taskSummaries:
-        computedDates.taskSummaries !== undefined ? computedDates.taskSummaries : existingSummaries,
+      taskCount: computedDates.taskCount !== undefined ? computedDates.taskCount : existingSummaries.length,
+      taskSummaries: computedDates.taskSummaries !== undefined ? computedDates.taskSummaries : existingSummaries,
     };
     touchedProjectsToPersist.push(nextProj);
+    if (
+      syncRecoveredSummariesToServer &&
+      p.id &&
+      (nextProj.taskSummaries?.length || 0) > existingSummaries.length
+    ) {
+      syncProjectDatesToFirestore(String(p.id), computedDates).catch(() => {});
+    }
     return nextProj;
   });
 

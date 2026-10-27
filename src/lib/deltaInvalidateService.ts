@@ -85,8 +85,9 @@ function queueDeferredInvalidation(item: TakaDeltaItem): void {
 function isRelevant(item: TakaDeltaItem, nowMs: number): boolean {
   if (!item || !item.docId || !item.collectionName) return false;
   const key = `${item.collectionName}:${item.docId}`;
+  const forceResolve = Boolean((item as any).forceResolve);
   const lastResolved = recentlyResolvedAt.get(key) || 0;
-  if (lastResolved > 0 && nowMs - lastResolved < RECENT_RESOLVE_DEDUP_MS) {
+  if (!forceResolve && lastResolved > 0 && nowMs - lastResolved < RECENT_RESOLVE_DEDUP_MS) {
     return false;
   }
 
@@ -95,28 +96,28 @@ function isRelevant(item: TakaDeltaItem, nowMs: number): boolean {
 
   if (item.collectionName === 'taka_costs') {
     const existing = store.costs?.find((c) => c.id === item.docId);
-    if (!store.isCostsRequested && !existing) {
+    if (!store.isCostsRequested && !existing && !forceResolve) {
       queueDeferredInvalidation(item);
       return false;
     }
-    if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
+    if (!forceResolve && existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_delegations') {
     const existing = store.delegationGroups?.find((d) => d.id === item.docId);
-    if (!store.isDelegationsRequested && !existing) {
+    if (!store.isDelegationsRequested && !existing && !forceResolve) {
       queueDeferredInvalidation(item);
       return false;
     }
-    if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
+    if (!forceResolve && existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_tasks') {
     const existing = store.tasks?.find((t) => t.id === item.docId);
-    if (!store.isTasksRequested && !existing) {
+    if (!store.isTasksRequested && !existing && !forceResolve) {
       queueDeferredInvalidation(item);
       return false;
     }
-    if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
+    if (!forceResolve && existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_projects') {
     const existing = store.projects?.find((p) => p.id === item.docId);
-    if (existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
+    if (!forceResolve && existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   }
 
   return true;

@@ -1,6 +1,6 @@
 import { localDb } from './localDb';
 
-const PREFIX = 'loaded:';
+const PREFIX = 'loaded_v2:';
 // Default warm window: 24 hours. Opening or resuming the app within 24h skips full-collection re-reads
 // and relies on Dexie Local-First + taka_deltas real-time stream (7-day retention).
 export const DEFAULT_MARKER_TTL_MS = 24 * 60 * 60 * 1000;
@@ -49,8 +49,8 @@ export function hasMarker(set: Set<string>, kind: MarkerKind, id: string | numbe
 }
 
 /**
- * Checks if a collection/year/project marker exists AND was verified within `maxAgeMs` (default 6 hours).
- * Prevents full-collection Firestore re-reads when reopening the app after 30m - 1h.
+ * Checks if a collection/year/project marker exists AND was verified within `maxAgeMs` (default 24 hours).
+ * Prevents full-collection Firestore re-reads when reopening the app within the warm window.
  */
 export function hasFreshMarker(
   set: Set<string>,
@@ -73,6 +73,15 @@ export async function markLoaded(kind: MarkerKind, id: string | number): Promise
   timestampCache.set(key, now);
   try {
     await localDb.syncMeta.put({ key, value: String(now), updatedAt: now });
+  } catch {}
+}
+
+export async function unmarkLoaded(kind: MarkerKind, id: string | number): Promise<void> {
+  const key = markerKey(kind, id);
+  if (cache) cache.delete(key);
+  timestampCache.delete(key);
+  try {
+    await localDb.syncMeta.delete(key);
   } catch {}
 }
 

@@ -208,12 +208,19 @@ export async function runSummaryAudit(onProgress?: (msg: string) => void): Promi
  */
 export async function repairServerSummaries(
   report: AuditReport,
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  targetProjectIds?: string[]
 ): Promise<{ fixed: number; skippedEmpty: number; backfilledTasks?: number }> {
   if (Date.now() - report.generatedAt > 10 * 60 * 1000) {
     throw new Error('Báo cáo đã cũ hơn 10 phút. Hãy chạy kiểm tra lại trước khi sửa.');
   }
-  const targets = report.issues.filter((r) => r.summaryIssue);
+  const targetSet =
+    targetProjectIds && targetProjectIds.length > 0
+      ? new Set(targetProjectIds.map(String))
+      : null;
+  const targets = report.issues.filter(
+    (r) => r.summaryIssue && (!targetSet || targetSet.has(String(r.projectId)))
+  );
   if (targets.length === 0) return { fixed: 0, skippedEmpty: 0, backfilledTasks: 0 };
 
   const { doc } = await import('firebase/firestore');
@@ -239,6 +246,7 @@ export async function repairServerSummaries(
     if (!serverProject) continue;
 
     const owned = [...(report.internal.ownerTasks.get(row.projectId) || [])];
+    owned.forEach((t) => localTasksToUpsert.push(t));
     const ownedById = new Map<string, Task>(owned.map((t) => [String(t.id), t]));
     const rawSummaries: any[] = Array.isArray(serverProject.taskSummaries)
       ? (serverProject.taskSummaries as any[])

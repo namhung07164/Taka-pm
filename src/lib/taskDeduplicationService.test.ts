@@ -5,6 +5,7 @@ import {
   normalizeStoreCode,
   normalizeTaskNameForComparison
 } from './taskDeduplicationService';
+import { rollupTaskSummaries } from './taskRollupHelpers';
 import { Task, Project } from '../types';
 
 describe('taskDeduplicationService', () => {
@@ -92,5 +93,38 @@ describe('taskDeduplicationService', () => {
     const keptGuideline = dedupedTasks.find(t => t.id === 't_second');
     expect(keptGuideline).toBeDefined();
     expect(keptGuideline?.comments?.length).toBe(1);
+  });
+
+  it('never collapses distinct project tasks or summaries (e.g. 48 tasks in B1-B105) that share name+dates but have distinct IDs, orderIndex, taskCodePhu, or parent hierarchy', () => {
+    const b105Project: Project = {
+      id: 'proj_b105',
+      code: 'B1-B105',
+      name: 'Nakajima Suisan',
+      year: 2027,
+      store: 'HN',
+      location: 'B1'
+    } as any;
+
+    const tasks48: Task[] = Array.from({ length: 48 }, (_, idx) => ({
+      id: `t_b105_${idx + 1}`,
+      projectId: 'proj_b105',
+      projectCode: 'B1-B105',
+      projectYear: 2027,
+      projectStore: 'HN',
+      name: idx >= 38 ? `Phase Task ${(idx - 38) + 1}` : `Phase Task ${idx + 1}`,
+      taskCodePhu: idx < 20 ? `B1-B105#${idx + 1}` : undefined,
+      orderIndex: idx,
+      parentTaskId: idx >= 38 ? 't_b105_1' : undefined,
+      start: '2026-06-15T22:00',
+      finish: '2027-11-01T00:00',
+      updatedAt: '2026-10-20T10:00:00.000Z'
+    } as any));
+
+    const { dedupedTasks, duplicateCount } = deduplicateTasksInMemory(tasks48, [b105Project]);
+    expect(duplicateCount).toBe(0);
+    expect(dedupedTasks.length).toBe(48);
+
+    const rolledSummaries = rollupTaskSummaries(tasks48.map(t => ({ ...t })));
+    expect(rolledSummaries.length).toBe(48);
   });
 });

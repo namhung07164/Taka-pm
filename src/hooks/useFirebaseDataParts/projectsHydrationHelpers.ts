@@ -1,8 +1,9 @@
 import { Project, Task, TakaDeltaItem } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { localDb, deleteLocalRecord, patchLocalRecord } from '../../lib/localDb';
-import { markTasksDeleted } from '../../lib/taskDeletedTracker';
+import { localDb, patchLocalRecord } from '../../lib/localDb';
 import { isTaskBelongsToProject } from '../../lib/taskStateService';
+import { unmarkProjectTasksHydrated } from '../../lib/utils';
+import { unmarkLoaded } from '../../lib/loadedMarkers';
 import { resolveInvalidations } from '../../lib/deltaInvalidateService';
 import { applyIncomingDeltas } from '../../lib/deltaSyncService';
 import { rollupTaskSummaries } from '../../lib/taskRollupHelpers';
@@ -10,27 +11,16 @@ import { rollupTaskSummaries } from '../../lib/taskRollupHelpers';
 // Chuyển updatedAt (ISO string / Firestore Timestamp / plain {seconds} / number) về ms
 export const tsOf = (v: any): number => {
   if (!v) return 0;
-  if (typeof v === 'string') {
-    const n = Date.parse(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.toMillis === 'function') {
-    const n = v.toMillis();
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.seconds === 'number') {
-    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
-  }
+  if (typeof v === 'string') { const n = Date.parse(v); return Number.isFinite(n) ? n : 0; }
+  if (typeof v?.toMillis === 'function') { const n = v.toMillis(); return Number.isFinite(n) ? n : 0; }
+  if (typeof v?.seconds === 'number') return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
-// Snapshot lấy từ cache cục bộ có thể cũ hơn dữ liệu đã nhận qua delta -> không cho ghi đè.
-// Chỉ áp dụng cho snapshot fromCache; snapshot từ server luôn được tin (tránh lệch đồng hồ)
 export const isStaleCacheDoc = (existing: any, incoming: any): boolean => {
   if (!existing) return false;
-  const e = tsOf(existing.updatedAt);
-  const i = tsOf(incoming?.updatedAt);
+  const e = tsOf(existing.updatedAt), i = tsOf(incoming?.updatedAt);
   return e > 0 && i > 0 && i < e;
 };
 
@@ -39,17 +29,10 @@ export interface ProjectTasksLookupIndex {
   byCodePart: Map<string, Task[]>;
 }
 
-/**
- * Pre-groups currentTasks by projectId and projectCode parts in O(T) before iterating docChanges,
- * reducing reconciliation from O(Delta_P * T) down to O(Delta_P + T).
- */
 export function buildProjectTasksLookupIndex(currentTasks: Task[]): ProjectTasksLookupIndex {
   const byProjectId = new Map<string, Task[]>();
   const byCodePart = new Map<string, Task[]>();
-
-  if (!Array.isArray(currentTasks) || currentTasks.length === 0) {
-    return { byProjectId, byCodePart };
-  }
+  if (!Array.isArray(currentTasks) || currentTasks.length === 0) return { byProjectId, byCodePart };
 
   for (let i = 0; i < currentTasks.length; i++) {
     const t = currentTasks[i];
@@ -58,39 +41,26 @@ export function buildProjectTasksLookupIndex(currentTasks: Task[]): ProjectTasks
       const pid = String(t.projectId).trim();
       if (pid) {
         let list = byProjectId.get(pid);
-        if (!list) {
-          list = [];
-          byProjectId.set(pid, list);
-        }
+        if (!list) { list = []; byProjectId.set(pid, list); }
         list.push(t);
       }
     }
     if (t.projectCode) {
       const rawCode = String(t.projectCode).trim().toLowerCase();
-      const parts = rawCode
-        .split(/[,;/]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
+      const parts = rawCode.split(/[,;/]+/).map((s) => s.trim()).filter(Boolean);
       const codes = parts.length > 0 ? parts : [rawCode];
       for (let j = 0; j < codes.length; j++) {
         const c = codes[j];
         if (!c) continue;
         let list = byCodePart.get(c);
-        if (!list) {
-          list = [];
-          byCodePart.set(c, list);
-        }
+        if (!list) { list = []; byCodePart.set(c, list); }
         list.push(t);
       }
     }
   }
-
   return { byProjectId, byCodePart };
 }
 
-/**
- * Retrieves local in-memory tasks belonging to `project` in O(K) using the pre-built lookup index.
- */
 export function getLocalProjectTasksFromIndex(
   project: Project,
   index: ProjectTasksLookupIndex
@@ -140,6 +110,7 @@ export function getLocalProjectTasksFromIndex(
 
 /**
  * Server-to-Device Task Summary Reconciliation for a single project docChange.
+ * Verifies missing/extra tasks via Firestore `resolveInvalidations` rather than blindly deleting valid tasks.
  */
 export function reconcileProjectSummaryWithLocalTasks(params: {
   id: string;
@@ -160,7 +131,7 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     tasksIndex,
     expandedSet,
     nowMs,
-    pendingDeletedTaskIds,
+    pendingInvalidatedTaskIds,
   } = params;
 
   if (!Array.isArray(data.taskSummaries)) return;
@@ -178,6 +149,7 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
 
   if (serverSummaryIds.size === 0 && !isZeroTaskServer) return;
 
+  const projYearStr = String(resolvedData.year || data.year || '');
   const serverSummaryNameStarts = new Set(
     authoritativeSummaries
       .map((s: any) => `${String(s?.name || '').trim().toLowerCase()}|${String(s?.start || '').trim()}`)
@@ -187,9 +159,13 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     existing.taskSummaries.forEach((oldS: any) => {
       const oldId = String(oldS?.id || '').trim();
       const oldNameStart = `${String(oldS?.name || '').trim().toLowerCase()}|${String(oldS?.start || '').trim()}`;
-      if (oldId && !serverSummaryIds.has(oldId.toLowerCase()) && !serverSummaryNameStarts.has(oldNameStart)) {
-        markTasksDeleted([oldId], id);
-        pendingDeletedTaskIds.add(oldId);
+      if (
+        oldId &&
+        !oldId.startsWith('ts_') &&
+        !serverSummaryIds.has(oldId.toLowerCase()) &&
+        !serverSummaryNameStarts.has(oldNameStart)
+      ) {
+        pendingInvalidatedTaskIds.set(oldId, projYearStr);
       }
     });
   }
@@ -201,15 +177,33 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     localProjTasksById.set(String(t.id).trim().toLowerCase(), t);
   });
 
+  const isProjectExpandedOrLoaded =
+    localProjTasksById.size > 0 ||
+    expandedSet.has(String(id)) ||
+    (Boolean(data.code) && expandedSet.has(String(data.code).trim()));
+
+  let hasMissingLocalTasks = false;
   const unmatchedSummaryNameStarts = new Set<string>();
   authoritativeSummaries.forEach((s: any) => {
-    const sIdLower = String(s?.id || '').trim().toLowerCase();
+    const sId = String(s?.id || '').trim();
+    const sIdLower = sId.toLowerCase();
     if (!sIdLower || !localProjTasksById.has(sIdLower)) {
+      if (sId && !sId.startsWith('ts_')) {
+        hasMissingLocalTasks = true;
+        if (isProjectExpandedOrLoaded) {
+          pendingInvalidatedTaskIds.set(sId, projYearStr);
+        }
+      }
       const sName = String(s?.name || '').trim().toLowerCase();
       const sStart = String(s?.start || '').trim();
       if (sName) unmatchedSummaryNameStarts.add(`${sName}|${sStart}`);
     }
   });
+
+  if (hasMissingLocalTasks) {
+    unmarkProjectTasksHydrated(id);
+    unmarkLoaded('tasks_proj', id).catch(() => {});
+  }
 
   localProjTasks.forEach((t) => {
     if (!t?.id || String(t.id).startsWith('ts_')) return;
@@ -222,27 +216,19 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
       }
       const updatedMs = tsOf(t.updatedAt);
       if (!updatedMs || nowMs - updatedMs > 60000) {
-        markTasksDeleted([t.id], id);
-        pendingDeletedTaskIds.add(t.id);
+        pendingInvalidatedTaskIds.set(t.id, projYearStr);
       }
     }
   });
-
-  const isProjectExpandedOrLoaded =
-    localProjTasksById.size > 0 ||
-    expandedSet.has(String(id)) ||
-    (Boolean(data.code) && expandedSet.has(String(data.code).trim()));
 
   if (serverSummaryIds.size > 0 && isProjectExpandedOrLoaded) {
     authoritativeSummaries.forEach((s: any) => {
       const sId = String(s?.id || '').trim();
       if (!sId || sId.startsWith('ts_')) return;
-      const sIdLower = sId.toLowerCase();
-      const localT = localProjTasksById.get(sIdLower);
+      const localT = localProjTasksById.get(sId.toLowerCase());
       if (localT) {
         const localUpdatedMs = tsOf(localT.updatedAt);
-        const isRecentlyEditedLocally = localUpdatedMs > 0 && nowMs - localUpdatedMs <= 60000;
-        if (!isRecentlyEditedLocally) {
+        if (!(localUpdatedMs > 0 && nowMs - localUpdatedMs <= 60000)) {
           const localParent = localT.parentTaskId || undefined;
           const localParentLower = localParent ? String(localParent).trim().toLowerCase() : '';
           const isModernSummary =
@@ -289,13 +275,14 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
 }
 
 /**
- * Background Dexie Task Reconciliation: purges zombie tasks and patches stale fields in localDb.tasks
- * according to authoritative server project.taskSummaries (0 Firestore reads).
+ * Background Dexie Task Reconciliation: reconciles localDb.tasks with server project.taskSummaries,
+ * fetching missing summary tasks and verifying candidate deletions against Firestore taka_tasks.
  */
 export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]): void {
   setTimeout(async () => {
     try {
       const nowBg = Date.now();
+      const itemsToVerify: TakaDeltaItem[] = [];
 
       for (const p of changed) {
         if (!p?.id || !Array.isArray(p.taskSummaries)) continue;
@@ -326,41 +313,54 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
             });
         }
         const [byId, byCode] = await Promise.all([
-          localDb.tasks
-            .where('projectId')
-            .equals(String(p.id))
-            .toArray()
-            .catch(() => []),
-          localDb.tasks
-            .where('projectCode')
-            .anyOf(keys)
-            .toArray()
-            .catch(() => []),
+          localDb.tasks.where('projectId').equals(String(p.id)).toArray().catch(() => []),
+          localDb.tasks.where('projectCode').anyOf(keys).toArray().catch(() => []),
         ]);
         const candidateMap = new Map<string, any>();
         byId.forEach((t) => {
-          if (t?.id) {
-            candidateMap.set(t.id, t);
-          }
+          if (t?.id) candidateMap.set(t.id, t);
         });
         byCode.forEach((t) => {
-          if (t?.id && isTaskBelongsToProject(t, p)) {
-            candidateMap.set(t.id, t);
-          }
+          if (t?.id && isTaskBelongsToProject(t, p)) candidateMap.set(t.id, t);
         });
 
         const candidateIdsLower = new Set(
           Array.from(candidateMap.keys()).map((k) => String(k).trim().toLowerCase())
         );
+        let missingInDexie = false;
         const unmatchedSummaryNameStarts = new Set<string>();
         summaries.forEach((s: any) => {
-          const sIdLower = String(s?.id || '').trim().toLowerCase();
+          const sId = String(s?.id || '').trim();
+          const sIdLower = sId.toLowerCase();
           if (!sIdLower || !candidateIdsLower.has(sIdLower)) {
+            if (sId && !sId.startsWith('ts_')) {
+              missingInDexie = true;
+              if (candidateMap.size > 0) {
+                itemsToVerify.push({
+                  docId: sId,
+                  collectionName: 'taka_tasks',
+                  action: 'update',
+                  data: {},
+                  isPatch: true,
+                  invalidate: true,
+                  year: String(p.year || ''),
+                  projectId: String(p.id),
+                  projectCode: p.code,
+                  projectStore: p.store,
+                  forceResolve: true,
+                } as any);
+              }
+            }
             const sName = String(s?.name || '').trim().toLowerCase();
             const sStart = String(s?.start || '').trim();
             if (sName) unmatchedSummaryNameStarts.add(`${sName}|${sStart}`);
           }
         });
+
+        if (missingInDexie) {
+          unmarkProjectTasksHydrated(p.id);
+          unmarkLoaded('tasks_proj', p.id).catch(() => {});
+        }
 
         for (const [tid, t] of candidateMap.entries()) {
           const tidLower = String(tid).trim().toLowerCase();
@@ -374,14 +374,19 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
               continue;
             }
             if (isZeroTask || allSummariesHaveIds) {
-              markTasksDeleted([tid], p.id);
-              await deleteLocalRecord('taka_tasks', tid);
-              const curTasks = useAppStore.getState().tasks || [];
-              if (curTasks.some((ct) => String(ct.id).trim().toLowerCase() === tidLower)) {
-                useAppStore
-                  .getState()
-                  .setTasks(curTasks.filter((ct) => String(ct.id).trim().toLowerCase() !== tidLower));
-              }
+              itemsToVerify.push({
+                docId: tid,
+                collectionName: 'taka_tasks',
+                action: 'update',
+                data: {},
+                isPatch: true,
+                invalidate: true,
+                year: String(p.year || t.projectYear || ''),
+                projectId: String(p.id),
+                projectCode: p.code || t.projectCode,
+                projectStore: p.store || t.projectStore,
+                forceResolve: true,
+              } as any);
             }
           } else {
             const s = summaryById.get(tidLower);
@@ -398,7 +403,7 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
                   ? s.parentTaskId
                   : isModernSummary
                     ? undefined
-                    : tParentLower && summaryIds.has(tParentLower)
+                    : tParentLower && summaryIds.has(localParentOrSelf(tParentLower))
                       ? tParent
                       : undefined;
               const needsPatch =
@@ -428,8 +433,19 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           }
         }
       }
+
+      if (itemsToVerify.length > 0) {
+        const resolved = await resolveInvalidations(itemsToVerify);
+        if (resolved.length > 0) {
+          applyIncomingDeltas(resolved);
+        }
+      }
     } catch {}
   }, 60);
+}
+
+function localParentOrSelf(pLower: string): string {
+  return pLower;
 }
 
 /**

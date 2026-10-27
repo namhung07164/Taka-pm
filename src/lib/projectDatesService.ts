@@ -156,16 +156,20 @@ export function calculateProjectComputedDates(
     Boolean((t.name && String(t.name).trim()) || (t.start && String(t.start).trim()) || (t.finish && String(t.finish).trim()) || t.taskCodePhu)
   );
   const realOnlyTasks = rawTasks.filter(t => !(t as any)._isVirtualSummary);
+  const realIdSet = new Set(realOnlyTasks.map(t => String(t.id || '').trim().toLowerCase()).filter(Boolean));
+  const hasMissingActiveSummaries = activeExistingSummaries.some((es: any) => {
+    const esId = String(es?.id || '').trim().toLowerCase();
+    return Boolean(esId && !esId.startsWith('ts_') && !realIdSet.has(esId));
+  });
   let filteredInputTasks: Task[];
 
   if (realOnlyTasks.length === 0) {
     filteredInputTasks = rawTasks;
-  } else if (isProjectTasksHydrated(pIdStr) || realOnlyTasks.length >= activeExistingSummaries.length) {
+  } else if (!hasMissingActiveSummaries && (isProjectTasksHydrated(pIdStr) || realOnlyTasks.length >= activeExistingSummaries.length)) {
     filteredInputTasks = realOnlyTasks;
   } else {
     // Partial real tasks in memory: merge with remaining activeExistingSummaries so unhydrated tasks are never dropped
     const mergedList: Task[] = [...realOnlyTasks];
-    const realIdSet = new Set(realOnlyTasks.map(t => String(t.id || '').trim().toLowerCase()).filter(Boolean));
     const realCodeSet = new Set(realOnlyTasks.map(t => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean));
     const realNameSet = new Set(realOnlyTasks.map(t => String(t.name || '').trim().toLowerCase()).filter(Boolean));
     const realNameStartSet = new Set(
@@ -174,12 +178,15 @@ export function calculateProjectComputedDates(
 
     activeExistingSummaries.forEach((ts: any, idx: number) => {
       const tsId = String(ts?.id || '').trim().toLowerCase();
-      const tsCode = String(ts?.taskCodePhu || '').trim().toLowerCase();
-      const tsName = String(ts?.name || '').trim().toLowerCase();
-      const tsStart = String(ts?.start || '').trim();
-      if (tsId && !tsId.startsWith('ts_') && realIdSet.has(tsId)) return;
-      if (tsCode && realCodeSet.has(tsCode)) return;
-      if (tsName && (realNameStartSet.has(`${tsName}|${tsStart}`) || (!tsId && !tsCode && realNameSet.has(tsName)))) return;
+      if (tsId && !tsId.startsWith('ts_')) {
+        if (realIdSet.has(tsId)) return;
+      } else {
+        const tsCode = String(ts?.taskCodePhu || '').trim().toLowerCase();
+        const tsName = String(ts?.name || '').trim().toLowerCase();
+        const tsStart = String(ts?.start || '').trim();
+        if (tsCode && realCodeSet.has(tsCode)) return;
+        if (tsName && (realNameStartSet.has(`${tsName}|${tsStart}`) || (!tsId && !tsCode && realNameSet.has(tsName)))) return;
+      }
 
       mergedList.push({
         id: ts.id || `ts_${project.id || project.code}_${project.store || 'HCM'}_${project.year || ''}_${idx}`,

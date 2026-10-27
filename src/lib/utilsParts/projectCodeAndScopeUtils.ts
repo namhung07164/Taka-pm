@@ -292,6 +292,12 @@ export function markProjectTasksHydrated(projectId?: string | number | null): vo
   }
 }
 
+export function unmarkProjectTasksHydrated(projectId?: string | number | null): void {
+  if (projectId !== undefined && projectId !== null && String(projectId).trim() !== '') {
+    _hydratedProjectIds.delete(String(projectId).trim());
+  }
+}
+
 export function isProjectTasksHydrated(projectId?: string | number | null): boolean {
   if (projectId === undefined || projectId === null) return false;
   return _hydratedProjectIds.has(String(projectId).trim());
