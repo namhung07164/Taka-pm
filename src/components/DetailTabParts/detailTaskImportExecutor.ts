@@ -7,6 +7,7 @@ import { getTasksForProject, calculateProjectComputedDates, matchProjectCode } f
 import { 
   calculateDatesFromPredecessorsAndDuration, 
   rollupParentTaskDates, 
+  prepareMissingDelegationsForTasks,
   batchSaveTasksToFirestore 
 } from '../../lib/taskImportService';
 import { healAllTasksPredecessors } from '../../lib/ganttUtils';
@@ -14,7 +15,7 @@ import { extractSubtaskIndex } from '../../lib/ganttUtilsParts/taskSortingAndCod
 import { findAffectedProjects } from '../../lib/taskStateService';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { resolveParentChildHierarchy } from './detailTaskImportHierarchy';
-import { syncAffectedProjectsSummaries } from './detailTaskImportProjectSync';
+import { buildAffectedProjectsSyncOps } from './detailTaskImportProjectSync';
 
 interface ExecuteImportTasksParams {
   rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
@@ -92,7 +93,6 @@ export async function executeImportTasks({
       ? getTasksForProject(targetProject, allInitialTasks)
       : allInitialTasks.filter(t => buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects) === prjKey);
 
-    // Compute maximum existing subtask code number and max orderIndex for this project
     let maxExistingSubtaskNum = 0;
     let maxExistingOrderIndex = -1;
 
@@ -142,7 +142,6 @@ export async function executeImportTasks({
       const exactProjectCode = String(t.projectCode || targetProject?.code || '').trim();
       const canonicalPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
 
-      // Determine taskCodePhu and orderIndex: respect explicit subtask number from CSV
       const rawCode = String(t.taskCodePhu || '').trim();
       const explicitNum = extractSubtaskIndex(rawCode);
       const hasExplicitSubtaskNumber = explicitNum !== null;
@@ -163,7 +162,6 @@ export async function executeImportTasks({
           ? Number(t.orderIndex)
           : nextAutoNumber - 1;
       } else {
-        // No code specified in CSV -> auto-continue after max existing task
         nextAutoNumber += 1;
         taskCodePhu = `${exactProjectCode}#${nextAutoNumber}`;
         taskOrderIndex = t.orderIndex !== undefined && t.orderIndex !== '' && !isNaN(Number(t.orderIndex))
@@ -179,7 +177,6 @@ export async function executeImportTasks({
 
       let existing: Task | undefined = undefined;
 
-      // Priority 1: Match within current import batch
       if (hasExplicitSubtaskNumber) {
         existing = processedImportTasksMap.get(codeKey);
       } else {
@@ -188,18 +185,14 @@ export async function executeImportTasks({
                    (normName ? processedImportTasksMap.get(normKey) : undefined);
       }
 
-      // Priority 2: Direct ID match if row contains ID
       if (!existing && t.id) {
         existing = existingTasksById.get(t.id);
       }
 
-      // Priority 3: When explicit subtask code was provided, ONLY match existing task with exact same code!
-      // NEVER match by name if code does not match!
       if (!existing && hasExplicitSubtaskNumber) {
         existing = existingTasksByCode.get(codeKey);
       }
 
-      // Priority 4: When NO explicit subtask code was provided, match by name
       if (!existing && !hasExplicitSubtaskNumber) {
         if (nameKey) existing = existingTasksByName.get(nameKey);
         if (!existing && normKey) existing = existingTasksByNorm.get(normKey);
@@ -308,7 +301,6 @@ export async function executeImportTasks({
             updatedAt: new Date().toISOString()
           };
 
-      // Tự động phân giải và gán projectId từ danh sách projects theo bộ 3 mã (code + store + year)
       if ((!finalTask.projectId || !finalTask.projectStore || finalTask.projectYear === undefined) && projects && projects.length > 0) {
         const pCode = String(finalTask.projectCode || '').trim().toLowerCase();
         const pStore = String(finalTask.projectStore || '').trim().toLowerCase();
@@ -350,7 +342,6 @@ export async function executeImportTasks({
         finalTask.durationManual = true;
       }
 
-      // Register immediately into lookup maps to prevent duplicate tasks within same import
       processedImportTasksMap.set(nameKey, finalTask);
       if (normKey) processedImportTasksMap.set(normKey, finalTask);
       if (codeKey) processedImportTasksMap.set(codeKey, finalTask);
@@ -371,7 +362,13 @@ export async function executeImportTasks({
   // 4. Resolve parent-child hierarchy across imported tasks and existing tasks
   resolveParentChildHierarchy(tasksToImport, allInitialTasks);
 
-  // 5. Calculate dates from predecessors and duration
+  // 5. Prepare missing delegations BEFORE rolling up parent tasks & project summaries
+  // so Desktop, Firestore, and all devices compute 100% identical runningStatus & progress
+  const commitNowIso = new Date().toISOString();
+  const activeUser = useAppStore.getState().currentUser || currentUser;
+  const precomputedDelegations = prepareMissingDelegationsForTasks(tasksToImport, activeUser, commitNowIso);
+
+  // 6. Calculate dates from predecessors and duration
   useAppStore.getState().optimisticUpdateTasks(tasksToImport);
 
   const allCurrentTasks = useAppStore.getState().tasks;
@@ -392,7 +389,6 @@ export async function executeImportTasks({
   const tasksToSaveIds = new Set<string>();
   calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
   updatedParents.forEach(p => tasksToSaveIds.add(p.id));
-  const commitNowIso = new Date().toISOString();
   const finalTasksToSave: Task[] = [];
   tasksToSaveIds.forEach(tid => {
     const tk = allTasksMap.get(tid);
@@ -405,13 +401,6 @@ export async function executeImportTasks({
 
   // Optimistic update (0ms UI)
   useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
-
-  // Persist tasks to LocalDB (Dexie) immediately
-  if (finalTasksToSave.length > 0) {
-    import('../../lib/localDb')
-      .then(({ bulkPersistTasks }) => bulkPersistTasks(finalTasksToSave))
-      .catch(() => {});
-  }
 
   // Compute & sync project summaries in memory BEFORE overwriting store.projects
   const finalFullTasksList = Array.from(allTasksMap.values());
@@ -433,7 +422,7 @@ export async function executeImportTasks({
   });
   useAppStore.getState().setProjects(updatedProjects);
 
-  // Persist affected projects to LocalDB (Dexie) immediately and mark tasks_proj as loaded
+  // Persist affected projects to LocalDB (Dexie) in background and mark tasks_proj as loaded
   if (touchedProjectsForPersistence.length > 0) {
     import('../../lib/localDb')
       .then(({ bulkPersistProjects }) => bulkPersistProjects(touchedProjectsForPersistence))
@@ -447,11 +436,19 @@ export async function executeImportTasks({
       .catch(() => {});
   }
 
-  // Save tasks FIRST, then project summaries to Firestore + Delta bus sequentially so other devices
-  // always receive the complete task set before the authoritative project summary seals the state.
-  const activeUser = useAppStore.getState().currentUser || currentUser;
-  await batchSaveTasksToFirestore(finalTasksToSave, activeUser);
-  await syncAffectedProjectsSummaries(affectedProjects, computedByProjectId, activeUser);
+  // Build authoritative project summary ops and commit tasks + delegations + project summaries
+  // in ONE unified Firestore batch + parallel coalesced delta broadcast
+  const { writeOps: projectWriteOps, projDeltaItems } = buildAffectedProjectsSyncOps(
+    affectedProjects,
+    computedByProjectId,
+    commitNowIso
+  );
+
+  await batchSaveTasksToFirestore(finalTasksToSave, activeUser, {
+    precomputedDelegations,
+    projectWriteOps,
+    projectDeltaItems: projDeltaItems,
+  });
 
   if (finalTasksToSave.length > 0) {
     undoManager.push({

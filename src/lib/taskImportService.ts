@@ -1,20 +1,17 @@
-import { Task, Project, DelegationGroup } from '../types';
+import { Task, Project, DelegationGroup, TakaDeltaItem } from '../types';
 import { 
   parsePredecessors, 
   buildTaskNoMap, 
   calculateTaskDatesFromPredecessors, 
   addDays 
 } from './ganttUtils';
-import { parseDateTime, formatToDatetimeLocal, generateId } from './utils';
+import { generateId } from './utils';
 import { calculateProjectComputedDates, syncProjectDatesToFirestore } from './projectDatesService';
-import { findAffectedProjects } from './taskStateService';
-import { doc } from 'firebase/firestore';
-import { db, APP_ID, writeBatch } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { recordBatchDeltas } from './deltaSyncService';
-import { markExplicitDelta } from './autoDeltaQueue';
 import { rollupParentTaskDatesAndStatus } from './taskRollupService';
 import { applyParentPredecessorsToTaskTree } from './parentTaskPredecessorService';
+import type { MassWriteOp } from './massBatchWriteEngine';
 
 /**
  * Normalizes a duration value (strips trailing 'd' or 'days', ensures valid number string).
@@ -143,7 +140,8 @@ export function rollupParentTaskDates(
   const { updatedTasks: tasksWithParentPreds, updatedParents: parentPredUpdates } =
     applyParentPredecessorsToTaskTree(allTasks, safeProjects);
 
-  const rolledUpList = rollupParentTaskDatesAndStatus(tasksWithParentPreds);
+  const delegationGroups = useAppStore.getState?.()?.delegationGroups || [];
+  const rolledUpList = rollupParentTaskDatesAndStatus(tasksWithParentPreds, delegationGroups);
   const taskMap = new Map<string, Task>();
   const updatedParents: Task[] = [];
   const parentPredMap = new Map<string, Task>();
@@ -178,97 +176,127 @@ export function rollupParentTaskDates(
 }
 
 /**
- * Saves tasks to LocalDB (Dexie) immediately and commits to Firestore in safe operation-counted chunks
- * (max 200 ops per batch) with Offline Queue fallback and multi-device upsert deltas.
+ * Prepares missing DelegationGroup records for imported tasks that have `delegation = true`
+ * without overwriting already-existing delegation groups in store/Firestore.
  */
-export async function batchSaveTasksToFirestore(
+export function prepareMissingDelegationsForTasks(
   tasksToSave: Task[],
-  currentUser?: { id?: string; username?: string }
-): Promise<void> {
-  if (!tasksToSave || tasksToSave.length === 0) return;
-
-  const now = new Date().toISOString();
-  const dateStr = now.substring(0, 10);
+  currentUser?: { id?: string; username?: string },
+  nowIso: string = new Date().toISOString()
+): { newDelegations: DelegationGroup[]; taskDelegationMap: Map<string, DelegationGroup> } {
+  const dateStr = nowIso.substring(0, 10);
   const activeUserId =
     currentUser?.id && currentUser.id !== 'guest'
       ? currentUser.id
       : currentUser?.username || 'system';
 
-  const generatedDelegations: DelegationGroup[] = [];
+  const existingDel = useAppStore.getState().delegationGroups || [];
+  const existingDelMap = new Map<string, DelegationGroup>(existingDel.map((d) => [d.id, d]));
+
+  const newDelegations: DelegationGroup[] = [];
   const taskDelegationMap = new Map<string, DelegationGroup>();
 
   tasksToSave.forEach((t) => {
-    if (t.delegation) {
-      const rawParty = t.party && t.party.trim() ? t.party.trim() : '';
-      const parsedParty =
-        rawParty
-          .split(/[,;/+]+/)
-          .map((s) => s.trim())
-          .filter(Boolean)[0] || rawParty;
-      if (parsedParty) {
-        const deterministicGroupId = `del_${t.id}`;
-        const delGroup: DelegationGroup = {
-          id: deterministicGroupId,
-          parentTaskId: t.id,
-          name: t.name || 'Delegated Task',
-          ...(t.projectId ? { projectId: t.projectId } : {}),
-          projectCode: t.projectCode,
-          projectStore: t.projectStore,
-          projectYear:
-            t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))
-              ? Number(t.projectYear)
-              : new Date().getFullYear(),
-          subTasks: [
-            {
-              id: generateId(),
-              name: '',
-              comments: '',
-              status: 'Assigned',
-              delegationStatus: 'Assigned',
-              priority: 'Mid',
-              party: parsedParty,
-              startAct: dateStr,
-              finishAct: dateStr,
-              updatedAt: now,
-            },
-          ],
-          updatedAt: now,
-          createdBy: activeUserId,
-        };
-        generatedDelegations.push(delGroup);
-        taskDelegationMap.set(t.id, delGroup);
-      }
+    if (!t.delegation) return;
+    const deterministicGroupId = `del_${t.id}`;
+    // Preserve existing delegation group if it already exists so subtask statuses are never reset
+    if (existingDelMap.has(deterministicGroupId)) {
+      return;
+    }
+    const rawParty = t.party && t.party.trim() ? t.party.trim() : '';
+    const parsedParty =
+      rawParty
+        .split(/[,;/+]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)[0] || rawParty;
+    if (parsedParty) {
+      const delGroup: DelegationGroup = {
+        id: deterministicGroupId,
+        parentTaskId: t.id,
+        name: t.name || 'Delegated Task',
+        ...(t.projectId ? { projectId: t.projectId } : {}),
+        projectCode: t.projectCode,
+        projectStore: t.projectStore,
+        projectYear:
+          t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))
+            ? Number(t.projectYear)
+            : new Date().getFullYear(),
+        subTasks: [
+          {
+            id: generateId(),
+            name: '',
+            comments: '',
+            status: 'Assigned',
+            delegationStatus: 'Assigned',
+            priority: 'Mid',
+            party: parsedParty,
+            startAct: dateStr,
+            finishAct: dateStr,
+            updatedAt: nowIso,
+          },
+        ],
+        updatedAt: nowIso,
+        createdBy: activeUserId,
+      };
+      newDelegations.push(delGroup);
+      taskDelegationMap.set(t.id, delGroup);
+      existingDelMap.set(deterministicGroupId, delGroup);
     }
   });
 
-  // 1. Persist immediately to local Dexie database & Zustand delegations so local cache is 100% synced
-  try {
-    const { bulkPersistTasks, bulkPersistDelegations } = await import('./localDb');
-    await bulkPersistTasks(tasksToSave).catch(() => {});
-    if (generatedDelegations.length > 0) {
-      await bulkPersistDelegations(generatedDelegations).catch(() => {});
-    }
-  } catch {
-    // Fallback if IndexedDB is unavailable
+  if (newDelegations.length > 0) {
+    useAppStore.getState().setDelegationGroups(Array.from(existingDelMap.values()));
   }
 
-  if (generatedDelegations.length > 0) {
-    const store = useAppStore.getState();
-    const existingDel = store.delegationGroups || [];
-    const delMap = new Map<string, DelegationGroup>(existingDel.map((d) => [d.id, d]));
-    generatedDelegations.forEach((d) => {
-      if (!delMap.has(d.id)) delMap.set(d.id, d);
-    });
-    store.setDelegationGroups(Array.from(delMap.values()));
-  }
+  return { newDelegations, taskDelegationMap };
+}
 
-  // 2. Build MassWriteOp list and Delta list for all tasks and generated delegations
+/**
+ * Saves tasks (and optional project summary ops) to LocalDB (Dexie) in background and commits
+ * to Firestore + Delta bus in a single unified parallel operation.
+ */
+export async function batchSaveTasksToFirestore(
+  tasksToSave: Task[],
+  currentUser?: { id?: string; username?: string },
+  options?: {
+    precomputedDelegations?: {
+      newDelegations: DelegationGroup[];
+      taskDelegationMap: Map<string, DelegationGroup>;
+    };
+    projectWriteOps?: MassWriteOp[];
+    projectDeltaItems?: TakaDeltaItem[];
+    skipTaskDeltaBroadcast?: boolean;
+  }
+): Promise<void> {
+  if (!tasksToSave || tasksToSave.length === 0) return;
+
+  const now = new Date().toISOString();
+  const { newDelegations, taskDelegationMap } =
+    options?.precomputedDelegations ||
+    prepareMissingDelegationsForTasks(tasksToSave, currentUser, now);
+
+  // 1. Offload persistence to local Dexie database in background (non-blocking)
+  import('./localDb')
+    .then(({ bulkPersistTasks, bulkPersistDelegations }) => {
+      bulkPersistTasks(tasksToSave).catch(() => {});
+      if (newDelegations.length > 0) {
+        bulkPersistDelegations(newDelegations).catch(() => {});
+      }
+    })
+    .catch(() => {});
+
+  // 2. Build unified MassWriteOp list and Delta list for project summaries + tasks + new delegations
   const { executeMassBatchOperations } = await import('./massBatchWriteEngine');
-  const writeOps: import('./massBatchWriteEngine').MassWriteOp[] = [];
-  const deltaItems: any[] = [];
+  const writeOps: MassWriteOp[] = [];
+  const deltaItems: TakaDeltaItem[] = [];
+
+  // Put authoritative project summary delta items FIRST so receiving devices seal project summaries immediately
+  if (options?.projectDeltaItems && options.projectDeltaItems.length > 0) {
+    deltaItems.push(...options.projectDeltaItems);
+  }
 
   for (const t of tasksToSave) {
-    const freshTask: Task = { ...t, updatedAt: now };
+    const freshTask: Task = { ...t, updatedAt: t.updatedAt || now };
     writeOps.push({
       collectionName: 'taka_tasks',
       docId: freshTask.id,
@@ -277,17 +305,19 @@ export async function batchSaveTasksToFirestore(
       merge: true,
     });
 
-    deltaItems.push({
-      docId: freshTask.id,
-      collectionName: 'taka_tasks' as const,
-      action: 'create' as const,
-      isPatch: false,
-      data: freshTask,
-      year: freshTask.projectYear ? String(freshTask.projectYear) : undefined,
-      projectId: freshTask.projectId ? String(freshTask.projectId) : undefined,
-      projectCode: freshTask.projectCode ? String(freshTask.projectCode) : undefined,
-      projectStore: freshTask.projectStore ? String(freshTask.projectStore) : undefined,
-    });
+    if (!options?.skipTaskDeltaBroadcast) {
+      deltaItems.push({
+        docId: freshTask.id,
+        collectionName: 'taka_tasks' as const,
+        action: 'create' as const,
+        isPatch: false,
+        data: freshTask,
+        year: freshTask.projectYear ? String(freshTask.projectYear) : undefined,
+        projectId: freshTask.projectId ? String(freshTask.projectId) : undefined,
+        projectCode: freshTask.projectCode ? String(freshTask.projectCode) : undefined,
+        projectStore: freshTask.projectStore ? String(freshTask.projectStore) : undefined,
+      });
+    }
 
     const delGroup = taskDelegationMap.get(freshTask.id);
     if (delGroup) {
@@ -299,27 +329,36 @@ export async function batchSaveTasksToFirestore(
         merge: true,
       });
 
-      deltaItems.push({
-        docId: delGroup.id,
-        collectionName: 'taka_delegations' as const,
-        action: 'create' as const,
-        isPatch: false,
-        data: delGroup,
-        year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
-        projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
-        projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
-        projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
-      });
+      if (!options?.skipTaskDeltaBroadcast) {
+        deltaItems.push({
+          docId: delGroup.id,
+          collectionName: 'taka_delegations' as const,
+          action: 'create' as const,
+          isPatch: false,
+          data: delGroup,
+          year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
+          projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
+          projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
+          projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
+        });
+      }
     }
   }
 
-  // 3. Commit all operations via Resilient Mass Batch Engine (byte-capped, retry with backoff, bisection, and Offline Queue fallback)
-  await executeMassBatchOperations(writeOps, {
-    suppressAutoDelta: true,
-  });
+  if (options?.projectWriteOps && options.projectWriteOps.length > 0) {
+    writeOps.push(...options.projectWriteOps);
+  }
 
-  // 4. Broadcast coalesced batch deltas (chunked by count & byte size with retry)
-  await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
+  // 3. Commit Firestore batch AND broadcast coalesced delta in parallel (1 network round-trip instead of 4)
+  await Promise.all([
+    executeMassBatchOperations(writeOps, {
+      suppressAutoDelta: true,
+      skipLocalMirror: true,
+    }),
+    deltaItems.length > 0
+      ? recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id)
+      : Promise.resolve(),
+  ]);
 }
 
 /**
@@ -362,4 +401,3 @@ export async function syncAffectedProjectSummaries(
     })
   );
 }
-

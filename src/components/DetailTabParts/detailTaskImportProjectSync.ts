@@ -1,22 +1,18 @@
-import { Project, AppUser } from '../../types';
+import { Project, AppUser, TakaDeltaItem } from '../../types';
 import { calculateProjectComputedDates } from '../../lib/projectDatesService';
 import { executeMassBatchOperations, MassWriteOp } from '../../lib/massBatchWriteEngine';
 
 /**
- * Commits updated project rollup summaries (taskSummaries, dates, progress) to Firestore & Delta bus
- * with byte-aware chunking, retry backoff, and offline syncQueue fallback.
+ * Builds MassWriteOp and TakaDeltaItem arrays for updated project rollup summaries
+ * (taskSummaries, dates, progress) so they can be committed atomically alongside tasks.
  */
-export async function syncAffectedProjectsSummaries(
+export function buildAffectedProjectsSyncOps(
   affectedProjects: Project[],
   computedByProjectId: Map<string, ReturnType<typeof calculateProjectComputedDates>>,
-  activeUser?: AppUser | null
-): Promise<void> {
-  if (affectedProjects.length === 0) return;
-  const { recordBatchDeltas } = await import('../../lib/deltaSyncService');
-  const nowIso = new Date().toISOString();
-
+  nowIso: string = new Date().toISOString()
+): { writeOps: MassWriteOp[]; projDeltaItems: TakaDeltaItem[] } {
   const writeOps: MassWriteOp[] = [];
-  const projDeltaItems: any[] = [];
+  const projDeltaItems: TakaDeltaItem[] = [];
 
   for (const p of affectedProjects) {
     if (!p?.id) continue;
@@ -61,13 +57,33 @@ export async function syncAffectedProjectsSummaries(
     });
   }
 
-  if (writeOps.length === 0) return;
-
-  await executeMassBatchOperations(writeOps, {
-    maxOpsPerBatch: 80,
-    suppressAutoDelta: true,
-  });
-
-  await recordBatchDeltas(projDeltaItems, activeUser?.username || activeUser?.id);
+  return { writeOps, projDeltaItems };
 }
 
+/**
+ * Commits updated project rollup summaries (taskSummaries, dates, progress) to Firestore & Delta bus
+ * with byte-aware chunking, retry backoff, and offline syncQueue fallback.
+ */
+export async function syncAffectedProjectsSummaries(
+  affectedProjects: Project[],
+  computedByProjectId: Map<string, ReturnType<typeof calculateProjectComputedDates>>,
+  activeUser?: AppUser | null
+): Promise<void> {
+  if (affectedProjects.length === 0) return;
+  const { recordBatchDeltas } = await import('../../lib/deltaSyncService');
+  const { writeOps, projDeltaItems } = buildAffectedProjectsSyncOps(
+    affectedProjects,
+    computedByProjectId
+  );
+
+  if (writeOps.length === 0) return;
+
+  await Promise.all([
+    executeMassBatchOperations(writeOps, {
+      maxOpsPerBatch: 80,
+      suppressAutoDelta: true,
+      skipLocalMirror: true,
+    }),
+    recordBatchDeltas(projDeltaItems, activeUser?.username || activeUser?.id),
+  ]);
+}

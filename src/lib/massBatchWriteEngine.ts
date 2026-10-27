@@ -17,6 +17,7 @@ export interface ExecuteMassBatchOptions {
   maxBytesPerBatch?: number;
   concurrency?: number;
   suppressAutoDelta?: boolean;
+  skipLocalMirror?: boolean;
   onProgress?: (completedOps: number, totalOps: number) => void;
 }
 
@@ -143,9 +144,12 @@ export function buildSafeBatchChunks(
 
 function executeSingleBatchCommit(
   chunk: MassWriteOp[],
-  suppressAutoDelta: boolean
+  suppressAutoDelta: boolean,
+  skipLocalMirror: boolean
 ): Promise<void> {
-  const batch = writeBatch(db);
+  const batch: any = writeBatch(db);
+  if (suppressAutoDelta) batch.__suppressAutoDelta = true;
+  if (skipLocalMirror) batch.__skipLocalMirror = true;
   const explicitMarks: Array<{ docId: string; collectionName: string }> = [];
 
   for (const op of chunk) {
@@ -180,13 +184,14 @@ function executeSingleBatchCommit(
  */
 async function commitChunkResilient(
   chunk: MassWriteOp[],
-  suppressAutoDelta: boolean
+  suppressAutoDelta: boolean,
+  skipLocalMirror: boolean
 ): Promise<{ committed: number; queuedOffline: number }> {
   if (chunk.length === 0) return { committed: 0, queuedOffline: 0 };
 
   for (let attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {
-      await executeSingleBatchCommit(chunk, suppressAutoDelta);
+      await executeSingleBatchCommit(chunk, suppressAutoDelta, skipLocalMirror);
       return { committed: chunk.length, queuedOffline: 0 };
     } catch (err: any) {
       const code = String(err?.code || '').toLowerCase();
@@ -211,8 +216,8 @@ async function commitChunkResilient(
   // Adaptive Binary Bisection when chunk size > 4 to isolate transient or single-doc failures
   if (chunk.length > 4) {
     const mid = Math.floor(chunk.length / 2);
-    const left = await commitChunkResilient(chunk.slice(0, mid), suppressAutoDelta);
-    const right = await commitChunkResilient(chunk.slice(mid), suppressAutoDelta);
+    const left = await commitChunkResilient(chunk.slice(0, mid), suppressAutoDelta, skipLocalMirror);
+    const right = await commitChunkResilient(chunk.slice(mid), suppressAutoDelta, skipLocalMirror);
     return {
       committed: left.committed + right.committed,
       queuedOffline: left.queuedOffline + right.queuedOffline,
@@ -257,6 +262,7 @@ export async function executeMassBatchOperations(
   const maxBytes = options.maxBytesPerBatch ?? DEFAULT_MAX_BYTES_PER_BATCH;
   const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
   const suppressAutoDelta = options.suppressAutoDelta ?? false;
+  const skipLocalMirror = options.skipLocalMirror ?? false;
 
   const chunks = buildSafeBatchChunks(ops, maxOps, maxBytes);
   const totalOps = chunks.reduce((acc, c) => acc + c.length, 0);
@@ -271,7 +277,7 @@ export async function executeMassBatchOperations(
       const wave = chunks.slice(i, i + concurrency);
       const results = await Promise.all(
         wave.map(async (chunk) => {
-          const res = await commitChunkResilient(chunk, suppressAutoDelta);
+          const res = await commitChunkResilient(chunk, suppressAutoDelta, skipLocalMirror);
           completedOps += chunk.length;
           if (options.onProgress) {
             try {

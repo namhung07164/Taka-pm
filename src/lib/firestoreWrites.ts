@@ -141,7 +141,10 @@ export function writeBatch(dbInstance: any): WriteBatch {
     const isDel = Boolean(cleanData?.isDeleted);
     const isMerge = Boolean(rest[0]?.merge);
     const rawSnapshot = cleanData && typeof cleanData === 'object' ? { ...cleanData } : cleanData;
-    const safePayload = !isDel ? extractAutoDeltaPayload(rawSnapshot, ref?.id, isMerge) : undefined;
+    const safePayload =
+      !isDel && !batch.__suppressAutoDelta
+        ? extractAutoDeltaPayload(rawSnapshot, ref?.id, isMerge)
+        : undefined;
     if (cleanData && typeof cleanData === 'object' && !isDel) {
       (cleanData as any).updatedAt = serverTimestamp();
     }
@@ -152,7 +155,10 @@ export function writeBatch(dbInstance: any): WriteBatch {
     const cleanData = removeUndefinedDeep(data);
     const isDel = Boolean(cleanData?.isDeleted);
     const rawSnapshot = cleanData && typeof cleanData === 'object' ? { ...cleanData } : cleanData;
-    const safePayload = !isDel ? extractAutoDeltaPayload(rawSnapshot, ref?.id, true) : undefined;
+    const safePayload =
+      !isDel && !batch.__suppressAutoDelta
+        ? extractAutoDeltaPayload(rawSnapshot, ref?.id, true)
+        : undefined;
     if (cleanData && typeof cleanData === 'object' && !isDel) {
       (cleanData as any).updatedAt = serverTimestamp();
     }
@@ -164,29 +170,33 @@ export function writeBatch(dbInstance: any): WriteBatch {
     return origDelete(ref);
   };
   batch.commit = () => {
-    ops.forEach((o) => {
-      mirrorLocalWrite(
-        o.ref?.path,
-        o.ref?.id,
-        o.kind === 'delete' || o.isDeleted ? 'delete' : o.kind,
-        o.rawData,
-        o.isMerge
-      );
-    });
+    if (!batch.__skipLocalMirror) {
+      ops.forEach((o) => {
+        mirrorLocalWrite(
+          o.ref?.path,
+          o.ref?.id,
+          o.kind === 'delete' || o.isDeleted ? 'delete' : o.kind,
+          o.rawData,
+          o.isMerge
+        );
+      });
+    }
     const p = origCommit();
-    // Queue auto-delta after server commit resolves so explicit recordBatchDeltas right after await batch.commit() cancels it
-    Promise.resolve(p)
-      .then(() => {
-        ops.forEach((o) => {
-          queueAutoDelta(
-            o.ref?.path,
-            o.ref?.id,
-            o.kind === 'delete' || o.isDeleted ? 'delete' : 'write',
-            o.safePayload
-          );
-        });
-      })
-      .catch(() => {});
+    // Queue auto-delta after server commit resolves unless explicitly suppressed by mass batch engine
+    if (!batch.__suppressAutoDelta) {
+      Promise.resolve(p)
+        .then(() => {
+          ops.forEach((o) => {
+            queueAutoDelta(
+              o.ref?.path,
+              o.ref?.id,
+              o.kind === 'delete' || o.isDeleted ? 'delete' : 'write',
+              o.safePayload
+            );
+          });
+        })
+        .catch(() => {});
+    }
     return p;
   };
   return batch as WriteBatch;

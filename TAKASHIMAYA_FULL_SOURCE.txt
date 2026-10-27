@@ -141479,23 +141479,20 @@ export function attachProjectTasksListener(params: {
 
 
 === FILE: src/lib/taskImportService.ts ===
-import { Task, Project, DelegationGroup } from '../types';
+import { Task, Project, DelegationGroup, TakaDeltaItem } from '../types';
 import { 
   parsePredecessors, 
   buildTaskNoMap, 
   calculateTaskDatesFromPredecessors, 
   addDays 
 } from './ganttUtils';
-import { parseDateTime, formatToDatetimeLocal, generateId } from './utils';
+import { generateId } from './utils';
 import { calculateProjectComputedDates, syncProjectDatesToFirestore } from './projectDatesService';
-import { findAffectedProjects } from './taskStateService';
-import { doc } from 'firebase/firestore';
-import { db, APP_ID, writeBatch } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { recordBatchDeltas } from './deltaSyncService';
-import { markExplicitDelta } from './autoDeltaQueue';
 import { rollupParentTaskDatesAndStatus } from './taskRollupService';
 import { applyParentPredecessorsToTaskTree } from './parentTaskPredecessorService';
+import type { MassWriteOp } from './massBatchWriteEngine';
 
 /**
  * Normalizes a duration value (strips trailing 'd' or 'days', ensures valid number string).
@@ -141624,7 +141621,8 @@ export function rollupParentTaskDates(
   const { updatedTasks: tasksWithParentPreds, updatedParents: parentPredUpdates } =
     applyParentPredecessorsToTaskTree(allTasks, safeProjects);
 
-  const rolledUpList = rollupParentTaskDatesAndStatus(tasksWithParentPreds);
+  const delegationGroups = useAppStore.getState?.()?.delegationGroups || [];
+  const rolledUpList = rollupParentTaskDatesAndStatus(tasksWithParentPreds, delegationGroups);
   const taskMap = new Map<string, Task>();
   const updatedParents: Task[] = [];
   const parentPredMap = new Map<string, Task>();
@@ -141659,179 +141657,189 @@ export function rollupParentTaskDates(
 }
 
 /**
- * Saves tasks to LocalDB (Dexie) immediately and commits to Firestore in safe operation-counted chunks
- * (max 200 ops per batch) with Offline Queue fallback and multi-device upsert deltas.
+ * Prepares missing DelegationGroup records for imported tasks that have `delegation = true`
+ * without overwriting already-existing delegation groups in store/Firestore.
  */
-export async function batchSaveTasksToFirestore(
+export function prepareMissingDelegationsForTasks(
   tasksToSave: Task[],
-  currentUser?: { id?: string; username?: string }
-): Promise<void> {
-  if (!tasksToSave || tasksToSave.length === 0) return;
-
-  const now = new Date().toISOString();
-  const dateStr = now.substring(0, 10);
+  currentUser?: { id?: string; username?: string },
+  nowIso: string = new Date().toISOString()
+): { newDelegations: DelegationGroup[]; taskDelegationMap: Map<string, DelegationGroup> } {
+  const dateStr = nowIso.substring(0, 10);
   const activeUserId =
     currentUser?.id && currentUser.id !== 'guest'
       ? currentUser.id
       : currentUser?.username || 'system';
 
-  const generatedDelegations: DelegationGroup[] = [];
+  const existingDel = useAppStore.getState().delegationGroups || [];
+  const existingDelMap = new Map<string, DelegationGroup>(existingDel.map((d) => [d.id, d]));
+
+  const newDelegations: DelegationGroup[] = [];
   const taskDelegationMap = new Map<string, DelegationGroup>();
 
   tasksToSave.forEach((t) => {
-    if (t.delegation) {
-      const rawParty = t.party && t.party.trim() ? t.party.trim() : '';
-      const parsedParty =
-        rawParty
-          .split(/[,;/+]+/)
-          .map((s) => s.trim())
-          .filter(Boolean)[0] || rawParty;
-      if (parsedParty) {
-        const deterministicGroupId = `del_${t.id}`;
-        const delGroup: DelegationGroup = {
-          id: deterministicGroupId,
-          parentTaskId: t.id,
-          name: t.name || 'Delegated Task',
-          ...(t.projectId ? { projectId: t.projectId } : {}),
-          projectCode: t.projectCode,
-          projectStore: t.projectStore,
-          projectYear:
-            t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))
-              ? Number(t.projectYear)
-              : new Date().getFullYear(),
-          subTasks: [
-            {
-              id: generateId(),
-              name: '',
-              comments: '',
-              status: 'Assigned',
-              delegationStatus: 'Assigned',
-              priority: 'Mid',
-              party: parsedParty,
-              startAct: dateStr,
-              finishAct: dateStr,
-              updatedAt: now,
-            },
-          ],
-          updatedAt: now,
-          createdBy: activeUserId,
-        };
-        generatedDelegations.push(delGroup);
-        taskDelegationMap.set(t.id, delGroup);
-      }
+    if (!t.delegation) return;
+    const deterministicGroupId = `del_${t.id}`;
+    // Preserve existing delegation group if it already exists so subtask statuses are never reset
+    if (existingDelMap.has(deterministicGroupId)) {
+      return;
+    }
+    const rawParty = t.party && t.party.trim() ? t.party.trim() : '';
+    const parsedParty =
+      rawParty
+        .split(/[,;/+]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)[0] || rawParty;
+    if (parsedParty) {
+      const delGroup: DelegationGroup = {
+        id: deterministicGroupId,
+        parentTaskId: t.id,
+        name: t.name || 'Delegated Task',
+        ...(t.projectId ? { projectId: t.projectId } : {}),
+        projectCode: t.projectCode,
+        projectStore: t.projectStore,
+        projectYear:
+          t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))
+            ? Number(t.projectYear)
+            : new Date().getFullYear(),
+        subTasks: [
+          {
+            id: generateId(),
+            name: '',
+            comments: '',
+            status: 'Assigned',
+            delegationStatus: 'Assigned',
+            priority: 'Mid',
+            party: parsedParty,
+            startAct: dateStr,
+            finishAct: dateStr,
+            updatedAt: nowIso,
+          },
+        ],
+        updatedAt: nowIso,
+        createdBy: activeUserId,
+      };
+      newDelegations.push(delGroup);
+      taskDelegationMap.set(t.id, delGroup);
+      existingDelMap.set(deterministicGroupId, delGroup);
     }
   });
 
-  // 1. Persist immediately to local Dexie database & Zustand delegations so local cache is 100% synced
+  if (newDelegations.length > 0) {
+    useAppStore.getState().setDelegationGroups(Array.from(existingDelMap.values()));
+  }
+
+  return { newDelegations, taskDelegationMap };
+}
+
+/**
+ * Saves tasks (and optional project summary ops) to LocalDB (Dexie) in background and commits
+ * to Firestore + Delta bus in a single unified parallel operation.
+ */
+export async function batchSaveTasksToFirestore(
+  tasksToSave: Task[],
+  currentUser?: { id?: string; username?: string },
+  options?: {
+    precomputedDelegations?: {
+      newDelegations: DelegationGroup[];
+      taskDelegationMap: Map<string, DelegationGroup>;
+    };
+    projectWriteOps?: MassWriteOp[];
+    projectDeltaItems?: TakaDeltaItem[];
+    skipTaskDeltaBroadcast?: boolean;
+  }
+): Promise<void> {
+  if (!tasksToSave || tasksToSave.length === 0) return;
+
+  const now = new Date().toISOString();
+  const { newDelegations, taskDelegationMap } =
+    options?.precomputedDelegations ||
+    prepareMissingDelegationsForTasks(tasksToSave, currentUser, now);
+
+  // 1. Offload persistence to local Dexie database in background (non-blocking)
   import('./localDb')
     .then(({ bulkPersistTasks, bulkPersistDelegations }) => {
       bulkPersistTasks(tasksToSave).catch(() => {});
-      if (generatedDelegations.length > 0) {
-        bulkPersistDelegations(generatedDelegations).catch(() => {});
+      if (newDelegations.length > 0) {
+        bulkPersistDelegations(newDelegations).catch(() => {});
       }
     })
     .catch(() => {});
 
-  if (generatedDelegations.length > 0) {
-    const store = useAppStore.getState();
-    const existingDel = store.delegationGroups || [];
-    const delMap = new Map<string, DelegationGroup>(existingDel.map((d) => [d.id, d]));
-    generatedDelegations.forEach((d) => {
-      if (!delMap.has(d.id)) delMap.set(d.id, d);
-    });
-    store.setDelegationGroups(Array.from(delMap.values()));
-  }
+  // 2. Build unified MassWriteOp list and Delta list for project summaries + tasks + new delegations
+  const { executeMassBatchOperations } = await import('./massBatchWriteEngine');
+  const writeOps: MassWriteOp[] = [];
+  const deltaItems: TakaDeltaItem[] = [];
 
-  // 2. Build chunks capped at 200 Firestore operations per batch (accounting for 2 ops when delegation exists)
-  const MAX_OPS_PER_BATCH = 200;
-  const chunks: Task[][] = [];
-  let currentChunk: Task[] = [];
-  let currentOps = 0;
+  // Put authoritative project summary delta items FIRST so receiving devices seal project summaries immediately
+  if (options?.projectDeltaItems && options.projectDeltaItems.length > 0) {
+    deltaItems.push(...options.projectDeltaItems);
+  }
 
   for (const t of tasksToSave) {
-    const opsForTask = taskDelegationMap.has(t.id) ? 2 : 1;
-    if (currentChunk.length > 0 && currentOps + opsForTask > MAX_OPS_PER_BATCH) {
-      chunks.push(currentChunk);
-      currentChunk = [];
-      currentOps = 0;
+    const freshTask: Task = { ...t, updatedAt: t.updatedAt || now };
+    writeOps.push({
+      collectionName: 'taka_tasks',
+      docId: freshTask.id,
+      action: 'set',
+      data: freshTask,
+      merge: true,
+    });
+
+    if (!options?.skipTaskDeltaBroadcast) {
+      deltaItems.push({
+        docId: freshTask.id,
+        collectionName: 'taka_tasks' as const,
+        action: 'create' as const,
+        isPatch: false,
+        data: freshTask,
+        year: freshTask.projectYear ? String(freshTask.projectYear) : undefined,
+        projectId: freshTask.projectId ? String(freshTask.projectId) : undefined,
+        projectCode: freshTask.projectCode ? String(freshTask.projectCode) : undefined,
+        projectStore: freshTask.projectStore ? String(freshTask.projectStore) : undefined,
+      });
     }
-    currentChunk.push(t);
-    currentOps += opsForTask;
-  }
-  if (currentChunk.length > 0) {
-    chunks.push(currentChunk);
-  }
 
-  // 3. Commit chunks with bounded concurrency (3 parallel batches) and Offline Queue fallback
-  const CONCURRENCY = 3;
-  for (let i = 0; i < chunks.length; i += CONCURRENCY) {
-    const slice = chunks.slice(i, i + CONCURRENCY);
-    await Promise.all(
-      slice.map(async (chunk) => {
-        const batch = writeBatch(db);
-        const deltaItems: any[] = [];
-        const explicitMarksList: Array<{ docId: string; collectionName: string }> = [];
+    const delGroup = taskDelegationMap.get(freshTask.id);
+    if (delGroup) {
+      writeOps.push({
+        collectionName: 'taka_delegation_groups',
+        docId: delGroup.id,
+        action: 'set',
+        data: delGroup,
+        merge: true,
+      });
 
-        chunk.forEach((t) => {
-          const freshTask: Task = { ...t, updatedAt: now };
-          const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', freshTask.id);
-          explicitMarksList.push({ docId: freshTask.id, collectionName: 'taka_tasks' });
-          batch.set(tRef, freshTask, { merge: true });
-
-          deltaItems.push({
-            docId: freshTask.id,
-            collectionName: 'taka_tasks' as const,
-            action: 'create' as const,
-            isPatch: false,
-            data: freshTask,
-            year: freshTask.projectYear ? String(freshTask.projectYear) : undefined,
-            projectId: freshTask.projectId ? String(freshTask.projectId) : undefined,
-            projectCode: freshTask.projectCode ? String(freshTask.projectCode) : undefined,
-            projectStore: freshTask.projectStore ? String(freshTask.projectStore) : undefined,
-          });
-
-          const delGroup = taskDelegationMap.get(freshTask.id);
-          if (delGroup) {
-            const delRef = doc(
-              db,
-              'artifacts',
-              APP_ID,
-              'public',
-              'data',
-              'taka_delegation_groups',
-              delGroup.id
-            );
-            explicitMarksList.push({ docId: delGroup.id, collectionName: 'taka_delegations' });
-            batch.set(delRef, delGroup, { merge: true });
-            deltaItems.push({
-              docId: delGroup.id,
-              collectionName: 'taka_delegations' as const,
-              action: 'create' as const,
-              isPatch: false,
-              data: delGroup,
-              year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
-              projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
-              projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
-              projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
-            });
-          }
+      if (!options?.skipTaskDeltaBroadcast) {
+        deltaItems.push({
+          docId: delGroup.id,
+          collectionName: 'taka_delegations' as const,
+          action: 'create' as const,
+          isPatch: false,
+          data: delGroup,
+          year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
+          projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
+          projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
+          projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
         });
-
-        markExplicitDelta(explicitMarksList);
-
-        try {
-          await batch.commit();
-          await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
-        } catch (err) {
-          console.warn('[taskImportService] Batch commit failed, queuing to syncQueue:', err);
-          const { syncQueueManager } = await import('./syncQueue');
-          for (const t of chunk) {
-            syncQueueManager.addToQueue('taka_tasks', t.id, 'set', t).catch(() => {});
-          }
-        }
-      })
-    );
+      }
+    }
   }
+
+  if (options?.projectWriteOps && options.projectWriteOps.length > 0) {
+    writeOps.push(...options.projectWriteOps);
+  }
+
+  // 3. Commit Firestore batch AND broadcast coalesced delta in parallel (1 network round-trip instead of 4)
+  await Promise.all([
+    executeMassBatchOperations(writeOps, {
+      suppressAutoDelta: true,
+      skipLocalMirror: true,
+    }),
+    deltaItems.length > 0
+      ? recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id)
+      : Promise.resolve(),
+  ]);
 }
 
 /**
@@ -141875,20 +141883,17 @@ export async function syncAffectedProjectSummaries(
   );
 }
 
-
-
 === FILE: src/components/DetailTabParts/detailTaskImportExecutor.ts ===
 import { Task, Project, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { doc } from 'firebase/firestore';
-import { writeBatch } from '../../lib/firestoreWrites';
-import { db, APP_ID } from '../../lib/firebase';
+import { executeMassBatchOperations, MassWriteOp } from '../../lib/massBatchWriteEngine';
 import { undoManager } from '../../lib/undoManager';
 import { formatToDatetimeLocal, getDefaultDatetimeLocal } from '../../lib/utils';
 import { getTasksForProject, calculateProjectComputedDates, matchProjectCode } from '../../lib/projectDatesService';
 import { 
   calculateDatesFromPredecessorsAndDuration, 
   rollupParentTaskDates, 
+  prepareMissingDelegationsForTasks,
   batchSaveTasksToFirestore 
 } from '../../lib/taskImportService';
 import { healAllTasksPredecessors } from '../../lib/ganttUtils';
@@ -141896,7 +141901,7 @@ import { extractSubtaskIndex } from '../../lib/ganttUtilsParts/taskSortingAndCod
 import { findAffectedProjects } from '../../lib/taskStateService';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { resolveParentChildHierarchy } from './detailTaskImportHierarchy';
-import { syncAffectedProjectsSummaries } from './detailTaskImportProjectSync';
+import { buildAffectedProjectsSyncOps } from './detailTaskImportProjectSync';
 
 interface ExecuteImportTasksParams {
   rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
@@ -141974,7 +141979,6 @@ export async function executeImportTasks({
       ? getTasksForProject(targetProject, allInitialTasks)
       : allInitialTasks.filter(t => buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects) === prjKey);
 
-    // Compute maximum existing subtask code number and max orderIndex for this project
     let maxExistingSubtaskNum = 0;
     let maxExistingOrderIndex = -1;
 
@@ -142024,7 +142028,6 @@ export async function executeImportTasks({
       const exactProjectCode = String(t.projectCode || targetProject?.code || '').trim();
       const canonicalPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
 
-      // Determine taskCodePhu and orderIndex: respect explicit subtask number from CSV
       const rawCode = String(t.taskCodePhu || '').trim();
       const explicitNum = extractSubtaskIndex(rawCode);
       const hasExplicitSubtaskNumber = explicitNum !== null;
@@ -142045,7 +142048,6 @@ export async function executeImportTasks({
           ? Number(t.orderIndex)
           : nextAutoNumber - 1;
       } else {
-        // No code specified in CSV -> auto-continue after max existing task
         nextAutoNumber += 1;
         taskCodePhu = `${exactProjectCode}#${nextAutoNumber}`;
         taskOrderIndex = t.orderIndex !== undefined && t.orderIndex !== '' && !isNaN(Number(t.orderIndex))
@@ -142061,7 +142063,6 @@ export async function executeImportTasks({
 
       let existing: Task | undefined = undefined;
 
-      // Priority 1: Match within current import batch
       if (hasExplicitSubtaskNumber) {
         existing = processedImportTasksMap.get(codeKey);
       } else {
@@ -142070,18 +142071,14 @@ export async function executeImportTasks({
                    (normName ? processedImportTasksMap.get(normKey) : undefined);
       }
 
-      // Priority 2: Direct ID match if row contains ID
       if (!existing && t.id) {
         existing = existingTasksById.get(t.id);
       }
 
-      // Priority 3: When explicit subtask code was provided, ONLY match existing task with exact same code!
-      // NEVER match by name if code does not match!
       if (!existing && hasExplicitSubtaskNumber) {
         existing = existingTasksByCode.get(codeKey);
       }
 
-      // Priority 4: When NO explicit subtask code was provided, match by name
       if (!existing && !hasExplicitSubtaskNumber) {
         if (nameKey) existing = existingTasksByName.get(nameKey);
         if (!existing && normKey) existing = existingTasksByNorm.get(normKey);
@@ -142190,7 +142187,6 @@ export async function executeImportTasks({
             updatedAt: new Date().toISOString()
           };
 
-      // Tự động phân giải và gán projectId từ danh sách projects theo bộ 3 mã (code + store + year)
       if ((!finalTask.projectId || !finalTask.projectStore || finalTask.projectYear === undefined) && projects && projects.length > 0) {
         const pCode = String(finalTask.projectCode || '').trim().toLowerCase();
         const pStore = String(finalTask.projectStore || '').trim().toLowerCase();
@@ -142232,7 +142228,6 @@ export async function executeImportTasks({
         finalTask.durationManual = true;
       }
 
-      // Register immediately into lookup maps to prevent duplicate tasks within same import
       processedImportTasksMap.set(nameKey, finalTask);
       if (normKey) processedImportTasksMap.set(normKey, finalTask);
       if (codeKey) processedImportTasksMap.set(codeKey, finalTask);
@@ -142253,7 +142248,13 @@ export async function executeImportTasks({
   // 4. Resolve parent-child hierarchy across imported tasks and existing tasks
   resolveParentChildHierarchy(tasksToImport, allInitialTasks);
 
-  // 5. Calculate dates from predecessors and duration
+  // 5. Prepare missing delegations BEFORE rolling up parent tasks & project summaries
+  // so Desktop, Firestore, and all devices compute 100% identical runningStatus & progress
+  const commitNowIso = new Date().toISOString();
+  const activeUser = useAppStore.getState().currentUser || currentUser;
+  const precomputedDelegations = prepareMissingDelegationsForTasks(tasksToImport, activeUser, commitNowIso);
+
+  // 6. Calculate dates from predecessors and duration
   useAppStore.getState().optimisticUpdateTasks(tasksToImport);
 
   const allCurrentTasks = useAppStore.getState().tasks;
@@ -142274,7 +142275,6 @@ export async function executeImportTasks({
   const tasksToSaveIds = new Set<string>();
   calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
   updatedParents.forEach(p => tasksToSaveIds.add(p.id));
-  const commitNowIso = new Date().toISOString();
   const finalTasksToSave: Task[] = [];
   tasksToSaveIds.forEach(tid => {
     const tk = allTasksMap.get(tid);
@@ -142287,13 +142287,6 @@ export async function executeImportTasks({
 
   // Optimistic update (0ms UI)
   useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
-
-  // Persist tasks to LocalDB (Dexie) immediately
-  if (finalTasksToSave.length > 0) {
-    import('../../lib/localDb')
-      .then(({ bulkPersistTasks }) => bulkPersistTasks(finalTasksToSave))
-      .catch(() => {});
-  }
 
   // Compute & sync project summaries in memory BEFORE overwriting store.projects
   const finalFullTasksList = Array.from(allTasksMap.values());
@@ -142315,7 +142308,7 @@ export async function executeImportTasks({
   });
   useAppStore.getState().setProjects(updatedProjects);
 
-  // Persist affected projects to LocalDB (Dexie) immediately and mark tasks_proj as loaded
+  // Persist affected projects to LocalDB (Dexie) in background and mark tasks_proj as loaded
   if (touchedProjectsForPersistence.length > 0) {
     import('../../lib/localDb')
       .then(({ bulkPersistProjects }) => bulkPersistProjects(touchedProjectsForPersistence))
@@ -142329,39 +142322,48 @@ export async function executeImportTasks({
       .catch(() => {});
   }
 
-  // Save tasks FIRST, then project summaries to Firestore + Delta bus sequentially so other devices
-  // always receive the complete task set before the authoritative project summary seals the state.
-  const activeUser = useAppStore.getState().currentUser || currentUser;
-  const cloudSyncPromise = (async () => {
-    await batchSaveTasksToFirestore(finalTasksToSave, activeUser);
-    await syncAffectedProjectsSummaries(affectedProjects, computedByProjectId, activeUser);
-  })();
+  // Build authoritative project summary ops and commit tasks + delegations + project summaries
+  // in ONE unified Firestore batch + parallel coalesced delta broadcast
+  const { writeOps: projectWriteOps, projDeltaItems } = buildAffectedProjectsSyncOps(
+    affectedProjects,
+    computedByProjectId,
+    commitNowIso
+  );
 
-  // Wait up to 2.5s for fast cloud commit; if mass import is very large, let remaining chunks finish in background without blocking the UI notification
-  await Promise.race([
-    cloudSyncPromise,
-    new Promise<void>(resolve => setTimeout(resolve, 2500)),
-  ]);
+  await batchSaveTasksToFirestore(finalTasksToSave, activeUser, {
+    precomputedDelegations,
+    projectWriteOps,
+    projectDeltaItems: projDeltaItems,
+  });
 
   if (finalTasksToSave.length > 0) {
     undoManager.push({
       description: 'Import Tasks',
       revert: async () => {
-        const batch = writeBatch(db);
+        const revertOps: MassWriteOp[] = [];
         previousStates.forEach((oldData, id) => {
-          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), oldData);
+          revertOps.push({
+            collectionName: 'taka_tasks',
+            docId: id,
+            action: 'set',
+            data: oldData,
+            merge: false,
+          });
         });
-        newIds.forEach(id => {
-          batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id));
+        newIds.forEach((id) => {
+          revertOps.push({
+            collectionName: 'taka_tasks',
+            docId: id,
+            action: 'delete',
+          });
         });
-        await batch.commit();
-      }
+        await executeMassBatchOperations(revertOps);
+      },
     });
   }
 
   return { count: tasksToImport.length, projectCount: affectedProjects.length };
 }
-
 
 === FILE: src/lib/deltaApplyParts/deltaProjectReconciler.ts ===
 import { Project, Task, DelegationGroup } from '../../types';
@@ -148374,6 +148376,8 @@ import {
 import { CLIENT_SESSION_ID, DELTA_COLLECTION, LAST_SYNC_KEY } from './deltaConstants';
 import { safeSetItemLocal } from './storage';
 import { markTasksDeleted } from './taskDeletedTracker';
+import { markLoaded } from './loadedMarkers';
+import { markProjectTasksHydrated } from './utils';
 import {
   tsOf,
   buildDeltaProjectsIndex,
@@ -148389,7 +148393,7 @@ import { rollupParentTaskDatesAndStatus } from './taskRollupService';
 /**
  * Applies a list of (already de-duplicated) deltas to Zustand + Dexie. Shared by the real-time listener and the
  * safety poll. Returns the number of deltas processed.
- * Pre-indexes projects in O(P) to eliminate linear scans per task delta.
+ * Pre-indexes projects in O(P) and detects authoritative project summaries to avoid redundant per-task rollups.
  */
 export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   if (!deltas || deltas.length === 0) return 0;
@@ -148407,8 +148411,58 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   let updatedCosts = [...(store.costs || [])];
   let updatedDelegations = [...(store.delegationGroups || [])];
 
-  // Pre-index projects by ID and Code in O(P) (rebuilt only when projects array length changes)
   let projectsIndex = buildDeltaProjectsIndex(updatedProjects);
+
+  // Pre-collect projects that have an authoritative taskSummaries payload in this delta batch
+  const authoritativeSummaryProjectIds = new Set<string>();
+  const batchTaskProjectIds = new Set<string>();
+  deltas.forEach((d) => {
+    if (d.sessionId && d.sessionId === CLIENT_SESSION_ID) return;
+    if (d.action === 'batch_update' && Array.isArray(d.batchItems)) {
+      d.batchItems.forEach((item) => {
+        if (
+          item.collectionName === 'taka_projects' &&
+          item.action !== 'delete' &&
+          !item.data?.isDeleted &&
+          Array.isArray(item.data?.taskSummaries) &&
+          item.docId
+        ) {
+          authoritativeSummaryProjectIds.add(String(item.docId).trim());
+        } else if (item.collectionName === 'taka_tasks' && item.action !== 'delete') {
+          const pid = (item as any).projectId || item.data?.projectId || d.projectId;
+          if (pid) batchTaskProjectIds.add(String(pid).trim());
+        }
+      });
+    } else if (
+      d.collectionName === 'taka_projects' &&
+      d.action !== 'delete' &&
+      !d.data?.isDeleted &&
+      Array.isArray(d.data?.taskSummaries) &&
+      d.docId
+    ) {
+      authoritativeSummaryProjectIds.add(String(d.docId).trim());
+    }
+  });
+
+  // O(T) pre-index of projects that currently have real tasks loaded in memory
+  const inMemoryProjectIds = new Set<string>();
+  const inMemoryProjectCompositeKeys = new Set<string>();
+  for (let i = 0; i < updatedTasks.length; i++) {
+    const t = updatedTasks[i];
+    if (!t || t.isDeleted) continue;
+    if (t.projectId) {
+      inMemoryProjectIds.add(String(t.projectId).trim());
+    } else if (t.projectCode) {
+      const c = String(t.projectCode).trim().toLowerCase();
+      const s = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+      const y = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+      inMemoryProjectCompositeKeys.add(`${c}|${s}|${y}`);
+    }
+  }
+
+  const expandedSet = new Set(
+    [...(store.expandedProjectIds || []), ...(store.searchActiveProjectIds || [])].map(String)
+  );
 
   let projectsChanged = false;
   let tasksChanged = false;
@@ -148422,7 +148476,10 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   const noteTouchedProject = (t: any) => {
     if (!t) return;
     if (t.projectId) {
-      touchedProjectIds.add(String(t.projectId));
+      const pid = String(t.projectId).trim();
+      if (!authoritativeSummaryProjectIds.has(pid)) {
+        touchedProjectIds.add(pid);
+      }
     } else if (t.projectCode) {
       const codeKey = String(t.projectCode).trim().toLowerCase();
       const storeKey = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '*';
@@ -148524,9 +148581,9 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           ...(meta?.year ? { projectYear: meta.year } : {}),
           ...(data || {}),
         };
-        noteTouchedProject(existingTask);
-        noteTouchedProject(enrichedData);
         if (isDelete || data?.isDeleted) {
+          noteTouchedProject(existingTask);
+          noteTouchedProject(enrichedData);
           const pIdHint = enrichedData?.projectId || existingTask?.projectId;
           const delProjCodeLower = String(enrichedData?.projectCode || existingTask?.projectCode || '')
             .trim()
@@ -148580,18 +148637,27 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           idx !== -1 ? applyFieldPatch(updatedTasks[idx], enrichedData) : { id: docId, ...enrichedData }
         ) as Task;
 
-        // O(1) upsert into matching project's taskSummaries via pre-built projectsIndex
-        if (
-          upsertTaskSummaryIntoMatchingProjects({
-            docId,
-            action,
-            mergedTask,
-            updatedProjects,
-            projectsIndex,
-            touchedProjectIds,
-          })
-        ) {
-          projectsChanged = true;
+        const tProjId = mergedTask.projectId ? String(mergedTask.projectId).trim() : '';
+        const hasAuthoritativeProjectDelta = Boolean(
+          tProjId && authoritativeSummaryProjectIds.has(tProjId)
+        );
+
+        // Only run per-task summary upsert & recalculation if the batch did NOT already carry the authoritative project summary
+        if (!hasAuthoritativeProjectDelta) {
+          noteTouchedProject(existingTask);
+          noteTouchedProject(enrichedData);
+          if (
+            upsertTaskSummaryIntoMatchingProjects({
+              docId,
+              action,
+              mergedTask,
+              updatedProjects,
+              projectsIndex,
+              touchedProjectIds,
+            })
+          ) {
+            projectsChanged = true;
+          }
         }
 
         if (idx !== -1) {
@@ -148604,12 +148670,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
             Boolean(enrichedData?.name && (enrichedData?.projectCode || enrichedData?.projectId)))
         ) {
           if (store.isTasksRequested || updatedTasks.length > 0) {
-            const expandedSet = new Set(
-              [...(store.expandedProjectIds || []), ...(store.searchActiveProjectIds || [])].map(
-                String
-              )
-            );
-            const tProjId = mergedTask.projectId ? String(mergedTask.projectId).trim() : '';
             const tCode = mergedTask.projectCode ? String(mergedTask.projectCode).trim() : '';
             const tStoreLower = mergedTask.projectStore
               ? String(mergedTask.projectStore).trim().toLowerCase()
@@ -148628,22 +148688,14 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
               !tYearStr ||
               tYearStr === activeYearFilter;
 
-            const projInMemory = updatedTasks.some((t) => {
-              if (tProjId && t.projectId) {
-                return String(t.projectId).trim() === tProjId;
-              }
-              if (tProjId || t.projectId) return false;
-              if (!tCode || String(t.projectCode || '').trim().toLowerCase() !== tCode.toLowerCase()) {
-                return false;
-              }
-              if (tStoreLower && t.projectStore && String(t.projectStore).trim().toLowerCase() !== tStoreLower) {
-                return false;
-              }
-              if (tYearStr && t.projectYear !== undefined && String(t.projectYear).trim() !== tYearStr) {
-                return false;
-              }
-              return true;
-            });
+            const projInMemory = tProjId
+              ? inMemoryProjectIds.has(tProjId)
+              : Boolean(
+                  tCode &&
+                    inMemoryProjectCompositeKeys.has(
+                      `${tCode.toLowerCase()}|${tStoreLower}|${tYearStr}`
+                    )
+                );
 
             let matchingIdx = tProjId ? projectsIndex.byId.get(tProjId) : undefined;
             if (matchingIdx === undefined && !tProjId && tCode) {
@@ -148659,18 +148711,24 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
             const matchingProj =
               matchingIdx !== undefined ? updatedProjects[matchingIdx] : undefined;
-            const isProjExpandedOrEmpty =
-              (store.isTasksRequested && matchesActiveYear) ||
+            const isExplicitlyExpanded =
               projInMemory ||
               (tProjId && expandedSet.has(tProjId)) ||
               (matchingProj?.id && expandedSet.has(String(matchingProj.id))) ||
-              (!tProjId && tCode && expandedSet.has(tCode)) ||
-              !matchingProj ||
-              (matchingProj.taskSummaries?.length || 0) <= 1;
+              (!tProjId && tCode && expandedSet.has(tCode));
+
+            // When an authoritative project summary already covers collapsed views, only hydrate into active
+            // React memory if the project is expanded/in-memory; otherwise Dexie stores it silently in background
+            const isProjExpandedOrEmpty =
+              isExplicitlyExpanded ||
+              (!hasAuthoritativeProjectDelta &&
+                store.isTasksRequested &&
+                (matchesActiveYear || !matchingProj || (matchingProj.taskSummaries?.length || 0) <= 1));
 
             if (isProjExpandedOrEmpty) {
               tasksChanged = true;
               updatedTasks.push(mergedTask);
+              if (tProjId) inMemoryProjectIds.add(tProjId);
             }
           }
         }
@@ -148781,6 +148839,14 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     }
   });
 
+  // Mark projects that received both tasks and authoritative summaries as locally hydrated
+  authoritativeSummaryProjectIds.forEach((pid) => {
+    if (batchTaskProjectIds.has(pid)) {
+      markLoaded('tasks_proj', pid).catch(() => {});
+      markProjectTasksHydrated(pid);
+    }
+  });
+
   if (tasksChanged && updatedTasks.length > 0) {
     updatedTasks = rollupParentTaskDatesAndStatus(updatedTasks, updatedDelegations);
   }
@@ -148845,7 +148911,6 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
   return deltas.length;
 }
-
 
 === FILE: src/lib/predecessorMatchParts/predecessorContextUtils.ts ===
 import { Task, Project } from '../../types';
