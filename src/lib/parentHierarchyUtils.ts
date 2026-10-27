@@ -156,10 +156,6 @@ export function buildProjectParentHierarchyIndex(groupTasks: Task[]): ProjectPar
     const matchedParent = findParent(rawParentId);
     if (matchedParent && isTaskBelongToSameParentScope(t, matchedParent)) {
       parentTaskIdsInProject.add(String(matchedParent.id));
-      if (matchedParent.taskCodePhu) {
-        parentTaskIdsInProject.add(String(matchedParent.taskCodePhu).trim());
-        parentTaskIdsInProject.add(String(matchedParent.taskCodePhu).trim().toLowerCase());
-      }
     }
   });
 

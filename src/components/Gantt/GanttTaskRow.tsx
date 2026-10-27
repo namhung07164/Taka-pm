@@ -416,6 +416,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
     prev.childCount === next.childCount &&
     prev.childTasks === next.childTasks &&
     prev.isModularExpanded === next.isModularExpanded &&
+    prev.toggleModularParent === next.toggleModularParent &&
     prev.isEditMode === next.isEditMode &&
     prev.canWrite === next.canWrite &&
     prev.isHideMode === next.isHideMode &&

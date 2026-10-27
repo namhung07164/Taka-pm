@@ -116,15 +116,20 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
   const handleToggleProjectModular = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!hasModularTasks || !setExpandedModularTasks) return;
+    if (!isProjectModularExpanded && !isExpanded && handleToggle && p.id) {
+      handleToggle(p.id);
+    }
+    const targetParentIds = projectModularParentIds.map(String);
     if (isProjectModularExpanded) {
+      const toRemove = new Set(targetParentIds);
       setExpandedModularTasks((prev) => {
-        const next = prev.filter((id) => !projectModularParentIds.includes(id));
+        const next = prev.filter((id) => !toRemove.has(String(id)));
         safeSetItemSession('taka_gantt_modular_expanded', JSON.stringify(next));
         return next;
       });
     } else {
       setExpandedModularTasks((prev) => {
-        const next = Array.from(new Set([...prev, ...projectModularParentIds]));
+        const next = Array.from(new Set([...prev.map(String), ...targetParentIds]));
         safeSetItemSession('taka_gantt_modular_expanded', JSON.stringify(next));
         return next;
       });

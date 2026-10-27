@@ -384,6 +384,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
     prev.delStatusText === next.delStatusText &&
     prev.delStatusColorClass === next.delStatusColorClass &&
     prev.childTasksCount === next.childTasksCount &&
-    prev.isModularExpanded === next.isModularExpanded
+    prev.isModularExpanded === next.isModularExpanded &&
+    prev.onToggleModularParent === next.onToggleModularParent
   );
 });

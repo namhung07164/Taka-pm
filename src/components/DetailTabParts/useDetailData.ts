@@ -69,13 +69,6 @@ function collectTaskAliases(
       aliases.add(String(targetTask.taskCodePhu).trim());
       aliases.add(String(targetTask.taskCodePhu).trim().toLowerCase());
     }
-    if (targetTask.orderIndex !== undefined && targetTask.orderIndex !== null) {
-      const ord = Number(targetTask.orderIndex);
-      if (!isNaN(ord)) {
-        aliases.add(String(ord + 1));
-        aliases.add(`#${ord + 1}`);
-      }
-    }
   }
   return { targetTask, aliases };
 }
@@ -316,11 +309,6 @@ export function useDetailData({
       const idStr = String(id).trim();
       set.add(idStr);
       set.add(idStr.toLowerCase());
-      const numMatch = idStr.match(/[-#]?(\d+)$/);
-      if (numMatch) {
-        set.add(numMatch[1]);
-        set.add(`#${numMatch[1]}`);
-      }
     });
     return set;
   }, [expandedModularTasks]);
@@ -331,15 +319,14 @@ export function useDetailData({
     if (!pId) return;
 
     setExpandedModularTasks(prev => {
-      const isCurrentlyExpanded = prev.some(id => aliases.has(id) || aliases.has(String(id).trim().toLowerCase()));
+      const isCurrentlyExpanded = prev.some(id => aliases.has(String(id).trim()) || aliases.has(String(id).trim().toLowerCase()));
       let next: string[];
       if (isCurrentlyExpanded) {
-        next = prev.filter(id => !aliases.has(id) && !aliases.has(String(id).trim().toLowerCase()));
+        next = prev.filter(id => !aliases.has(String(id).trim()) && !aliases.has(String(id).trim().toLowerCase()));
       } else {
         const canonicalId = targetTask?.id ? String(targetTask.id).trim() : pId;
-        const cleaned = prev.filter(id => !aliases.has(id) && !aliases.has(String(id).trim().toLowerCase()));
+        const cleaned = prev.filter(id => !aliases.has(String(id).trim()) && !aliases.has(String(id).trim().toLowerCase()));
         cleaned.push(canonicalId);
-        if (targetTask?.taskCodePhu) cleaned.push(String(targetTask.taskCodePhu).trim());
         next = cleaned;
       }
       safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(next));

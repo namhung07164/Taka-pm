@@ -41,7 +41,15 @@ export function useGanttBatchOps({
 
   const selectedTaskSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
   const selectedProjectSet = useMemo(() => new Set(selectedProjectIds), [selectedProjectIds]);
-  const expandedModularSet = useMemo(() => new Set(expandedModularTasks), [expandedModularTasks]);
+  const expandedModularSet = useMemo(() => {
+    const set = new Set<string>();
+    expandedModularTasks.forEach(id => {
+      const s = String(id).trim();
+      set.add(s);
+      set.add(s.toLowerCase());
+    });
+    return set;
+  }, [expandedModularTasks]);
 
   // O(1) Pre-indexed Task Map (Rule 7)
   const taskByIdMap = useMemo(() => {
@@ -53,13 +61,39 @@ export function useGanttBatchOps({
   }, [tasks]);
 
   const toggleModularParent = useCallback((taskId: string | number) => {
-    const idStr = String(taskId);
+    const idStr = String(taskId).trim();
+    if (!idStr) return;
+
+    const targetTask = taskByIdMap.get(idStr) || tasks.find(
+      (t) => String(t.id) === idStr || (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === idStr.toLowerCase())
+    );
+
+    const aliases = new Set<string>([idStr, idStr.toLowerCase()]);
+    if (targetTask) {
+      if (targetTask.id) {
+        aliases.add(String(targetTask.id).trim());
+        aliases.add(String(targetTask.id).trim().toLowerCase());
+      }
+      if (targetTask.taskCodePhu) {
+        aliases.add(String(targetTask.taskCodePhu).trim());
+        aliases.add(String(targetTask.taskCodePhu).trim().toLowerCase());
+      }
+    }
+
     setExpandedModularTasks(prev => {
-      const next = prev.includes(idStr) ? prev.filter(id => id !== idStr) : [...prev, idStr];
+      const isCurrentlyExpanded = prev.some(id => aliases.has(String(id).trim()) || aliases.has(String(id).trim().toLowerCase()));
+      let next: string[];
+      if (isCurrentlyExpanded) {
+        next = prev.filter(id => !aliases.has(String(id).trim()) && !aliases.has(String(id).trim().toLowerCase()));
+      } else {
+        const canonicalId = targetTask?.id ? String(targetTask.id).trim() : idStr;
+        const cleaned = prev.filter(id => !aliases.has(String(id).trim()) && !aliases.has(String(id).trim().toLowerCase()));
+        next = [...cleaned, canonicalId];
+      }
       safeSetItemSession('taka_gantt_modular_expanded', JSON.stringify(next));
       return next;
     });
-  }, []);
+  }, [taskByIdMap, tasks]);
 
   // Hidden rows state
   const [hiddenRows, setHiddenRows] = useState<string[]>(() => {

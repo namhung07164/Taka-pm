@@ -203,8 +203,7 @@ export const DetailTableView = memo(function DetailTableView({
               const isModularExpanded = expandedModularTasks
                 ? (expandedModularTasks.has(String(t.id)) ||
                    expandedModularTasks.has(String(t.id).toLowerCase()) ||
-                   (!!t.taskCodePhu && (expandedModularTasks.has(t.taskCodePhu) || expandedModularTasks.has(t.taskCodePhu.trim().toLowerCase()))) ||
-                   (t.orderIndex !== undefined && (expandedModularTasks.has(String(Number(t.orderIndex) + 1)) || expandedModularTasks.has(`#${Number(t.orderIndex) + 1}`))))
+                   (!!t.taskCodePhu && (expandedModularTasks.has(t.taskCodePhu) || expandedModularTasks.has(t.taskCodePhu.trim().toLowerCase()))))
                 : false;
               return (
                 <DetailTaskRow

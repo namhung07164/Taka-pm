@@ -129,9 +129,12 @@ export function GanttTaskLeftColumns({
         {hasChildren && (
           <button
             type="button"
-            onClick={() => toggleModularParent(t.id)}
-            className="p-0.5 rounded bg-purple-600 text-white hover:bg-purple-700 shadow-xs shrink-0 cursor-pointer transition-all active:scale-90"
-            title="Toggle Grouped Tasks"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleModularParent(t.id);
+            }}
+            className="p-0.5 rounded bg-purple-600 text-white hover:bg-purple-700 shadow-xs shrink-0 cursor-pointer transition-all active:scale-95 touch-manipulation"
+            title={isModularExpanded ? `Collapse ${childCount} subtasks` : `Expand ${childCount} subtasks`}
           >
             {isModularExpanded ? (
               <ChevronDown className="w-3.5 h-3.5 text-white font-bold stroke-[2.5]" />

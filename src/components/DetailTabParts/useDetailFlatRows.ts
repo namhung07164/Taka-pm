@@ -206,10 +206,6 @@ export function useDetailFlatRows({
                 candidateIds.push(String(matchedParent.taskCodePhu).trim());
                 candidateIds.push(String(matchedParent.taskCodePhu).trim().toLowerCase());
               }
-              if (matchedParent.orderIndex !== undefined && matchedParent.orderIndex !== null) {
-                const ordNum = Number(matchedParent.orderIndex);
-                candidateIds.push(String(ordNum + 1), `#${ordNum + 1}`, String(ordNum));
-              }
 
               const isParentExpanded = candidateIds.some(cid => expandedModularTasks.has(cid));
               if (!isParentExpanded) {

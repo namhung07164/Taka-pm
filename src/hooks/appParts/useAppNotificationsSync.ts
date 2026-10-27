@@ -261,11 +261,11 @@ export function useAppNotificationsSync({
           prevNotifs.every(
             (p, idx) =>
               p.id === notifs[idx].id &&
-              p.type === notifs[idx].type &&
+              p.targetType === notifs[idx].targetType &&
               p.title === notifs[idx].title &&
               p.message === notifs[idx].message &&
-              p.isRead === notifs[idx].isRead &&
-              p.actionStatus === notifs[idx].actionStatus
+              p.dateStr === notifs[idx].dateStr &&
+              p.priority === notifs[idx].priority
           );
 
         if (!isSameNotifs) {
