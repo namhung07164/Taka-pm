@@ -4,20 +4,79 @@
     <meta charset="UTF-8" />
     <script>
       (function() {
+        if (typeof window !== 'undefined' && window.WebSocket) {
+          var NativeWebSocket = window.WebSocket;
+          var ViteMockWebSocket = function(url, protocols) {
+            if (protocols === 'vite-hmr' || protocols === 'vite-ping') {
+              var listeners = { open: [], message: [], close: [], error: [] };
+              var wsInstance = {
+                readyState: 1,
+                OPEN: 1,
+                CONNECTING: 0,
+                CLOSING: 2,
+                CLOSED: 3,
+                protocol: protocols || '',
+                url: String(url || ''),
+                send: function() {},
+                close: function() {},
+                addEventListener: function(type, fn) {
+                  if (listeners[type]) listeners[type].push(fn);
+                  if (type === 'open') {
+                    setTimeout(function() {
+                      try { fn({ type: 'open', target: wsInstance }); } catch (err) {}
+                    }, 0);
+                  }
+                },
+                removeEventListener: function(type, fn) {
+                  if (listeners[type]) {
+                    var idx = listeners[type].indexOf(fn);
+                    if (idx !== -1) listeners[type].splice(idx, 1);
+                  }
+                },
+                dispatchEvent: function() { return true; }
+              };
+              return wsInstance;
+            }
+            return new NativeWebSocket(url, protocols);
+          };
+          ViteMockWebSocket.prototype = NativeWebSocket.prototype;
+          ViteMockWebSocket.OPEN = 1;
+          ViteMockWebSocket.CONNECTING = 0;
+          ViteMockWebSocket.CLOSING = 2;
+          ViteMockWebSocket.CLOSED = 3;
+          window.WebSocket = ViteMockWebSocket;
+        }
+
         window.addEventListener('error', function(e) {
           var f = String((e && e.filename) || '');
           var m = String((e && e.message) || '');
-          if (f.indexOf('@vite/client') !== -1 || m.indexOf('WebSocket') !== -1 || m.indexOf('vite') !== -1 || m.indexOf('HMR') !== -1) {
-            e.preventDefault();
-            e.stopPropagation();
+          var s = String((e && e.error && (e.error.stack || e.error.message)) || '');
+          if (
+            f.indexOf('@vite/client') !== -1 ||
+            m.indexOf('@vite/client') !== -1 ||
+            s.indexOf('@vite/client') !== -1 ||
+            m.indexOf('WebSocket') !== -1 ||
+            s.indexOf('WebSocket') !== -1 ||
+            m.toLowerCase().indexOf('vite') !== -1 ||
+            s.toLowerCase().indexOf('vite') !== -1 ||
+            m.indexOf('HMR') !== -1
+          ) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
             return true;
           }
         }, true);
+
         window.addEventListener('unhandledrejection', function(e) {
-          var r = String((e && (e.reason && (e.reason.message || e.reason))) || '');
-          if (r.indexOf('WebSocket') !== -1 || r.indexOf('vite') !== -1 || r.indexOf('HMR') !== -1) {
-            e.preventDefault();
-            e.stopPropagation();
+          var r = String((e && (e.reason && (e.reason.stack || e.reason.message || e.reason))) || '');
+          if (
+            r.indexOf('@vite/client') !== -1 ||
+            r.indexOf('WebSocket') !== -1 ||
+            r.toLowerCase().indexOf('vite') !== -1 ||
+            r.indexOf('HMR') !== -1
+          ) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
           }
         }, true);
       })();

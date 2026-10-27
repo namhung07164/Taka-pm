@@ -137,13 +137,19 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 
-const shouldSuppress = (args) => {
-  return args.some(arg => 
-    typeof arg === 'string' && 
-    (arg.includes("Could not reach Cloud Firestore backend") || 
-     arg.includes("c050") ||
-     arg.includes("INTERNAL ASSERTION FAILED: Unexpected state"))
-  );
+const shouldSuppress = (args: any[]) => {
+  return args.some(arg => {
+    const text = typeof arg === 'string' ? arg : String(arg?.stack || arg?.message || arg || '');
+    return (
+      text.includes("Could not reach Cloud Firestore backend") || 
+      text.includes("c050") ||
+      text.includes("INTERNAL ASSERTION FAILED: Unexpected state") ||
+      text.includes("@vite/client") ||
+      text.includes("WebSocket closed without opened") ||
+      text.includes("vite-hmr") ||
+      text.includes("vite:ws:disconnect")
+    );
+  });
 };
 
 console.error = (...args) => {

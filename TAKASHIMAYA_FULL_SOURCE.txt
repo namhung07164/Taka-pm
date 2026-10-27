@@ -121701,6 +121701,13 @@ import { checkAndCleanStorageQuota, cleanupBloatedStorage } from './lib/storage'
 import { bootstrapLocalStore } from './lib/backgroundSyncWorker';
 
 // Proactively verify & clean localStorage quota and kick off Local-First IndexedDB hydration before React mounts
+try {
+  if (typeof window !== 'undefined' && window.location.search.includes('v=')) {
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete('v');
+    window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search + cleanUrl.hash);
+  }
+} catch {}
 checkAndCleanStorageQuota();
 bootstrapLocalStore().catch(() => {});
 
@@ -121824,13 +121831,19 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 const originalConsoleError = console.error;
 const originalConsoleWarn = console.warn;
 
-const shouldSuppress = (args) => {
-  return args.some(arg => 
-    typeof arg === 'string' && 
-    (arg.includes("Could not reach Cloud Firestore backend") || 
-     arg.includes("c050") ||
-     arg.includes("INTERNAL ASSERTION FAILED: Unexpected state"))
-  );
+const shouldSuppress = (args: any[]) => {
+  return args.some(arg => {
+    const text = typeof arg === 'string' ? arg : String(arg?.stack || arg?.message || arg || '');
+    return (
+      text.includes("Could not reach Cloud Firestore backend") || 
+      text.includes("c050") ||
+      text.includes("INTERNAL ASSERTION FAILED: Unexpected state") ||
+      text.includes("@vite/client") ||
+      text.includes("WebSocket closed without opened") ||
+      text.includes("vite-hmr") ||
+      text.includes("vite:ws:disconnect")
+    );
+  });
 };
 
 console.error = (...args) => {
@@ -129763,20 +129776,79 @@ FILE: index.html
     <meta charset="UTF-8" />
     <script>
       (function() {
+        if (typeof window !== 'undefined' && window.WebSocket) {
+          var NativeWebSocket = window.WebSocket;
+          var ViteMockWebSocket = function(url, protocols) {
+            if (protocols === 'vite-hmr' || protocols === 'vite-ping') {
+              var listeners = { open: [], message: [], close: [], error: [] };
+              var wsInstance = {
+                readyState: 1,
+                OPEN: 1,
+                CONNECTING: 0,
+                CLOSING: 2,
+                CLOSED: 3,
+                protocol: protocols || '',
+                url: String(url || ''),
+                send: function() {},
+                close: function() {},
+                addEventListener: function(type, fn) {
+                  if (listeners[type]) listeners[type].push(fn);
+                  if (type === 'open') {
+                    setTimeout(function() {
+                      try { fn({ type: 'open', target: wsInstance }); } catch (err) {}
+                    }, 0);
+                  }
+                },
+                removeEventListener: function(type, fn) {
+                  if (listeners[type]) {
+                    var idx = listeners[type].indexOf(fn);
+                    if (idx !== -1) listeners[type].splice(idx, 1);
+                  }
+                },
+                dispatchEvent: function() { return true; }
+              };
+              return wsInstance;
+            }
+            return new NativeWebSocket(url, protocols);
+          };
+          ViteMockWebSocket.prototype = NativeWebSocket.prototype;
+          ViteMockWebSocket.OPEN = 1;
+          ViteMockWebSocket.CONNECTING = 0;
+          ViteMockWebSocket.CLOSING = 2;
+          ViteMockWebSocket.CLOSED = 3;
+          window.WebSocket = ViteMockWebSocket;
+        }
+
         window.addEventListener('error', function(e) {
           var f = String((e && e.filename) || '');
           var m = String((e && e.message) || '');
-          if (f.indexOf('@vite/client') !== -1 || m.indexOf('WebSocket') !== -1 || m.indexOf('vite') !== -1 || m.indexOf('HMR') !== -1) {
-            e.preventDefault();
-            e.stopPropagation();
+          var s = String((e && e.error && (e.error.stack || e.error.message)) || '');
+          if (
+            f.indexOf('@vite/client') !== -1 ||
+            m.indexOf('@vite/client') !== -1 ||
+            s.indexOf('@vite/client') !== -1 ||
+            m.indexOf('WebSocket') !== -1 ||
+            s.indexOf('WebSocket') !== -1 ||
+            m.toLowerCase().indexOf('vite') !== -1 ||
+            s.toLowerCase().indexOf('vite') !== -1 ||
+            m.indexOf('HMR') !== -1
+          ) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
             return true;
           }
         }, true);
+
         window.addEventListener('unhandledrejection', function(e) {
-          var r = String((e && (e.reason && (e.reason.message || e.reason))) || '');
-          if (r.indexOf('WebSocket') !== -1 || r.indexOf('vite') !== -1 || r.indexOf('HMR') !== -1) {
-            e.preventDefault();
-            e.stopPropagation();
+          var r = String((e && (e.reason && (e.reason.stack || e.reason.message || e.reason))) || '');
+          if (
+            r.indexOf('@vite/client') !== -1 ||
+            r.indexOf('WebSocket') !== -1 ||
+            r.toLowerCase().indexOf('vite') !== -1 ||
+            r.indexOf('HMR') !== -1
+          ) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
           }
         }, true);
       })();
@@ -129814,7 +129886,6 @@ FILE: index.html
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
 
 ================================================================================
 FILE: src/components/DetailTabParts/DetailMobileCardControls.tsx
