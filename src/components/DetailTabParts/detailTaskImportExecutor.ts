@@ -16,6 +16,7 @@ import { findAffectedProjects } from '../../lib/taskStateService';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { resolveParentChildHierarchy } from './detailTaskImportHierarchy';
 import { buildAffectedProjectsSyncOps } from './detailTaskImportProjectSync';
+import { hydrateImportContextTasks } from './detailTaskImportHydrator';
 
 interface ExecuteImportTasksParams {
   rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
@@ -32,11 +33,11 @@ export async function executeImportTasks({
   appUsers,
   currentUser
 }: ExecuteImportTasksParams): Promise<{ count: number; projectCount?: number }> {
-  // 1. Gather all tasks across memory and local storage to guarantee 100% presence
-  const allInitialTasks = [...useAppStore.getState().tasks];
+  // 1. Gather all tasks across memory, local storage, and Firestore/summaries for target & referenced projects
+  const initialCandidates = [...useAppStore.getState().tasks];
   tasks.forEach(t => {
-    if (!allInitialTasks.some(existing => existing.id === t.id)) {
-      allInitialTasks.push(t);
+    if (!initialCandidates.some(existing => existing.id === t.id)) {
+      initialCandidates.push(t);
     }
   });
 
@@ -44,13 +45,19 @@ export async function executeImportTasks({
     const { localDb } = await import('../../lib/localDb');
     const dbTasks = await localDb.tasks.toArray();
     dbTasks.forEach(t => {
-      if (!allInitialTasks.some(existing => existing.id === t.id)) {
-        allInitialTasks.push(t);
+      if (!initialCandidates.some(existing => existing.id === t.id)) {
+        initialCandidates.push(t);
       }
     });
   } catch {
     // localDb fallback
   }
+
+  const allInitialTasks = await hydrateImportContextTasks(
+    rawParsedRowsByProject,
+    projects,
+    initialCandidates
+  );
 
   // 2. Build multi-index maps for existing tasks
   const existingTasksById = new Map<string, Task>();
@@ -199,9 +206,10 @@ export async function executeImportTasks({
         if (!existing && codeKey) existing = existingTasksByCode.get(codeKey);
       }
 
-      const id = existing ? existing.id : `t_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${tasksToImport.length}`;
+      const hasRealExistingId = Boolean(existing?.id && !String(existing.id).startsWith('ts_'));
+      const id = hasRealExistingId ? existing!.id : `t_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${tasksToImport.length}`;
 
-      if (existing) {
+      if (existing && hasRealExistingId) {
         if (!previousStates.has(id)) {
           previousStates.set(id, existing);
         }
@@ -276,7 +284,7 @@ export async function executeImportTasks({
         ? {
             ...existing,
             ...t,
-            id: existing.id,
+            id,
             parentTaskId: hasImportedParentRef ? (t.parentTaskId || existing.parentTaskId) : undefined,
             predecessorTaskIds: undefined,
             predecessors: undefined,
@@ -300,6 +308,7 @@ export async function executeImportTasks({
             startManual: false,
             updatedAt: new Date().toISOString()
           };
+      delete (finalTask as any)._isVirtualSummary;
 
       if ((!finalTask.projectId || !finalTask.projectStore || finalTask.projectYear === undefined) && projects && projects.length > 0) {
         const pCode = String(finalTask.projectCode || '').trim().toLowerCase();
@@ -307,7 +316,7 @@ export async function executeImportTasks({
         const pYear = String(finalTask.projectYear ?? '').trim();
         const matched = projects.find(p => {
           if (finalTask.projectId && String(p.id) === String(finalTask.projectId)) return true;
-          const matchCode = String(p.code || '').trim().toLowerCase() === pCode || String(p.no || '').trim().toLowerCase() === pCode;
+          const matchCode = matchProjectCode(p.code, pCode) || String(p.no || '').trim().toLowerCase() === pCode;
           const matchStore = !pStore || !p.store || String(p.store).trim().toLowerCase() === pStore;
           const matchYear = !pYear || p.year === undefined || p.year === null || String(p.year).trim() === pYear;
           return matchCode && matchStore && matchYear;
@@ -388,12 +397,18 @@ export async function executeImportTasks({
 
   const tasksToSaveIds = new Set<string>();
   calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
-  updatedParents.forEach(p => tasksToSaveIds.add(p.id));
+  updatedParents.forEach(p => {
+    if (p.id && !String(p.id).startsWith('ts_')) {
+      tasksToSaveIds.add(p.id);
+    }
+  });
   const finalTasksToSave: Task[] = [];
   tasksToSaveIds.forEach(tid => {
+    if (String(tid).startsWith('ts_')) return;
     const tk = allTasksMap.get(tid);
     if (tk) {
       const stamped = { ...tk, updatedAt: commitNowIso };
+      delete (stamped as any)._isVirtualSummary;
       allTasksMap.set(tid, stamped);
       finalTasksToSave.push(stamped);
     }

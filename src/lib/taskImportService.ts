@@ -286,22 +286,29 @@ export async function batchSaveTasksToFirestore(
     .catch(() => {});
 
   // 2. Build unified MassWriteOp list and Delta list for project summaries + tasks + new delegations
-  const { executeMassBatchOperations } = await import('./massBatchWriteEngine');
+  const [{ executeMassBatchOperations }, { removeUndefinedDeep }] = await Promise.all([
+    import('./massBatchWriteEngine'),
+    import('./firestoreSanitizer'),
+  ]);
   const writeOps: MassWriteOp[] = [];
   const deltaItems: TakaDeltaItem[] = [];
 
   // Put authoritative project summary delta items FIRST so receiving devices seal project summaries immediately
   const syncedSummaryProjectIds = new Set<string>();
   if (options?.projectDeltaItems && options.projectDeltaItems.length > 0) {
-    deltaItems.push(...options.projectDeltaItems);
     for (const pItem of options.projectDeltaItems) {
+      deltaItems.push({
+        ...pItem,
+        data: pItem.data ? removeUndefinedDeep(pItem.data) : pItem.data,
+      });
       if (pItem.docId) syncedSummaryProjectIds.add(String(pItem.docId).trim());
       if (pItem.projectId) syncedSummaryProjectIds.add(String(pItem.projectId).trim());
     }
   }
 
   for (const t of tasksToSave) {
-    const freshTask: Task = { ...t, updatedAt: t.updatedAt || now };
+    if (!t || !t.id || String(t.id).startsWith('ts_')) continue;
+    const freshTask: Task = removeUndefinedDeep({ ...t, updatedAt: t.updatedAt || now });
     writeOps.push({
       collectionName: 'taka_tasks',
       docId: freshTask.id,
@@ -329,44 +336,48 @@ export async function batchSaveTasksToFirestore(
 
     const delGroup = taskDelegationMap.get(freshTask.id);
     if (delGroup) {
+      const cleanDelGroup = removeUndefinedDeep(delGroup);
       writeOps.push({
         collectionName: 'taka_delegation_groups',
-        docId: delGroup.id,
+        docId: cleanDelGroup.id,
         action: 'set',
-        data: delGroup,
+        data: cleanDelGroup,
         merge: true,
       });
 
       if (!options?.skipTaskDeltaBroadcast) {
         deltaItems.push({
-          docId: delGroup.id,
+          docId: cleanDelGroup.id,
           collectionName: 'taka_delegations' as const,
           action: 'create' as const,
           isPatch: false,
-          data: delGroup,
-          year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
-          projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
-          projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
-          projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
+          data: cleanDelGroup,
+          year: cleanDelGroup.projectYear ? String(cleanDelGroup.projectYear) : undefined,
+          projectId: cleanDelGroup.projectId ? String(cleanDelGroup.projectId) : undefined,
+          projectCode: cleanDelGroup.projectCode ? String(cleanDelGroup.projectCode) : undefined,
+          projectStore: cleanDelGroup.projectStore ? String(cleanDelGroup.projectStore) : undefined,
         });
       }
     }
   }
 
   if (options?.projectWriteOps && options.projectWriteOps.length > 0) {
-    writeOps.push(...options.projectWriteOps);
+    options.projectWriteOps.forEach((op) => {
+      writeOps.push({
+        ...op,
+        data: op.data ? removeUndefinedDeep(op.data) : op.data,
+      });
+    });
   }
 
-  // 3. Commit Firestore batch AND broadcast coalesced delta in parallel (1 network round-trip instead of 4)
-  await Promise.all([
-    executeMassBatchOperations(writeOps, {
-      suppressAutoDelta: true,
-      skipLocalMirror: true,
-    }),
-    deltaItems.length > 0
-      ? recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id)
-      : Promise.resolve(),
-  ]);
+  // 3. Commit Firestore batch FIRST, then broadcast coalesced delta so other devices always read committed docs
+  await executeMassBatchOperations(writeOps, {
+    suppressAutoDelta: true,
+    skipLocalMirror: true,
+  });
+  if (deltaItems.length > 0) {
+    await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
+  }
 }
 
 /**

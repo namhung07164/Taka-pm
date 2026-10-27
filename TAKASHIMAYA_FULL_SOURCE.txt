@@ -142151,17 +142151,29 @@ export async function batchSaveTasksToFirestore(
     .catch(() => {});
 
   // 2. Build unified MassWriteOp list and Delta list for project summaries + tasks + new delegations
-  const { executeMassBatchOperations } = await import('./massBatchWriteEngine');
+  const [{ executeMassBatchOperations }, { removeUndefinedDeep }] = await Promise.all([
+    import('./massBatchWriteEngine'),
+    import('./firestoreSanitizer'),
+  ]);
   const writeOps: MassWriteOp[] = [];
   const deltaItems: TakaDeltaItem[] = [];
 
   // Put authoritative project summary delta items FIRST so receiving devices seal project summaries immediately
+  const syncedSummaryProjectIds = new Set<string>();
   if (options?.projectDeltaItems && options.projectDeltaItems.length > 0) {
-    deltaItems.push(...options.projectDeltaItems);
+    for (const pItem of options.projectDeltaItems) {
+      deltaItems.push({
+        ...pItem,
+        data: pItem.data ? removeUndefinedDeep(pItem.data) : pItem.data,
+      });
+      if (pItem.docId) syncedSummaryProjectIds.add(String(pItem.docId).trim());
+      if (pItem.projectId) syncedSummaryProjectIds.add(String(pItem.projectId).trim());
+    }
   }
 
   for (const t of tasksToSave) {
-    const freshTask: Task = { ...t, updatedAt: t.updatedAt || now };
+    if (!t || !t.id || String(t.id).startsWith('ts_')) continue;
+    const freshTask: Task = removeUndefinedDeep({ ...t, updatedAt: t.updatedAt || now });
     writeOps.push({
       collectionName: 'taka_tasks',
       docId: freshTask.id,
@@ -142171,6 +142183,8 @@ export async function batchSaveTasksToFirestore(
     });
 
     if (!options?.skipTaskDeltaBroadcast) {
+      const tProjId = freshTask.projectId ? String(freshTask.projectId).trim() : '';
+      const hasAuthProjSummary = Boolean(tProjId && syncedSummaryProjectIds.has(tProjId));
       deltaItems.push({
         docId: freshTask.id,
         collectionName: 'taka_tasks' as const,
@@ -142178,52 +142192,57 @@ export async function batchSaveTasksToFirestore(
         isPatch: false,
         data: freshTask,
         year: freshTask.projectYear ? String(freshTask.projectYear) : undefined,
-        projectId: freshTask.projectId ? String(freshTask.projectId) : undefined,
+        projectId: tProjId || undefined,
         projectCode: freshTask.projectCode ? String(freshTask.projectCode) : undefined,
         projectStore: freshTask.projectStore ? String(freshTask.projectStore) : undefined,
-      });
+        ...(hasAuthProjSummary ? { skipSummaryRollup: true } : {}),
+      } as TakaDeltaItem);
     }
 
     const delGroup = taskDelegationMap.get(freshTask.id);
     if (delGroup) {
+      const cleanDelGroup = removeUndefinedDeep(delGroup);
       writeOps.push({
         collectionName: 'taka_delegation_groups',
-        docId: delGroup.id,
+        docId: cleanDelGroup.id,
         action: 'set',
-        data: delGroup,
+        data: cleanDelGroup,
         merge: true,
       });
 
       if (!options?.skipTaskDeltaBroadcast) {
         deltaItems.push({
-          docId: delGroup.id,
+          docId: cleanDelGroup.id,
           collectionName: 'taka_delegations' as const,
           action: 'create' as const,
           isPatch: false,
-          data: delGroup,
-          year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
-          projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
-          projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
-          projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
+          data: cleanDelGroup,
+          year: cleanDelGroup.projectYear ? String(cleanDelGroup.projectYear) : undefined,
+          projectId: cleanDelGroup.projectId ? String(cleanDelGroup.projectId) : undefined,
+          projectCode: cleanDelGroup.projectCode ? String(cleanDelGroup.projectCode) : undefined,
+          projectStore: cleanDelGroup.projectStore ? String(cleanDelGroup.projectStore) : undefined,
         });
       }
     }
   }
 
   if (options?.projectWriteOps && options.projectWriteOps.length > 0) {
-    writeOps.push(...options.projectWriteOps);
+    options.projectWriteOps.forEach((op) => {
+      writeOps.push({
+        ...op,
+        data: op.data ? removeUndefinedDeep(op.data) : op.data,
+      });
+    });
   }
 
-  // 3. Commit Firestore batch AND broadcast coalesced delta in parallel (1 network round-trip instead of 4)
-  await Promise.all([
-    executeMassBatchOperations(writeOps, {
-      suppressAutoDelta: true,
-      skipLocalMirror: true,
-    }),
-    deltaItems.length > 0
-      ? recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id)
-      : Promise.resolve(),
-  ]);
+  // 3. Commit Firestore batch FIRST, then broadcast coalesced delta so other devices always read committed docs
+  await executeMassBatchOperations(writeOps, {
+    suppressAutoDelta: true,
+    skipLocalMirror: true,
+  });
+  if (deltaItems.length > 0) {
+    await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
+  }
 }
 
 /**
@@ -142267,6 +142286,7 @@ export async function syncAffectedProjectSummaries(
   );
 }
 
+
 === FILE: src/components/DetailTabParts/detailTaskImportExecutor.ts ===
 import { Task, Project, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
@@ -142286,6 +142306,7 @@ import { findAffectedProjects } from '../../lib/taskStateService';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { resolveParentChildHierarchy } from './detailTaskImportHierarchy';
 import { buildAffectedProjectsSyncOps } from './detailTaskImportProjectSync';
+import { hydrateImportContextTasks } from './detailTaskImportHydrator';
 
 interface ExecuteImportTasksParams {
   rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
@@ -142302,11 +142323,11 @@ export async function executeImportTasks({
   appUsers,
   currentUser
 }: ExecuteImportTasksParams): Promise<{ count: number; projectCount?: number }> {
-  // 1. Gather all tasks across memory and local storage to guarantee 100% presence
-  const allInitialTasks = [...useAppStore.getState().tasks];
+  // 1. Gather all tasks across memory, local storage, and Firestore/summaries for target & referenced projects
+  const initialCandidates = [...useAppStore.getState().tasks];
   tasks.forEach(t => {
-    if (!allInitialTasks.some(existing => existing.id === t.id)) {
-      allInitialTasks.push(t);
+    if (!initialCandidates.some(existing => existing.id === t.id)) {
+      initialCandidates.push(t);
     }
   });
 
@@ -142314,13 +142335,19 @@ export async function executeImportTasks({
     const { localDb } = await import('../../lib/localDb');
     const dbTasks = await localDb.tasks.toArray();
     dbTasks.forEach(t => {
-      if (!allInitialTasks.some(existing => existing.id === t.id)) {
-        allInitialTasks.push(t);
+      if (!initialCandidates.some(existing => existing.id === t.id)) {
+        initialCandidates.push(t);
       }
     });
   } catch {
     // localDb fallback
   }
+
+  const allInitialTasks = await hydrateImportContextTasks(
+    rawParsedRowsByProject,
+    projects,
+    initialCandidates
+  );
 
   // 2. Build multi-index maps for existing tasks
   const existingTasksById = new Map<string, Task>();
@@ -142469,9 +142496,10 @@ export async function executeImportTasks({
         if (!existing && codeKey) existing = existingTasksByCode.get(codeKey);
       }
 
-      const id = existing ? existing.id : `t_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${tasksToImport.length}`;
+      const hasRealExistingId = Boolean(existing?.id && !String(existing.id).startsWith('ts_'));
+      const id = hasRealExistingId ? existing!.id : `t_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${tasksToImport.length}`;
 
-      if (existing) {
+      if (existing && hasRealExistingId) {
         if (!previousStates.has(id)) {
           previousStates.set(id, existing);
         }
@@ -142546,7 +142574,7 @@ export async function executeImportTasks({
         ? {
             ...existing,
             ...t,
-            id: existing.id,
+            id,
             parentTaskId: hasImportedParentRef ? (t.parentTaskId || existing.parentTaskId) : undefined,
             predecessorTaskIds: undefined,
             predecessors: undefined,
@@ -142570,6 +142598,7 @@ export async function executeImportTasks({
             startManual: false,
             updatedAt: new Date().toISOString()
           };
+      delete (finalTask as any)._isVirtualSummary;
 
       if ((!finalTask.projectId || !finalTask.projectStore || finalTask.projectYear === undefined) && projects && projects.length > 0) {
         const pCode = String(finalTask.projectCode || '').trim().toLowerCase();
@@ -142577,7 +142606,7 @@ export async function executeImportTasks({
         const pYear = String(finalTask.projectYear ?? '').trim();
         const matched = projects.find(p => {
           if (finalTask.projectId && String(p.id) === String(finalTask.projectId)) return true;
-          const matchCode = String(p.code || '').trim().toLowerCase() === pCode || String(p.no || '').trim().toLowerCase() === pCode;
+          const matchCode = matchProjectCode(p.code, pCode) || String(p.no || '').trim().toLowerCase() === pCode;
           const matchStore = !pStore || !p.store || String(p.store).trim().toLowerCase() === pStore;
           const matchYear = !pYear || p.year === undefined || p.year === null || String(p.year).trim() === pYear;
           return matchCode && matchStore && matchYear;
@@ -142658,12 +142687,18 @@ export async function executeImportTasks({
 
   const tasksToSaveIds = new Set<string>();
   calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
-  updatedParents.forEach(p => tasksToSaveIds.add(p.id));
+  updatedParents.forEach(p => {
+    if (p.id && !String(p.id).startsWith('ts_')) {
+      tasksToSaveIds.add(p.id);
+    }
+  });
   const finalTasksToSave: Task[] = [];
   tasksToSaveIds.forEach(tid => {
+    if (String(tid).startsWith('ts_')) return;
     const tk = allTasksMap.get(tid);
     if (tk) {
       const stamped = { ...tk, updatedAt: commitNowIso };
+      delete (stamped as any)._isVirtualSummary;
       allTasksMap.set(tid, stamped);
       finalTasksToSave.push(stamped);
     }
@@ -142748,6 +142783,7 @@ export async function executeImportTasks({
 
   return { count: tasksToImport.length, projectCount: affectedProjects.length };
 }
+
 
 === FILE: src/lib/deltaApplyParts/deltaProjectReconciler.ts ===
 import { Project, Task, DelegationGroup } from '../../types';
@@ -160112,3 +160148,219 @@ export function subscribePaintCategoriesConfig(
     }
   );
 }
+
+=== FILE: src/components/DetailTabParts/detailTaskImportHydrator.ts ===
+import { Project, Task } from '../../types';
+import { ensureProjectTasksLoaded } from '../../lib/taskStateService';
+import { matchProjectCode } from '../../lib/projectDatesService';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { normalizeDashes, isTaskBelongsToProject } from '../../lib/utils';
+import { splitPredecessors } from '../../lib/ganttUtils';
+import { parsePredecessorToken } from '../../lib/predecessorMatchUtils';
+
+/**
+ * Ensures all existing tasks for target projects in the import file AND any external
+ * projects referenced via `predecessor` or `parentTaskCode` are loaded into memory
+ * (from localDb / Firestore `taka_tasks`, with fallback to `project.taskSummaries`
+ * virtual tasks) before running `executeImportTasks`.
+ *
+ * This prevents importing onto a device where the target project or cross-project
+ * predecessor project was not expanded in the UI prior to import.
+ */
+export async function hydrateImportContextTasks(
+  rawParsedRowsByProject: Map<string, Array<{ rowData?: any; [k: string]: any }>>,
+  projects: Project[],
+  initialTasks: Task[]
+): Promise<Task[]> {
+  const safeProjects = Array.isArray(projects) ? projects : [];
+  const tasksMap = new Map<string, Task>();
+  for (const t of initialTasks || []) {
+    if (t && t.id && !t.isDeleted) {
+      tasksMap.set(String(t.id), t);
+    }
+  }
+
+  const projectsToHydrate = new Map<string, Project>();
+
+  const findMatchingProject = (
+    code?: string,
+    store?: string,
+    year?: string | number,
+    projectId?: string
+  ): Project | undefined => {
+    if (projectId) {
+      const byId = safeProjects.find((p) => p && !p.isDeleted && String(p.id) === String(projectId));
+      if (byId) return byId;
+    }
+    if (!code) return undefined;
+    return safeProjects.find((p) => {
+      if (!p || p.isDeleted) return false;
+      const codeMatch = matchProjectCode(p.code, code);
+      const storeMatch =
+        !store ||
+        !p.store ||
+        String(p.store).trim().toLowerCase() === String(store).trim().toLowerCase();
+      const yearMatch =
+        !year ||
+        p.year === undefined ||
+        p.year === null ||
+        String(p.year).trim() === String(year).trim();
+      return codeMatch && storeMatch && yearMatch;
+    });
+  };
+
+  for (const [, rawGroup] of rawParsedRowsByProject.entries()) {
+    const firstEntry = rawGroup[0];
+    const sample = firstEntry?.rowData ?? firstEntry;
+    if (!sample) continue;
+    const targetProj = findMatchingProject(
+      sample.projectCode,
+      sample.projectStore,
+      sample.projectYear,
+      sample.projectId
+    );
+    if (targetProj) {
+      projectsToHydrate.set(String(targetProj.id || targetProj.code), targetProj);
+    }
+
+    for (const entry of rawGroup) {
+      const row = entry?.rowData ?? entry;
+      const predRaw = String(row?.predecessor || '').trim();
+      if (predRaw) {
+        const tokens = splitPredecessors(predRaw);
+        for (const tok of tokens) {
+          const parsedTok = parsePredecessorToken(tok);
+          const refCode = normalizeDashes(parsedTok.code || tok).trim();
+          const hashIdx = refCode.indexOf('#');
+          let projPrefix = hashIdx > 0 ? refCode.slice(0, hashIdx).trim() : '';
+          if (!projPrefix) {
+            const dashMatch = refCode.match(/^([A-Za-z0-9_-]+?)[-#]\d+$/);
+            if (dashMatch) projPrefix = dashMatch[1].trim();
+          }
+          if (projPrefix) {
+            const extProj =
+              findMatchingProject(projPrefix, sample.projectStore, sample.projectYear) ||
+              findMatchingProject(projPrefix, sample.projectStore) ||
+              findMatchingProject(projPrefix);
+            if (extProj) {
+              projectsToHydrate.set(String(extProj.id || extProj.code), extProj);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 1. Load real tasks from Dexie / Firestore for all referenced projects
+  if (projectsToHydrate.size > 0) {
+    const hydratePromises = Array.from(projectsToHydrate.values()).map((proj) =>
+      ensureProjectTasksLoaded(proj.code || '', {
+        projectId: proj.id,
+        store: proj.store,
+        year: proj.year,
+      }).catch(() => [] as Task[])
+    );
+    const hydratedLists = await Promise.all(hydratePromises);
+    for (const list of hydratedLists) {
+      for (const t of list || []) {
+        if (t && t.id && !t.isDeleted) {
+          tasksMap.set(String(t.id), t);
+        }
+      }
+    }
+  }
+
+  // 2. Fallback: For any project in `safeProjects` whose `taskSummaries` contain tasks
+  // not yet present in `tasksMap` (e.g. offline or unhydrated external project),
+  // synthesize complete Task records from `project.taskSummaries` so predecessor/hierarchy
+  // resolution and subtask numbering never miss existing tasks.
+  const currentTasksList = Array.from(tasksMap.values());
+  const existingNameKeyByProj = new Set<string>();
+  const existingCodeKeyByProj = new Set<string>();
+
+  for (const t of currentTasksList) {
+    const pKey = t.projectId
+      ? `pid:${String(t.projectId).trim()}`
+      : `c:${String(t.projectCode || '').trim().toLowerCase()}|${String(t.projectStore || '').trim().toLowerCase()}|${String(t.projectYear || '').trim()}`;
+    if (t.name) {
+      existingNameKeyByProj.add(`${pKey}::n::${String(t.name).trim().toLowerCase()}`);
+    }
+    if (t.taskCodePhu) {
+      existingCodeKeyByProj.add(`${pKey}::c::${String(t.taskCodePhu).trim().toLowerCase()}`);
+    }
+  }
+
+  for (const proj of safeProjects) {
+    if (!proj || proj.isDeleted || !Array.isArray(proj.taskSummaries) || proj.taskSummaries.length === 0) {
+      continue;
+    }
+    const pIdStr = proj.id ? String(proj.id).trim() : '';
+    const pKey = pIdStr
+      ? `pid:${pIdStr}`
+      : `c:${String(proj.code || '').trim().toLowerCase()}|${String(proj.store || '').trim().toLowerCase()}|${String(proj.year || '').trim()}`;
+
+    proj.taskSummaries.forEach((ts: any, idx: number) => {
+      if (!ts) return;
+      const rawId = ts.id ? String(ts.id).trim() : '';
+      if (rawId && isTaskDeletedInTracker(rawId, pIdStr || undefined)) return;
+      if (rawId && !rawId.startsWith('ts_') && tasksMap.has(rawId)) return;
+
+      const tsCode = String(
+        ts.taskCodePhu || (proj.code ? `${proj.code}#${idx + 1}` : '')
+      ).trim();
+      const tsName = String(ts.name || '').trim();
+      if (!tsName && !tsCode && !ts.start && !ts.finish) return;
+
+      if (tsCode && existingCodeKeyByProj.has(`${pKey}::c::${tsCode.toLowerCase()}`)) return;
+      if (
+        !rawId &&
+        tsName &&
+        existingNameKeyByProj.has(`${pKey}::n::${tsName.toLowerCase()}`)
+      ) {
+        return;
+      }
+
+      const synthId =
+        rawId && !rawId.startsWith('ts_')
+          ? rawId
+          : `ts_${proj.id || proj.code}_${proj.store || 'HCM'}_${proj.year || ''}_${idx}`;
+
+      if (tasksMap.has(synthId)) return;
+
+      const synthTask: Task = {
+        id: synthId,
+        name: tsName || tsCode || `Task ${idx + 1}`,
+        start: ts.start || proj.computedTakStart || proj.start || '',
+        finish: ts.finish || proj.computedTakCompl || proj.handover || '',
+        duration: ts.duration !== undefined ? String(ts.duration) : '',
+        party: ts.party || proj.party || '',
+        runningStatus: ts.runningStatus || 'On process',
+        approval: ts.approval || '',
+        delegation: Boolean(ts.delegation),
+        predecessor: ts.predecessor || '',
+        predecessorTaskIds: Array.isArray(ts.predecessorTaskIds) ? ts.predecessorTaskIds : undefined,
+        parentTaskId: ts.parentTaskId,
+        isModularParent: Boolean(ts.isModularParent),
+        taskCodePhu: tsCode || undefined,
+        orderIndex: ts.orderIndex !== undefined ? Number(ts.orderIndex) : idx,
+        projectId: proj.id,
+        projectCode: proj.code || '',
+        projectStore: proj.store || 'HCM',
+        projectYear: proj.year !== undefined && proj.year !== null ? Number(proj.year) : undefined,
+        baselineStart: ts.baselineStart,
+        baselineFinish: ts.baselineFinish,
+      };
+
+      if (synthId.startsWith('ts_')) {
+        (synthTask as any)._isVirtualSummary = true;
+      }
+
+      if (isTaskBelongsToProject(synthTask, proj, safeProjects)) {
+        tasksMap.set(synthId, synthTask);
+      }
+    });
+  }
+
+  return Array.from(tasksMap.values());
+}
+
