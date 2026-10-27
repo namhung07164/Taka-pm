@@ -286,6 +286,15 @@ export function GanttTableView({
     return fallbackIds;
   }, [flatGanttRows, visibleGanttRows, currentProjects, getGroupTasksForProject]);
 
+  const orderedTaskIdsRef = React.useRef(allOrderedTaskIds);
+  orderedTaskIdsRef.current = allOrderedTaskIds;
+  const onRowTaskCheckboxChange = React.useCallback(
+    (e: React.ChangeEvent<HTMLInputElement> | React.MouseEvent, id: string, isShift?: boolean) => {
+      handleTaskCheckboxChange(e, id, isShift, orderedTaskIdsRef.current);
+    },
+    [handleTaskCheckboxChange]
+  );
+
   return (
     <div
       ref={tableContainerRef}
@@ -464,7 +473,7 @@ export function GanttTableView({
                   handleTaskDragEnd={handleTaskDragEnd}
                   dragOverTaskId={dragOverTaskId}
                   dropPosition={dropPosition}
-                  handleTaskCheckboxChange={(e, id, isShift) => handleTaskCheckboxChange(e, id, isShift, allOrderedTaskIds)}
+                  handleTaskCheckboxChange={onRowTaskCheckboxChange}
                   isHideMode={isHideMode}
                   toggleHideRow={toggleHideRow}
                   onNavigateToTaskDetail={onNavigateToTaskDetail}

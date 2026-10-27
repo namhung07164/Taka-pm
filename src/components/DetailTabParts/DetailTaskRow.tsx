@@ -366,4 +366,24 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
       )}
     </tr>
   );
+}, (prev, next) => {
+  return (
+    prev.item.task === next.item.task &&
+    prev.item.project === next.item.project &&
+    prev.item.taskIndex === next.item.taskIndex &&
+    prev.item.isProjDelegationOn === next.item.isProjDelegationOn &&
+    prev.item.groupTasks.length === next.item.groupTasks.length &&
+    prev.visibleColumns === next.visibleColumns &&
+    prev.canWrite === next.canWrite &&
+    prev.isSelected === next.isSelected &&
+    prev.isDragging === next.isDragging &&
+    prev.isDragOver === next.isDragOver &&
+    prev.dropPosition === next.dropPosition &&
+    prev.taskCode === next.taskCode &&
+    prev.isFocused === next.isFocused &&
+    prev.delStatusText === next.delStatusText &&
+    prev.delStatusColorClass === next.delStatusColorClass &&
+    prev.childTasksCount === next.childTasksCount &&
+    prev.isModularExpanded === next.isModularExpanded
+  );
 });

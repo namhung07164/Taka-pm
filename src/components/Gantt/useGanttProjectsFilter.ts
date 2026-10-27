@@ -187,8 +187,17 @@ export function useGanttProjectsFilter({
     return map;
   }, [tasks]);
 
+  const projectTasksCache = useMemo(
+    () => new WeakMap<Project, Task[]>(),
+    [tasksByProjectId, tasksByProject, tasksMapByCode]
+  );
+
   const getGroupTasksForProject = useCallback(
     (p: Project): Task[] => {
+      if (!p) return [];
+      const cached = projectTasksCache.get(p);
+      if (cached) return cached;
+
       const realTasksMap = new Map<string, Task>();
       const virtualTasksMap = new Map<string, Task>();
 
@@ -301,17 +310,24 @@ export function useGanttProjectsFilter({
         rawGroupTasks.push(vt);
       });
 
-      if (rawGroupTasks.length <= 1) return rawGroupTasks;
+      if (rawGroupTasks.length <= 1) {
+        projectTasksCache.set(p, rawGroupTasks);
+        return rawGroupTasks;
+      }
       const { dedupedTasks } = deduplicateTasksInMemory(rawGroupTasks, [p]);
       const { cleaned } = filterNonOrphanTasks(dedupedTasks);
+      projectTasksCache.set(p, cleaned);
       return cleaned;
     },
-    [tasksByProjectId, tasksByProject, tasksMapByCode]
+    [projectTasksCache, tasksByProjectId, tasksByProject, tasksMapByCode]
   );
 
-  // Pre-indexed Search Pool Cache to eliminate Garbage Collection pauses on mobile Safari
+  const hasActiveSearchTerm = Boolean(deferredSearchTerm.trim());
+
+  // Pre-indexed Search Pool Cache built lazily only when user actually searches
   const projectSearchIndex = useMemo(() => {
     const map = new Map<string, { pPool: (string | number | undefined | null)[]; tPools: (string | number | undefined | null)[][] }>();
+    if (!hasActiveSearchTerm) return map;
     projects.forEach(p => {
       const pTasks = getGroupTasksForProject(p);
       const pPool = [p.code, p.name, p.store, p.location, p.year, p.detail, p.party];
@@ -326,7 +342,7 @@ export function useGanttProjectsFilter({
       map.set(p.id || p.code, { pPool, tPools });
     });
     return map;
-  }, [projects, getGroupTasksForProject]);
+  }, [hasActiveSearchTerm, projects, getGroupTasksForProject]);
 
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {

@@ -118,6 +118,8 @@ function resolveParentTaskInScope(
   return undefined;
 }
 
+const _orphanCleanWeakCache = new WeakMap<Task[], { cleaned: Task[]; fixedCount: number }>();
+
 /**
  * Promotes orphan subtasks (whose parentTaskId is missing, deleted, or self-referential) to root tasks in memory,
  * enforces the Single-Level WBS hierarchy rule (a parent task with children cannot itself be hidden as a child),
@@ -125,6 +127,8 @@ function resolveParentTaskInScope(
  */
 export function filterNonOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: number } {
   if (!tasks || tasks.length === 0) return { cleaned: tasks || [], fixedCount: 0 };
+  const cached = _orphanCleanWeakCache.get(tasks);
+  if (cached) return cached;
 
   const { taskByIdLower, scopedTaskByCode, scopedTaskByName } = buildCanonicalTaskContext(tasks);
 
@@ -168,7 +172,12 @@ export function filterNonOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCou
     return t;
   });
 
-  return { cleaned, fixedCount };
+  const out = { cleaned: fixedCount > 0 ? cleaned : tasks, fixedCount };
+  _orphanCleanWeakCache.set(tasks, out);
+  if (out.cleaned !== tasks) {
+    _orphanCleanWeakCache.set(out.cleaned, { cleaned: out.cleaned, fixedCount: 0 });
+  }
+  return out;
 }
 
 interface RollupNodeResult {
@@ -197,8 +206,7 @@ function isAutoRollupPredecessorPattern(pred?: string): boolean {
   return /^\s*[^,\s]+?\s*SS\s*,\s*[^,\s]+?\s*FF\s*$/i.test(pred.trim());
 }
 
-let _lastRollupInputRef: Task[] | null = null;
-let _lastRollupOutputRef: Task[] | null = null;
+const _rollupWeakCache = new WeakMap<Task[], Task[]>();
 
 /**
  * Computes rolled up start date, finish date, duration, status, and SS/FF predecessors
@@ -209,8 +217,9 @@ export function rollupParentTaskDatesAndStatus(
   _delegationGroups?: DelegationGroup[]
 ): Task[] {
   if (!Array.isArray(tasks) || tasks.length === 0) return tasks || [];
-  if (_lastRollupInputRef === tasks && _lastRollupOutputRef) {
-    return _lastRollupOutputRef;
+  const cachedRollup = _rollupWeakCache.get(tasks);
+  if (cachedRollup) {
+    return cachedRollup;
   }
 
   const { taskByIdLower, scopedTaskByCode, scopedTaskByName, canonicalCodeByTaskId } = buildCanonicalTaskContext(tasks);
@@ -439,8 +448,10 @@ export function rollupParentTaskDatesAndStatus(
   }
 
   const finalOut = anyNormalizedChild || anyParentChanged ? result : tasks;
-  _lastRollupInputRef = tasks;
-  _lastRollupOutputRef = finalOut;
+  _rollupWeakCache.set(tasks, finalOut);
+  if (finalOut !== tasks) {
+    _rollupWeakCache.set(finalOut, finalOut);
+  }
   return finalOut;
 }
 

@@ -254,7 +254,23 @@ export function useAppNotificationsSync({
           currentUser
         );
         if (cancelled) return;
-        setActiveNotifications(notifs);
+
+        const prevNotifs = useAppStore.getState().activeNotifications;
+        const isSameNotifs =
+          prevNotifs.length === notifs.length &&
+          prevNotifs.every(
+            (p, idx) =>
+              p.id === notifs[idx].id &&
+              p.type === notifs[idx].type &&
+              p.title === notifs[idx].title &&
+              p.message === notifs[idx].message &&
+              p.isRead === notifs[idx].isRead &&
+              p.actionStatus === notifs[idx].actionStatus
+          );
+
+        if (!isSameNotifs) {
+          setActiveNotifications(notifs);
+        }
 
         if (currentUser.readNotifs && currentUser.readNotifs.length > 300) {
           const trimmed = currentUser.readNotifs.slice(-200);
@@ -324,11 +340,11 @@ export function useAppNotificationsSync({
       };
 
       if (typeof (window as any).requestIdleCallback === "function") {
-        idleHandle = (window as any).requestIdleCallback(runNotificationCalc, { timeout: 500 });
+        idleHandle = (window as any).requestIdleCallback(runNotificationCalc, { timeout: 2000 });
       } else {
         runNotificationCalc();
       }
-    }, 80);
+    }, 500);
 
     return () => {
       cancelled = true;

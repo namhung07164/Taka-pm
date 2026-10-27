@@ -21756,7 +21756,7 @@ FILE: src/components/DetailTabParts/DetailTaskRow.tsx
 import React, { memo } from 'react';
 import { Project, Task } from '../../types';
 import { cn, formatDisplayDateTime, formatDisplayDateMain, calculateDays, getActStatusPercent } from '../../lib/utils';
-import { GripVertical, Trash2, Edit3, ArrowUp, ArrowDown } from 'lucide-react';
+import { GripVertical, Trash2, Edit3, ArrowUp, ArrowDown, ChevronRight, ChevronDown } from 'lucide-react';
 import { DetailTableRow } from './detailTypes';
 import { EditableCell } from './EditableCell';
 import { PredecessorEditableCell } from './PredecessorEditableCell';
@@ -21779,6 +21779,8 @@ interface DetailTaskRowProps {
   delStatusText: string;
   delStatusColorClass: string;
   childTasksCount: number;
+  isModularExpanded?: boolean;
+  onToggleModularParent?: (parentTaskId: string) => void;
   tasks?: Task[];
   projects?: Project[];
   onToggleSelectTask: (id: string, shiftKey: boolean) => void;
@@ -21806,6 +21808,8 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
   delStatusText,
   delStatusColorClass,
   childTasksCount = 0,
+  isModularExpanded = false,
+  onToggleModularParent,
   tasks,
   projects,
   onToggleSelectTask,
@@ -21874,23 +21878,43 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         </td>
       )}
       {visibleColumns.includes('no') && (
-        <td className="px-3 py-2 text-slate-600 dark:text-[#c3c3c3] text-xs font-mono">
-          <div className="flex items-center gap-1.5 pl-1">
-            {canWrite && (
-              <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-                <GripVertical size={13} />
-              </div>
-            )}
-            <span className="font-semibold">{i + 1}</span>
+        <td className="px-2 py-2 text-slate-600 dark:text-[#c3c3c3] text-xs font-mono text-center">
+          <div className="flex flex-col items-center justify-center gap-0.5">
+            <div className="flex items-center justify-center gap-1">
+              {canWrite && (
+                <div className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                  <GripVertical size={13} />
+                </div>
+              )}
+              <span className="font-semibold">{i + 1}</span>
+              {isChildTask && (
+                <span className="text-[8.5px] font-bold px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Task con (Sub-task)">
+                  ↳ SUB
+                </span>
+              )}
+            </div>
             {childTasksCount > 0 && (
-              <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-950/90 text-purple-700 dark:text-purple-200 border border-purple-300 dark:border-purple-600 shadow-2xs flex items-center gap-0.5 leading-none" title={`${childTasksCount} task con`}>
-                ({childTasksCount})
-              </span>
-            )}
-            {isChildTask && (
-              <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Task con (Sub-task)">
-                ↳ SUB
-              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onToggleModularParent) onToggleModularParent(t.id);
+                }}
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-all flex items-center gap-0.5 leading-none cursor-pointer shadow-2xs select-none active:scale-95 border",
+                  isModularExpanded
+                    ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-500 shadow-purple-500/20"
+                    : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-950/80 dark:hover:bg-purple-900 dark:text-purple-200 border-purple-300 dark:border-purple-700"
+                )}
+                title={isModularExpanded ? `Collapse ${childTasksCount} subtasks` : `Expand ${childTasksCount} subtasks`}
+              >
+                {isModularExpanded ? (
+                  <ChevronDown className="w-3 h-3 text-current font-bold" />
+                ) : (
+                  <ChevronRight className="w-3 h-3 text-current font-bold" />
+                )}
+                <span>({childTasksCount})</span>
+              </button>
             )}
           </div>
         </td>
@@ -22096,6 +22120,26 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         />
       )}
     </tr>
+  );
+}, (prev, next) => {
+  return (
+    prev.item.task === next.item.task &&
+    prev.item.project === next.item.project &&
+    prev.item.taskIndex === next.item.taskIndex &&
+    prev.item.isProjDelegationOn === next.item.isProjDelegationOn &&
+    prev.item.groupTasks.length === next.item.groupTasks.length &&
+    prev.visibleColumns === next.visibleColumns &&
+    prev.canWrite === next.canWrite &&
+    prev.isSelected === next.isSelected &&
+    prev.isDragging === next.isDragging &&
+    prev.isDragOver === next.isDragOver &&
+    prev.dropPosition === next.dropPosition &&
+    prev.taskCode === next.taskCode &&
+    prev.isFocused === next.isFocused &&
+    prev.delStatusText === next.delStatusText &&
+    prev.delStatusColorClass === next.delStatusColorClass &&
+    prev.childTasksCount === next.childTasksCount &&
+    prev.isModularExpanded === next.isModularExpanded
   );
 });
 
@@ -31856,6 +31900,15 @@ export function GanttTableView({
     return fallbackIds;
   }, [flatGanttRows, visibleGanttRows, currentProjects, getGroupTasksForProject]);
 
+  const orderedTaskIdsRef = React.useRef(allOrderedTaskIds);
+  orderedTaskIdsRef.current = allOrderedTaskIds;
+  const onRowTaskCheckboxChange = React.useCallback(
+    (e: React.ChangeEvent<HTMLInputElement> | React.MouseEvent, id: string, isShift?: boolean) => {
+      handleTaskCheckboxChange(e, id, isShift, orderedTaskIdsRef.current);
+    },
+    [handleTaskCheckboxChange]
+  );
+
   return (
     <div
       ref={tableContainerRef}
@@ -32034,7 +32087,7 @@ export function GanttTableView({
                   handleTaskDragEnd={handleTaskDragEnd}
                   dragOverTaskId={dragOverTaskId}
                   dropPosition={dropPosition}
-                  handleTaskCheckboxChange={(e, id, isShift) => handleTaskCheckboxChange(e, id, isShift, allOrderedTaskIds)}
+                  handleTaskCheckboxChange={onRowTaskCheckboxChange}
                   isHideMode={isHideMode}
                   toggleHideRow={toggleHideRow}
                   onNavigateToTaskDetail={onNavigateToTaskDetail}
@@ -32057,6 +32110,7 @@ export function GanttTableView({
     </div>
   );
 }
+
 
 ================================================================================
 FILE: src/components/Gantt/GanttTaskLeftColumns.tsx
@@ -32634,6 +32688,65 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
         />
       </div>
     </div>
+  );
+}, (prev, next) => {
+  const tId = String(prev.t.id);
+  const myTooltipId = `task-${prev.t.id}`;
+  const prevTooltipActive = prev.activeTooltip === myTooltipId;
+  const nextTooltipActive = next.activeTooltip === myTooltipId;
+  if (prevTooltipActive !== nextTooltipActive) return false;
+
+  const prevSelected = prev.selectedTaskSet.has(tId) || prev.selectedTaskSet.has(prev.t.id);
+  const nextSelected = next.selectedTaskSet.has(tId) || next.selectedTaskSet.has(next.t.id);
+  if (prevSelected !== nextSelected) return false;
+
+  const prevDragging = prev.draggingTaskIds.includes(prev.t.id);
+  const nextDragging = next.draggingTaskIds.includes(next.t.id);
+  if (prevDragging !== nextDragging) return false;
+
+  const prevTarget = prev.dragOverTaskId === prev.t.id;
+  const nextTarget = next.dragOverTaskId === next.t.id;
+  if (prevTarget !== nextTarget) return false;
+  if (nextTarget && prev.dropPosition !== next.dropPosition) return false;
+
+  const prevFocused = prev.initialFocusTaskId === prev.t.id || prev.ganttTabFocusTaskId === prev.t.id;
+  const nextFocused = next.initialFocusTaskId === next.t.id || next.ganttTabFocusTaskId === next.t.id;
+  if (prevFocused !== nextFocused) return false;
+
+  const prevCode = prev.taskCodeMap?.get(prev.t.id);
+  const nextCode = next.taskCodeMap?.get(next.t.id);
+  if (prevCode !== nextCode) return false;
+
+  const prevDelGroup = prev.delegationGroupByTaskId?.get(prev.t.id);
+  const nextDelGroup = next.delegationGroupByTaskId?.get(next.t.id);
+  if (prevDelGroup !== nextDelGroup) return false;
+
+  return (
+    prev.t === next.t &&
+    prev.p === next.p &&
+    prev.taskIndex === next.taskIndex &&
+    prev.isChild === next.isChild &&
+    prev.parentTask === next.parentTask &&
+    prev.hasChildren === next.hasChildren &&
+    prev.childCount === next.childCount &&
+    prev.childTasks === next.childTasks &&
+    prev.isModularExpanded === next.isModularExpanded &&
+    prev.isEditMode === next.isEditMode &&
+    prev.canWrite === next.canWrite &&
+    prev.isHideMode === next.isHideMode &&
+    prev.sideWidth === next.sideWidth &&
+    prev.showStart === next.showStart &&
+    prev.startColWidth === next.startColWidth &&
+    prev.showFinish === next.showFinish &&
+    prev.finishColWidth === next.finishColWidth &&
+    prev.showParty === next.showParty &&
+    prev.partyColWidth === next.partyColWidth &&
+    prev.showDuration === next.showDuration &&
+    prev.durationColWidth === next.durationColWidth &&
+    prev.showPredecessor === next.showPredecessor &&
+    prev.predecessorColWidth === next.predecessorColWidth &&
+    prev.dayWidth === next.dayWidth &&
+    prev.startDate?.getTime() === next.startDate?.getTime()
   );
 });
 
@@ -93143,9 +93256,11 @@ export function useFirebaseData() {
   const userCanSee = currentUser?.role === "admin" || !!currentUser?.canSee;
   const userRole = currentUser?.role;
 
+  const storePermsSignature = JSON.stringify(currentUser?.storePermissions || null);
   const allowedStores = useMemo(
     () => getUserAllowedStores(currentUser),
-    [currentUser]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentUser?.id, currentUser?.role, currentUser?.canSee, storePermsSignature]
   );
 
   // Stable Query Signature
@@ -116217,6 +116332,12 @@ export function buildCanonicalProjectKey(
   return `${canonicalCode}__${canonicalYear}__${canonicalStore}`;
 }
 
+const _dedupWeakCache = new WeakMap<Task[], {
+  dedupedTasks: Task[];
+  duplicateCount: number;
+  removedTaskIds: string[];
+}>();
+
 /**
  * Deduplicates a list of tasks in-memory.
  * If multiple tasks exist with the same project and same task name (case-insensitive or normalized)
@@ -116232,6 +116353,10 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
   }
   if (tasks.length === 1) {
     return { dedupedTasks: tasks, duplicateCount: 0, removedTaskIds: [] };
+  }
+  if (!projects || projects.length <= 1) {
+    const cached = _dedupWeakCache.get(tasks);
+    if (cached) return cached;
   }
 
   // Pre-index projects into Map for O(1) canonical key resolution
@@ -116291,7 +116416,10 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
         if (rawC) {
           taskByScopedCode.set(`${pKey}:::${rawC}`, t);
           if (rawC.includes('-')) {
-            taskByScopedCode.set(`${pKey}:::${rawC.replace(/-(\d+)$/, '#$1')}`, t);
+            taskByScopedCode.set(`${pKey}:::${rawC.replace(/-(\d+)$/, '#================================================================================
+FILE: src/lib/taskDeduplicationService.ts
+================================================================================
+')}`, t);
           }
           const m = rawC.match(/#(\d+)$/) || rawC.match(/-(\d+)$/) || rawC.match(/^(\d+)$/);
           if (m) {
@@ -116330,7 +116458,10 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
     if (!matchedPar && pKey) {
       matchedPar =
         taskByScopedCode.get(`${pKey}:::${parLower}`) ||
-        taskByScopedCode.get(`${pKey}:::${parLower.replace(/-(\d+)$/, '#$1')}`);
+        taskByScopedCode.get(`${pKey}:::${parLower.replace(/-(\d+)$/, '#================================================================================
+FILE: src/lib/taskDeduplicationService.ts
+================================================================================
+')}`);
       if (!matchedPar) {
         const m = parLower.match(/#\s*(\d+)$/) || parLower.match(/^(\d+)$/);
         if (m) {
@@ -116519,11 +116650,14 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
     }
   }
 
-  return {
+  const result = {
     dedupedTasks,
     duplicateCount,
     removedTaskIds
   };
+  _dedupWeakCache.set(tasks, result);
+  _dedupWeakCache.set(dedupedTasks, { dedupedTasks, duplicateCount: 0, removedTaskIds: [] });
+  return result;
 }
 
 let _lastDedupInputTasksRef: Task[] | null = null;
@@ -116589,6 +116723,7 @@ export async function scanAndRemoveDuplicateTasksOnFirestore(projects: Project[]
     return { removedCount: 0, mergedCount: 0 };
   }
 }
+
 
 ================================================================================
 FILE: src/lib/taskDefaults.test.ts
@@ -120545,13 +120680,40 @@ import {
   computeActProgressFromSummaries,
   computeProjectActStatus,
 } from "./progressAndStatusUtils";
+import { resolveMatchedUnitSizeM2 } from "../unitSizeResolver";
+import { rollupTaskSummaries } from "../taskRollupHelpers";
+import { useDataStore } from "../../components/PictureMapping/DataContext";
 
 // Module-level cache for zero-cost multi-component calls to enrichProjects
 const EMPTY_DELEGATION_GROUPS: DelegationGroup[] = [];
 let _lastProjectsRef: Project[] | null = null;
 let _lastTasksRef: Task[] | null = null;
 let _lastDelegationRef: DelegationGroup[] | null = null;
+let _lastMapUnitsRef: any = null;
+let _lastMapVersionsRef: any = null;
+let _lastStoreLocationDataRef: any = null;
 let _lastEnrichedResult: Project[] | null = null;
+
+interface PerProjectEnrichCacheEntry {
+  projectTasks: Task[];
+  candidateDelegations: DelegationGroup[];
+  isHydrated: boolean;
+  mapUnitsRef: any;
+  mapVersionsRef: any;
+  storeLocationDataRef: any;
+  enriched: Project;
+}
+
+const _perProjectEnrichCache = new WeakMap<Project, PerProjectEnrichCacheEntry>();
+
+function areArraysShallowEqual<T>(a: T[], b: T[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
 
 export function enrichProjects(
   projects: Project[], 
@@ -120560,11 +120722,15 @@ export function enrichProjects(
 ): Project[] {
   const normDelegations =
     delegationGroups && delegationGroups.length > 0 ? delegationGroups : EMPTY_DELEGATION_GROUPS;
+  const dataState = useDataStore.getState();
 
   if (
     _lastProjectsRef === projects &&
     _lastTasksRef === tasks &&
     _lastDelegationRef === normDelegations &&
+    _lastMapUnitsRef === dataState.mapUnits &&
+    _lastMapVersionsRef === dataState.mapVersions &&
+    _lastStoreLocationDataRef === dataState.storeLocationData &&
     _lastEnrichedResult
   ) {
     return _lastEnrichedResult;
@@ -120703,6 +120869,20 @@ export function enrichProjects(
       }
     }
 
+    const isHydrated = isProjectTasksHydrated(pId);
+    const cachedEntry = _perProjectEnrichCache.get(p);
+    if (
+      cachedEntry &&
+      cachedEntry.isHydrated === isHydrated &&
+      cachedEntry.mapUnitsRef === dataState.mapUnits &&
+      cachedEntry.mapVersionsRef === dataState.mapVersions &&
+      cachedEntry.storeLocationDataRef === dataState.storeLocationData &&
+      areArraysShallowEqual(cachedEntry.projectTasks, projectTasks) &&
+      areArraysShallowEqual(cachedEntry.candidateDelegations, candidateDelegations)
+    ) {
+      return cachedEntry.enriched;
+    }
+
     const sortedProjTasks = [...projectTasks].sort((a, b) => {
       const codeA = a.taskCodePhu || '';
       const codeB = b.taskCodePhu || '';
@@ -120732,51 +120912,65 @@ export function enrichProjects(
 
     const isAuthoritativeRealTasks =
       sortedProjTasks.length > 0 &&
-      (isProjectTasksHydrated(pId) || sortedProjTasks.length >= filteredExistingSummaries.length);
+      (isHydrated || sortedProjTasks.length >= filteredExistingSummaries.length);
 
     let taskSummaries: any[];
     if (isAuthoritativeRealTasks) {
-      taskSummaries = sortedProjTasks.filter(t => Boolean(t.name)).map((t, idx) => ({
-        id: t.id,
-        name: t.name!,
-        start: t.start || '',
-        finish: t.finish || '',
-        orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
-        duration: t.duration,
-        parentTaskId: t.parentTaskId,
-        taskCodePhu: t.taskCodePhu,
-        runningStatus: t.runningStatus,
-        approval: t.approval,
-        party: t.party
-      }));
+      taskSummaries = rollupTaskSummaries(
+        sortedProjTasks.filter(t => Boolean(t.name)).map((t, idx) => ({
+          id: t.id,
+          name: t.name!,
+          start: t.start || '',
+          finish: t.finish || '',
+          orderIndex: t.orderIndex !== undefined ? t.orderIndex : idx,
+          duration: t.duration,
+          parentTaskId: t.parentTaskId,
+          isModularParent: t.isModularParent,
+          taskCodePhu: t.taskCodePhu,
+          runningStatus: t.runningStatus,
+          approval: t.approval,
+          party: t.party,
+          delegation: t.delegation,
+          predecessor: t.predecessor,
+          predecessorTaskIds: t.predecessorTaskIds,
+          baselineStart: t.baselineStart,
+          baselineFinish: t.baselineFinish,
+        }))
+      );
     } else if (sortedProjTasks.length > 0 && filteredExistingSummaries.length > sortedProjTasks.length) {
       const realById = new Map<string, Task>();
       sortedProjTasks.forEach(t => {
         if (t.id) realById.set(String(t.id).trim().toLowerCase(), t);
       });
-      taskSummaries = filteredExistingSummaries.map((es: any, idx: number) => {
-        const esId = es?.id ? String(es.id).trim().toLowerCase() : '';
-        const matchedReal = esId ? realById.get(esId) : undefined;
-        if (matchedReal) {
-          return {
-            ...es,
-            id: matchedReal.id,
-            name: matchedReal.name || es.name,
-            start: matchedReal.start || es.start || '',
-            finish: matchedReal.finish || es.finish || '',
-            orderIndex: matchedReal.orderIndex !== undefined ? matchedReal.orderIndex : (es.orderIndex ?? idx),
-            duration: matchedReal.duration ?? es.duration,
-            parentTaskId: matchedReal.parentTaskId ?? es.parentTaskId,
-            taskCodePhu: matchedReal.taskCodePhu ?? es.taskCodePhu,
-            runningStatus: matchedReal.runningStatus ?? es.runningStatus,
-            approval: matchedReal.approval ?? es.approval,
-            party: matchedReal.party ?? es.party,
-          };
-        }
-        return es;
-      });
+      taskSummaries = rollupTaskSummaries(
+        filteredExistingSummaries.map((es: any, idx: number) => {
+          const esId = es?.id ? String(es.id).trim().toLowerCase() : '';
+          const matchedReal = esId ? realById.get(esId) : undefined;
+          if (matchedReal) {
+            return {
+              ...es,
+              id: matchedReal.id,
+              name: matchedReal.name || es.name,
+              start: matchedReal.start || es.start || '',
+              finish: matchedReal.finish || es.finish || '',
+              orderIndex: matchedReal.orderIndex !== undefined ? matchedReal.orderIndex : (es.orderIndex ?? idx),
+              duration: matchedReal.duration ?? es.duration,
+              parentTaskId: matchedReal.parentTaskId,
+              isModularParent: matchedReal.isModularParent ?? es.isModularParent,
+              taskCodePhu: matchedReal.taskCodePhu ?? es.taskCodePhu,
+              runningStatus: matchedReal.runningStatus ?? es.runningStatus,
+              approval: matchedReal.approval ?? es.approval,
+              party: matchedReal.party ?? es.party,
+              delegation: matchedReal.delegation ?? es.delegation,
+              predecessor: matchedReal.predecessor ?? es.predecessor,
+              predecessorTaskIds: matchedReal.predecessorTaskIds ?? es.predecessorTaskIds,
+            };
+          }
+          return es;
+        })
+      );
     } else {
-      taskSummaries = filteredExistingSummaries;
+      taskSummaries = rollupTaskSummaries(filteredExistingSummaries);
     }
 
     let computedTakStart = p.computedTakStart || p.start;
@@ -120858,8 +121052,14 @@ export function enrichProjects(
       projectTasks
     );
 
-    return {
+    const resolvedSizeM2 =
+      p.sizeM2 !== undefined && p.sizeM2 !== null && p.sizeM2 > 0
+        ? p.sizeM2
+        : resolveMatchedUnitSizeM2(p).sizeM2;
+
+    const enriched: Project = {
       ...p,
+      ...(resolvedSizeM2 !== undefined ? { sizeM2: resolvedSizeM2 } : {}),
       computedTakStart,
       computedTakCompl,
       computedOpening,
@@ -120870,6 +121070,27 @@ export function enrichProjects(
       taskSummaries,
       taskCount,
     };
+
+    _perProjectEnrichCache.set(p, {
+      projectTasks,
+      candidateDelegations,
+      isHydrated,
+      mapUnitsRef: dataState.mapUnits,
+      mapVersionsRef: dataState.mapVersions,
+      storeLocationDataRef: dataState.storeLocationData,
+      enriched,
+    });
+    _perProjectEnrichCache.set(enriched, {
+      projectTasks,
+      candidateDelegations,
+      isHydrated,
+      mapUnitsRef: dataState.mapUnits,
+      mapVersionsRef: dataState.mapVersions,
+      storeLocationDataRef: dataState.storeLocationData,
+      enriched,
+    });
+
+    return enriched;
   });
 
   const statusPriority: Record<string, number> = {
@@ -120927,10 +121148,14 @@ export function enrichProjects(
   _lastProjectsRef = projects;
   _lastTasksRef = tasks;
   _lastDelegationRef = normDelegations;
+  _lastMapUnitsRef = dataState.mapUnits;
+  _lastMapVersionsRef = dataState.mapVersions;
+  _lastStoreLocationDataRef = dataState.storeLocationData;
   _lastEnrichedResult = enrichedProjects;
 
   return enrichedProjects;
 }
+
 
 ================================================================================
 FILE: src/lib/utilsParts/statusResolutionUtils.ts
@@ -121888,6 +122113,7 @@ createRoot(document.getElementById('root')!).render(
     </LanguageProvider>
   </ErrorBoundary>,
 );
+
 
 ================================================================================
 FILE: src/pages/api/r2-upload.ts
@@ -129886,6 +130112,7 @@ FILE: index.html
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+
 
 ================================================================================
 FILE: src/components/DetailTabParts/DetailMobileCardControls.tsx
@@ -152893,7 +153120,10 @@ function buildCanonicalTaskContext(tasks: Task[]): {
       if (t.taskCodePhu) {
         const cLower = String(t.taskCodePhu).trim().toLowerCase();
         scopedTaskByCode.set(`${scope}:::${cLower}`, t);
-        if (cLower.includes('-')) scopedTaskByCode.set(`${scope}:::${cLower.replace(/-(\d+)$/, '#$1')}`, t);
+        if (cLower.includes('-')) scopedTaskByCode.set(`${scope}:::${cLower.replace(/-(\d+)$/, '#================================================================================
+FILE: src/lib/taskRollupService.ts
+================================================================================
+')}`, t);
         const num = extractNumericSuffix(cLower);
         if (num !== null) {
           scopedTaskByCode.set(`${scope}:::#${num}`, t);
@@ -152960,7 +153190,10 @@ function resolveParentTaskInScope(
     if (byScopedCode && String(byScopedCode.id) !== String(child.id)) return byScopedCode;
 
     if (parentStr.includes('-')) {
-      const normalizedHash = parentStr.replace(/-(\d+)$/, '#$1');
+      const normalizedHash = parentStr.replace(/-(\d+)$/, '#================================================================================
+FILE: src/lib/taskRollupService.ts
+================================================================================
+');
       const byHash = scopedTaskByCode.get(`${scope}:::${normalizedHash}`);
       if (byHash && String(byHash.id) !== String(child.id)) return byHash;
     }
@@ -152979,6 +153212,8 @@ function resolveParentTaskInScope(
   return undefined;
 }
 
+const _orphanCleanWeakCache = new WeakMap<Task[], { cleaned: Task[]; fixedCount: number }>();
+
 /**
  * Promotes orphan subtasks (whose parentTaskId is missing, deleted, or self-referential) to root tasks in memory,
  * enforces the Single-Level WBS hierarchy rule (a parent task with children cannot itself be hidden as a child),
@@ -152986,6 +153221,8 @@ function resolveParentTaskInScope(
  */
 export function filterNonOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCount: number } {
   if (!tasks || tasks.length === 0) return { cleaned: tasks || [], fixedCount: 0 };
+  const cached = _orphanCleanWeakCache.get(tasks);
+  if (cached) return cached;
 
   const { taskByIdLower, scopedTaskByCode, scopedTaskByName } = buildCanonicalTaskContext(tasks);
 
@@ -153029,7 +153266,12 @@ export function filterNonOrphanTasks(tasks: Task[]): { cleaned: Task[]; fixedCou
     return t;
   });
 
-  return { cleaned, fixedCount };
+  const out = { cleaned: fixedCount > 0 ? cleaned : tasks, fixedCount };
+  _orphanCleanWeakCache.set(tasks, out);
+  if (out.cleaned !== tasks) {
+    _orphanCleanWeakCache.set(out.cleaned, { cleaned: out.cleaned, fixedCount: 0 });
+  }
+  return out;
 }
 
 interface RollupNodeResult {
@@ -153058,8 +153300,7 @@ function isAutoRollupPredecessorPattern(pred?: string): boolean {
   return /^\s*[^,\s]+?\s*SS\s*,\s*[^,\s]+?\s*FF\s*$/i.test(pred.trim());
 }
 
-let _lastRollupInputRef: Task[] | null = null;
-let _lastRollupOutputRef: Task[] | null = null;
+const _rollupWeakCache = new WeakMap<Task[], Task[]>();
 
 /**
  * Computes rolled up start date, finish date, duration, status, and SS/FF predecessors
@@ -153070,8 +153311,9 @@ export function rollupParentTaskDatesAndStatus(
   _delegationGroups?: DelegationGroup[]
 ): Task[] {
   if (!Array.isArray(tasks) || tasks.length === 0) return tasks || [];
-  if (_lastRollupInputRef === tasks && _lastRollupOutputRef) {
-    return _lastRollupOutputRef;
+  const cachedRollup = _rollupWeakCache.get(tasks);
+  if (cachedRollup) {
+    return cachedRollup;
   }
 
   const { taskByIdLower, scopedTaskByCode, scopedTaskByName, canonicalCodeByTaskId } = buildCanonicalTaskContext(tasks);
@@ -153300,12 +153542,17 @@ export function rollupParentTaskDatesAndStatus(
   }
 
   const finalOut = anyNormalizedChild || anyParentChanged ? result : tasks;
-  _lastRollupInputRef = tasks;
-  _lastRollupOutputRef = finalOut;
+  _rollupWeakCache.set(tasks, finalOut);
+  if (finalOut !== tasks) {
+    _rollupWeakCache.set(finalOut, finalOut);
+  }
   return finalOut;
 }
 
 export { rollupTaskSummaries } from './taskRollupHelpers';
+
+
+
 
 ================================================================================
 FILE: src/lib/taskRollupHelpers.ts
@@ -153810,11 +154057,16 @@ export function useDetailFlatRows({
         : (p.code ? expandedCodes.includes(p.code) : false);
       const isProjDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
-      const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(groupTasks, delegationGroups);
-      const validGroupTasks = rolledUpGroupTasks.map(t => ({
-        ...t,
-        name: t.name && String(t.name).trim() ? t.name : (t.taskCodePhu || 'Task')
-      }));
+      const rolledUpGroupTasks = sortConfig
+        ? rollupParentTaskDatesAndStatus(groupTasks, delegationGroups)
+        : groupTasks;
+      const validGroupTasks = rolledUpGroupTasks.every(t => Boolean(t.name && String(t.name).trim()))
+        ? rolledUpGroupTasks
+        : rolledUpGroupTasks.map(t => (
+            t.name && String(t.name).trim()
+              ? t
+              : { ...t, name: t.taskCodePhu || 'Task' }
+          ));
 
       const isProjectMatch = lowerSearchTerm
         ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])
@@ -153940,6 +154192,7 @@ export function useDetailFlatRows({
 
   return flatTableRows;
 }
+
 
 ================================================================================
 FILE: src/components/DetailTabParts/useDetailData.ts
@@ -161034,5 +161287,899 @@ export async function purgeExcessFirestoreTasks(
   }
   st.setTasks((st.tasks || []).filter((t) => !deletedSet.has(t.id)));
   return { purgedTasks: allTaskIdsToDelete.length, updatedProjects: targets.length };
+}
+
+
+================================================================================
+FILE: src/components/Gantt/useGanttProjectsFilter.ts
+================================================================================
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Project, Task, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { 
+  getStatus, 
+  getProjectDatesAndStatus,
+  matchProjectStatusFilter,
+  parseDateTime, 
+  getUserAllowedStores, 
+  getEffectiveStoreFilter, 
+  matchesAdvancedSearch 
+} from '../../lib/utils';
+import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { deduplicateTasksInMemory } from '../../lib/taskDeduplicationService';
+import { filterNonOrphanTasks } from '../../lib/taskRollupService';
+
+interface UseGanttProjectsFilterParams {
+  projects: Project[];
+  tasks: Task[];
+  delegationGroups: any[];
+  currentUser: AppUser;
+}
+
+export function useGanttProjectsFilter({
+  projects,
+  tasks,
+  delegationGroups,
+  currentUser
+}: UseGanttProjectsFilterParams) {
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+  const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
+  const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
+  const setExpandedProjects = useAppStore(state => state.setExpandedProjectIds);
+  const ganttTabFilterProjectId = useAppStore(state => state.ganttTabFilterProjectId);
+  const setGanttTabFilterProjectId = useAppStore(state => state.setGanttTabFilterProjectId);
+
+  const [searchTerm, setSearchTerm] = useState(() => safeGetItemSession("taka_gantt_search") || "");
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+
+  // Sync QuickNav targeted project filter
+  useEffect(() => {
+    if (ganttTabFilterProjectId) {
+      const targetProj = projects.find(
+        p => (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+             (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase())
+      );
+      const codeToDisplay = targetProj?.code || ganttTabFilterProjectId;
+      setSearchTerm(codeToDisplay);
+      setFilterProjectStatus('all');
+    }
+  }, [ganttTabFilterProjectId, projects]);
+
+  const [filterProjectStatus, setFilterProjectStatus] = useState<string>(() => {
+    if ((safeGetItemSession("taka_gantt_search") || "").trim()) return 'all';
+    const saved = safeGetItemSession("taka_gantt_status_filter");
+    return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
+  });
+
+  const lastSelectedStatusFilterRef = useRef<string>(
+    (() => {
+      const saved = safeGetItemSession("taka_gantt_status_filter");
+      return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
+    })()
+  );
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
+  const wasSearchingRef = useRef<boolean>(!!(safeGetItemSession("taka_gantt_search") || "").trim());
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      safeSetItemSession("taka_gantt_search", searchTerm);
+      if (ganttTabFilterProjectId) {
+        const targetProj = projects.find(
+          p => (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+               (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase())
+        );
+        const expectedCode = targetProj?.code || ganttTabFilterProjectId;
+        if (!searchTerm.trim() || searchTerm.trim().toUpperCase() !== expectedCode.trim().toUpperCase()) {
+          setGanttTabFilterProjectId('');
+        }
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchTerm, ganttTabFilterProjectId, setGanttTabFilterProjectId, projects]);
+
+  const onStatusFilterChange = useCallback((status: string) => {
+    setFilterProjectStatus(status);
+    if (!searchTerm.trim()) {
+      lastSelectedStatusFilterRef.current = status;
+      safeSetItemSession("taka_gantt_status_filter", status);
+    }
+  }, [searchTerm]);
+
+  // Status & Location filter preservation during search
+  useEffect(() => {
+    const isSearching = !!deferredSearchTerm.trim();
+    if (!wasSearchingRef.current && isSearching) {
+      if (filterProjectStatus !== 'all') {
+        lastSelectedStatusFilterRef.current = filterProjectStatus;
+        safeSetItemSession("taka_gantt_status_filter", filterProjectStatus);
+      }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
+      setFilterProjectStatus('all');
+      wasSearchingRef.current = true;
+    } else if (wasSearchingRef.current && !isSearching) {
+      const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_gantt_status_filter") || 'On process + Upcoming 3 days';
+      const finalStatus = restored && restored !== 'all' ? restored : 'On process + Upcoming 3 days';
+      setFilterProjectStatus(finalStatus);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
+      wasSearchingRef.current = false;
+    }
+  }, [deferredSearchTerm]);
+
+  // Reset to default 'On process + Upcoming 3 days' when switching Year or Store
+  const prevGanttScopeRef = useRef(`${globalYearFilter}_${effectiveStore}`);
+  useEffect(() => {
+    const currentScope = `${globalYearFilter}_${effectiveStore}`;
+    if (prevGanttScopeRef.current !== currentScope) {
+      prevGanttScopeRef.current = currentScope;
+      if (!searchTerm.trim()) {
+        setFilterProjectStatus('On process + Upcoming 3 days');
+        lastSelectedStatusFilterRef.current = 'On process + Upcoming 3 days';
+        safeSetItemSession("taka_gantt_status_filter", 'On process + Upcoming 3 days');
+      }
+      if (globalLocationFilter.length > 0) {
+        const hasMatchingLoc = projects.some(p => {
+          if (p.isDeleted) return false;
+          const pYear = p.year ? String(p.year) : null;
+          if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
+          if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
+          return p.location && globalLocationFilter.includes(p.location);
+        });
+        if (!hasMatchingLoc) {
+          setGlobalLocationFilter([]);
+        }
+      }
+    }
+  }, [globalYearFilter, effectiveStore, searchTerm, projects, globalLocationFilter, setGlobalLocationFilter]);
+
+  const uniqueYears = useMemo(() => {
+    const yearsSet = new Set<string>();
+    projects.forEach(p => {
+      if (p.year) yearsSet.add(String(p.year));
+    });
+    ['2026', '2027'].forEach(y => yearsSet.add(y));
+    return Array.from(yearsSet).sort();
+  }, [projects]);
+
+  const uniqueStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
+  const locationOptions = useLocationOptions();
+
+  // Index tasks by project ID, project key, and code
+  const tasksByProjectId = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach(t => {
+      if (t.projectId) {
+        const pId = String(t.projectId);
+        if (!map.has(pId)) map.set(pId, []);
+        map.get(pId)!.push(t);
+      }
+    });
+    return map;
+  }, [tasks]);
+
+  const tasksByProject = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach(t => {
+      const key = `${String(t.projectCode || '').trim().toUpperCase()}_${String(t.projectYear || '').trim()}_${String(t.projectStore || '').trim().toUpperCase()}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(t);
+    });
+    return map;
+  }, [tasks]);
+
+  const tasksMapByCode = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach(t => {
+      const code = String(t.projectCode || '').trim().toUpperCase();
+      if (!map.has(code)) map.set(code, []);
+      map.get(code)!.push(t);
+    });
+    return map;
+  }, [tasks]);
+
+  const projectTasksCache = useMemo(
+    () => new WeakMap<Project, Task[]>(),
+    [tasksByProjectId, tasksByProject, tasksMapByCode]
+  );
+
+  const getGroupTasksForProject = useCallback(
+    (p: Project): Task[] => {
+      if (!p) return [];
+      const cached = projectTasksCache.get(p);
+      if (cached) return cached;
+
+      const realTasksMap = new Map<string, Task>();
+      const virtualTasksMap = new Map<string, Task>();
+
+      const pIdStr = p.id ? String(p.id).trim() : '';
+      const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
+      const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+
+      const tryAddTask = (t: Task) => {
+        if (!t || (!t.id && !t.name) || t.isDeleted) return;
+        const tIdStr = String(t.id || '').trim();
+        if (tIdStr && isTaskDeletedInTracker(tIdStr, pIdStr || undefined)) return;
+        if ((!t.name || !String(t.name).trim()) && (!t.start || !String(t.start).trim()) && (!t.finish || !String(t.finish).trim()) && !t.taskCodePhu) {
+          return;
+        }
+
+        const tProjId = t.projectId ? String(t.projectId).trim() : '';
+        if (tProjId && pIdStr) {
+          if (tProjId !== pIdStr) return;
+        } else {
+          const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+          const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+          if (pStore && tStore && pStore !== tStore) return;
+          if (pYear && tYear && pYear !== tYear) return;
+        }
+
+        const mapKey = (tIdStr || String(t.name)).toLowerCase();
+        const isVirtual = Boolean((t as any)._isVirtualSummary);
+        if (isVirtual) {
+          if (!virtualTasksMap.has(mapKey)) virtualTasksMap.set(mapKey, t);
+        } else {
+          realTasksMap.set(mapKey, t);
+        }
+      };
+
+      // 1. By projectId
+      if (pIdStr && tasksByProjectId.has(pIdStr)) {
+        tasksByProjectId.get(pIdStr)!.forEach(tryAddTask);
+      }
+
+      // 2. By project key (CODE_YEAR_STORE)
+      const key = `${String(p.code || '').trim().toUpperCase()}_${pYear}_${pStore}`;
+      const foundByKey = tasksByProject.get(key);
+      if (foundByKey && foundByKey.length > 0) {
+        foundByKey.forEach(tryAddTask);
+      }
+
+      // 3. By project code
+      const codeKey = String(p.code || '').trim().toUpperCase();
+      if (codeKey) {
+        const foundByCode = tasksMapByCode.get(codeKey);
+        if (foundByCode && foundByCode.length > 0) {
+          foundByCode.forEach(tryAddTask);
+        }
+      }
+
+      // 4. Fallback & Merge from taskSummaries if taskSummaries has more items than realTasksMap
+      if (p.taskSummaries && Array.isArray(p.taskSummaries) && realTasksMap.size < p.taskSummaries.length) {
+        p.taskSummaries.forEach((ts, idx) => {
+          if (isTaskDeletedInTracker(ts.id, pIdStr || undefined)) return;
+          if ((!ts.name || !String(ts.name).trim()) && (!ts.start || !String(ts.start).trim()) && (!ts.finish || !String(ts.finish).trim()) && !ts.taskCodePhu) {
+            return;
+          }
+          const rawTsId = ts.id ? String(ts.id).trim() : '';
+          const tsId = rawTsId || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
+          const tsIdLower = tsId.toLowerCase();
+          if (!virtualTasksMap.has(tsIdLower)) {
+            virtualTasksMap.set(tsIdLower, {
+              id: tsId,
+              name: (ts.name && String(ts.name).trim()) ? ts.name : (ts.taskCodePhu || `Task ${idx + 1}`),
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts,
+              _isVirtualSummary: true,
+            } as unknown as Task);
+          }
+        });
+      }
+
+      const rawGroupTasks: Task[] = Array.from(realTasksMap.values());
+      const realCodeSet = new Set<string>();
+      const realNameOrdSet = new Set<string>();
+      rawGroupTasks.forEach(rt => {
+        if (rt.taskCodePhu) realCodeSet.add(String(rt.taskCodePhu).trim().toLowerCase());
+        if (rt.name) {
+          const nLower = String(rt.name).trim().toLowerCase();
+          const ordStr = rt.orderIndex !== undefined && rt.orderIndex !== null ? String(rt.orderIndex) : '';
+          realNameOrdSet.add(`${nLower}|${ordStr}`);
+        }
+      });
+
+      virtualTasksMap.forEach((vt, mapKey) => {
+        if (realTasksMap.has(mapKey)) return;
+        const vtCode = vt.taskCodePhu ? String(vt.taskCodePhu).trim().toLowerCase() : '';
+        if (vtCode && realCodeSet.has(vtCode)) return;
+        const vtName = vt.name ? String(vt.name).trim().toLowerCase() : '';
+        const vtOrd = vt.orderIndex !== undefined && vt.orderIndex !== null ? String(vt.orderIndex) : '';
+        if (!vt.id || String(vt.id).startsWith('ts_')) {
+          if (vtName && realNameOrdSet.has(`${vtName}|${vtOrd}`)) return;
+        }
+        rawGroupTasks.push(vt);
+      });
+
+      if (rawGroupTasks.length <= 1) {
+        projectTasksCache.set(p, rawGroupTasks);
+        return rawGroupTasks;
+      }
+      const { dedupedTasks } = deduplicateTasksInMemory(rawGroupTasks, [p]);
+      const { cleaned } = filterNonOrphanTasks(dedupedTasks);
+      projectTasksCache.set(p, cleaned);
+      return cleaned;
+    },
+    [projectTasksCache, tasksByProjectId, tasksByProject, tasksMapByCode]
+  );
+
+  const hasActiveSearchTerm = Boolean(deferredSearchTerm.trim());
+
+  // Pre-indexed Search Pool Cache built lazily only when user actually searches
+  const projectSearchIndex = useMemo(() => {
+    const map = new Map<string, { pPool: (string | number | undefined | null)[]; tPools: (string | number | undefined | null)[][] }>();
+    if (!hasActiveSearchTerm) return map;
+    projects.forEach(p => {
+      const pTasks = getGroupTasksForProject(p);
+      const pPool = [p.code, p.name, p.store, p.location, p.year, p.detail, p.party];
+      const tPools = pTasks.map(t => [
+        t.name,
+        t.taskCodePhu,
+        t.party,
+        t.runningStatus,
+        t.predecessor,
+        ...(t.notes ? t.notes.map(n => n.content) : [])
+      ]);
+      map.set(p.id || p.code, { pPool, tPools });
+    });
+    return map;
+  }, [hasActiveSearchTerm, projects, getGroupTasksForProject]);
+
+  const filteredProjects = useMemo(() => {
+    return projects.filter(p => {
+      // Strict single-project isolation when navigated via Quick Navigation
+      if (ganttTabFilterProjectId) {
+        const isTarget = (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+                         (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase());
+        return isTarget;
+      }
+
+      const computedTakStart = p.computedTakStart || p.start || "";
+      const status = p.computedStatus || getStatus(computedTakStart, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
+      const pYear = p.year ? String(p.year).trim() : null;
+      const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
+      const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
+      const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));
+
+      const matchesStatus = matchProjectStatusFilter(status, filterProjectStatus, computedTakStart);
+
+      if (!matchesYear || !matchesStore || !matchesLocation || !matchesStatus) return false;
+
+      if (!deferredSearchTerm.trim()) return true;
+
+      const indexed = projectSearchIndex.get(p.id || p.code);
+      if (indexed) {
+        if (matchesAdvancedSearch(deferredSearchTerm, [...indexed.pPool, status])) return true;
+        return indexed.tPools.some(tPool => matchesAdvancedSearch(deferredSearchTerm, tPool));
+      }
+
+      return matchesAdvancedSearch(deferredSearchTerm, [p.code, p.name, p.store, p.location, status]);
+    });
+  }, [
+    projects,
+    ganttTabFilterProjectId,
+    globalYearFilter,
+    effectiveStore,
+    globalLocationFilter,
+    filterProjectStatus,
+    deferredSearchTerm,
+    projectSearchIndex
+  ]);
+
+  const [visibleCount, setVisibleCount] = useState(20);
+
+  const sortedProjects = useMemo(() => {
+    return [...filteredProjects].sort((a, b) => {
+      const startA = a.computedTakStart || '9999-12-31';
+      const startB = b.computedTakStart || '9999-12-31';
+      if (startA !== startB) return startA.localeCompare(startB);
+      return a.code.localeCompare(b.code);
+    });
+  }, [filteredProjects]);
+
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
+
+  const paginatedProjects = useMemo(() => {
+    if (isPrintPreview || isExportingPDF) return sortedProjects;
+    return sortedProjects.slice(0, visibleCount);
+  }, [sortedProjects, visibleCount, isPrintPreview, isExportingPDF]);
+
+  const handleLoadMore = useCallback(() => {
+    setVisibleCount(prev => Math.min(prev + 20, sortedProjects.length));
+  }, [sortedProjects.length]);
+
+  // Search filter operates on Project Summaries + loaded tasks first (Tri-Gate Lazy Loading).
+  // Projects remain in summarized/collapsed state until user taps Expand (+), which triggers Delta Sync task fetching.
+  const lastAutoExpandedSearchRef = useRef<string>('');
+  useEffect(() => {
+    const term = deferredSearchTerm.trim();
+    if (!term) {
+      lastAutoExpandedSearchRef.current = '';
+    }
+  }, [deferredSearchTerm]);
+
+  return {
+    globalYearFilter,
+    setGlobalYearFilter,
+    globalStoreFilter,
+    setGlobalStoreFilter,
+    effectiveStore,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    filterProjectStatus,
+    onStatusFilterChange,
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    uniqueYears,
+    uniqueStores,
+    locationOptions,
+    tasksByProject,
+    tasksMapByCode,
+    getGroupTasksForProject,
+    filteredProjects,
+    sortedProjects,
+    paginatedProjects,
+    visibleCount,
+    setVisibleCount,
+    handleLoadMore
+  };
+}
+
+
+================================================================================
+FILE: src/hooks/appParts/useAppNotificationsSync.ts
+================================================================================
+import { useEffect, useMemo } from "react";
+import { useAppStore } from "../../store/useAppStore";
+import { safeGetItemLocal, safeSetItemLocal } from "../../lib/storage";
+import {
+  enrichProjects,
+  calculateActiveNotifications,
+  getUserAllowedStores,
+} from "../../lib/utils";
+import { Project, Task, AppRole, PermissionModule, TabId } from "../../types";
+
+function stripHtml(htmlStr: string): string {
+  if (!htmlStr) return '';
+  return htmlStr
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+
+interface UseAppNotificationsSyncParams {
+  enrichedProjects: Project[];
+  filteredTasks: Task[];
+  visibleDelegationGroups: any[];
+}
+
+export function useAppNotificationsSync({
+  enrichedProjects,
+  filteredTasks,
+  visibleDelegationGroups,
+}: UseAppNotificationsSyncParams) {
+  const currentUser = useAppStore((state) => state.currentUser)!;
+  const projects = useAppStore((state) => state.projects);
+  const tasks = useAppStore((state) => state.tasks);
+  const allProjectsForNotifs = useAppStore((state) => state.allProjectsForNotifs);
+  const allTasksForNotifs = useAppStore((state) => state.allTasksForNotifs);
+  const notificationRules = useAppStore((state) => state.notificationRules);
+  const activeNotifications = useAppStore((state) => state.activeNotifications);
+  const setActiveNotifications = useAppStore((state) => state.setActiveNotifications);
+  const setNotificationFilterId = useAppStore((state) => state.setNotificationFilterId);
+  const setActiveTab = useAppStore((state) => state.setActiveTab);
+  const permissionMatrix = useAppStore((state) => state.permissionMatrix);
+
+  const mergedTasksForNotifs = useMemo(() => {
+    if (allTasksForNotifs.length === 0 || allTasksForNotifs === tasks) return tasks;
+    if (tasks.length === 0) return allTasksForNotifs;
+    const map = new Map<string, Task>();
+    for (let i = 0; i < allTasksForNotifs.length; i++) {
+      const t = allTasksForNotifs[i];
+      if (t?.id && !t.isDeleted) map.set(t.id, t);
+    }
+    for (let i = 0; i < tasks.length; i++) {
+      const t = tasks[i];
+      if (t?.id) {
+        if (t.isDeleted) map.delete(t.id);
+        else map.set(t.id, t);
+      }
+    }
+    return Array.from(map.values());
+  }, [allTasksForNotifs, tasks]);
+
+  const isSameAsActiveYearScope =
+    (allProjectsForNotifs.length === 0 ||
+      allProjectsForNotifs === projects ||
+      allProjectsForNotifs.length === projects.length) &&
+    (allTasksForNotifs.length === 0 ||
+      allTasksForNotifs === tasks ||
+      allTasksForNotifs.length === tasks.length);
+
+  const globalEnrichedProjectsForNotifs = useMemo(() => {
+    // Fast-path: When notification arrays match the active scope, reuse already-computed enrichedProjects (0ms)
+    if (isSameAsActiveYearScope) {
+      return enrichedProjects;
+    }
+
+    const baseProjects = allProjectsForNotifs.length > 0 ? allProjectsForNotifs : projects;
+    const baseTasks = mergedTasksForNotifs;
+    const enriched = enrichProjects(baseProjects, baseTasks);
+    if (currentUser.role === "admin") return enriched;
+
+    const userParties = currentUser.partyPermissions
+      ? Object.keys(currentUser.partyPermissions)
+          .filter((k) => currentUser.partyPermissions![k] && k.toLowerCase() !== "all")
+          .map((k) => k.toLowerCase().trim())
+      : [];
+    const userPartySet = new Set(userParties);
+    const username = String(currentUser.username || "").toLowerCase().trim();
+    const userId = String(currentUser.id || "").toLowerCase().trim();
+
+    const tasksByProject = new Map<string, Task[]>();
+    baseTasks.forEach((t) => {
+      const key = `${t.projectCode || ""}-${t.projectYear || ""}-${t.projectStore || ""}`;
+      let list = tasksByProject.get(key);
+      if (!list) {
+        list = [];
+        tasksByProject.set(key, list);
+      }
+      list.push(t);
+    });
+
+    const allowedStores = getUserAllowedStores(currentUser);
+
+    return enriched.filter((p) => {
+      const store = String(p.store || "").toUpperCase().trim();
+      let hasStorePerm = allowedStores.includes(store);
+      if (!hasStorePerm && (store === "HCM" || store === "HN")) {
+        hasStorePerm = allowedStores.includes(store);
+      } else if (!hasStorePerm && store !== "HCM" && store !== "HN") {
+        hasStorePerm = currentUser.role === "admin" || allowedStores.length >= 2;
+      }
+
+      const loc = String(p.location || "").toLowerCase().trim();
+      let permLoc = loc;
+      if (["md-b1", "md-l1", "md-l2", "md-l3", "md-l4"].includes(permLoc)) {
+        permLoc = permLoc.replace("md-", "");
+      }
+      const hasLocPerm =
+        currentUser.locationPermissions?.all ||
+        (currentUser.locationPermissions?.[permLoc] ?? false);
+
+      if (!hasStorePerm || !hasLocPerm) {
+        return false;
+      }
+
+      if (currentUser.byPartyAccess === true && currentUser.partyPermissions?.["all"] !== true) {
+        const pPartyList = String(p.party || "")
+          .toLowerCase()
+          .split(/[,;/+]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const pMatch = pPartyList.some(
+          (party) => userPartySet.has(party) || party === username || party === userId
+        );
+        if (pMatch) return true;
+
+        const pKey = `${p.code || ""}-${p.year || ""}-${p.store || ""}`;
+        const groupTasks = tasksByProject.get(pKey) || [];
+        return groupTasks.some((t) => {
+          const tPartyList = String(t.party || "")
+            .toLowerCase()
+            .split(/[,;/+]+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+          return tPartyList.some(
+            (party) => userPartySet.has(party) || party === username || party === userId
+          );
+        });
+      }
+
+      return true;
+    });
+  }, [
+    isSameAsActiveYearScope,
+    allProjectsForNotifs,
+    mergedTasksForNotifs,
+    projects,
+    currentUser,
+    enrichedProjects,
+  ]);
+
+  const globalFilteredTasksForNotifs = useMemo(() => {
+    // Fast-path: Reuse filteredTasks when notification arrays match active scope (0ms)
+    if (isSameAsActiveYearScope) {
+      return filteredTasks;
+    }
+
+    const baseTasks = mergedTasksForNotifs;
+    if (currentUser.role === "admin") return baseTasks;
+
+    // O(1) Pre-indexed map of project key -> project party list (Rule 7)
+    const projectPartyByKeyMap = new Map<string, string[]>();
+    const visibleProjectKeys = new Set<string>();
+
+    globalEnrichedProjectsForNotifs.forEach((p) => {
+      const fullKey = `${String(p.code).trim()}_${String(p.year || "").trim()}_${String(p.store || "").trim()}`.toLowerCase();
+      const codeOnlyKey = `${String(p.code).trim()}__`.toLowerCase();
+      visibleProjectKeys.add(fullKey);
+      const partyList = String(p.party || "")
+        .toLowerCase()
+        .split(/[,;/+]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      projectPartyByKeyMap.set(fullKey, partyList);
+      if (!projectPartyByKeyMap.has(codeOnlyKey)) {
+        projectPartyByKeyMap.set(codeOnlyKey, partyList);
+      }
+    });
+
+    let visibleTasks = baseTasks.filter((t) => {
+      const taskKey = `${String(t.projectCode).trim()}_${String(t.projectYear || "").trim()}_${String(t.projectStore || "").trim()}`.toLowerCase();
+      return (
+        visibleProjectKeys.has(taskKey) ||
+        visibleProjectKeys.has(`${String(t.projectCode).trim()}__`.toLowerCase())
+      );
+    });
+
+    if (currentUser.byPartyAccess === true && currentUser.partyPermissions?.["all"] !== true) {
+      const userParties = currentUser.partyPermissions
+        ? Object.keys(currentUser.partyPermissions)
+            .filter((k) => currentUser.partyPermissions![k] && k.toLowerCase() !== "all")
+            .map((k) => k.toLowerCase().trim())
+        : [];
+      const userPartySet = new Set(userParties);
+      const username = String(currentUser.username || "").toLowerCase().trim();
+      const userId = String(currentUser.id || "").toLowerCase().trim();
+
+      visibleTasks = visibleTasks.filter((t) => {
+        const fullKey = `${String(t.projectCode).trim()}_${String(t.projectYear || "").trim()}_${String(t.projectStore || "").trim()}`.toLowerCase();
+        const codeOnlyKey = `${String(t.projectCode).trim()}__`.toLowerCase();
+        const projectPartyList =
+          projectPartyByKeyMap.get(fullKey) || projectPartyByKeyMap.get(codeOnlyKey) || [];
+
+        const pMatch = projectPartyList.some(
+          (p) => userPartySet.has(p) || p === username || p === userId
+        );
+        if (pMatch) return true;
+
+        const tPartyList = String(t.party || "")
+          .toLowerCase()
+          .split(/[,;/+]+/)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        return tPartyList.some((p) => userPartySet.has(p) || p === username || p === userId);
+      });
+    }
+
+    return visibleTasks;
+  }, [
+    isSameAsActiveYearScope,
+    mergedTasksForNotifs,
+    globalEnrichedProjectsForNotifs,
+    currentUser,
+    filteredTasks,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let idleHandle: number | null = null;
+
+    const timer = setTimeout(() => {
+      const runNotificationCalc = () => {
+        if (cancelled) return;
+        const notifs = calculateActiveNotifications(
+          globalEnrichedProjectsForNotifs,
+          globalFilteredTasksForNotifs,
+          notificationRules,
+          visibleDelegationGroups,
+          currentUser.id,
+          currentUser.username,
+          currentUser
+        );
+        if (cancelled) return;
+
+        const prevNotifs = useAppStore.getState().activeNotifications;
+        const isSameNotifs =
+          prevNotifs.length === notifs.length &&
+          prevNotifs.every(
+            (p, idx) =>
+              p.id === notifs[idx].id &&
+              p.type === notifs[idx].type &&
+              p.title === notifs[idx].title &&
+              p.message === notifs[idx].message &&
+              p.isRead === notifs[idx].isRead &&
+              p.actionStatus === notifs[idx].actionStatus
+          );
+
+        if (!isSameNotifs) {
+          setActiveNotifications(notifs);
+        }
+
+        if (currentUser.readNotifs && currentUser.readNotifs.length > 300) {
+          const trimmed = currentUser.readNotifs.slice(-200);
+          safeSetItemLocal(`taka_read_notifs_${currentUser.id}`, JSON.stringify(trimmed));
+        }
+
+        if (
+          currentUser.id !== "guest" &&
+          currentUser.notification !== false &&
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
+          const notifiedStr = safeGetItemLocal(`taka_notified_${currentUser.id}`);
+          const notifiedIds: string[] = notifiedStr ? JSON.parse(notifiedStr) : [];
+          const notifiedSet = new Set(notifiedIds);
+          let hasNew = false;
+
+          notifs.forEach((notif) => {
+            if (!notifiedSet.has(notif.id)) {
+              hasNew = true;
+              notifiedSet.add(notif.id);
+              notifiedIds.push(notif.id);
+
+              const cleanBody = stripHtml(notif.message);
+              const iconUrl = typeof window !== "undefined" ? `${window.location.origin}/icon-192.png` : "/icon-192.png";
+
+              if ("serviceWorker" in navigator) {
+                navigator.serviceWorker.ready
+                  .then((registration) => {
+                    registration.showNotification(notif.title, {
+                      body: cleanBody,
+                      icon: iconUrl,
+                      badge: iconUrl,
+                      data: {
+                        targetType: notif.targetType,
+                        targetId: notif.targetId,
+                        notificationId: notif.id,
+                      },
+                    });
+                  })
+                  .catch(console.error);
+              } else {
+                const n = new Notification(notif.title, {
+                  body: cleanBody,
+                  icon: iconUrl,
+                  badge: iconUrl,
+                  data: {
+                    targetType: notif.targetType,
+                    targetId: notif.targetId,
+                    notificationId: notif.id,
+                  },
+                });
+                n.onclick = (e) => {
+                  e.preventDefault();
+                  window.focus();
+                  setNotificationFilterId(notif.id);
+                  setActiveTab("notification");
+                };
+              }
+            }
+          });
+
+          if (hasNew) {
+            safeSetItemLocal(`taka_notified_${currentUser.id}`, JSON.stringify(notifiedIds));
+          }
+        }
+      };
+
+      if (typeof (window as any).requestIdleCallback === "function") {
+        idleHandle = (window as any).requestIdleCallback(runNotificationCalc, { timeout: 2000 });
+      } else {
+        runNotificationCalc();
+      }
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      if (idleHandle !== null && typeof (window as any).cancelIdleCallback === "function") {
+        (window as any).cancelIdleCallback(idleHandle);
+      }
+    };
+  }, [
+    globalEnrichedProjectsForNotifs,
+    globalFilteredTasksForNotifs,
+    notificationRules,
+    visibleDelegationGroups,
+    currentUser,
+    setActiveNotifications,
+    setNotificationFilterId,
+    setActiveTab,
+  ]);
+
+  const readNotifs = currentUser.readNotifs || [];
+  const readNotifsSet = useMemo(() => new Set(readNotifs), [readNotifs]);
+  const unreadCount = useMemo(() => {
+    if (currentUser.notification === false) return 0;
+    let count = 0;
+    for (let i = 0; i < activeNotifications.length; i++) {
+      if (!readNotifsSet.has(activeNotifications[i].id)) count++;
+    }
+    return count;
+  }, [currentUser.notification, activeNotifications, readNotifsSet]);
+
+  useEffect(() => {
+    if ("setAppBadge" in navigator) {
+      if (unreadCount > 0) {
+        (navigator as any).setAppBadge(unreadCount).catch(console.error);
+      } else {
+        (navigator as any).clearAppBadge().catch(console.error);
+      }
+    }
+  }, [unreadCount]);
+
+  const visibleTabs = useMemo(() => {
+    const isAdmin = currentUser.role === "admin";
+    const uRole = (
+      currentUser.role === "admin"
+        ? "admin"
+        : (currentUser.role as string)?.toUpperCase() === "CP"
+        ? "CP"
+        : (currentUser.role as string)?.toLowerCase() === "manager"
+        ? "Manager"
+        : (currentUser.role as string)?.toLowerCase() === "staff"
+        ? "Staff"
+        : (currentUser.role as string)?.toLowerCase() === "external"
+        ? "External"
+        : currentUser.role
+    ) as AppRole;
+    const perms = permissionMatrix[uRole]?.See;
+    const writePerms = permissionMatrix[uRole]?.Write;
+    if (!isAdmin && !currentUser.canSee) return [];
+
+    const canSeeModule = (module: PermissionModule) => {
+      if (module === "taskDelegation") return isAdmin || !!perms?.[module];
+      return isAdmin || !!perms?.[module] || !!writePerms?.[module];
+    };
+
+    const order: { id: TabId; hidden: boolean }[] = [
+      { id: "calendar", hidden: !(canSeeModule("calendar") || canSeeModule("report")) },
+      { id: "taskDelegationCalendar", hidden: !canSeeModule("taskDelegation") },
+      { id: "general", hidden: !canSeeModule("general") },
+      { id: "taskDelegation", hidden: !canSeeModule("taskDelegation") },
+      { id: "detail", hidden: !canSeeModule("detail") },
+      { id: "gantt", hidden: !canSeeModule("report") },
+      { id: "summary", hidden: !(canSeeModule("summary") || canSeeModule("report")) },
+      { id: "layout", hidden: !canSeeModule("layout") },
+      { id: "budget", hidden: !canSeeModule("budget") },
+      { id: "cost", hidden: !canSeeModule("costDetail") },
+      { id: "picture_mapping", hidden: !canSeeModule("pictureMapping") },
+      { id: "csv_export", hidden: !canSeeModule("importCsv") },
+      { id: "accControl", hidden: false },
+      { id: "notification", hidden: !isAdmin && currentUser.notification === false },
+      { id: "setting", hidden: currentUser.role === "guest" },
+    ];
+    return order.filter((t) => !t.hidden).map((t) => t.id);
+  }, [currentUser, permissionMatrix]);
+
+  return {
+    readNotifs,
+    unreadCount,
+    visibleTabs,
+  };
 }
 

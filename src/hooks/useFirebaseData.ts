@@ -14,9 +14,11 @@ export function useFirebaseData() {
   const userCanSee = currentUser?.role === "admin" || !!currentUser?.canSee;
   const userRole = currentUser?.role;
 
+  const storePermsSignature = JSON.stringify(currentUser?.storePermissions || null);
   const allowedStores = useMemo(
     () => getUserAllowedStores(currentUser),
-    [currentUser]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentUser?.id, currentUser?.role, currentUser?.canSee, storePermsSignature]
   );
 
   // Stable Query Signature

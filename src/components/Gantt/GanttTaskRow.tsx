@@ -374,4 +374,63 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
       </div>
     </div>
   );
+}, (prev, next) => {
+  const tId = String(prev.t.id);
+  const myTooltipId = `task-${prev.t.id}`;
+  const prevTooltipActive = prev.activeTooltip === myTooltipId;
+  const nextTooltipActive = next.activeTooltip === myTooltipId;
+  if (prevTooltipActive !== nextTooltipActive) return false;
+
+  const prevSelected = prev.selectedTaskSet.has(tId) || prev.selectedTaskSet.has(prev.t.id);
+  const nextSelected = next.selectedTaskSet.has(tId) || next.selectedTaskSet.has(next.t.id);
+  if (prevSelected !== nextSelected) return false;
+
+  const prevDragging = prev.draggingTaskIds.includes(prev.t.id);
+  const nextDragging = next.draggingTaskIds.includes(next.t.id);
+  if (prevDragging !== nextDragging) return false;
+
+  const prevTarget = prev.dragOverTaskId === prev.t.id;
+  const nextTarget = next.dragOverTaskId === next.t.id;
+  if (prevTarget !== nextTarget) return false;
+  if (nextTarget && prev.dropPosition !== next.dropPosition) return false;
+
+  const prevFocused = prev.initialFocusTaskId === prev.t.id || prev.ganttTabFocusTaskId === prev.t.id;
+  const nextFocused = next.initialFocusTaskId === next.t.id || next.ganttTabFocusTaskId === next.t.id;
+  if (prevFocused !== nextFocused) return false;
+
+  const prevCode = prev.taskCodeMap?.get(prev.t.id);
+  const nextCode = next.taskCodeMap?.get(next.t.id);
+  if (prevCode !== nextCode) return false;
+
+  const prevDelGroup = prev.delegationGroupByTaskId?.get(prev.t.id);
+  const nextDelGroup = next.delegationGroupByTaskId?.get(next.t.id);
+  if (prevDelGroup !== nextDelGroup) return false;
+
+  return (
+    prev.t === next.t &&
+    prev.p === next.p &&
+    prev.taskIndex === next.taskIndex &&
+    prev.isChild === next.isChild &&
+    prev.parentTask === next.parentTask &&
+    prev.hasChildren === next.hasChildren &&
+    prev.childCount === next.childCount &&
+    prev.childTasks === next.childTasks &&
+    prev.isModularExpanded === next.isModularExpanded &&
+    prev.isEditMode === next.isEditMode &&
+    prev.canWrite === next.canWrite &&
+    prev.isHideMode === next.isHideMode &&
+    prev.sideWidth === next.sideWidth &&
+    prev.showStart === next.showStart &&
+    prev.startColWidth === next.startColWidth &&
+    prev.showFinish === next.showFinish &&
+    prev.finishColWidth === next.finishColWidth &&
+    prev.showParty === next.showParty &&
+    prev.partyColWidth === next.partyColWidth &&
+    prev.showDuration === next.showDuration &&
+    prev.durationColWidth === next.durationColWidth &&
+    prev.showPredecessor === next.showPredecessor &&
+    prev.predecessorColWidth === next.predecessorColWidth &&
+    prev.dayWidth === next.dayWidth &&
+    prev.startDate?.getTime() === next.startDate?.getTime()
+  );
 });

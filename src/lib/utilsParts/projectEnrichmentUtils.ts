@@ -24,6 +24,27 @@ let _lastMapVersionsRef: any = null;
 let _lastStoreLocationDataRef: any = null;
 let _lastEnrichedResult: Project[] | null = null;
 
+interface PerProjectEnrichCacheEntry {
+  projectTasks: Task[];
+  candidateDelegations: DelegationGroup[];
+  isHydrated: boolean;
+  mapUnitsRef: any;
+  mapVersionsRef: any;
+  storeLocationDataRef: any;
+  enriched: Project;
+}
+
+const _perProjectEnrichCache = new WeakMap<Project, PerProjectEnrichCacheEntry>();
+
+function areArraysShallowEqual<T>(a: T[], b: T[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 export function enrichProjects(
   projects: Project[], 
   tasks: Task[], 
@@ -178,6 +199,20 @@ export function enrichProjects(
       }
     }
 
+    const isHydrated = isProjectTasksHydrated(pId);
+    const cachedEntry = _perProjectEnrichCache.get(p);
+    if (
+      cachedEntry &&
+      cachedEntry.isHydrated === isHydrated &&
+      cachedEntry.mapUnitsRef === dataState.mapUnits &&
+      cachedEntry.mapVersionsRef === dataState.mapVersions &&
+      cachedEntry.storeLocationDataRef === dataState.storeLocationData &&
+      areArraysShallowEqual(cachedEntry.projectTasks, projectTasks) &&
+      areArraysShallowEqual(cachedEntry.candidateDelegations, candidateDelegations)
+    ) {
+      return cachedEntry.enriched;
+    }
+
     const sortedProjTasks = [...projectTasks].sort((a, b) => {
       const codeA = a.taskCodePhu || '';
       const codeB = b.taskCodePhu || '';
@@ -207,7 +242,7 @@ export function enrichProjects(
 
     const isAuthoritativeRealTasks =
       sortedProjTasks.length > 0 &&
-      (isProjectTasksHydrated(pId) || sortedProjTasks.length >= filteredExistingSummaries.length);
+      (isHydrated || sortedProjTasks.length >= filteredExistingSummaries.length);
 
     let taskSummaries: any[];
     if (isAuthoritativeRealTasks) {
@@ -352,7 +387,7 @@ export function enrichProjects(
         ? p.sizeM2
         : resolveMatchedUnitSizeM2(p).sizeM2;
 
-    return {
+    const enriched: Project = {
       ...p,
       ...(resolvedSizeM2 !== undefined ? { sizeM2: resolvedSizeM2 } : {}),
       computedTakStart,
@@ -365,6 +400,27 @@ export function enrichProjects(
       taskSummaries,
       taskCount,
     };
+
+    _perProjectEnrichCache.set(p, {
+      projectTasks,
+      candidateDelegations,
+      isHydrated,
+      mapUnitsRef: dataState.mapUnits,
+      mapVersionsRef: dataState.mapVersions,
+      storeLocationDataRef: dataState.storeLocationData,
+      enriched,
+    });
+    _perProjectEnrichCache.set(enriched, {
+      projectTasks,
+      candidateDelegations,
+      isHydrated,
+      mapUnitsRef: dataState.mapUnits,
+      mapVersionsRef: dataState.mapVersions,
+      storeLocationDataRef: dataState.storeLocationData,
+      enriched,
+    });
+
+    return enriched;
   });
 
   const statusPriority: Record<string, number> = {

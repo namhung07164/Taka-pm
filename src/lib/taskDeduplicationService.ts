@@ -99,6 +99,12 @@ export function buildCanonicalProjectKey(
   return `${canonicalCode}__${canonicalYear}__${canonicalStore}`;
 }
 
+const _dedupWeakCache = new WeakMap<Task[], {
+  dedupedTasks: Task[];
+  duplicateCount: number;
+  removedTaskIds: string[];
+}>();
+
 /**
  * Deduplicates a list of tasks in-memory.
  * If multiple tasks exist with the same project and same task name (case-insensitive or normalized)
@@ -114,6 +120,10 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
   }
   if (tasks.length === 1) {
     return { dedupedTasks: tasks, duplicateCount: 0, removedTaskIds: [] };
+  }
+  if (!projects || projects.length <= 1) {
+    const cached = _dedupWeakCache.get(tasks);
+    if (cached) return cached;
   }
 
   // Pre-index projects into Map for O(1) canonical key resolution
@@ -401,11 +411,14 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
     }
   }
 
-  return {
+  const result = {
     dedupedTasks,
     duplicateCount,
     removedTaskIds
   };
+  _dedupWeakCache.set(tasks, result);
+  _dedupWeakCache.set(dedupedTasks, { dedupedTasks, duplicateCount: 0, removedTaskIds: [] });
+  return result;
 }
 
 let _lastDedupInputTasksRef: Task[] | null = null;

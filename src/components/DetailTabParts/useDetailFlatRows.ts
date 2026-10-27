@@ -105,11 +105,16 @@ export function useDetailFlatRows({
         : (p.code ? expandedCodes.includes(p.code) : false);
       const isProjDelegationOn = groupTasks.some(t => Boolean(t.delegation)) || (p.taskSummaries?.some(ts => Boolean(ts.delegation)) ?? false);
 
-      const rolledUpGroupTasks = rollupParentTaskDatesAndStatus(groupTasks, delegationGroups);
-      const validGroupTasks = rolledUpGroupTasks.map(t => ({
-        ...t,
-        name: t.name && String(t.name).trim() ? t.name : (t.taskCodePhu || 'Task')
-      }));
+      const rolledUpGroupTasks = sortConfig
+        ? rollupParentTaskDatesAndStatus(groupTasks, delegationGroups)
+        : groupTasks;
+      const validGroupTasks = rolledUpGroupTasks.every(t => Boolean(t.name && String(t.name).trim()))
+        ? rolledUpGroupTasks
+        : rolledUpGroupTasks.map(t => (
+            t.name && String(t.name).trim()
+              ? t
+              : { ...t, name: t.taskCodePhu || 'Task' }
+          ));
 
       const isProjectMatch = lowerSearchTerm
         ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])
