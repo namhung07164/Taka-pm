@@ -113,6 +113,16 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
     return Array.from(set);
   }, [activeStore, getAllStoreVersions, storeLocationData]);
 
+  React.useEffect(() => {
+    if (availablePaintCategories.length > 0) {
+      if (layoutPaintCategory === 'all' || (!availablePaintCategories.includes(layoutPaintCategory) && layoutPaintCategory !== 'none')) {
+        setLayoutPaintCategory(availablePaintCategories[0]);
+      }
+    } else if (layoutPaintCategory === 'all') {
+      setLayoutPaintCategory('none');
+    }
+  }, [availablePaintCategories, layoutPaintCategory, setLayoutPaintCategory]);
+
   return (
     <div className="flex flex-col gap-1.5 mb-1.5 hide-on-actual-print print:hidden">
       {/* Mobile-optimized & Responsive Header Toolbar */}
@@ -165,6 +175,19 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
                   ))}
                 </select>
               )}
+              {canWrite && (
+                <>
+                  <div className="w-px h-3 bg-slate-200 dark:bg-[#444446]"></div>
+                  <button 
+                    type="button"
+                    onClick={() => { setEditUrl(url); setIsEditing(true); }}
+                    className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 dark:text-blue-400 rounded-lg transition-colors cursor-pointer shrink-0"
+                    title="Edit layout image/drive URL"
+                  >
+                    <Edit2 className="w-3.5 h-3.5 shrink-0" />
+                  </button>
+                </>
+              )}
               {allowedStores.length === 0 && availableLocations.length === 0 && availableYears.length === 0 && (
                 <span className="text-xs text-slate-400 dark:text-slate-500 italic px-2">No accessible projects</span>
               )}
@@ -173,19 +196,6 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
 
           {/* Top Right Action Buttons on Mobile */}
           <div className="flex items-center gap-1.5 ml-auto md:ml-0 shrink-0">
-
-            {/* Edit URL for Admin / Write.layout */}
-            {canWrite && (
-              <button 
-                onClick={() => { setEditUrl(url); setIsEditing(true); }}
-                className="h-8 sm:h-9 flex items-center justify-center gap-1.5 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-bold transition-colors border border-blue-200 dark:border-blue-800 shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
-                title="Edit layout image/drive URL"
-              >
-                <Edit2 className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">Edit URL</span>
-              </button>
-            )}
-
             {/* Active Export Status Banner */}
             {isExporting && (
               <div className="flex items-center gap-1.5 text-xs text-amber-700 font-medium bg-amber-50 dark:bg-amber-950/60 px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800 animate-pulse shrink-0">
@@ -298,7 +308,6 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
                   className="bg-transparent border-none text-xs text-indigo-700 dark:text-indigo-300 font-bold outline-none cursor-pointer w-full truncate"
                   title="Filter units by Paint Category"
                 >
-                  <option value="all">All Categories</option>
                   {availablePaintCategories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
