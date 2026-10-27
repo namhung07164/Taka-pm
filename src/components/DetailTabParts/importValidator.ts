@@ -44,7 +44,7 @@ export function validateTasksImportData(
 
   const projectLookup = new Map<string, Project>();
   existingProjects.forEach(p => {
-    const pCode = String(p.code || '').trim().toLowerCase();
+    const pCode = normalizeDashes(String(p.code || '')).trim().toLowerCase();
     const pYear = normalizeYearString(p.year);
     const pStore = normalizeStoreCode(p.store);
     if (pCode) {
@@ -157,12 +157,24 @@ export function validateTasksImportData(
 
     // 2. Project Existence
     if (projectCode && existingProjects.length > 0) {
-      const pCodeLower = projectCode.toLowerCase();
+      const pCodeClean = normalizeDashes(projectCode).trim();
+      const pCodeLower = pCodeClean.toLowerCase();
       const pYearNorm = normalizeYearString(projectYear);
       const pStoreNorm = normalizeStoreCode(projectStore);
-      const foundProject = (pYearNorm && pStoreNorm && projectLookup.get(`${pCodeLower}__${pYearNorm}__${pStoreNorm}`)) ||
-                           (pStoreNorm && projectLookup.get(`${pCodeLower}____${pStoreNorm}`)) ||
-                           projectLookup.get(pCodeLower);
+      let foundProject = (pYearNorm && pStoreNorm && projectLookup.get(`${pCodeLower}__${pYearNorm}__${pStoreNorm}`)) ||
+                         (pStoreNorm && projectLookup.get(`${pCodeLower}____${pStoreNorm}`)) ||
+                         projectLookup.get(pCodeLower);
+
+      if (!foundProject) {
+        foundProject = existingProjects.find(p => {
+          if (!p || p.isDeleted) return false;
+          const codeMatch = matchProjectCode(p.code, pCodeClean);
+          const storeMatch = !pStoreNorm || !p.store || normalizeStoreCode(p.store) === pStoreNorm;
+          const yearMatch = !pYearNorm || p.year === undefined || p.year === null || normalizeYearString(p.year) === pYearNorm;
+          return codeMatch && storeMatch && yearMatch;
+        });
+      }
+
       if (!foundProject) {
         addError({
           rowNumber,

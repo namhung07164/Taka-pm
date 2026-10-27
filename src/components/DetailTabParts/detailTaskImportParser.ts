@@ -3,6 +3,7 @@ import { parseCSV } from '../../lib/csvUtils';
 import { cleanDurationString } from '../../lib/taskImportService';
 import { parseCSVDate } from './detailCsvUtils';
 import { validateTasksImportData, generateTaskErrorReportCSV, ImportValidationResult } from './importValidator';
+import { hydrateProjectsForImport, RawImportProjectKey } from './detailProjectImportHydrator';
 
 export interface ParsedTasksFileResult {
   rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
@@ -39,8 +40,27 @@ export async function parseTasksFile(
   const headers = rows[0].map(h => h.trim().toLowerCase());
   const dataRows = rows.slice(1);
 
-  // 1. Run Comprehensive Validation
-  const validation = validateTasksImportData(headers, dataRows, projects);
+  // Extract project keys from data rows to hydrate any projects not yet loaded in active year view
+  const pCodeIdx = headers.findIndex(h => ['projectcode', 'project code', 'code'].includes(h));
+  const pYearIdx = headers.findIndex(h => ['projectyear', 'project year', 'year'].includes(h));
+  const pStoreIdx = headers.findIndex(h => ['projectstore', 'project store', 'store'].includes(h));
+
+  const rawKeys: RawImportProjectKey[] = [];
+  if (pCodeIdx !== -1) {
+    dataRows.forEach(r => {
+      const code = String(r[pCodeIdx] || '').trim();
+      const year = pYearIdx !== -1 ? String(r[pYearIdx] || '').trim() : undefined;
+      const store = pStoreIdx !== -1 ? String(r[pStoreIdx] || '').trim() : undefined;
+      if (code) {
+        rawKeys.push({ projectCode: code, projectYear: year, projectStore: store });
+      }
+    });
+  }
+
+  const allKnownProjects = await hydrateProjectsForImport(rawKeys, projects);
+
+  // 1. Run Comprehensive Validation against all known projects across all years
+  const validation = validateTasksImportData(headers, dataRows, allKnownProjects);
   const errorReportCSV = validation.isValid ? '' : generateTaskErrorReportCSV(headers, dataRows, validation);
 
   const rawParsedRowsByProject = new Map<string, Array<{ rowData: any; originalCsvIndex: number }>>();

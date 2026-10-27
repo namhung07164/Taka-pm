@@ -131,10 +131,11 @@ export function useDetailTaskCsv({
         return;
       }
 
-      // Safe to execute import
+      // Safe to execute import with the latest hydrated projects across all years
+      const latestProjects = useAppStore.getState().projects || projects;
       const { count, projectCount } = await executeImportTasks({
         rawParsedRowsByProject: parsed.rawParsedRowsByProject,
-        projects,
+        projects: latestProjects,
         tasks,
         appUsers,
         currentUser

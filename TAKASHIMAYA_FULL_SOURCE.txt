@@ -160364,3 +160364,978 @@ export async function hydrateImportContextTasks(
   return Array.from(tasksMap.values());
 }
 
+=== FILE: src/components/DetailTabParts/detailProjectImportHydrator.ts ===
+import { Project } from '../../types';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db, APP_ID } from '../../lib/firebase';
+import { normalizeYearString, normalizeStoreCode } from '../../lib/taskDeduplicationService';
+import { matchProjectCode } from '../../lib/projectDatesService';
+import { normalizeDashes } from '../../lib/utils';
+import { isProjectDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { useAppStore } from '../../store/useAppStore';
+
+export interface RawImportProjectKey {
+  projectCode: string;
+  projectYear?: string;
+  projectStore?: string;
+}
+
+/**
+ * Hydrates projects for import validation from Zustand, Dexie (localDb), and Firestore.
+ * This guarantees that when an import file references projects in years or stores not
+ * currently loaded in the active view (e.g. year 2027 HN when viewing 2026 HCM),
+ * the validator can find the project, hydrate it into the local store, and succeed.
+ */
+export async function hydrateProjectsForImport(
+  keys: RawImportProjectKey[],
+  currentProjects: Project[]
+): Promise<Project[]> {
+  const projectMap = new Map<string, Project>();
+
+  // 1. Index in-memory projects
+  (currentProjects || []).forEach((p) => {
+    if (p && p.id && !p.isDeleted && !isProjectDeletedInTracker(p.id)) {
+      projectMap.set(String(p.id).trim(), p);
+    }
+  });
+
+  const missingKeys: RawImportProjectKey[] = [];
+
+  const matchesKey = (p: Project, k: RawImportProjectKey): boolean => {
+    if (!p || p.isDeleted || (p.id && isProjectDeletedInTracker(p.id))) return false;
+    const pCodeMatch = matchProjectCode(p.code, k.projectCode);
+    const pStore = normalizeStoreCode(p.store);
+    const kStore = normalizeStoreCode(k.projectStore);
+    if (pStore && kStore && pStore !== kStore) return false;
+    const pYear = normalizeYearString(p.year);
+    const kYear = normalizeYearString(k.projectYear);
+    if (pYear && kYear && pYear !== kYear) return false;
+    return pCodeMatch;
+  };
+
+  for (const k of keys) {
+    if (!k.projectCode) continue;
+    let found = false;
+    for (const p of projectMap.values()) {
+      if (matchesKey(p, k)) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      missingKeys.push(k);
+    }
+  }
+
+  if (missingKeys.length === 0) {
+    return Array.from(projectMap.values());
+  }
+
+  // 2. Check Dexie localDb for missing project years / codes
+  try {
+    const { getLocalProjects, bulkPersistProjects } = await import('../../lib/localDb');
+    const allLocal = await getLocalProjects('all');
+    for (const p of allLocal) {
+      if (p && p.id && !p.isDeleted && !isProjectDeletedInTracker(p.id)) {
+        projectMap.set(String(p.id).trim(), p);
+      }
+    }
+
+    const stillMissing: RawImportProjectKey[] = [];
+    for (const k of missingKeys) {
+      let found = false;
+      for (const p of projectMap.values()) {
+        if (matchesKey(p, k)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        stillMissing.push(k);
+      }
+    }
+
+    // 3. If still missing from localDb, query Firestore taka_projects directly
+    if (stillMissing.length > 0) {
+      const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects');
+      const fetchPromises: Promise<any>[] = [];
+
+      const queriedYears = new Set<string>();
+      const queriedCodes = new Set<string>();
+
+      for (const k of stillMissing) {
+        const cleanCode = normalizeDashes(k.projectCode).trim();
+        const cleanYear = normalizeYearString(k.projectYear);
+        const cleanStore = normalizeStoreCode(k.projectStore);
+
+        if (cleanYear && cleanStore && !queriedYears.has(`${cleanYear}__${cleanStore}`)) {
+          queriedYears.add(`${cleanYear}__${cleanStore}`);
+          fetchPromises.push(
+            getDocs(
+              query(
+                colRef,
+                where('year', 'in', [cleanYear, Number(cleanYear)]),
+                where('store', '==', cleanStore)
+              )
+            ).catch(() => null)
+          );
+        } else if (cleanCode && !queriedCodes.has(cleanCode.toLowerCase())) {
+          queriedCodes.add(cleanCode.toLowerCase());
+          const codeVariants = Array.from(
+            new Set([cleanCode, cleanCode.toUpperCase(), cleanCode.toLowerCase()])
+          );
+          fetchPromises.push(
+            getDocs(
+              codeVariants.length > 1
+                ? query(colRef, where('code', 'in', codeVariants))
+                : query(colRef, where('code', '==', codeVariants[0]))
+            ).catch(() => null)
+          );
+        }
+      }
+
+      const snapshots = await Promise.all(fetchPromises);
+      const newlyFetched: Project[] = [];
+      snapshots.forEach((snap) => {
+        if (!snap) return;
+        snap.forEach((docSnap: any) => {
+          const data = { id: docSnap.id, ...docSnap.data() } as Project;
+          if (data && !data.isDeleted && !isProjectDeletedInTracker(data.id)) {
+            newlyFetched.push(data);
+            projectMap.set(data.id, data);
+          }
+        });
+      });
+
+      if (newlyFetched.length > 0) {
+        bulkPersistProjects(newlyFetched).catch(() => {});
+        const storeProjects = useAppStore.getState().projects || [];
+        const mergedById = new Map<string, Project>(storeProjects.map((p) => [p.id, p]));
+        newlyFetched.forEach((p) => mergedById.set(p.id, p));
+        const mergedList = Array.from(mergedById.values()).sort((a, b) => (a.no || 0) - (b.no || 0));
+        useAppStore.getState().setProjects(mergedList);
+      }
+    }
+  } catch (err) {
+    console.warn('[hydrateProjectsForImport] error hydrating projects:', err);
+  }
+
+  return Array.from(projectMap.values());
+}
+
+=== FILE: src/components/DetailTabParts/importValidator.ts ===
+import { Project } from '../../types';
+import { normalizeStoreCode, normalizeYearString } from '../../lib/taskDeduplicationService';
+import { parseCSVDate } from './detailCsvUtils';
+import { ImportErrorDetail, ImportValidationResult, generateTaskErrorReportCSV } from './importTypes';
+
+export type { ImportErrorDetail, ImportValidationResult };
+export { generateTaskErrorReportCSV };
+
+/**
+ * Deeply validates all rows in a task CSV / Excel file before import.
+ * If any invalid, duplicate, or buggy data is found, returns isValid: false
+ * with a full list of errors.
+ */
+export function validateTasksImportData(
+  headers: string[],
+  dataRows: string[][],
+  existingProjects: Project[] = []
+): ImportValidationResult {
+  const errors: ImportErrorDetail[] = [];
+  const errorRowNumbers = new Set<number>();
+  const errorSummaryByType: Record<string, number> = {};
+
+  const addError = (err: ImportErrorDetail) => {
+    errors.push(err);
+    errorRowNumbers.add(err.rowNumber);
+    errorSummaryByType[err.errorType] = (errorSummaryByType[err.errorType] || 0) + 1;
+  };
+
+  const headerIndexMap = new Map<string, number>();
+  headers.forEach((h, i) => headerIndexMap.set(h.trim().toLowerCase(), i));
+
+  const getCol = (row: string[], ...names: string[]): string => {
+    for (const name of names) {
+      const idx = headerIndexMap.get(name.toLowerCase());
+      if (idx !== undefined && idx < row.length) {
+        return String(row[idx] || '').trim();
+      }
+    }
+    return '';
+  };
+
+  const seenTaskNamesWithinFile = new Map<string, { rowNumber: number; rawName: string }>();
+  const seenSubTaskCodesWithinFile = new Map<string, { rowNumber: number }>();
+
+  const projectLookup = new Map<string, Project>();
+  existingProjects.forEach(p => {
+    const pCode = normalizeDashes(String(p.code || '')).trim().toLowerCase();
+    const pYear = normalizeYearString(p.year);
+    const pStore = normalizeStoreCode(p.store);
+    if (pCode) {
+      if (pYear && pStore) projectLookup.set(`${pCode}__${pYear}__${pStore}`, p);
+      if (pStore) projectLookup.set(`${pCode}____${pStore}`, p);
+      if (pYear) projectLookup.set(`${pCode}__${pYear}__`, p);
+      if (!projectLookup.has(pCode)) projectLookup.set(pCode, p);
+    }
+    if (p.id) projectLookup.set(String(p.id).trim().toLowerCase(), p);
+  });
+
+  let totalDataRows = 0;
+
+  for (let idx = 0; idx < dataRows.length; idx++) {
+    const row = dataRows[idx];
+    const rowNumber = idx + 2;
+
+    if (row.every(c => !String(c).trim())) continue;
+    totalDataRows++;
+
+    const projectCode = getCol(row, 'projectcode', 'project code', 'code');
+    const projectYear = getCol(row, 'projectyear', 'project year', 'year');
+    const projectStore = getCol(row, 'projectstore', 'project store', 'store');
+    const taskName = getCol(row, 'task name', 'taskname', 'name');
+    const subTaskCode = getCol(row, 'sub-task code', 'sub task code', 'subtask code', 'sub_task_code', 'taskcodephu', 'task code phu');
+    const startDateRaw = getCol(row, 'start', 'start date', 'startdate');
+    const finishDateRaw = getCol(row, 'finish', 'finish date', 'finishdate', 'end');
+    const predecessor = getCol(row, 'predecessor', 'predecessors');
+
+    // 1. Missing Required Fields
+    if (!projectCode) {
+      addError({
+        rowNumber,
+        projectCode: '(empty)',
+        projectYear,
+        projectStore,
+        taskName: taskName || '(empty)',
+        errorType: 'MISSING_FIELD',
+        field: 'Project Code',
+        message: 'Missing required field: Project Code.'
+      });
+    }
+
+    if (!taskName) {
+      addError({
+        rowNumber,
+        projectCode,
+        projectYear,
+        projectStore,
+        taskName: '(empty)',
+        errorType: 'MISSING_FIELD',
+        field: 'Task Name',
+        message: 'Missing required field: Task Name. Every task must have a name.'
+      });
+    }
+
+    if (!projectYear) {
+      addError({
+        rowNumber,
+        projectCode,
+        projectYear: '(empty)',
+        projectStore,
+        taskName,
+        errorType: 'MISSING_FIELD',
+        field: 'Year',
+        message: 'Missing required field: Year.'
+      });
+    } else {
+      const yearNum = Number(projectYear);
+      if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATA',
+          field: 'Year',
+          message: `Invalid Year '${projectYear}'. Must be a valid 4-digit year between 2000 and 2100.`
+        });
+      }
+    }
+
+    if (!projectStore) {
+      addError({
+        rowNumber,
+        projectCode,
+        projectYear,
+        projectStore: '(empty)',
+        taskName,
+        errorType: 'MISSING_FIELD',
+        field: 'Store',
+        message: 'Missing required field: Store (must be HN or HCM).'
+      });
+    } else {
+      const normStore = normalizeStoreCode(projectStore);
+      if (normStore !== 'HN' && normStore !== 'HCM') {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATA',
+          field: 'Store',
+          message: `Unrecognized Store '${projectStore}'. Store must be 'HN' or 'HCM'.`
+        });
+      }
+    }
+
+    // 2. Project Existence
+    if (projectCode && existingProjects.length > 0) {
+      const pCodeClean = normalizeDashes(projectCode).trim();
+      const pCodeLower = pCodeClean.toLowerCase();
+      const pYearNorm = normalizeYearString(projectYear);
+      const pStoreNorm = normalizeStoreCode(projectStore);
+      let foundProject = (pYearNorm && pStoreNorm && projectLookup.get(`${pCodeLower}__${pYearNorm}__${pStoreNorm}`)) ||
+                         (pStoreNorm && projectLookup.get(`${pCodeLower}____${pStoreNorm}`)) ||
+                         projectLookup.get(pCodeLower);
+
+      if (!foundProject) {
+        foundProject = existingProjects.find(p => {
+          if (!p || p.isDeleted) return false;
+          const codeMatch = matchProjectCode(p.code, pCodeClean);
+          const storeMatch = !pStoreNorm || !p.store || normalizeStoreCode(p.store) === pStoreNorm;
+          const yearMatch = !pYearNorm || p.year === undefined || p.year === null || normalizeYearString(p.year) === pYearNorm;
+          return codeMatch && storeMatch && yearMatch;
+        });
+      }
+
+      if (!foundProject) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'PROJECT_NOT_FOUND',
+          field: 'Project Code',
+          message: `Project '${projectCode}' (${projectYear || 'no year'} - ${projectStore || 'no store'}) was not found in database.`
+        });
+      }
+    }
+
+    // 3. Duplicate Task Within File
+    if (projectCode && taskName) {
+      const pYearNorm = normalizeYearString(projectYear);
+      const pStoreNorm = normalizeStoreCode(projectStore);
+      const projKey = `${projectCode.toLowerCase()}__${pYearNorm}__${pStoreNorm}`;
+      
+      const absTaskName = taskName.trim().toLowerCase().replace(/\s+/g, ' ');
+      const taskNameKey = `${projKey}:::name:::${absTaskName}`;
+
+      if (seenTaskNamesWithinFile.has(taskNameKey)) {
+        const firstOccurrence = seenTaskNamesWithinFile.get(taskNameKey)!;
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'DUPLICATE',
+          field: 'Task Name',
+          message: `Duplicate task name '${taskName}' in project ${projectCode} (conflicts with Row ${firstOccurrence.rowNumber}).`
+        });
+      } else {
+        seenTaskNamesWithinFile.set(taskNameKey, { rowNumber, rawName: taskName });
+      }
+
+      if (subTaskCode) {
+        const subTaskCodeKey = `${projKey}:::code:::${subTaskCode.toLowerCase()}`;
+        if (seenSubTaskCodesWithinFile.has(subTaskCodeKey)) {
+          const firstCodeOccurrence = seenSubTaskCodesWithinFile.get(subTaskCodeKey)!;
+          addError({
+            rowNumber,
+            projectCode,
+            projectYear,
+            projectStore,
+            taskName,
+            subTaskCode,
+            errorType: 'DUPLICATE',
+            field: 'Sub-task code',
+            message: `Duplicate Sub-task Code '${subTaskCode}' in project ${projectCode} (conflicts with Row ${firstCodeOccurrence.rowNumber}).`
+          });
+        } else {
+          seenSubTaskCodesWithinFile.set(subTaskCodeKey, { rowNumber });
+        }
+      }
+    }
+
+    // 4. Date Formats & Chronological Logic
+    let parsedStart: string | null = null;
+    let parsedFinish: string | null = null;
+
+    if (startDateRaw) {
+      parsedStart = parseCSVDate(startDateRaw);
+      if (!parsedStart || isNaN(new Date(parsedStart).getTime())) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATE',
+          field: 'Start Date',
+          message: `Invalid Start Date format '${startDateRaw}'. Expected YYYY-MM-DD or DD/MM/YYYY.`
+        });
+      }
+    }
+
+    if (finishDateRaw) {
+      parsedFinish = parseCSVDate(finishDateRaw);
+      if (!parsedFinish || isNaN(new Date(parsedFinish).getTime())) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATE',
+          field: 'Finish Date',
+          message: `Invalid Finish Date format '${finishDateRaw}'. Expected YYYY-MM-DD or DD/MM/YYYY.`
+        });
+      }
+    }
+
+    if (parsedStart && parsedFinish) {
+      const startTime = new Date(parsedStart).getTime();
+      const finishTime = new Date(parsedFinish).getTime();
+      if (startTime > finishTime) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'DATE_LOGIC',
+          field: 'Start/Finish Dates',
+          message: `Date Logic Error: Start date (${parsedStart}) is later than Finish date (${parsedFinish}).`
+        });
+      }
+    }
+
+    // 5. Predecessor Self-Reference
+    if (predecessor && subTaskCode) {
+      if (predecessor.toUpperCase().includes(subTaskCode.toUpperCase())) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          subTaskCode,
+          errorType: 'PREDECESSOR_ERROR',
+          field: 'Predecessor',
+          message: `Invalid Predecessor: Task cannot reference itself ('${subTaskCode}') as a predecessor.`
+        });
+      }
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    totalRows: totalDataRows,
+    validRowsCount: totalDataRows - errorRowNumbers.size,
+    errorCount: errors.length,
+    errors,
+    errorRowNumbers,
+    errorSummaryByType
+  };
+}
+
+/**
+ * Validates project CSV data rows.
+ */
+export function validateProjectsImportData(
+  headers: string[],
+  dataRows: string[][]
+): ImportValidationResult {
+  const errors: ImportErrorDetail[] = [];
+  const errorRowNumbers = new Set<number>();
+  const errorSummaryByType: Record<string, number> = {};
+
+  const addError = (err: ImportErrorDetail) => {
+    errors.push(err);
+    errorRowNumbers.add(err.rowNumber);
+    errorSummaryByType[err.errorType] = (errorSummaryByType[err.errorType] || 0) + 1;
+  };
+
+  const headerIndexMap = new Map<string, number>();
+  headers.forEach((h, i) => headerIndexMap.set(h.trim().toLowerCase(), i));
+
+  const getCol = (row: string[], ...names: string[]): string => {
+    for (const name of names) {
+      const idx = headerIndexMap.get(name.toLowerCase());
+      if (idx !== undefined && idx < row.length) {
+        return String(row[idx] || '').trim();
+      }
+    }
+    return '';
+  };
+
+  const seenProjectCodes = new Map<string, number>();
+  let totalDataRows = 0;
+
+  for (let idx = 0; idx < dataRows.length; idx++) {
+    const row = dataRows[idx];
+    const rowNumber = idx + 2;
+
+    if (row.every(c => !String(c).trim())) continue;
+    totalDataRows++;
+
+    const code = getCol(row, 'code', 'projectcode', 'project code');
+    const year = getCol(row, 'year', 'projectyear', 'project year');
+    const store = getCol(row, 'store', 'projectstore', 'project store');
+    const name = getCol(row, 'name', 'project name', 'projectname');
+
+    if (!code) {
+      addError({
+        rowNumber,
+        projectCode: '(empty)',
+        projectYear: year,
+        projectStore: store,
+        taskName: name,
+        errorType: 'MISSING_FIELD',
+        field: 'Project Code',
+        message: 'Missing required field: Project Code.'
+      });
+    }
+
+    if (!year) {
+      addError({
+        rowNumber,
+        projectCode: code,
+        projectYear: '(empty)',
+        projectStore: store,
+        taskName: name,
+        errorType: 'MISSING_FIELD',
+        field: 'Year',
+        message: 'Missing required field: Year.'
+      });
+    } else {
+      const yearNum = Number(year);
+      if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+        addError({
+          rowNumber,
+          projectCode: code,
+          projectYear: year,
+          projectStore: store,
+          taskName: name,
+          errorType: 'INVALID_DATA',
+          field: 'Year',
+          message: `Invalid Year '${year}'. Year must be a 4-digit number between 2000 and 2100.`
+        });
+      }
+    }
+
+    if (!store) {
+      addError({
+        rowNumber,
+        projectCode: code,
+        projectYear: year,
+        projectStore: '(empty)',
+        taskName: name,
+        errorType: 'MISSING_FIELD',
+        field: 'Store',
+        message: 'Missing required field: Store (must be HN or HCM).'
+      });
+    } else {
+      const normStore = normalizeStoreCode(store);
+      if (normStore !== 'HN' && normStore !== 'HCM') {
+        addError({
+          rowNumber,
+          projectCode: code,
+          projectYear: year,
+          projectStore: store,
+          taskName: name,
+          errorType: 'INVALID_DATA',
+          field: 'Store',
+          message: `Unrecognized Store '${store}'. Must be 'HN' or 'HCM'.`
+        });
+      }
+    }
+
+    if (code && year && store) {
+      const pKey = `${code.toLowerCase()}__${normalizeYearString(year)}__${normalizeStoreCode(store)}`;
+      if (seenProjectCodes.has(pKey)) {
+        const firstRow = seenProjectCodes.get(pKey)!;
+        addError({
+          rowNumber,
+          projectCode: code,
+          projectYear: year,
+          projectStore: store,
+          taskName: name,
+          errorType: 'DUPLICATE',
+          field: 'Project Code',
+          message: `Duplicate Project Code '${code}' for Year ${year} - Store ${store} (conflicts with Row ${firstRow}).`
+        });
+      } else {
+        seenProjectCodes.set(pKey, rowNumber);
+      }
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    totalRows: totalDataRows,
+    validRowsCount: totalDataRows - errorRowNumbers.size,
+    errorCount: errors.length,
+    errors,
+    errorRowNumbers,
+    errorSummaryByType
+  };
+}
+
+=== FILE: src/components/DetailTabParts/detailTaskImportParser.ts ===
+import { Project } from '../../types';
+import { parseCSV } from '../../lib/csvUtils';
+import { cleanDurationString } from '../../lib/taskImportService';
+import { parseCSVDate } from './detailCsvUtils';
+import { validateTasksImportData, generateTaskErrorReportCSV, ImportValidationResult } from './importValidator';
+import { hydrateProjectsForImport, RawImportProjectKey } from './detailProjectImportHydrator';
+
+export interface ParsedTasksFileResult {
+  rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
+  headers: string[];
+  dataRows: string[][];
+  validation: ImportValidationResult;
+  errorReportCSV: string;
+}
+
+export async function parseTasksFile(
+  file: File,
+  projects: Project[]
+): Promise<ParsedTasksFileResult> {
+  let rows: string[][] = [];
+  const fileName = file.name.toLowerCase();
+
+  if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+    const XLSX = await import('xlsx');
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheetName = workbook.SheetNames.includes('tasks') ? 'tasks' : workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: false });
+    rows = rawRows.map(row => row.map((cell: any) => String(cell !== null && cell !== undefined ? cell : '').trim()));
+  } else {
+    const text = await file.text();
+    rows = parseCSV(text);
+  }
+
+  if (!rows || rows.length < 2) {
+    throw new Error('CSV file is empty or format is invalid. At least 1 header row and 1 data row are required.');
+  }
+
+  const headers = rows[0].map(h => h.trim().toLowerCase());
+  const dataRows = rows.slice(1);
+
+  // Extract project keys from data rows to hydrate any projects not yet loaded in active year view
+  const pCodeIdx = headers.findIndex(h => ['projectcode', 'project code', 'code'].includes(h));
+  const pYearIdx = headers.findIndex(h => ['projectyear', 'project year', 'year'].includes(h));
+  const pStoreIdx = headers.findIndex(h => ['projectstore', 'project store', 'store'].includes(h));
+
+  const rawKeys: RawImportProjectKey[] = [];
+  if (pCodeIdx !== -1) {
+    dataRows.forEach(r => {
+      const code = String(r[pCodeIdx] || '').trim();
+      const year = pYearIdx !== -1 ? String(r[pYearIdx] || '').trim() : undefined;
+      const store = pStoreIdx !== -1 ? String(r[pStoreIdx] || '').trim() : undefined;
+      if (code) {
+        rawKeys.push({ projectCode: code, projectYear: year, projectStore: store });
+      }
+    });
+  }
+
+  const allKnownProjects = await hydrateProjectsForImport(rawKeys, projects);
+
+  // 1. Run Comprehensive Validation against all known projects across all years
+  const validation = validateTasksImportData(headers, dataRows, allKnownProjects);
+  const errorReportCSV = validation.isValid ? '' : generateTaskErrorReportCSV(headers, dataRows, validation);
+
+  const rawParsedRowsByProject = new Map<string, Array<{ rowData: any; originalCsvIndex: number }>>();
+
+  // If validation failed, return immediately without parsing into project maps to ensure 0 writes
+  if (!validation.isValid) {
+    return {
+      rawParsedRowsByProject,
+      headers,
+      dataRows,
+      validation,
+      errorReportCSV
+    };
+  }
+
+  dataRows.forEach((row, rowIndex) => {
+    if (row.length < headers.length) return;
+    const t: any = {};
+
+    headers.forEach((h, i) => {
+      let key = h;
+      if (h === 'task name') key = 'name';
+      if (h === 'projectid' || h === 'project_id' || h === 'project id') key = 'projectId';
+      if (h === 'projectcode') key = 'projectCode';
+      if (h === 'year' || h === 'projectyear') key = 'projectYear';
+      if (h === 'store' || h === 'projectstore') key = 'projectStore';
+      if (h === 'sub-task code' || h === 'sub task code' || h === 'subtask code' || h === 'sub_task_code' || h === 'taskcodephu' || h === 'task code phu' || h === 'task_code_phu') {
+        key = 'taskCodePhu';
+      }
+      if (h === 'orderindex' || h === 'order_index') key = 'orderIndex';
+      if (h === 'delegation' || h === 'task delegation' || h === 'task_delegation' || h === 'isdelegation') {
+        key = 'delegation';
+      }
+      if (h === 'task flexible' || h === 'task_flexible' || h === 'taskflexible' || h === 'flexible' || h === 'realtimeupdate' || h === 'realtime_update') {
+        key = 'realtimeUpdate';
+      }
+      if (h === 'comments' || h === 'comment') {
+        key = 'importComment';
+      }
+      if (h === 'parent task code' || h === 'parenttaskcode' || h === 'parent_task_code' || h === 'parent code' || h === 'parent_code' || h === 'task mẹ code' || h === 'task me code') {
+        key = 'parentTaskCode';
+      }
+      if (h === 'parent task name' || h === 'parenttaskname' || h === 'parent_task_name' || h === 'parent name' || h === 'parent_name' || h === 'task mẹ name' || h === 'task me name' || h === 'task mẹ' || h === 'task me' || h === 'parent task' || h === 'parenttask') {
+        key = 'parentTaskName';
+      }
+      if (h === 'parenttaskid' || h === 'parent_task_id' || h === 'parent id' || h === 'parentid') {
+        key = 'parentTaskId';
+      }
+      if (h === 'is parent' || h === 'is_parent' || h === 'isparent') {
+        key = 'isParent';
+      }
+      if (h === 'level' || h === 'wbs level' || h === 'wbs_level') {
+        key = 'level';
+      }
+
+      if (['projectId', 'projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
+        let val: any = row[i];
+        if (key === 'start' || key === 'finish') {
+          val = parseCSVDate(val);
+        } else if (key === 'duration') {
+          val = cleanDurationString(val);
+        } else if (key === 'delegation' || key === 'realtimeUpdate') {
+          const strVal = String(val || '').trim().toLowerCase();
+          val = (strVal === 'true' || strVal === '1' || strVal === 'yes' || strVal === 'on');
+        } else if (key === 'projectYear') {
+          val = isNaN(Number(val)) ? val : Number(val);
+        }
+        t[key] = val;
+      }
+    });
+
+    if (t.projectCode && t.name) {
+      if (!t.projectYear || !t.projectStore) {
+        const possibleProjects = projects.filter(p => String(p.code).trim().toLowerCase() === String(t.projectCode).trim().toLowerCase());
+        if (possibleProjects.length === 1) {
+          if (!t.projectYear) t.projectYear = possibleProjects[0].year;
+          if (!t.projectStore) t.projectStore = possibleProjects[0].store;
+        }
+      }
+
+      if (!t.projectYear) {
+        const matchedProj = projects.find(p => String(p.code).trim().toLowerCase() === String(t.projectCode).trim().toLowerCase());
+        t.projectYear = (matchedProj?.year && !isNaN(Number(matchedProj.year))) ? Number(matchedProj.year) : new Date().getFullYear();
+      }
+
+      if (t.projectYear !== undefined && !isNaN(Number(t.projectYear))) {
+        t.projectYear = Number(t.projectYear);
+      } else {
+        t.projectYear = new Date().getFullYear();
+      }
+
+      const yearKey = t.projectYear ? String(t.projectYear).trim().toLowerCase() : '';
+      const storeKey = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+      const prjKey = `${String(t.projectCode).trim().toLowerCase()}_${yearKey}_${storeKey}`;
+
+      if (!rawParsedRowsByProject.has(prjKey)) {
+        rawParsedRowsByProject.set(prjKey, []);
+      }
+      rawParsedRowsByProject.get(prjKey)!.push({ rowData: t, originalCsvIndex: rowIndex });
+    }
+  });
+
+  return {
+    rawParsedRowsByProject,
+    headers,
+    dataRows,
+    validation,
+    errorReportCSV
+  };
+}
+
+=== FILE: src/components/DetailTabParts/useDetailTaskCsv.ts ===
+import React, { useState } from 'react';
+import { Project, Task, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { downloadCSV, generateCSV } from '../../lib/csvUtils';
+import { sortGroupTasks } from '../../lib/ganttUtils';
+import { formatToCSVDate, parseCSVDate, formatPredecessorForExport } from './detailCsvUtils';
+import { parseTasksFile } from './detailTaskImportParser';
+import { executeImportTasks } from './detailTaskImportExecutor';
+import { ImportErrorModal } from './ImportErrorModal';
+import { ImportValidationResult } from './importValidator';
+
+interface UseDetailTaskCsvParams {
+  filteredProjects: Project[];
+  projects: Project[];
+  tasks: Task[];
+  appUsers: AppUser[];
+  currentUser: AppUser;
+}
+
+export function useDetailTaskCsv({
+  filteredProjects,
+  projects,
+  tasks,
+  appUsers,
+  currentUser,
+}: UseDetailTaskCsvParams) {
+  const [importErrorData, setImportErrorData] = useState<{
+    validationResult: ImportValidationResult;
+    errorReportCSV: string;
+    fileName: string;
+  } | null>(null);
+
+  const handleExportTasks = () => {
+    const headers = [
+      'store',
+      'location',
+      'projectYear',
+      'projectCode',
+      'Sub-task code',
+      'Task name',
+      'Parent task code',
+      'start',
+      'finish',
+      'duration',
+      'party',
+      'predecessor',
+      'delegation',
+      'task flexible',
+      'comments'
+    ];
+
+    const filteredTasksToExport: Task[] = [];
+    filteredProjects.forEach(p => {
+      const groupTasks = sortGroupTasks(tasks.filter(t => 
+        t.projectCode === p.code && 
+        (t.projectYear == p.year || (!t.projectYear && !p.year)) &&
+        (t.projectStore == p.store || (!t.projectStore && !p.store))
+      ));
+      filteredTasksToExport.push(...groupTasks);
+    });
+
+    const data = filteredTasksToExport.map((t, idx) => {
+      const p = projects.find(proj => 
+        proj.code === t.projectCode && 
+        (t.projectYear == proj.year || (!t.projectYear && !proj.year)) &&
+        (t.projectStore == proj.store || (!t.projectStore && !proj.store))
+      );
+      const subTaskCode = t.taskCodePhu || (p ? `${p.code}#${t.orderIndex !== undefined ? t.orderIndex + 1 : idx + 1}` : '');
+      const parentTask = t.parentTaskId ? tasks.find(pt => String(pt.id) === String(t.parentTaskId)) : null;
+
+      const commentsText = t.comments && t.comments.length > 0 
+        ? t.comments.map(c => {
+            const author = appUsers.find(u => 
+              u.id === c.userId || 
+              (u.username && String(u.username).toLowerCase() === String(c.userId).toLowerCase())
+            );
+            const name = c.userName || author?.username || c.userId || '';
+            return `${name ? name + ': ' : ''}${c.text}`;
+          }).join(' | ') 
+        : '';
+
+      return [
+        t.projectStore || p?.store || '',
+        p?.location || '',
+        t.projectYear || p?.year || '',
+        t.projectCode || '', 
+        subTaskCode,
+        t.name || '', 
+        parentTask ? (parentTask.taskCodePhu || parentTask.name || '') : '',
+        formatToCSVDate(t.start), 
+        formatToCSVDate(t.finish), 
+        t.duration !== undefined ? t.duration : '',
+        t.party || '',
+        formatPredecessorForExport(t.predecessor, t.projectCode || p?.code),
+        t.delegation ? 'true' : 'false',
+        t.realtimeUpdate ? 'true' : 'false',
+        commentsText
+      ];
+    });
+
+    const csv = generateCSV(headers, data);
+    downloadCSV(csv, 'taka_tasks_filtered.csv');
+  };
+
+  const handleImportTasks = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      useAppStore.getState().setToast({
+        title: "Processing Import...",
+        message: "Validating and importing tasks, please wait...",
+        type: "info"
+      });
+      await new Promise((r) => setTimeout(r, 15));
+
+      const parsed = await parseTasksFile(file, projects);
+
+      // If errors, duplicates, or data bugs are detected, BLOCK the import completely
+      if (!parsed.validation.isValid) {
+        setImportErrorData({
+          validationResult: parsed.validation,
+          errorReportCSV: parsed.errorReportCSV,
+          fileName: `${file.name.replace(/\.[^/.]+$/, '')}_import_errors.csv`
+        });
+        useAppStore.getState().setToast({
+          title: "Import Blocked",
+          message: `Found ${parsed.validation.errorCount} error(s) in ${parsed.validation.errorRowNumbers.size} row(s). Import was blocked.`,
+          type: "error"
+        });
+        return;
+      }
+
+      // Safe to execute import with the latest hydrated projects across all years
+      const latestProjects = useAppStore.getState().projects || projects;
+      const { count, projectCount } = await executeImportTasks({
+        rawParsedRowsByProject: parsed.rawParsedRowsByProject,
+        projects: latestProjects,
+        tasks,
+        appUsers,
+        currentUser
+      });
+
+      useAppStore.getState().setToast({
+        title: "Import Successful",
+        message: `Import Tasks completed! Successfully processed ${count} task(s)${projectCount ? ` across ${projectCount} project(s)` : ''} and synced to cloud.`,
+        type: "success"
+      });
+    } catch (err: any) {
+      console.error("Import error:", err);
+      useAppStore.getState().setToast({
+        title: "Notice",
+        message: "Failed to import file: " + (err?.message || "File processing error"),
+        type: "error"
+      });
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const importErrorModal = importErrorData ? React.createElement(ImportErrorModal, {
+    isOpen: Boolean(importErrorData),
+    onClose: () => setImportErrorData(null),
+    validationResult: importErrorData.validationResult,
+    errorReportCSV: importErrorData.errorReportCSV,
+    fileName: importErrorData.fileName
+  }) : null;
+
+  return {
+    handleExportTasks,
+    handleImportTasks,
+    parseCSVDate,
+    formatToCSVDate,
+    importErrorModal
+  };
+}
+
