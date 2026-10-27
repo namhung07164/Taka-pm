@@ -71,7 +71,6 @@ export const TooltipMetaRow: React.FC<TooltipMetaRowProps> = React.memo(({
             className="bg-purple-50 dark:bg-purple-950/70 px-1.5 py-0.5 rounded border border-purple-200 dark:border-purple-800/80 flex items-center gap-0.5 shrink-0"
             title={`Shop Type: ${effectiveShopType}`}
           >
-            <span className="text-[7.5px] text-purple-600 dark:text-purple-400 font-semibold uppercase tracking-tight">Type:</span>
             <span className="font-bold text-[9.5px] text-purple-700 dark:text-purple-300 font-mono truncate max-w-[105px]">
               {effectiveShopType}
             </span>
