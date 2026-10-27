@@ -291,8 +291,13 @@ export async function batchSaveTasksToFirestore(
   const deltaItems: TakaDeltaItem[] = [];
 
   // Put authoritative project summary delta items FIRST so receiving devices seal project summaries immediately
+  const syncedSummaryProjectIds = new Set<string>();
   if (options?.projectDeltaItems && options.projectDeltaItems.length > 0) {
     deltaItems.push(...options.projectDeltaItems);
+    for (const pItem of options.projectDeltaItems) {
+      if (pItem.docId) syncedSummaryProjectIds.add(String(pItem.docId).trim());
+      if (pItem.projectId) syncedSummaryProjectIds.add(String(pItem.projectId).trim());
+    }
   }
 
   for (const t of tasksToSave) {
@@ -306,6 +311,8 @@ export async function batchSaveTasksToFirestore(
     });
 
     if (!options?.skipTaskDeltaBroadcast) {
+      const tProjId = freshTask.projectId ? String(freshTask.projectId).trim() : '';
+      const hasAuthProjSummary = Boolean(tProjId && syncedSummaryProjectIds.has(tProjId));
       deltaItems.push({
         docId: freshTask.id,
         collectionName: 'taka_tasks' as const,
@@ -313,10 +320,11 @@ export async function batchSaveTasksToFirestore(
         isPatch: false,
         data: freshTask,
         year: freshTask.projectYear ? String(freshTask.projectYear) : undefined,
-        projectId: freshTask.projectId ? String(freshTask.projectId) : undefined,
+        projectId: tProjId || undefined,
         projectCode: freshTask.projectCode ? String(freshTask.projectCode) : undefined,
         projectStore: freshTask.projectStore ? String(freshTask.projectStore) : undefined,
-      });
+        ...(hasAuthProjSummary ? { skipSummaryRollup: true } : {}),
+      } as TakaDeltaItem);
     }
 
     const delGroup = taskDelegationMap.get(freshTask.id);
