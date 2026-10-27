@@ -62,6 +62,8 @@ const normalizeRuleField = (f: string) => {
   if (f === "appBudget" || f === "app: budget") return "appProjectBudget";
   if (f === "appActual" || f === "app: actual") return "appProjectActual";
   if (f === "appSizeM2" || f === "app: size (m²)" || f === "app: size m2" || f === "app: sizem2" || f === "appsizem2") return "appProjectSizeM2";
+  if (f === "appShopType" || f === "app: shop type" || f === "app: shoptype" || f === "appshoptype") return "appProjectShopType";
+  if (f === "shop_type" || f === "shop type") return "shopType";
   return f;
 };
 
@@ -1192,6 +1194,7 @@ function DynamicHierarchyTab({
                                   <option value="startDate">Start Date</option>
                                   <option value="endDate">End Date</option>
                                   <option value="status">Status</option>
+                                  <option value="shopType">Shop Type</option>
                                 </optgroup>
                                 <optgroup label="App Data (Real-time)">
                                   <option value="appTask">App: Task Summarize (Real-time)</option>
@@ -1204,6 +1207,7 @@ function DynamicHierarchyTab({
                                   <option value="appProjectBudget">App: Budget</option>
                                   <option value="appProjectActual">App: Actual</option>
                                   <option value="appProjectSizeM2">App: Size (m²)</option>
+                                  <option value="appProjectShopType">App: Shop Type</option>
                                   <option value="appProjectCode">App: Project Code</option>
                                   <option value="appProjectYear">App: Year</option>
                                 </optgroup>

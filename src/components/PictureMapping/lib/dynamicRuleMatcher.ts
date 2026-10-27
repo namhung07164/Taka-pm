@@ -17,6 +17,8 @@ export interface DynamicUnitSummaryItem {
   appProjectDetail: string;
   appProjectDescription: string;
   appProjectParty: string;
+  appProjectShopType?: string;
+  shopType?: string;
   appProjectBudget: number;
   appProjectActual: number;
   appProjectSizeM2?: number;
@@ -102,6 +104,8 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
       val = data.hasAppProject ? (data.appProjectSizeM2 ?? data.sizeM2 ?? 0) : 0;
     } else if (f === 'sizem2' || f === 'size m2' || f === 'size' || f === 'area' || f === 'area (m2)' || f === 'm2') {
       val = data.sizeM2 ?? data.appProjectSizeM2 ?? data.size ?? 0;
+    } else if (f === 'appprojectshoptype' || f === 'appshoptype' || f === 'app: shop type' || f === 'app: shoptype' || f === 'shoptype' || f === 'shop_type' || f === 'shop type') {
+      val = data.hasAppProject ? ((data as any).appProjectShopType || (data as any).shopType || '') : ((data as any).shopType || '');
     }
   }
 

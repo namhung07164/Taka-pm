@@ -61225,6 +61225,8 @@ const normalizeRuleField = (f: string) => {
   if (f === "appBudget" || f === "app: budget") return "appProjectBudget";
   if (f === "appActual" || f === "app: actual") return "appProjectActual";
   if (f === "appSizeM2" || f === "app: size (m²)" || f === "app: size m2" || f === "app: sizem2" || f === "appsizem2") return "appProjectSizeM2";
+  if (f === "appShopType" || f === "app: shop type" || f === "app: shoptype" || f === "appshoptype") return "appProjectShopType";
+  if (f === "shop_type" || f === "shop type") return "shopType";
   return f;
 };
 
@@ -62355,6 +62357,7 @@ function DynamicHierarchyTab({
                                   <option value="startDate">Start Date</option>
                                   <option value="endDate">End Date</option>
                                   <option value="status">Status</option>
+                                  <option value="shopType">Shop Type</option>
                                 </optgroup>
                                 <optgroup label="App Data (Real-time)">
                                   <option value="appTask">App: Task Summarize (Real-time)</option>
@@ -62367,6 +62370,7 @@ function DynamicHierarchyTab({
                                   <option value="appProjectBudget">App: Budget</option>
                                   <option value="appProjectActual">App: Actual</option>
                                   <option value="appProjectSizeM2">App: Size (m²)</option>
+                                  <option value="appProjectShopType">App: Shop Type</option>
                                   <option value="appProjectCode">App: Project Code</option>
                                   <option value="appProjectYear">App: Year</option>
                                 </optgroup>
@@ -62492,7 +62496,7 @@ function DynamicHierarchyTab({
 }
 
 export default React.memo(DynamicHierarchyTab);
-================================================================================
+
 FILE: src/components/PictureMapping/components/DataMapping/DynamicUnitSummaryTable.tsx
 ================================================================================
 import React, { useState, useMemo } from "react";
@@ -68425,7 +68429,6 @@ export default function R2UploadModal({ isOpen, onClose, onStartExport, uploadin
 
 ================================================================================
 FILE: src/components/PictureMapping/hooks/useDynamicRules.ts
-================================================================================
 import React, { useEffect, useMemo, useCallback, useRef } from "react";
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { SummaryDataItem, calculateSummaryData } from '../lib/summaryData';
@@ -68475,6 +68478,8 @@ export function matchRuleAgainstData(rule: GroupRule, data: Record<string, any>)
     val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
   } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual' || f === 'actual') {
     val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
+  } else if (f === 'appprojectshoptype' || f === 'appshoptype' || f === 'app: shop type' || f === 'app: shoptype' || f === 'shoptype' || f === 'shop_type' || f === 'shop type') {
+    val = data.hasAppProject ? (data.appProjectShopType || data.shopType || '') : (data.shopType || '');
   } else if (val === undefined || val === null || String(val).trim() === '') {
     // 2. General attribute fallbacks
     if (f === 'floor' || f === 'location') {
@@ -68485,6 +68490,8 @@ export function matchRuleAgainstData(rule: GroupRule, data: Record<string, any>)
       val = data.hasAppProject ? (data.appProjectMdStatus || data.mdStatus || '') : (data.mdStatus || '');
     } else if (f === 'unit' || f === 'code') {
       val = data.unit || data.appProjectCode || '';
+    } else if (f === 'shoptype' || f === 'shop_type' || f === 'shop type') {
+      val = data.shopType || data.appProjectShopType || '';
     }
   }
 
@@ -68873,6 +68880,9 @@ export function useDynamicRules(
 
           dataMap[code].appProjectParty = partyStr;
           dataMap[code].appParty = partyStr;
+
+          dataMap[code].appProjectShopType = p.shopType || (p as any).type || '';
+          dataMap[code].shopType = dataMap[code].shopType || p.shopType || (p as any).type || '';
         }
       });
     });
@@ -68964,8 +68974,6 @@ export function useDynamicRules(
   };
 }
 
-
-================================================================================
 FILE: src/components/PictureMapping/lib/auth.ts
 ================================================================================
 import { initializeApp, getApps } from 'firebase/app';
@@ -69110,7 +69118,6 @@ export async function uploadFileToDrive({
 
 ================================================================================
 FILE: src/components/PictureMapping/lib/dynamicExportService.ts
-================================================================================
 import { doc, setDoc } from 'firebase/firestore';
 import { db, APP_ID } from '../../../lib/firebase';
 import { useAppStore } from '../../../store/useAppStore';
@@ -69158,6 +69165,8 @@ export function matchRulesAgainstUnit(unit: UnitShape, rules: GroupRule[] | unde
       val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
     } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual' || f === 'actual') {
       val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
+    } else if (f === 'appprojectshoptype' || f === 'appshoptype' || f === 'app: shop type' || f === 'app: shoptype' || f === 'shoptype' || f === 'shop type') {
+      val = data.hasAppProject ? (data.appProjectShopType || data.shopType || '') : (data.shopType || '');
     } else if (val === undefined || val === null || String(val).trim() === '') {
       // 2. General attribute fallbacks
       if (f === 'floor' || f === 'location') {
@@ -69436,6 +69445,9 @@ export function buildDataMapForYear(targetYear: string, targetStore: 'HCM' | 'HN
 
         dataMap[code].appProjectParty = partyStr;
         dataMap[code].appParty = partyStr;
+
+        dataMap[code].appProjectShopType = p.shopType || '';
+        dataMap[code].shopType = p.shopType || dataMap[code].shopType || '';
 
         if (!dataMap[code].year) dataMap[code].year = pYear || normalizedTargetYear;
         dataMap[code].projectStatus = status;
@@ -70084,7 +70096,6 @@ export async function executeTriggerExportProcess(
   };
 }
 
-================================================================================
 FILE: src/components/PictureMapping/lib/dynamicSummaryEngine.ts
 import { useMemo } from "react";
 import { UnitShape, MapVersion } from '../components/DataMapping/types';
@@ -70460,6 +70471,10 @@ export function useDynamicUnitSummary({
             item.sizeM2 = p.sizeM2;
             if (!item.size) item.size = p.sizeM2;
           }
+          item.appProjectShopType = p.shopType || (p as any).type || '';
+          if (!(item as any).shopType && p.shopType) {
+            (item as any).shopType = p.shopType;
+          }
           item.planProgress = p.computedPlanProgress ?? 0;
           item.actProgress = p.computedActProgress ?? 0;
           item.matchedTasksCount = matchedTaskSet.size;
@@ -70522,7 +70537,7 @@ export function useDynamicUnitSummary({
     effectiveYear,
   };
 }
-================================================================================
+
 FILE: src/components/PictureMapping/lib/r2Upload.ts
 import type { S3Client as S3ClientType } from '@aws-sdk/client-s3';
 import { useAppStore } from '../../../store/useAppStore';
@@ -130550,6 +130565,8 @@ export interface DynamicUnitSummaryItem {
   appProjectDetail: string;
   appProjectDescription: string;
   appProjectParty: string;
+  appProjectShopType?: string;
+  shopType?: string;
   appProjectBudget: number;
   appProjectActual: number;
   appProjectSizeM2?: number;
@@ -130635,6 +130652,8 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
       val = data.hasAppProject ? (data.appProjectSizeM2 ?? data.sizeM2 ?? 0) : 0;
     } else if (f === 'sizem2' || f === 'size m2' || f === 'size' || f === 'area' || f === 'area (m2)' || f === 'm2') {
       val = data.sizeM2 ?? data.appProjectSizeM2 ?? data.size ?? 0;
+    } else if (f === 'appprojectshoptype' || f === 'appshoptype' || f === 'app: shop type' || f === 'app: shoptype' || f === 'shoptype' || f === 'shop_type' || f === 'shop type') {
+      val = data.hasAppProject ? ((data as any).appProjectShopType || (data as any).shopType || '') : ((data as any).shopType || '');
     }
   }
 
@@ -130696,7 +130715,7 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
       return false;
   }
 }
-================================================================================
+
 FILE: src/lib/exportPdfParts/pdfTableSlicer.ts
 ================================================================================
 import { drawPdfFilterHeader } from '../printFilterHelper';

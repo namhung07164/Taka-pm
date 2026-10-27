@@ -45,6 +45,8 @@ export function matchRulesAgainstUnit(unit: UnitShape, rules: GroupRule[] | unde
       val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
     } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual' || f === 'actual') {
       val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
+    } else if (f === 'appprojectshoptype' || f === 'appshoptype' || f === 'app: shop type' || f === 'app: shoptype' || f === 'shoptype' || f === 'shop type') {
+      val = data.hasAppProject ? (data.appProjectShopType || data.shopType || '') : (data.shopType || '');
     } else if (val === undefined || val === null || String(val).trim() === '') {
       // 2. General attribute fallbacks
       if (f === 'floor' || f === 'location') {
@@ -323,6 +325,9 @@ export function buildDataMapForYear(targetYear: string, targetStore: 'HCM' | 'HN
 
         dataMap[code].appProjectParty = partyStr;
         dataMap[code].appParty = partyStr;
+
+        dataMap[code].appProjectShopType = p.shopType || '';
+        dataMap[code].shopType = p.shopType || dataMap[code].shopType || '';
 
         if (!dataMap[code].year) dataMap[code].year = pYear || normalizedTargetYear;
         dataMap[code].projectStatus = status;

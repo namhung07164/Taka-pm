@@ -372,6 +372,10 @@ export function useDynamicUnitSummary({
             item.sizeM2 = p.sizeM2;
             if (!item.size) item.size = p.sizeM2;
           }
+          item.appProjectShopType = p.shopType || (p as any).type || '';
+          if (!(item as any).shopType && p.shopType) {
+            (item as any).shopType = p.shopType;
+          }
           item.planProgress = p.computedPlanProgress ?? 0;
           item.actProgress = p.computedActProgress ?? 0;
           item.matchedTasksCount = matchedTaskSet.size;
