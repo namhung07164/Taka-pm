@@ -398,10 +398,12 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
         };
       });
 
-      // Ensure units maintain default visible styling and do not get overwritten with transparent colors
+      // Ensure units maintain default visible styling without replacing intentional transparent fills
       const sanitizedUnits = pUnits.map((u) => ({
         ...u,
-        fill: (u.fill && u.fill !== 'rgba(0, 0, 0, 0.001)' && u.fill !== 'transparent') ? u.fill : '#3b82f6',
+        fill: (u.fill === 'transparent' || u.fill === 'none')
+          ? 'transparent'
+          : (u.fill && u.fill !== 'rgba(0, 0, 0, 0.001)' ? u.fill : '#3b82f6'),
       }));
 
       totalEvaluatedUnits += sanitizedUnits.length;

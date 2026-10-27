@@ -61135,23 +61135,175 @@ export default function CloudSyncManager({
 
 ================================================================================
 FILE: src/components/PictureMapping/components/ColorPicker.tsx
-================================================================================
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { X, Check, Ban } from 'lucide-react';
 
 interface ColorPickerProps {
   color: string;
   onChange: (color: string) => void;
   className?: string;
+  showTransparentOption?: boolean;
 }
 
-export function ColorPicker({ color, onChange, className }: ColorPickerProps) {
+const PRESET_COLORS = [
+  '#3b82f6', // Blue
+  '#10b981', // Emerald
+  '#f59e0b', // Amber
+  '#ef4444', // Red
+  '#8b5cf6', // Purple
+  '#ec4899', // Pink
+  '#06b6d4', // Cyan
+  '#14b8a6', // Teal
+  '#84cc16', // Lime
+  '#eab308', // Yellow
+  '#f97316', // Orange
+  '#6366f1', // Indigo
+  '#d946ef', // Fuchsia
+  '#64748b', // Slate
+  '#0284c7', // Sky
+  '#059669', // Dark Emerald
+  '#b91c1c', // Dark Red
+  '#1e293b', // Dark Slate
+];
+
+export function ColorPicker({ color, onChange, className, showTransparentOption = true }: ColorPickerProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const isTransparent = !color || color === 'transparent' || color === 'none' || color === 'rgba(0,0,0,0)' || color === 'rgba(0, 0, 0, 0)';
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+
+  const handleSelectColor = (newColor: string) => {
+    onChange(newColor);
+    setIsOpen(false);
+  };
+
   return (
-    <input
-      type="color"
-      value={color}
-      onChange={(e) => onChange(e.target.value)}
-      className={`w-6 h-6 border-0 p-0 cursor-pointer rounded-full overflow-hidden ${className || ''}`}
-    />
+    <div className={`relative inline-block ${className || ''}`} ref={containerRef}>
+      {/* Trigger Swatch Button */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-6 h-6 rounded-lg border border-slate-600/80 hover:border-brand-400 overflow-hidden cursor-pointer shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 flex items-center justify-center transition-all active:scale-95"
+        style={{
+          backgroundColor: isTransparent ? 'transparent' : color,
+          backgroundImage: isTransparent
+            ? 'repeating-conic-gradient(#475569 0% 25%, #1e293b 0% 50%)'
+            : undefined,
+          backgroundSize: '8px 8px',
+        }}
+        title={isTransparent ? 'Color: Transparent / No Fill' : `Color: ${color}`}
+      >
+        {isTransparent && (
+          <Ban size={12} className="text-red-400 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]" />
+        )}
+      </button>
+
+      {/* Popover Dropdown */}
+      {isOpen && (
+        <div className="absolute left-0 top-8 z-[9999] w-64 p-3 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl glass backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100">
+          <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-800">
+            <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+              Color Palette / Bảng màu
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="p-1 text-slate-400 hover:text-white rounded-md hover:bg-slate-800 transition-colors"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* Transparent / No Fill Option */}
+          {showTransparentOption && (
+            <button
+              type="button"
+              onClick={() => handleSelectColor('transparent')}
+              className={`w-full mb-3 px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center justify-between transition-all active:scale-95 ${
+                isTransparent
+                  ? 'bg-red-500/20 border-red-500/60 text-red-300 ring-1 ring-red-500/40'
+                  : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800 hover:border-slate-700'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-4 h-4 rounded border border-slate-600 flex items-center justify-center overflow-hidden"
+                  style={{
+                    backgroundImage: 'repeating-conic-gradient(#475569 0% 25%, #1e293b 0% 50%)',
+                    backgroundSize: '6px 6px',
+                  }}
+                >
+                  <Ban size={10} className="text-red-400" />
+                </div>
+                <span>Transparent (Trong suốt / Không tô)</span>
+              </div>
+              {isTransparent && <Check size={14} className="text-red-400" />}
+            </button>
+          )}
+
+          {/* Swatches Grid */}
+          <div className="mb-3">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-1.5">
+              Preset Colors
+            </span>
+            <div className="grid grid-cols-6 gap-1.5">
+              {PRESET_COLORS.map((hex) => {
+                const isSelected = !isTransparent && color.toLowerCase() === hex.toLowerCase();
+                return (
+                  <button
+                    key={hex}
+                    type="button"
+                    onClick={() => handleSelectColor(hex)}
+                    className="w-8 h-8 rounded-lg border border-slate-700 hover:border-white transition-all flex items-center justify-center active:scale-90 relative shadow-sm"
+                    style={{ backgroundColor: hex }}
+                    title={hex}
+                  >
+                    {isSelected && (
+                      <Check size={14} className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Custom Hex / Color Input */}
+          <div className="pt-2 border-t border-slate-800 flex items-center gap-2">
+            <span className="text-[10px] text-slate-400 font-bold uppercase shrink-0">Custom:</span>
+            <div className="relative flex-1 flex items-center">
+              <input
+                type="color"
+                value={isTransparent ? '#3b82f6' : color}
+                onChange={(e) => onChange(e.target.value)}
+                className="w-6 h-6 border-0 p-0 rounded cursor-pointer bg-transparent overflow-hidden shrink-0"
+                title="Pick custom color"
+              />
+              <input
+                type="text"
+                value={color}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="#3b82f6 or transparent"
+                className="w-full ml-2 bg-slate-950 border border-slate-800 text-slate-200 text-xs px-2 py-1 rounded font-mono uppercase focus:outline-none focus:border-brand-500"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -61159,7 +61311,6 @@ export default ColorPicker;
 
 
 
-================================================================================
 FILE: src/components/PictureMapping/components/DataMapping/DynamicHierarchyTab.tsx
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UnitShape, Group, GroupRule, MapVersion } from "./types";
@@ -61329,10 +61480,19 @@ function DynamicHierarchyTab({
     return unsub;
   }, []);
 
-  // Wrap setVersions to update Zustand and RAM state instantly (0ms)
+  const syncDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Wrap setVersions to update Zustand and RAM state instantly (0ms) and background sync across devices
   const updateVersions = useCallback(
     (newVersions: MapVersion[]) => {
       setVersions(newVersions);
+
+      if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
+      syncDebounceRef.current = setTimeout(() => {
+        triggerBackgroundR2Sync(storeRef.current).catch((err) => {
+          console.warn('[DynamicHierarchy] Auto background sync warning:', err);
+        });
+      }, 1200);
     },
     [setVersions]
   );
@@ -62498,7 +62658,6 @@ function DynamicHierarchyTab({
 export default React.memo(DynamicHierarchyTab);
 
 FILE: src/components/PictureMapping/components/DataMapping/DynamicUnitSummaryTable.tsx
-================================================================================
 import React, { useState, useMemo } from "react";
 import { DynamicUnitSummaryItem } from '../../lib/dynamicSummaryEngine';
 import { Search, Filter, CheckCircle2, Clock, AlertTriangle, Building, Eye, ChevronDown, ChevronUp } from 'lucide-react';
@@ -62558,6 +62717,11 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
       return matchSearch && matchStatus && matchGroup;
     });
   }, [summaryList, searchTerm, statusFilter, groupFilter]);
+
+  const totalSizeM2 = useMemo(() => {
+    const sum = filteredList.reduce((acc, item) => acc + (Number(item.sizeM2 ?? item.size ?? 0) || 0), 0);
+    return Math.round(sum * 100) / 100;
+  }, [filteredList]);
 
   const getStatusBadge = (item: DynamicUnitSummaryItem) => {
     if (!item.hasAppProject || !item.appProjectStatus) {
@@ -62620,6 +62784,11 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
           <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-brand-600/20 text-brand-300 border border-brand-500/30">
             {filteredList.length} / {summaryList.length} units
           </span>
+          {totalSizeM2 > 0 && (
+            <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+              ∑ {totalSizeM2.toLocaleString()} m²
+            </span>
+          )}
         </div>
         <button className="text-slate-400 hover:text-white p-1">
           {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -62676,6 +62845,7 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
               <thead className="bg-slate-900/90 sticky top-0 z-10 border-b border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider select-none">
                 <tr>
                   <th className="px-3 py-2">Mã Unit</th>
+                  <th className="px-3 py-2">Size (m²)</th>
                   <th className="px-3 py-2">Dự Án (App)</th>
                   <th className="px-3 py-2">App Status</th>
                   <th className="px-3 py-2">Nhóm Màu (Rule)</th>
@@ -62686,13 +62856,14 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
               <tbody className="divide-y divide-slate-800/60 font-mono">
                 {filteredList.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500 italic text-xs">
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500 italic text-xs">
                       Không tìm thấy gian hàng nào khớp bộ lọc.
                     </td>
                   </tr>
                 ) : (
                   filteredList.map((item) => {
                     const isSelected = selectedUnitId === item.unitId;
+                    const unitArea = Number(item.sizeM2 ?? item.size ?? 0) || 0;
                     return (
                       <tr
                         key={item.unitId}
@@ -62703,11 +62874,29 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
                         )}
                       >
                         <td className="px-3 py-2 font-bold text-white flex items-center gap-1.5">
-                          <span 
-                            className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" 
-                            style={{ backgroundColor: item.color }} 
-                          />
+                          {(() => {
+                            const isTrans = !item.color || item.color === 'transparent' || item.color === 'none' || item.color === 'rgba(0,0,0,0)';
+                            return (
+                              <span 
+                                className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm border border-slate-600 overflow-hidden" 
+                                style={{
+                                  backgroundColor: isTrans ? 'transparent' : item.color,
+                                  backgroundImage: isTrans ? 'repeating-conic-gradient(#475569 0% 25%, #1e293b 0% 50%)' : undefined,
+                                  backgroundSize: '4px 4px',
+                                }} 
+                              />
+                            );
+                          })()}
                           <span className="font-mono">{item.unitName}</span>
+                        </td>
+                        <td className="px-3 py-2">
+                          {unitArea > 0 ? (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                              {unitArea.toLocaleString()} m²
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">-</span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-slate-300">
                           {item.hasAppProject ? (
@@ -62721,28 +62910,46 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
                         </td>
                         <td className="px-3 py-2">
                           {item.matchedGroupName ? (
-                            <span 
-                              className="px-2 py-0.5 rounded text-[10px] font-bold"
-                              style={{ 
-                                backgroundColor: `${item.color}20`, 
-                                color: item.color,
-                                border: `1px solid ${item.color}50` 
-                              }}
-                            >
-                              {item.matchedGroupName}
-                            </span>
+                            (() => {
+                              const isTrans = !item.color || item.color === 'transparent' || item.color === 'none' || item.color === 'rgba(0,0,0,0)';
+                              return (
+                                <span 
+                                  className="px-2 py-0.5 rounded text-[10px] font-bold"
+                                  style={isTrans ? {
+                                    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                                    color: '#cbd5e1',
+                                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                                  } : { 
+                                    backgroundColor: `${item.color}20`, 
+                                    color: item.color,
+                                    border: `1px solid ${item.color}50` 
+                                  }}
+                                >
+                                  {item.matchedGroupName}
+                                </span>
+                              );
+                            })()
                           ) : (
                             <span className="text-slate-600 text-[10px]">Mặc định</span>
                           )}
                         </td>
                         <td className="px-3 py-2">
-                          <div className="flex items-center gap-1.5">
-                            <span 
-                              className="w-4 h-4 rounded border border-white/20 shadow-inner" 
-                              style={{ backgroundColor: item.color }} 
-                            />
-                            <span className="text-[10px] text-slate-400 uppercase">{item.color}</span>
-                          </div>
+                          {(() => {
+                            const isTrans = !item.color || item.color === 'transparent' || item.color === 'none' || item.color === 'rgba(0,0,0,0)';
+                            return (
+                              <div className="flex items-center gap-1.5">
+                                <span 
+                                  className="w-4 h-4 rounded border border-slate-600 shadow-inner overflow-hidden" 
+                                  style={{
+                                    backgroundColor: isTrans ? 'transparent' : item.color,
+                                    backgroundImage: isTrans ? 'repeating-conic-gradient(#475569 0% 25%, #1e293b 0% 50%)' : undefined,
+                                    backgroundSize: '6px 6px',
+                                  }} 
+                                />
+                                <span className="text-[10px] text-slate-400 uppercase">{isTrans ? 'Transparent' : item.color}</span>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-3 py-2 text-[10px] text-slate-400 font-sans truncate max-w-[200px]" title={item.matchedRuleReason}>
                           {item.matchedRuleReason}
@@ -62760,8 +62967,6 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
   );
 });
 
-
-================================================================================
 FILE: src/components/PictureMapping/components/DataMapping/EditTab.tsx
 import React, { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -69518,10 +69723,12 @@ export function applyAllDynamicRulesForStore(targetStore: 'HCM' | 'HN'): {
         };
       });
 
-      // Ensure units maintain default visible styling and do not get overwritten with transparent colors
+      // Ensure units maintain default visible styling without replacing intentional transparent fills
       const sanitizedUnits = pUnits.map((u) => ({
         ...u,
-        fill: (u.fill && u.fill !== 'rgba(0, 0, 0, 0.001)' && u.fill !== 'transparent') ? u.fill : '#3b82f6',
+        fill: (u.fill === 'transparent' || u.fill === 'none')
+          ? 'transparent'
+          : (u.fill && u.fill !== 'rgba(0, 0, 0, 0.001)' ? u.fill : '#3b82f6'),
       }));
 
       totalEvaluatedUnits += sanitizedUnits.length;

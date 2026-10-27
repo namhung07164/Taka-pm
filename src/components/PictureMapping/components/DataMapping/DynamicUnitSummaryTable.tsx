@@ -214,10 +214,19 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
                         )}
                       >
                         <td className="px-3 py-2 font-bold text-white flex items-center gap-1.5">
-                          <span 
-                            className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm" 
-                            style={{ backgroundColor: item.color }} 
-                          />
+                          {(() => {
+                            const isTrans = !item.color || item.color === 'transparent' || item.color === 'none' || item.color === 'rgba(0,0,0,0)';
+                            return (
+                              <span 
+                                className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm border border-slate-600 overflow-hidden" 
+                                style={{
+                                  backgroundColor: isTrans ? 'transparent' : item.color,
+                                  backgroundImage: isTrans ? 'repeating-conic-gradient(#475569 0% 25%, #1e293b 0% 50%)' : undefined,
+                                  backgroundSize: '4px 4px',
+                                }} 
+                              />
+                            );
+                          })()}
                           <span className="font-mono">{item.unitName}</span>
                         </td>
                         <td className="px-3 py-2">
@@ -241,28 +250,46 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
                         </td>
                         <td className="px-3 py-2">
                           {item.matchedGroupName ? (
-                            <span 
-                              className="px-2 py-0.5 rounded text-[10px] font-bold"
-                              style={{ 
-                                backgroundColor: `${item.color}20`, 
-                                color: item.color,
-                                border: `1px solid ${item.color}50` 
-                              }}
-                            >
-                              {item.matchedGroupName}
-                            </span>
+                            (() => {
+                              const isTrans = !item.color || item.color === 'transparent' || item.color === 'none' || item.color === 'rgba(0,0,0,0)';
+                              return (
+                                <span 
+                                  className="px-2 py-0.5 rounded text-[10px] font-bold"
+                                  style={isTrans ? {
+                                    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                                    color: '#cbd5e1',
+                                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                                  } : { 
+                                    backgroundColor: `${item.color}20`, 
+                                    color: item.color,
+                                    border: `1px solid ${item.color}50` 
+                                  }}
+                                >
+                                  {item.matchedGroupName}
+                                </span>
+                              );
+                            })()
                           ) : (
                             <span className="text-slate-600 text-[10px]">Mặc định</span>
                           )}
                         </td>
                         <td className="px-3 py-2">
-                          <div className="flex items-center gap-1.5">
-                            <span 
-                              className="w-4 h-4 rounded border border-white/20 shadow-inner" 
-                              style={{ backgroundColor: item.color }} 
-                            />
-                            <span className="text-[10px] text-slate-400 uppercase">{item.color}</span>
-                          </div>
+                          {(() => {
+                            const isTrans = !item.color || item.color === 'transparent' || item.color === 'none' || item.color === 'rgba(0,0,0,0)';
+                            return (
+                              <div className="flex items-center gap-1.5">
+                                <span 
+                                  className="w-4 h-4 rounded border border-slate-600 shadow-inner overflow-hidden" 
+                                  style={{
+                                    backgroundColor: isTrans ? 'transparent' : item.color,
+                                    backgroundImage: isTrans ? 'repeating-conic-gradient(#475569 0% 25%, #1e293b 0% 50%)' : undefined,
+                                    backgroundSize: '6px 6px',
+                                  }} 
+                                />
+                                <span className="text-[10px] text-slate-400 uppercase">{isTrans ? 'Transparent' : item.color}</span>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="px-3 py-2 text-[10px] text-slate-400 font-sans truncate max-w-[200px]" title={item.matchedRuleReason}>
                           {item.matchedRuleReason}

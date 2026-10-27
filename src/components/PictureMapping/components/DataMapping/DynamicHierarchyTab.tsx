@@ -166,10 +166,19 @@ function DynamicHierarchyTab({
     return unsub;
   }, []);
 
-  // Wrap setVersions to update Zustand and RAM state instantly (0ms)
+  const syncDebounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Wrap setVersions to update Zustand and RAM state instantly (0ms) and background sync across devices
   const updateVersions = useCallback(
     (newVersions: MapVersion[]) => {
       setVersions(newVersions);
+
+      if (syncDebounceRef.current) clearTimeout(syncDebounceRef.current);
+      syncDebounceRef.current = setTimeout(() => {
+        triggerBackgroundR2Sync(storeRef.current).catch((err) => {
+          console.warn('[DynamicHierarchy] Auto background sync warning:', err);
+        });
+      }, 1200);
     },
     [setVersions]
   );
