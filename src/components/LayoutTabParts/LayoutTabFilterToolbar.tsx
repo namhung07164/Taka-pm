@@ -173,19 +173,6 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
 
           {/* Top Right Action Buttons on Mobile */}
           <div className="flex items-center gap-1.5 ml-auto md:ml-0 shrink-0">
-            {/* Live Map / Exit View button */}
-            <button
-              onClick={() => setIsLiveMapMode((prev: boolean) => !prev)}
-              title={isLiveMapMode ? 'Exit Live Map View' : 'Switch to Live Interactive Map'}
-              className={`h-8 sm:h-9 flex items-center justify-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition-all border shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer ${
-                isLiveMapMode 
-                  ? 'bg-purple-600 text-white border-purple-700 ring-1 ring-purple-400/50 hover:bg-purple-700' 
-                  : 'bg-white dark:bg-[#1e1e20] text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40 border-slate-200 dark:border-[#444446]'
-              }`}
-            >
-              <Map className="w-3.5 h-3.5 shrink-0" />
-              <span>{isLiveMapMode ? 'Exit' : 'Live'}</span>
-            </button>
 
             {/* Edit URL for Admin / Write.layout */}
             {canWrite && (
