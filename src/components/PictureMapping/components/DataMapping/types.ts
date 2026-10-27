@@ -48,6 +48,8 @@ export interface Group {
   opacity?: number;
   hatchPattern?: HatchPatternType;
   symbol?: string;
+  category?: string;
+  paintCategory?: string;
   rules?: GroupRule[];
 }
 

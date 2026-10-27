@@ -539,6 +539,10 @@ export async function loadStoreFromCloudR2(): Promise<{ success: boolean; messag
           name: g.name,
           color: g.color,
           opacity: g.opacity,
+          hatchPattern: g.hatchPattern || 'none',
+          symbol: g.symbol || '',
+          category: g.category || g.paintCategory || '',
+          paintCategory: g.paintCategory || g.category || '',
           rules: Array.isArray(g.rules) ? g.rules.map((r: any) => ({
             field: r.field,
             operator: r.operator,
@@ -650,6 +654,10 @@ export async function saveStoreToCloudR2(
         name: g.name,
         color: g.color,
         opacity: g.opacity,
+        hatchPattern: g.hatchPattern || 'none',
+        symbol: g.symbol || '',
+        category: g.category || g.paintCategory || '',
+        paintCategory: g.paintCategory || g.category || '',
         rules: Array.isArray(g.rules) ? g.rules.map((r: any) => ({
           field: r.field,
           operator: r.operator,

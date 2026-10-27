@@ -430,6 +430,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     safeSetItemLocal("taka_layout_tooltip_visibility", JSON.stringify(defaultVal));
     return { layoutTooltipVisibility: defaultVal };
   }),
+  layoutPaintCategory: "all",
+  setLayoutPaintCategory: (layoutPaintCategory) => set({ layoutPaintCategory }),
   zoomableImageSrc: null,
   setZoomableImageSrc: (zoomableImageSrc) => set({ zoomableImageSrc }),
 });

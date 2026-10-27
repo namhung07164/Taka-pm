@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { LayoutPaintCategoriesSection } from './LayoutPaintCategoriesSection';
 
 export interface LayoutEditModeModalProps {
   showMenu: boolean;
@@ -34,6 +35,8 @@ export interface LayoutEditModeModalProps {
   isPrintPreview: boolean;
   handleExport: () => void;
   onOpenR2Config: () => void;
+  version?: any;
+  storeFilter?: string;
 }
 
 export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
@@ -54,6 +57,8 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
   isPrintPreview,
   handleExport,
   onOpenR2Config,
+  version,
+  storeFilter,
 }) => {
   if (!showMenu) return null;
 
@@ -84,6 +89,13 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
             className="w-full pl-9 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-purple-500"
           />
         </div>
+
+        {/* Paint Categories Mapping Section */}
+        <LayoutPaintCategoriesSection
+          version={version}
+          storeFilter={storeFilter}
+          canWrite={canWrite}
+        />
 
         {/* Smart Notifications & Alerts Config (Collapsible Accordion) */}
         <div className="space-y-2 p-3 bg-red-50/50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/40 rounded-2xl">

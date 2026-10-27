@@ -156,6 +156,8 @@ export interface UISlice {
   layoutTooltipVisibility: LayoutTooltipVisibility;
   setLayoutTooltipVisibility: (updater: Partial<LayoutTooltipVisibility> | ((prev: LayoutTooltipVisibility) => LayoutTooltipVisibility)) => void;
   resetLayoutTooltipVisibility: () => void;
+  layoutPaintCategory: string;
+  setLayoutPaintCategory: (cat: string) => void;
   zoomableImageSrc: string | null;
   setZoomableImageSrc: (src: string | null) => void;
 }

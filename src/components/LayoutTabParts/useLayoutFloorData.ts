@@ -82,8 +82,9 @@ export function useLayoutFloorData({
                     ? existing.backgroundUrl
                     : v.backgroundUrl || existing.backgroundUrl;
               versionsMap.set(v.id, {
-                ...existing,
                 ...v,
+                ...existing,
+                groups: Array.isArray(existing.groups) && existing.groups.length > 0 ? existing.groups : (v.groups || []),
                 backgroundUrl: resolvedBg,
                 r2Key: (v as any).r2Key || (existing as any).r2Key,
                 location: existing.location || v.location || key.split('_')[1],
@@ -110,8 +111,9 @@ export function useLayoutFloorData({
                 ? existing.backgroundUrl
                 : v.backgroundUrl || existing.backgroundUrl;
           versionsMap.set(v.id, {
-            ...existing,
             ...v,
+            ...existing,
+            groups: Array.isArray(existing.groups) && existing.groups.length > 0 ? existing.groups : (v.groups || []),
             backgroundUrl: resolvedBg,
             r2Key: (v as any).r2Key || (existing as any).r2Key,
             store: existing.store || v.store || 'HCM',
@@ -121,7 +123,10 @@ export function useLayoutFloorData({
     }
 
     const finalVersions = Array.from(versionsMap.values());
-    const key = `${storeFilter}_${finalVersions.map(v => `${v?.id || ''}_${v?.backgroundUrl || ''}`).join('|')}`;
+    const key = `${storeFilter}_${finalVersions.map(v => {
+      const gSig = (v?.groups || []).map((g: any) => `${g.id}:${g.color}:${g.opacity}:${g.hatchPattern || ''}:${g.symbol || ''}:${g.paintCategory || g.category || ''}:${(g.rules || []).length}`).join(',');
+      return `${v?.id || ''}_${v?.backgroundUrl || ''}_${gSig}`;
+    }).join('|')}`;
     if (key === prevAvailVersionsKeyRef.current) {
       return prevAvailVersionsRef.current;
     }
@@ -163,7 +168,10 @@ export function useLayoutFloorData({
       }
     }
 
-    const key = `${targetLoc}_${activeYear}_${result.map(v => v?.id || '').join('|')}`;
+    const key = `${targetLoc}_${activeYear}_${result.map(v => {
+      const gSig = (v?.groups || []).map((g: any) => `${g.id}:${g.color}:${g.opacity}:${g.hatchPattern || ''}:${g.symbol || ''}:${g.paintCategory || g.category || ''}:${(g.rules || []).length}`).join(',');
+      return `${v?.id || ''}_${gSig}`;
+    }).join('|')}`;
     if (key === prevLocationVersionsKeyRef.current) {
       return prevLocationVersionsRef.current;
     }

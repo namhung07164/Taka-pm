@@ -145,9 +145,29 @@ export function useLayoutAggregates({
     });
   }, [units, version, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, targetLoc, effectiveLayoutYear, delegationGroups, layoutTooltipVisibility, restrictedProjectCodes, hasStoredUnitImages, unitImagesRev]);
 
+  const layoutPaintCategory = useAppStore(state => state.layoutPaintCategory);
+
+  const filteredVersionForPaint = useMemo(() => {
+    if (!version) return version;
+    if (!layoutPaintCategory || layoutPaintCategory === 'all') return version;
+    if (layoutPaintCategory === 'none') {
+      return { ...version, groups: [] };
+    }
+    const targetCat = layoutPaintCategory.trim().toLowerCase();
+    const filteredGroups = (version.groups || []).filter((g: any) => {
+      const rawCat = String(g.paintCategory || g.category || '').trim();
+      if (!rawCat) return false;
+      return rawCat
+        .split(',')
+        .map((c: string) => c.trim().toLowerCase())
+        .includes(targetCat);
+    });
+    return { ...version, groups: filteredGroups };
+  }, [version, layoutPaintCategory]);
+
   const { summaryMap: dynamicSummaryMap } = useDynamicUnitSummary({
     units,
-    activeVersion: version,
+    activeVersion: filteredVersionForPaint,
     store: (version?.store as any) || (storeFilter === 'HN' ? 'HN' : 'HCM'),
     location: version?.location || targetLoc,
     year: effectiveLayoutYear,
@@ -162,7 +182,8 @@ export function useLayoutAggregates({
     const symbolMap: Record<string, string> = {};
     const groupsInUseMap = new Map<string, any>();
     
-    if (!version || !version.groups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, unitHatchMap: hatchMap, unitSymbolMap: symbolMap, activeGroups: [] };
+    const activeVersionGroups = filteredVersionForPaint?.groups;
+    if (!filteredVersionForPaint || !activeVersionGroups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, unitHatchMap: hatchMap, unitSymbolMap: symbolMap, activeGroups: [] };
 
     units.forEach((u: any) => {
       const uName = String(u.name || '').toLowerCase().trim();
@@ -177,7 +198,7 @@ export function useLayoutAggregates({
         colorMap[u.id] = dynamicItem.color;
         groupMap[u.id] = dynamicItem.matchedGroupId;
         opacityMap[u.id] = dynamicItem.opacity ?? 0.85;
-        const matchedG = version.groups.find((g: any) => g.id === dynamicItem.matchedGroupId);
+        const matchedG = activeVersionGroups.find((g: any) => g.id === dynamicItem.matchedGroupId);
         hatchMap[u.id] = matchedG?.hatchPattern || dynamicItem.hatchPattern || 'none';
         symbolMap[u.id] = matchedG?.symbol || dynamicItem.symbol || '';
       }
@@ -196,7 +217,7 @@ export function useLayoutAggregates({
       }
     });
 
-    version.groups.forEach((group: any) => {
+    activeVersionGroups.forEach((group: any) => {
       const matchedUnits = matchedUnitsByGroup.get(group.id) || [];
       if (matchedUnits.length > 0) {
         groupsInUseMap.set(group.id, { ...group, matchCount: matchedUnits.length, matchedUnits });
@@ -211,7 +232,7 @@ export function useLayoutAggregates({
       unitSymbolMap: symbolMap, 
       activeGroups: Array.from(groupsInUseMap.values()) 
     };
-  }, [version?.groups, units, aggregatedData, dynamicSummaryMap, restrictedProjectCodes]);
+  }, [filteredVersionForPaint, units, aggregatedData, dynamicSummaryMap, restrictedProjectCodes]);
 
   // Total count of units with alerts on this floor
   const totalFloorAlerts = useMemo(() => {

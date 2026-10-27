@@ -91,62 +91,51 @@ async function resolveConfigSignedUrls(
     });
 
   const resolvePromises: Promise<void>[] = [];
+  let resolvedCount = 0;
+
+  const processVersion = (v: any) => {
+    if (!v) return;
+    const imgKey = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
+    const isAlreadySigned = typeof v.backgroundUrl === 'string' && (v.backgroundUrl.startsWith('http://') || v.backgroundUrl.startsWith('https://') || v.backgroundUrl.startsWith('blob:'));
+    if (imgKey && !isAlreadySigned) {
+      (v as any).r2Key = imgKey;
+      const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: imgKey });
+      resolvePromises.push(
+        getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
+          .then((url) => {
+            v.backgroundUrl = url;
+            resolvedCount++;
+          })
+          .catch(() => {})
+      );
+    }
+  };
 
   if (data.storeLocationData) {
     for (const pKey in data.storeLocationData) {
       const partition = data.storeLocationData[pKey];
       if (!partition?.mapVersions) continue;
       for (const v of partition.mapVersions) {
-        const imgKey = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
-        if (imgKey) {
-          (v as any).r2Key = imgKey;
-          const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: imgKey });
-          resolvePromises.push(
-            getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
-              .then((url) => {
-                v.backgroundUrl = url;
-              })
-              .catch(() => {})
-          );
-        }
+        processVersion(v);
       }
     }
   }
 
   if (Array.isArray(data.versions)) {
     for (const v of data.versions) {
-      const imgKey = extractR2Key(v.backgroundUrl) || (v as any).r2Key;
-      if (imgKey) {
-        (v as any).r2Key = imgKey;
-        const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: imgKey });
-        resolvePromises.push(
-          getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
-            .then((url) => {
-              v.backgroundUrl = url;
-            })
-            .catch(() => {})
-        );
-      }
+      processVersion(v);
     }
   }
 
   if (data.version) {
-    const imgKey = extractR2Key(data.version.backgroundUrl) || (data.version as any).r2Key;
-    if (imgKey) {
-      (data.version as any).r2Key = imgKey;
-      const imgCommand = new GetObjectCommand({ Bucket: creds.bucketName, Key: imgKey });
-      resolvePromises.push(
-        getSignedUrl(s3, imgCommand, { expiresIn: 3600 * 24 * 7 })
-          .then((url) => {
-            data.version.backgroundUrl = url;
-          })
-          .catch(() => {})
-      );
-    }
+    processVersion(data.version);
   }
 
   if (resolvePromises.length > 0) {
     await Promise.all(resolvePromises);
+  }
+  if (data) {
+    data._urlResolvedCount = resolvedCount;
   }
   return data;
 }
@@ -255,7 +244,9 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
         if (accountId && accessKeyId && secretAccessKey && bucketName) {
           resolveConfigSignedUrls(activeCached, { accountId, accessKeyId, secretAccessKey, bucketName })
             .then((signed) => {
-              applyAndCacheConfig({ ...signed }, false);
+              if (signed?._urlResolvedCount && signed._urlResolvedCount > 0) {
+                applyAndCacheConfig({ ...signed }, false);
+              }
             })
             .catch(() => {});
         }
@@ -425,11 +416,14 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
     loadConfig(true);
   }, [cfgAccountId, cfgBucketName, cfgAccessKey, cfgSecretKey, setR2Config, loadConfig]);
 
+  const loadConfigRef = useRef(loadConfig);
+  loadConfigRef.current = loadConfig;
+
   useEffect(() => {
-    loadConfig(false);
+    loadConfigRef.current(false);
 
     const handleSyncUpdate = () => {
-      loadConfig(true);
+      loadConfigRef.current(true);
     };
 
     if (typeof window !== 'undefined') {
@@ -441,7 +435,7 @@ export function useLiveLayoutR2Config(): LiveLayoutR2ConfigState {
         window.removeEventListener('taka_cloud_sync_updated', handleSyncUpdate);
       }
     };
-  }, [loadConfig]);
+  }, []);
 
   return {
     config,

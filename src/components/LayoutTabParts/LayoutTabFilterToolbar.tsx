@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { 
   Filter, 
   Map, 
@@ -7,9 +7,14 @@ import {
   Search, 
   X, 
   Clipboard, 
-  Save 
+  Save,
+  Palette,
+  SlidersHorizontal
 } from 'lucide-react';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { useAppStore } from '../../store/useAppStore';
+import { useDataStore } from '../PictureMapping/DataContext';
+import { getSavedCustomPaintCategories } from './LayoutPaintCategoriesSection';
 
 interface LayoutTabFilterToolbarProps {
   activeStore: string;
@@ -81,6 +86,33 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
   onSelectSearchUnit,
   onClearSearchAndFocus,
 }: LayoutTabFilterToolbarProps) {
+  const layoutPaintCategory = useAppStore(state => state.layoutPaintCategory);
+  const setLayoutPaintCategory = useAppStore(state => state.setLayoutPaintCategory);
+  const storeLocationData = useDataStore(state => state.storeLocationData);
+  const getAllStoreVersions = useDataStore(state => state.getAllStoreVersions);
+
+  const availablePaintCategories = useMemo(() => {
+    const set = new Set<string>(getSavedCustomPaintCategories());
+    try {
+      const storeKey = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+      const versions = getAllStoreVersions(storeKey) || [];
+      versions.forEach(v => {
+        (v.groups || []).forEach((g: any) => {
+          const raw = String(g.paintCategory || g.category || '').trim();
+          if (raw) {
+            raw.split(',').forEach(part => {
+              const trimmed = part.trim();
+              if (trimmed) set.add(trimmed);
+            });
+          }
+        });
+      });
+    } catch {
+      // ignore
+    }
+    return Array.from(set);
+  }, [activeStore, getAllStoreVersions, storeLocationData]);
+
   return (
     <div className="flex flex-col gap-1.5 mb-1.5 hide-on-actual-print print:hidden">
       {/* Single Unified Header & Action Bar */}
@@ -136,6 +168,28 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
               <span className="text-xs text-slate-400 dark:text-slate-500 italic px-2">No accessible projects</span>
             )}
           </div>
+
+          {/* Paint Categories Filter (LiveView Mode) */}
+          {isLiveMapMode && (
+            <div className="flex items-center gap-1.5 bg-white dark:bg-[#1e1e20] px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-[#444446] shadow-2xs">
+              <Palette className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 hidden lg:inline shrink-0">
+                Paint Categories:
+              </span>
+              <select
+                value={layoutPaintCategory}
+                onChange={(e) => setLayoutPaintCategory(e.target.value)}
+                className="bg-transparent border-none text-xs text-indigo-700 dark:text-indigo-300 font-bold outline-none cursor-pointer max-w-[140px]"
+                title="Filter units by Paint Category (configured in Edit Mode)"
+              >
+                <option value="all">All Categories</option>
+                {availablePaintCategories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+                <option value="none">None (Unpainted)</option>
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Center: Expanded Search Unit Box (All on the same line) */}
@@ -245,18 +299,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
             <span>{isLiveMapMode ? 'Exit' : 'Live'}</span>
           </button>
 
-          {/* Trigger Export to Cloud R2 */}
-          {canWrite && (
-            <button 
-              onClick={onTriggerReExport}
-              disabled={isExporting}
-              title="Apply Dynamic Rules -> Save Cloud R2"
-              className="h-9 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 disabled:opacity-50 rounded-xl text-xs font-bold transition-colors border border-emerald-200 dark:border-emerald-800 shadow-2xs whitespace-nowrap active:scale-95 touch-manipulation shrink-0 cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isExporting ? 'animate-spin' : ''}`} />
-              <span>{isExporting ? 'Exporting...' : 'Export'}</span>
-            </button>
-          )}
+
 
           {/* Edit URL for Admin / Write.layout */}
           {canWrite && (

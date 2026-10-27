@@ -377,6 +377,8 @@ export const LiveCanvas = React.memo(function LiveCanvas({
         isPrintPreview={isPrintPreview}
         handleExport={stageInteractions.handleExport}
         onOpenR2Config={onOpenR2Config}
+        version={version}
+        storeFilter={storeFilter}
       />
 
       {/* Tooltip (Auto-hidden when any Modal or QuickNav is active) */}
