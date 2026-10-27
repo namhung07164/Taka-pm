@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
 import { useSummaryData } from '../PictureMapping/lib/summaryData';
@@ -6,6 +6,7 @@ import { useDataStore } from '../PictureMapping/DataContext';
 import { useDynamicUnitSummary } from '../PictureMapping/lib/dynamicSummaryEngine';
 import { buildAggregatedUnitData } from './layoutDataAggregator';
 import { extractAllProjectCodes, extractProjectMetadata, getUserAllowedStores, projectMatchesScope, projectMatchesUnitCode } from '../../lib/utils';
+import { getSavedPaintGroupMappings, resolveGroupPaintCategory, subscribePaintCategoriesConfig } from './layoutPaintCategoriesService';
 
 const EMPTY_RESTRICTED_SET = new Set<string>();
 
@@ -146,6 +147,15 @@ export function useLayoutAggregates({
   }, [units, version, summaryData, enrichedProjects, tasks, storeFilter, locationFilter, targetLoc, effectiveLayoutYear, delegationGroups, layoutTooltipVisibility, restrictedProjectCodes, hasStoredUnitImages, unitImagesRev]);
 
   const layoutPaintCategory = useAppStore(state => state.layoutPaintCategory);
+  const [paintGroupMappings, setPaintGroupMappings] = useState<Record<string, string>>(() => getSavedPaintGroupMappings());
+
+  useEffect(() => {
+    return subscribePaintCategoriesConfig((cfg) => {
+      if (cfg.groupMappings) {
+        setPaintGroupMappings(cfg.groupMappings);
+      }
+    });
+  }, []);
 
   const filteredVersionForPaint = useMemo(() => {
     if (!version) return version;
@@ -155,7 +165,7 @@ export function useLayoutAggregates({
     }
     const targetCat = layoutPaintCategory.trim().toLowerCase();
     const filteredGroups = (version.groups || []).filter((g: any) => {
-      const rawCat = String(g.paintCategory || g.category || '').trim();
+      const rawCat = resolveGroupPaintCategory(g, paintGroupMappings);
       if (!rawCat) return false;
       return rawCat
         .split(',')
@@ -163,7 +173,7 @@ export function useLayoutAggregates({
         .includes(targetCat);
     });
     return { ...version, groups: filteredGroups };
-  }, [version, layoutPaintCategory]);
+  }, [version, layoutPaintCategory, paintGroupMappings]);
 
   const { summaryMap: dynamicSummaryMap } = useDynamicUnitSummary({
     units,

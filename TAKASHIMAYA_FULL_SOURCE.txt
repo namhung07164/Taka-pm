@@ -159417,3 +159417,303 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
     </div>
   );
 };
+
+
+================================================================================
+FILE: src/components/LayoutTabParts/layoutPaintCategoriesService.ts
+================================================================================
+import { doc, getDoc, setDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { db, APP_ID } from '../../lib/firebase';
+import { useAppStore } from '../../store/useAppStore';
+import { useDataStore } from '../PictureMapping/DataContext';
+
+export const CUSTOM_PAINT_CATEGORIES_STORAGE_KEY = 'taka_layout_custom_paint_categories';
+export const ACTIVE_PAINT_FILTER_STORAGE_KEY = 'taka_layout_active_paint_filter';
+export const PAINT_GROUP_MAPPINGS_STORAGE_KEY = 'taka_layout_paint_group_mappings';
+
+export const DEFAULT_PRESET_CATEGORIES = [
+  'Status',
+  'Timeline',
+  'Department',
+  'Risk',
+  'Progress',
+  'Shop type',
+];
+
+export interface PaintCategoriesConfig {
+  categories: string[];
+  activeCategory?: string;
+  groupMappings?: Record<string, string>;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+// Memory cache to avoid redundant JSON parsing
+let cachedCategories: string[] | null = null;
+let cachedActiveFilter: string | null = null;
+let cachedGroupMappings: Record<string, string> | null = null;
+
+/**
+ * Get locally cached paint categories (0ms read)
+ */
+export function getSavedCustomPaintCategories(): string[] {
+  if (cachedCategories && cachedCategories.length > 0) {
+    return cachedCategories;
+  }
+  try {
+    const raw = localStorage.getItem(CUSTOM_PAINT_CATEGORIES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        cachedCategories = parsed.filter(Boolean);
+        return cachedCategories;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  cachedCategories = [...DEFAULT_PRESET_CATEGORIES];
+  return cachedCategories;
+}
+
+/**
+ * Get locally cached active paint filter
+ */
+export function getSavedActivePaintFilter(): string {
+  if (cachedActiveFilter) return cachedActiveFilter;
+  try {
+    const raw = localStorage.getItem(ACTIVE_PAINT_FILTER_STORAGE_KEY);
+    if (raw && typeof raw === 'string' && raw.trim()) {
+      cachedActiveFilter = raw.trim();
+      return cachedActiveFilter;
+    }
+  } catch {
+    // fallback
+  }
+  return 'Status';
+}
+
+/**
+ * Get locally cached condition group mappings
+ */
+export function getSavedPaintGroupMappings(): Record<string, string> {
+  if (cachedGroupMappings) return cachedGroupMappings;
+  try {
+    const raw = localStorage.getItem(PAINT_GROUP_MAPPINGS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        cachedGroupMappings = parsed;
+        return cachedGroupMappings;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return {};
+}
+
+/**
+ * Save paint categories config to LocalStorage + Cloud Firestore (Multi-device & Multi-user Sync)
+ */
+export async function savePaintCategoriesConfig(
+  config: Partial<PaintCategoriesConfig>,
+  currentEmail?: string
+): Promise<void> {
+  try {
+    // 1. Optimistic local cache update (0ms)
+    if (config.categories && Array.isArray(config.categories)) {
+      cachedCategories = config.categories;
+      localStorage.setItem(CUSTOM_PAINT_CATEGORIES_STORAGE_KEY, JSON.stringify(config.categories));
+    }
+    if (config.activeCategory !== undefined) {
+      cachedActiveFilter = config.activeCategory;
+      localStorage.setItem(ACTIVE_PAINT_FILTER_STORAGE_KEY, config.activeCategory);
+    }
+    if (config.groupMappings !== undefined) {
+      cachedGroupMappings = config.groupMappings;
+      localStorage.setItem(PAINT_GROUP_MAPPINGS_STORAGE_KEY, JSON.stringify(config.groupMappings));
+    }
+
+    // Broadcast local event for immediate in-process components update
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('taka_paint_categories_updated', {
+          detail: {
+            categories: cachedCategories,
+            activeCategory: cachedActiveFilter,
+            groupMappings: cachedGroupMappings,
+          },
+        })
+      );
+    }
+
+    // 2. Cloud Firestore Persistence (taka_config/paint_categories)
+    const paintCategoriesDocRef = doc(
+      db,
+      'artifacts',
+      APP_ID,
+      'public',
+      'data',
+      'taka_config',
+      'paint_categories'
+    );
+
+    const payload: Partial<PaintCategoriesConfig> = {
+      ...config,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentEmail || 'system',
+    };
+
+    if (config.categories) {
+      payload.categories = config.categories;
+    }
+    if (config.activeCategory !== undefined) {
+      payload.activeCategory = config.activeCategory;
+    }
+    if (config.groupMappings !== undefined) {
+      payload.groupMappings = config.groupMappings;
+    }
+
+    await setDoc(paintCategoriesDocRef, payload, { merge: true });
+
+    // 3. Touch versions document to alert snapshot listeners
+    const versionsDocRef = doc(
+      db,
+      'artifacts',
+      APP_ID,
+      'public',
+      'data',
+      'taka_config',
+      'versions'
+    );
+    await setDoc(
+      versionsDocRef,
+      {
+        paintCategoriesVersion: Date.now(),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn('[layoutPaintCategoriesService] Cloud save failed:', err);
+  }
+}
+
+/**
+ * Apply cloud group mappings onto local versions in DataStore
+ */
+export function applyGroupMappingsToVersions(
+  groupMappings: Record<string, string>,
+  targetStore: 'HCM' | 'HN'
+) {
+  if (!groupMappings || Object.keys(groupMappings).length === 0) return;
+  try {
+    const dataStore = useDataStore.getState();
+    const allVers = dataStore.getAllStoreVersions(targetStore) || [];
+    if (!allVers || allVers.length === 0) return;
+
+    let hasChanges = false;
+    const updatedVers = allVers.map(v => {
+      let vChanged = false;
+      const nextGroups = (v.groups || []).map((g: any) => {
+        const assigned = groupMappings[g.name] || groupMappings[g.id];
+        if (assigned !== undefined && assigned !== g.paintCategory) {
+          vChanged = true;
+          return {
+            ...g,
+            paintCategory: assigned,
+            category: assigned,
+          };
+        }
+        return g;
+      });
+      if (vChanged) {
+        hasChanges = true;
+        return { ...v, groups: nextGroups };
+      }
+      return v;
+    });
+
+    if (hasChanges) {
+      dataStore.updateStoreVersionsAcrossLocations(updatedVers, targetStore);
+    }
+  } catch (err) {
+    console.warn('[layoutPaintCategoriesService] applyGroupMappingsToVersions error:', err);
+  }
+}
+
+/**
+ * Real-time listener for taka_config/paint_categories across all devices and users
+ */
+export function subscribePaintCategoriesConfig(
+  onUpdate: (config: PaintCategoriesConfig) => void
+): Unsubscribe {
+  const paintCategoriesDocRef = doc(
+    db,
+    'artifacts',
+    APP_ID,
+    'public',
+    'data',
+    'taka_config',
+    'paint_categories'
+  );
+
+  return onSnapshot(
+    paintCategoriesDocRef,
+    (snap) => {
+      if (!snap.exists()) {
+        const initialCategories = getSavedCustomPaintCategories();
+        const initialActive = getSavedActivePaintFilter();
+        const initialMappings = getSavedPaintGroupMappings();
+        onUpdate({
+          categories: initialCategories,
+          activeCategory: initialActive,
+          groupMappings: initialMappings,
+        });
+        return;
+      }
+
+      const data = snap.data() as PaintCategoriesConfig;
+      const categories = Array.isArray(data.categories) && data.categories.length > 0
+        ? data.categories
+        : DEFAULT_PRESET_CATEGORIES;
+
+      cachedCategories = categories;
+      localStorage.setItem(CUSTOM_PAINT_CATEGORIES_STORAGE_KEY, JSON.stringify(categories));
+
+      if (data.activeCategory) {
+        cachedActiveFilter = data.activeCategory;
+        localStorage.setItem(ACTIVE_PAINT_FILTER_STORAGE_KEY, data.activeCategory);
+      }
+
+      if (data.groupMappings) {
+        cachedGroupMappings = data.groupMappings;
+        localStorage.setItem(PAINT_GROUP_MAPPINGS_STORAGE_KEY, JSON.stringify(data.groupMappings));
+      }
+
+      onUpdate({
+        categories,
+        activeCategory: data.activeCategory,
+        groupMappings: data.groupMappings,
+        updatedAt: data.updatedAt,
+        updatedBy: data.updatedBy,
+      });
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('taka_paint_categories_updated', {
+            detail: {
+              categories,
+              activeCategory: data.activeCategory,
+              groupMappings: data.groupMappings,
+            },
+          })
+        );
+      }
+    },
+    (err) => {
+      console.warn('[layoutPaintCategoriesService] onSnapshot error:', err);
+    }
+  );
+}

@@ -14,7 +14,13 @@ import {
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 import { useAppStore } from '../../store/useAppStore';
 import { useDataStore } from '../PictureMapping/DataContext';
-import { getSavedCustomPaintCategories } from './LayoutPaintCategoriesSection';
+import {
+  getSavedCustomPaintCategories,
+  getSavedActivePaintFilter,
+  saveActivePaintFilterLocal,
+  applyGroupMappingsToVersions,
+  subscribePaintCategoriesConfig,
+} from './layoutPaintCategoriesService';
 
 interface LayoutTabFilterToolbarProps {
   activeStore: string;
@@ -88,35 +94,37 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
 }: LayoutTabFilterToolbarProps) {
   const layoutPaintCategory = useAppStore(state => state.layoutPaintCategory);
   const setLayoutPaintCategory = useAppStore(state => state.setLayoutPaintCategory);
-  const storeLocationData = useDataStore(state => state.storeLocationData);
-  const getAllStoreVersions = useDataStore(state => state.getAllStoreVersions);
+
+  const [syncedCustomCats, setSyncedCustomCats] = React.useState<string[]>(() => getSavedCustomPaintCategories());
+
+  // Listen to realtime cloud sync for paint categories filter data (categories list & condition mappings only)
+  React.useEffect(() => {
+    const storeKey = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+    const unsub = subscribePaintCategoriesConfig((config) => {
+      if (Array.isArray(config.categories) && config.categories.length > 0) {
+        setSyncedCustomCats(config.categories);
+      }
+      if (config.groupMappings && Object.keys(config.groupMappings).length > 0) {
+        applyGroupMappingsToVersions(config.groupMappings, storeKey);
+      }
+    });
+    return () => unsub();
+  }, [activeStore]);
 
   const availablePaintCategories = useMemo(() => {
-    const set = new Set<string>(getSavedCustomPaintCategories());
-    try {
-      const storeKey = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
-      const versions = getAllStoreVersions(storeKey) || [];
-      versions.forEach(v => {
-        (v.groups || []).forEach((g: any) => {
-          const raw = String(g.paintCategory || g.category || '').trim();
-          if (raw) {
-            raw.split(',').forEach(part => {
-              const trimmed = part.trim();
-              if (trimmed) set.add(trimmed);
-            });
-          }
-        });
-      });
-    } catch {
-      // ignore
-    }
-    return Array.from(set);
-  }, [activeStore, getAllStoreVersions, storeLocationData]);
+    const baseCats = syncedCustomCats.length > 0 ? syncedCustomCats : getSavedCustomPaintCategories();
+    return Array.from(new Set<string>(baseCats.map(c => String(c || '').trim()).filter(Boolean)));
+  }, [syncedCustomCats]);
 
   React.useEffect(() => {
     if (availablePaintCategories.length > 0) {
       if (layoutPaintCategory === 'all' || (!availablePaintCategories.includes(layoutPaintCategory) && layoutPaintCategory !== 'none')) {
-        setLayoutPaintCategory(availablePaintCategories[0]);
+        const saved = getSavedActivePaintFilter();
+        if (availablePaintCategories.includes(saved)) {
+          setLayoutPaintCategory(saved);
+        } else {
+          setLayoutPaintCategory(availablePaintCategories[0]);
+        }
       }
     } else if (layoutPaintCategory === 'all') {
       setLayoutPaintCategory('none');
@@ -304,7 +312,11 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
                 <Palette className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                 <select
                   value={layoutPaintCategory}
-                  onChange={(e) => setLayoutPaintCategory(e.target.value)}
+                  onChange={(e) => {
+                    const nextVal = e.target.value;
+                    setLayoutPaintCategory(nextVal);
+                    saveActivePaintFilterLocal(nextVal);
+                  }}
                   className="bg-transparent border-none text-xs text-indigo-700 dark:text-indigo-300 font-bold outline-none cursor-pointer w-full truncate"
                   title="Filter units by Paint Category"
                 >
