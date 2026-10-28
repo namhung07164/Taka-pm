@@ -23327,7 +23327,7 @@ export async function executeImportTasks({
 
   // Auto-expand affected projects in UI so user immediately sees imported tasks
   const curExpanded = useAppStore.getState().expandedProjectIds || [];
-  const affKeys = affectedProjects.flatMap(p => [p.id, p.code].filter(Boolean) as string[]);
+  const affKeys = affectedProjects.map(p => String(p.id || p.code || '')).filter(Boolean);
   useAppStore.getState().setExpandedProjectIds(Array.from(new Set([...curExpanded, ...affKeys])));
 
   // Persist affected projects to LocalDB (Dexie) in background and mark tasks_proj as loaded
@@ -29660,61 +29660,23 @@ export const GanttBar = React.memo(function GanttBar({
   const [isEditingPredecessor, setIsEditingPredecessor] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const lastMousePos = useRef({ x: 0, y: 0 });
-  const moveRafRef = useRef<number | null>(null);
   const isDraggingTooltipRef = useRef(false);
   const dragStartPos = useRef({ x: 0, y: 0 });
   const tooltipStartPos = useRef({ x: 0, y: 0 });
-  const hoverTimeoutRef = useRef<number | null>(null);
 
-  const handleBarMouseEnter = (e: React.MouseEvent) => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    setIsDismissed(false);
-    lastMousePos.current = { x: e.clientX, y: e.clientY };
+  const handleBarMouseEnter = () => {
     setIsHovered(true);
   };
 
   const handleBarMouseLeave = () => {
-    hoverTimeoutRef.current = window.setTimeout(() => {
-      setIsHovered(false);
-      setIsDismissed(false);
-    }, 200);
-  };
-
-  const handleTooltipMouseEnter = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    setIsHovered(true);
-  };
-
-  const handleTooltipMouseLeave = () => {
-    hoverTimeoutRef.current = window.setTimeout(() => {
-      setIsHovered(false);
-      setIsDismissed(false);
-    }, 150);
+    setIsHovered(false);
   };
 
   const handleCloseTooltip = React.useCallback(() => {
     setIsDismissed(true);
-    setIsHovered(false);
     setActiveTooltip(null);
     setIsEditingPredecessor(false);
   }, [setActiveTooltip]);
-
-  useEffect(() => {
-    return () => {
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-      }
-      if (moveRafRef.current !== null) {
-        cancelAnimationFrame(moveRafRef.current);
-      }
-    };
-  }, []);
 
   const isPinned = activeTooltip === id || isEditingPredecessor;
 
@@ -29745,10 +29707,10 @@ export const GanttBar = React.memo(function GanttBar({
   };
 
   useEffect(() => {
-    if ((isHovered || isPinned) && tooltipRef.current && !isDraggingTooltipRef.current) {
+    if (isPinned && tooltipRef.current && !isDraggingTooltipRef.current) {
       positionTooltip(tooltipRef.current, lastMousePos.current.x, lastMousePos.current.y);
     }
-  }, [isHovered, isPinned]);
+  }, [isPinned]);
 
   if (!dStart || !dEnd) {
     return null;
@@ -29777,27 +29739,9 @@ export const GanttBar = React.memo(function GanttBar({
             setIsDismissed(false);
             const nextPinned = activeTooltip !== id;
             setActiveTooltip(nextPinned ? id : null);
-            if (nextPinned && tooltipRef.current) {
-              positionTooltip(tooltipRef.current, e.clientX, e.clientY);
-            }
           }
         }}
         onMouseEnter={handleBarMouseEnter}
-        onMouseMove={(e) => {
-          if (!isPinned && !isDraggingTooltipRef.current) {
-            const clientX = e.clientX;
-            const clientY = e.clientY;
-            lastMousePos.current = { x: clientX, y: clientY };
-            if (moveRafRef.current === null) {
-              moveRafRef.current = requestAnimationFrame(() => {
-                if (tooltipRef.current) {
-                  positionTooltip(tooltipRef.current, lastMousePos.current.x, lastMousePos.current.y);
-                }
-                moveRafRef.current = null;
-              });
-            }
-          }
-        }}
         onMouseLeave={handleBarMouseLeave}
         className={cn(
           "absolute top-1.5 bottom-1.5 flex items-center transition-all cursor-pointer select-none group shadow-2xs before:absolute before:-inset-y-1.5 before:-inset-x-1 before:content-['']",
@@ -29877,8 +29821,8 @@ export const GanttBar = React.memo(function GanttBar({
         </div>
       )}
 
-      {/* Floating Tooltip via Portal */}
-      {!isDismissed && (isHovered || isPinned) && (
+      {/* Floating Tooltip via Portal - Only rendered on Click */}
+      {!isDismissed && isPinned && (
         <GanttBarTooltip
           id={id}
           label={label}
@@ -29894,8 +29838,6 @@ export const GanttBar = React.memo(function GanttBar({
           handlePointerDown={handlePointerDown}
           handlePointerMove={handlePointerMove}
           handlePointerUp={handlePointerUp}
-          onMouseEnter={handleTooltipMouseEnter}
-          onMouseLeave={handleTooltipMouseLeave}
           onClose={handleCloseTooltip}
         />
       )}
@@ -31794,12 +31736,7 @@ export function GanttTableView({
     }
   };
 
-  const showStart = visibleColumns.includes('start');
-  const showFinish = visibleColumns.includes('finish');
-  const showParty = visibleColumns.includes('party');
-  const showDuration = visibleColumns.includes('duration');
-  const showPredecessor = visibleColumns.includes('predecessor');
-
+  const showStart = visibleColumns.includes('start'), showFinish = visibleColumns.includes('finish'), showParty = visibleColumns.includes('party'), showDuration = visibleColumns.includes('duration'), showPredecessor = visibleColumns.includes('predecessor');
   const startColWidth = colWidths?.start ?? 85; const finishColWidth = colWidths?.finish ?? 85; const partyColWidth = colWidths?.party ?? 80; const durationColWidth = colWidths?.duration ?? 60; const predecessorColWidth = colWidths?.predecessor ?? 90;
 
   const taskCodeMap = useMemo(() => {
@@ -31893,6 +31830,11 @@ export function GanttTableView({
         ref={mainScrollRef}
         onScroll={handleCombinedMainScroll}
         onPointerDown={handlePointerDown}
+        onClick={(e) => {
+          if (activeTooltip && !(e.target as HTMLElement).closest('.cursor-pointer, button, input')) {
+            setActiveTooltip(null);
+          }
+        }}
         className={cn(
           "flex-grow overflow-auto relative flex min-h-0",
           isPanning ? "cursor-grabbing select-none" : "cursor-grab"
@@ -35223,11 +35165,13 @@ export function useGanttColumnResize() {
 
 ================================================================================
 FILE: src/components/Gantt/useGanttDependencies.ts
-import React, { useCallback, useMemo, useState } from 'react';
+================================================================================
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Task, Project } from '../../types';
 import { DependencyLine, GanttTableRow } from './ganttTypes';
 import { computeAllTaskCodes } from '../../lib/ganttUtils';
 import { parseDateTime } from '../../lib/utils';
+import { findClosestTaskMatch, buildProjectLookupIndex, resolveProjectContext } from '../../lib/predecessorMatchUtils';
 
 interface UseGanttDependenciesParams {
   tasks: Task[];
@@ -35250,45 +35194,136 @@ interface UseGanttDependenciesParams {
   predecessorColWidth?: number;
 }
 
-function generateOrthogonalPath(x1: number, y1: number, x2: number, y2: number): string {
-  const r = 5;
-  const minGap = 20;
+interface Point {
+  x: number;
+  y: number;
+}
 
-  if (Math.abs(y1 - y2) < 1) {
-    return `M ${x1} ${y1} L ${x2} ${y2}`;
+function buildRoundedOrthogonalPath(points: Point[], cornerRadius = 5): string {
+  if (points.length < 2) return '';
+  if (points.length === 2) {
+    return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
   }
 
-  const isDown = y2 > y1;
-  const dy = isDown ? r : -r;
+  let path = `M ${points[0].x} ${points[0].y}`;
 
-  if (x2 >= x1 + minGap) {
-    const xMid = Math.round(x1 + Math.min(24, (x2 - x1) / 2));
-    return [
-      `M ${x1} ${y1}`,
-      `L ${xMid - r} ${y1}`,
-      `Q ${xMid} ${y1} ${xMid} ${y1 + dy}`,
-      `L ${xMid} ${y2 - dy}`,
-      `Q ${xMid} ${y2} ${xMid + r} ${y2}`,
-      `L ${x2} ${y2}`,
-    ].join(' ');
+  for (let i = 1; i < points.length - 1; i++) {
+    const pPrev = points[i - 1];
+    const pCurr = points[i];
+    const pNext = points[i + 1];
+
+    const dx1 = pCurr.x - pPrev.x;
+    const dy1 = pCurr.y - pPrev.y;
+    const len1 = Math.hypot(dx1, dy1);
+
+    const dx2 = pNext.x - pCurr.x;
+    const dy2 = pNext.y - pCurr.y;
+    const len2 = Math.hypot(dx2, dy2);
+
+    const r = Math.min(cornerRadius, len1 / 2, len2 / 2);
+
+    if (r < 1 || len1 === 0 || len2 === 0) {
+      path += ` L ${pCurr.x} ${pCurr.y}`;
+    } else {
+      const startX = pCurr.x - (dx1 / len1) * r;
+      const startY = pCurr.y - (dy1 / len1) * r;
+      const endX = pCurr.x + (dx2 / len2) * r;
+      const endY = pCurr.y + (dy2 / len2) * r;
+
+      path += ` L ${startX} ${startY} Q ${pCurr.x} ${pCurr.y} ${endX} ${endY}`;
+    }
   }
 
-  const marginOut = 14;
-  const marginIn = 14;
+  const last = points[points.length - 1];
+  path += ` L ${last.x} ${last.y}`;
+
+  return path;
+}
+
+export function generateGanttPath(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  relType: string = 'FS',
+  laneIndex: number = 0
+): { d: string; arrowDir: 'left' | 'right' } {
+  const laneOffset = (laneIndex % 5 - 2) * 4;
+
+  if (Math.abs(y1 - y2) < 2) {
+    if (relType === 'FS' || relType === 'SS') {
+      return { d: `M ${x1} ${y1} L ${x2} ${y2}`, arrowDir: 'right' };
+    }
+    return { d: `M ${x1} ${y1} L ${x2} ${y2}`, arrowDir: 'left' };
+  }
+
+  if (relType === 'FS') {
+    const arrowDir = 'right';
+    if (x2 >= x1 + 16) {
+      const xMid = Math.round(x1 + Math.min(18 + Math.abs(laneOffset), (x2 - x1) / 2));
+      const points: Point[] = [
+        { x: x1, y: y1 },
+        { x: xMid, y: y1 },
+        { x: xMid, y: y2 },
+        { x: x2, y: y2 },
+      ];
+      return { d: buildRoundedOrthogonalPath(points, 5), arrowDir };
+    } else {
+      const xExit = Math.round(x1 + 12 + Math.max(0, laneOffset));
+      const xEntry = Math.round(x2 - 12 - Math.max(0, -laneOffset));
+      const yMid = Math.round(y1 + (y2 - y1) / 2);
+
+      const points: Point[] = [
+        { x: x1, y: y1 },
+        { x: xExit, y: y1 },
+        { x: xExit, y: yMid },
+        { x: xEntry, y: yMid },
+        { x: xEntry, y: y2 },
+        { x: x2, y: y2 },
+      ];
+      return { d: buildRoundedOrthogonalPath(points, 5), arrowDir };
+    }
+  }
+
+  if (relType === 'SS') {
+    const arrowDir = 'right';
+    const xExit = Math.round(Math.min(x1, x2) - 14 - Math.abs(laneOffset));
+    const points: Point[] = [
+      { x: x1, y: y1 },
+      { x: xExit, y: y1 },
+      { x: xExit, y: y2 },
+      { x: x2, y: y2 },
+    ];
+    return { d: buildRoundedOrthogonalPath(points, 5), arrowDir };
+  }
+
+  if (relType === 'FF') {
+    const arrowDir = 'left';
+    const xExit = Math.round(Math.max(x1, x2) + 14 + Math.abs(laneOffset));
+    const points: Point[] = [
+      { x: x1, y: y1 },
+      { x: xExit, y: y1 },
+      { x: xExit, y: y2 },
+      { x: x2, y: y2 },
+    ];
+    return { d: buildRoundedOrthogonalPath(points, 5), arrowDir };
+  }
+
+  // SF (Start-to-Finish)
+  const arrowDir = 'left';
+  const xExit = Math.round(x1 - 12 - Math.abs(laneOffset));
+  const xEntry = Math.round(x2 + 12 + Math.abs(laneOffset));
   const yMid = Math.round(y1 + (y2 - y1) / 2);
 
-  return [
-    `M ${x1} ${y1}`,
-    `L ${x1 + marginOut - r} ${y1}`,
-    `Q ${x1 + marginOut} ${y1} ${x1 + marginOut} ${y1 + dy}`,
-    `L ${x1 + marginOut} ${yMid - dy}`,
-    `Q ${x1 + marginOut} ${yMid} ${x1 + marginOut - r} ${yMid}`,
-    `L ${x2 - marginIn + r} ${yMid}`,
-    `Q ${x2 - marginIn} ${yMid} ${x2 - marginIn} ${yMid + dy}`,
-    `L ${x2 - marginIn} ${y2 - dy}`,
-    `Q ${x2 - marginIn} ${y2} ${x2 - marginIn + r} ${y2}`,
-    `L ${x2} ${y2}`,
-  ].join(' ');
+  const points: Point[] = [
+    { x: x1, y: y1 },
+    { x: xExit, y: y1 },
+    { x: xExit, y: yMid },
+    { x: xEntry, y: yMid },
+    { x: xEntry, y: y2 },
+    { x: x2, y: y2 },
+  ];
+  return { d: buildRoundedOrthogonalPath(points, 5), arrowDir };
 }
 
 export function useGanttDependencies({
@@ -35313,6 +35348,17 @@ export function useGanttDependencies({
 }: UseGanttDependenciesParams) {
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!activeTooltip) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveTooltip(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTooltip]);
+
   const taskNoMap = useMemo(() => {
     const map = new Map<string, Task>();
     tasks.forEach(t => {
@@ -35329,6 +35375,10 @@ export function useGanttDependencies({
   const allCodesMap = useMemo(() => {
     return computeAllTaskCodes(projects, tasks);
   }, [projects, tasks]);
+
+  const projectIndex = useMemo(() => {
+    return buildProjectLookupIndex(projects);
+  }, [projects]);
 
   const taskCodeMap = useMemo(() => {
     const map = new Map<string, Task>();
@@ -35362,11 +35412,13 @@ export function useGanttDependencies({
     if (!startDate || visibleGanttRows.length === 0) return [];
 
     const taskPosMap = new Map<string, { xStart: number; xEnd: number; yCenter: number; t: Task }>();
+    const visibleTasks: Task[] = [];
     let currentY = paddingTop;
     const timelineLeft = sideWidth + (showStart ? startColWidth : 0) + (showFinish ? finishColWidth : 0) + (showParty ? partyColWidth : 0) + (showDuration ? durationColWidth : 0) + (showPredecessor ? predecessorColWidth : 0);
 
     visibleGanttRows.forEach((row) => {
-      const rowHeight = row.type === 'project' ? 40 : 36;
+      // GanttProjectRow is 48px, GanttTaskRow is 40px
+      const rowHeight = row.type === 'project' ? 48 : 40;
       const yCenter = currentY + rowHeight / 2;
       currentY += rowHeight;
 
@@ -35375,25 +35427,45 @@ export function useGanttDependencies({
         const dStart = t.start ? parseDateTime(t.start) : null;
         const dEnd = t.finish ? parseDateTime(t.finish) : null;
         if (dStart && dEnd) {
-          const startDays = (dStart.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
-          const endDays = (dEnd.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24) + 1;
-          const xStart = timelineLeft + Math.max(0, startDays * dayWidth);
-          const xEnd = timelineLeft + Math.max(0, endDays * dayWidth);
+          const isMilestone = Number(t.duration) === 0 || Math.abs(dStart.getTime() - dEnd.getTime()) < 3600000;
+          const offsetDays = (dStart.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+          const durationDays = Math.max((dEnd.getTime() - dStart.getTime()) / (1000 * 60 * 60 * 24) + 1, 1);
+          const barLeft = offsetDays * dayWidth;
+          const barWidth = isMilestone ? 16 : Math.max(durationDays * dayWidth, 8);
+
+          const xStart = timelineLeft + barLeft;
+          const xEnd = timelineLeft + barLeft + barWidth;
 
           const posObj = { xStart, xEnd, yCenter, t };
+          visibleTasks.push(t);
           taskPosMap.set(t.id, posObj);
+          const pIdScope = t.projectId ? `PID:${String(t.projectId).trim().toUpperCase()}__` : '';
+          const pCodeScope = t.projectCode ? `PCODE:${String(t.projectCode).trim().toUpperCase()}__` : '';
           if (t.taskCodePhu) {
-            taskPosMap.set(t.taskCodePhu.trim().toUpperCase(), posObj);
+            const phuUpper = t.taskCodePhu.trim().toUpperCase();
+            if (pIdScope) taskPosMap.set(`${pIdScope}${phuUpper}`, posObj);
+            if (pCodeScope) taskPosMap.set(`${pCodeScope}${phuUpper}`, posObj);
+            if (!taskPosMap.has(phuUpper)) taskPosMap.set(phuUpper, posObj);
           }
           const computedCode = allCodesMap.get(t.id);
           if (computedCode) {
-            taskPosMap.set(computedCode.trim().toUpperCase(), posObj);
+            const compUpper = computedCode.trim().toUpperCase();
+            if (pIdScope) taskPosMap.set(`${pIdScope}${compUpper}`, posObj);
+            if (pCodeScope) taskPosMap.set(`${pCodeScope}${compUpper}`, posObj);
+            if (!taskPosMap.has(compUpper)) taskPosMap.set(compUpper, posObj);
+            const hashIdx = compUpper.lastIndexOf('#');
+            if (hashIdx !== -1) {
+              const shortHash = compUpper.slice(hashIdx); // "#N"
+              if (pIdScope) taskPosMap.set(`${pIdScope}${shortHash}`, posObj);
+              if (pCodeScope) taskPosMap.set(`${pCodeScope}${shortHash}`, posObj);
+            }
           }
         }
       }
     });
 
     const lines: DependencyLine[] = [];
+    let laneCounter = 0;
 
     visibleGanttRows.forEach((row) => {
       if (row.type !== 'task' || !row.task) return;
@@ -35403,17 +35475,54 @@ export function useGanttDependencies({
       const succPos = taskPosMap.get(succTask.id);
       if (!succPos) return;
 
+      const pIdScope = succTask.projectId ? `PID:${String(succTask.projectId).trim().toUpperCase()}__` : '';
+      const pCodeScope = succTask.projectCode ? `PCODE:${String(succTask.projectCode).trim().toUpperCase()}__` : '';
+
       const predCodes = String(succTask.predecessor)
         .split(/[,;]/)
-        .map((s) => s.trim().toUpperCase())
+        .map((s) => s.trim())
         .filter(Boolean);
 
-      predCodes.forEach((code) => {
-        const typeMatch = code.match(/^(.*?)(FS|SS|FF|SF)(\s*[+-]\s*\d+(?:\.\d+)?)?$/i);
-        const cleanCode = typeMatch ? typeMatch[1].trim() : code.replace(/(\s*[+-]\s*\d+(?:\.\d+)?)?$/, '').trim();
+      predCodes.forEach((token, idx) => {
+        const typeMatch = token.match(/^(.*?)(FS|SS|FF|SF)(\s*[+-]\s*\d+(?:\.\d+)?)?$/i);
+        const cleanQuery = typeMatch ? typeMatch[1].trim() : token.replace(/(\s*[+-]\s*\d+(?:\.\d+)?)?$/, '').trim();
         const relType = typeMatch ? typeMatch[2].toUpperCase() : 'FS';
+        const cleanUpper = cleanQuery.toUpperCase();
+        const tokenUpper = token.toUpperCase();
 
-        const predPos = taskPosMap.get(cleanCode) || taskPosMap.get(code);
+        const linkedTaskId = succTask.predecessorTaskIds?.[idx] || succTask.predecessors?.[idx]?.taskId;
+        let predPos = linkedTaskId ? taskPosMap.get(String(linkedTaskId)) : undefined;
+        if (!predPos && pIdScope) {
+          predPos = taskPosMap.get(`${pIdScope}${cleanUpper}`) || taskPosMap.get(`${pIdScope}${tokenUpper}`);
+        }
+        if (!predPos && pCodeScope) {
+          predPos = taskPosMap.get(`${pCodeScope}${cleanUpper}`) || taskPosMap.get(`${pCodeScope}${tokenUpper}`);
+        }
+        if (!predPos) {
+          predPos = taskPosMap.get(cleanUpper) || taskPosMap.get(tokenUpper);
+        }
+        if (!predPos && visibleTasks.length > 0) {
+          // Only search visibleTasks because off-screen tasks are not in taskPosMap and cannot be drawn
+          const match = findClosestTaskMatch(
+            cleanQuery,
+            visibleTasks,
+            projects,
+            tasks,
+            succTask.projectCode,
+            650,
+            {
+              projectId: succTask.projectId,
+              projectCode: succTask.projectCode,
+              projectYear: succTask.projectYear,
+              projectStore: succTask.projectStore,
+            },
+            undefined,
+            { projectIndex, allTaskCodesMap: allCodesMap }
+          );
+          if (match && match.task) {
+            predPos = taskPosMap.get(match.task.id);
+          }
+        }
         if (!predPos) return;
 
         let x1 = predPos.xEnd;
@@ -35432,11 +35541,12 @@ export function useGanttDependencies({
         const y1 = predPos.yCenter;
         const y2 = succPos.yCenter;
 
-        const d = generateOrthogonalPath(x1, y1, x2, y2);
+        const pathResult = generateGanttPath(x1, y1, x2, y2, relType, laneCounter++);
 
         lines.push({
-          id: `${predPos.t.id}->${succTask.id}-${relType}`,
-          d,
+          id: `${predPos.t.id}->${succTask.id}-${relType}-${laneCounter}`,
+          d: pathResult.d,
+          arrowDir: pathResult.arrowDir,
           fromTaskId: predPos.t.id,
           toTaskId: succTask.id,
           fromTaskCode: predPos.t.taskCodePhu || allCodesMap.get(predPos.t.id) || "",
@@ -35467,6 +35577,8 @@ export function useGanttDependencies({
     predecessorColWidth,
     projects,
     tasks,
+    allCodesMap,
+    projectIndex,
   ]);
 
   return {
@@ -35476,334 +35588,6 @@ export function useGanttDependencies({
     taskNoMap,
     taskCodeMap,
     delegationGroupByTaskId,
-  };
-}
-
-
-FILE: src/components/Gantt/useGanttDragReorder.ts
-================================================================================
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Task, Project } from '../../types';
-import { useAppStore } from '../../store/useAppStore';
-import { doc } from 'firebase/firestore';
-import { writeBatch } from '../../lib/firestoreWrites';
-import { db, APP_ID } from '../../lib/firebase';
-import { 
-  buildTaskNoMap, 
-  getPredecessorCodeUpdates, 
-  updatePredecessorsStrings, 
-  healAllTasksPredecessors 
-} from '../../lib/ganttUtils';
-
-interface UseGanttDragReorderParams {
-  tasks: Task[];
-  projects: Project[];
-  mainScrollRef: React.RefObject<HTMLDivElement | null>;
-}
-
-export function useGanttDragReorder({
-  tasks,
-  projects,
-  mainScrollRef
-}: UseGanttDragReorderParams) {
-  const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
-  const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
-  const [draggingTaskIds, setDraggingTaskIds] = useState<string[]>([]);
-
-  const dragScrollInterval = useRef<NodeJS.Timeout | null>(null);
-  const dragMouseY = useRef<number>(0);
-
-  const startDragAutoScroll = useCallback(() => {
-    if (dragScrollInterval.current) return;
-    dragScrollInterval.current = setInterval(() => {
-      const container = mainScrollRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      const y = dragMouseY.current;
-      const threshold = 60;
-      const maxSpeed = 15;
-
-      if (y < rect.top + threshold && y > rect.top - 50) {
-        const factor = Math.max(0, (rect.top + threshold - y) / threshold);
-        container.scrollTop -= Math.round(maxSpeed * factor);
-      } else if (y > rect.bottom - threshold && y < rect.bottom + 50) {
-        const factor = Math.max(0, (y - (rect.bottom - threshold)) / threshold);
-        container.scrollTop += Math.round(maxSpeed * factor);
-      }
-    }, 16);
-  }, [mainScrollRef]);
-
-  const stopDragAutoScroll = useCallback(() => {
-    if (dragScrollInterval.current) {
-      clearInterval(dragScrollInterval.current);
-      dragScrollInterval.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      stopDragAutoScroll();
-    };
-  }, [stopDragAutoScroll]);
-
-  const handleTaskDragStart = (e: React.DragEvent, taskId: string) => {
-    e.stopPropagation();
-    const targetTask = tasks.find(t => String(t.id) === String(taskId));
-    const isParentTask = targetTask && (
-      Boolean((targetTask as any).isModularParent) ||
-      tasks.some(other => {
-        const rawParent = other.parentTaskId || (other as any).parentId;
-        if (!rawParent) return false;
-        const rawStr = String(rawParent).trim().toLowerCase();
-        return String(rawParent) === String(targetTask.id) ||
-          (targetTask.taskCodePhu && rawStr === String(targetTask.taskCodePhu).trim().toLowerCase());
-      })
-    );
-    if (isParentTask) {
-      e.preventDefault();
-      return;
-    }
-    setDraggingTaskIds([taskId]);
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', taskId);
-    startDragAutoScroll();
-  };
-
-  const handleTaskDragOver = (e: React.DragEvent, taskId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragMouseY.current = e.clientY;
-
-    if (draggingTaskIds.includes(taskId)) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const relativeY = e.clientY - rect.top;
-    const isTopHalf = relativeY < rect.height / 2;
-    const pos = isTopHalf ? 'before' : 'after';
-
-    if (dragOverTaskId !== taskId || dropPosition !== pos) {
-      setDragOverTaskId(taskId);
-      setDropPosition(pos);
-    }
-  };
-
-  const handleContainerDragOver = (e: React.DragEvent) => {
-    dragMouseY.current = e.clientY;
-  };
-
-  const handleTaskDragLeave = (e: React.DragEvent, taskId: string) => {
-    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-    if (dragOverTaskId === taskId) {
-      setDragOverTaskId(null);
-      setDropPosition(null);
-    }
-  };
-
-  const handleTaskDragEnd = () => {
-    setDraggingTaskIds([]);
-    setDragOverTaskId(null);
-    setDropPosition(null);
-    stopDragAutoScroll();
-  };
-
-  const handleTaskDrop = async (e: React.DragEvent, targetTask: Task, parentProject?: Project) => {
-    e.preventDefault();
-    e.stopPropagation();
-    stopDragAutoScroll();
-
-    const draggedId = draggingTaskIds[0] || e.dataTransfer.getData('text/plain');
-    if (!draggedId || draggedId === targetTask.id) {
-      handleTaskDragEnd();
-      return;
-    }
-
-    const draggedTask = tasks.find(t => t.id === draggedId);
-    if (!draggedTask) {
-      handleTaskDragEnd();
-      return;
-    }
-
-    // Reorder inside the same project & parent group
-    const pCode = targetTask.projectCode || draggedTask.projectCode;
-
-    // Check if draggedTask is a parent task (has child tasks in the store)
-    const childTasksOfDragged = tasks.filter(t => {
-      if (!t || t.id === draggedTask.id) return false;
-      const rawPId = String(t.parentTaskId || (t as any).parentId || '').trim();
-      if (!rawPId) return false;
-      return (
-        rawPId === String(draggedTask.id) ||
-        (draggedTask.taskCodePhu && rawPId.toLowerCase() === String(draggedTask.taskCodePhu).trim().toLowerCase())
-      );
-    });
-    const isParentTask = childTasksOfDragged.length > 0;
-
-    // Determine targetParentId:
-    // 1) If draggedTask is a parent task (task gộp cha), force targetParentId to null (root level).
-    // 2) If draggedTask is a child task, check if targetTask is a parent task or subtask.
-    let targetParentId: string | null = null;
-    if (isParentTask) {
-      targetParentId = null;
-    } else {
-      const targetIsParent = tasks.some(t => {
-        if (!t || t.id === targetTask.id) return false;
-        const rawPId = String(t.parentTaskId || (t as any).parentId || '').trim();
-        return rawPId === String(targetTask.id) || (targetTask.taskCodePhu && rawPId.toLowerCase() === String(targetTask.taskCodePhu).trim().toLowerCase());
-      });
-
-      if (targetIsParent && !targetTask.parentTaskId && !(targetTask as any).parentId) {
-        // Dropped onto a parent task -> attach as child of targetTask
-        targetParentId = targetTask.id;
-      } else {
-        // Otherwise match targetTask's parentTaskId
-        targetParentId = targetTask.parentTaskId || (targetTask as any).parentId || null;
-      }
-    }
-
-    // Sibling tasks (either root tasks of the project or child tasks of the same parent)
-    const siblingTasks = tasks
-      .filter(t => 
-        (t.projectCode || '') === (pCode || '') && 
-        (t.parentTaskId || (t as any).parentId || null) === targetParentId
-      )
-      .sort((a, b) => (a.orderIndex !== undefined ? a.orderIndex : ((a as any).order || 0)) - (b.orderIndex !== undefined ? b.orderIndex : ((b as any).order || 0)));
-
-    const cleanList = siblingTasks.filter(t => t.id !== draggedTask.id);
-    const targetIdx = cleanList.findIndex(t => t.id === targetTask.id);
-    const insertIdx = targetIdx === -1 ? cleanList.length : (dropPosition === 'before' ? targetIdx : targetIdx + 1);
-
-    const nowIso = new Date().toISOString();
-    const movedTask: Task = {
-      ...draggedTask,
-      parentTaskId: targetParentId || undefined,
-      updatedAt: nowIso
-    };
-    if (targetParentId) {
-      (movedTask as any).parentId = targetParentId;
-    } else {
-      delete (movedTask as any).parentId;
-    }
-    cleanList.splice(insertIdx, 0, movedTask);
-
-    const oldTaskNoMap = buildTaskNoMap(projects, tasks);
-
-    const reorderedWithOrder = cleanList.map((t, idx) => {
-      const pCodeVal = t.projectCode || '';
-      const newCode = pCodeVal ? `${pCodeVal}#${idx + 1}` : (t.taskCodePhu || '');
-      return {
-        ...t,
-        orderIndex: idx,
-        order: (idx + 1) * 10,
-        taskCodePhu: newCode || t.taskCodePhu,
-        updatedAt: nowIso
-      };
-    });
-
-    const updatesMap = new Map<string, Task>();
-    reorderedWithOrder.forEach(t => updatesMap.set(t.id, t));
-
-    // Preserve parent-child relationships: ensure all child tasks point to parent's canonical ID
-    const parentCodeToIdMap = new Map<string, string>();
-    reorderedWithOrder.forEach(pt => {
-      parentCodeToIdMap.set(pt.id, pt.id);
-      if (pt.taskCodePhu) parentCodeToIdMap.set(pt.taskCodePhu.trim().toLowerCase(), pt.id);
-    });
-
-    let allUpdatedTasks = tasks.map(t => {
-      const updatedSibling = updatesMap.get(t.id);
-      if (updatedSibling) return updatedSibling;
-
-      // Check if this task is a child of any reordered parent task
-      const rawPId = String(t.parentTaskId || (t as any).parentId || '').trim();
-      if (rawPId) {
-        const canonicalParentId = parentCodeToIdMap.get(rawPId) || parentCodeToIdMap.get(rawPId.toLowerCase());
-        if (canonicalParentId && (t.parentTaskId !== canonicalParentId || (t as any).parentId !== canonicalParentId)) {
-          const res = {
-            ...t,
-            parentTaskId: canonicalParentId,
-            updatedAt: nowIso
-          };
-          (res as any).parentId = canonicalParentId;
-          return res;
-        }
-      }
-      return t;
-    });
-    const newTaskNoMap = buildTaskNoMap(projects, allUpdatedTasks);
-    const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, allUpdatedTasks);
-    const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, allUpdatedTasks, projects, oldTaskNoMap);
-
-    if (predUpdates.length > 0) {
-      const predMap = new Map(predUpdates.map(pu => [pu.id, pu]));
-      allUpdatedTasks = allUpdatedTasks.map(t => {
-        const pu = predMap.get(t.id);
-        return pu ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t;
-      });
-    }
-
-    const healed = healAllTasksPredecessors(allUpdatedTasks, projects);
-    if (healed.changedCount > 0) {
-      allUpdatedTasks = healed.updatedTasks;
-    }
-
-    // 0ms Optimistic UI update in Zustand
-    useAppStore.getState().optimisticUpdateTasks(allUpdatedTasks);
-
-    // Save to Firestore in batch with dirty-checking to eliminate redundant writes
-    const batch = writeBatch(db);
-    let writeCount = 0;
-
-    allUpdatedTasks.forEach(t => {
-      const orig = tasks.find(o => o.id === t.id);
-      
-      // Dirty check: Only write to Firestore if fields actually changed
-      const isNew = !orig;
-      const orderChanged = orig ? (orig as any).order !== (t as any).order : true;
-      const orderIndexChanged = orig ? orig.orderIndex !== t.orderIndex : true;
-      const codeChanged = orig ? orig.taskCodePhu !== t.taskCodePhu : true;
-      const predChanged = orig ? orig.predecessor !== t.predecessor : true;
-      const parentChanged = orig ? (orig.parentTaskId || null) !== (t.parentTaskId || null) : true;
-
-      if (isNew || orderChanged || orderIndexChanged || codeChanged || predChanged || parentChanged) {
-        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-        batch.update(docRef, {
-          order: (t as any).order,
-          orderIndex: t.orderIndex,
-          taskCodePhu: t.taskCodePhu,
-          predecessor: t.predecessor,
-          parentTaskId: t.parentTaskId || null,
-          parentId: t.parentTaskId || null,
-          updatedAt: t.updatedAt
-        });
-        writeCount++;
-      }
-    });
-
-    if (writeCount > 0) {
-      try {
-        await batch.commit();
-        useAppStore.getState().setToast({
-          title: "Success",
-          message: `Reordered task ${draggedTask.name}`
-        });
-      } catch (err) {
-        console.error("Task reorder error:", err);
-      }
-    }
-
-    handleTaskDragEnd();
-  };
-
-  return {
-    dragOverTaskId,
-    dropPosition,
-    draggingTaskIds,
-    handleTaskDragStart,
-    handleTaskDragOver,
-    handleContainerDragOver,
-    handleTaskDragLeave,
-    handleTaskDragEnd,
-    handleTaskDrop
   };
 }
 
@@ -122956,13 +122740,20 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       projectsList.find((p) => String(p.code || '').trim().toLowerCase() === strId.toLowerCase());
     const canonicalId = proj?.id ? String(proj.id).trim() : strId;
     const idAliases = new Set<string>([strId, canonicalId]);
-    if (proj && !proj.id && proj.code) {
-      idAliases.add(String(proj.code).trim());
+    if (proj?.code) {
+      const c = String(proj.code).trim();
+      idAliases.add(c);
+      idAliases.add(c.toLowerCase());
+      idAliases.add(c.toUpperCase());
+      idAliases.add(c.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-'));
+      idAliases.add(c.replace(/-/g, '–'));
+    }
+    if (proj?.id) {
+      idAliases.add(String(proj.id).trim());
     }
     const isCurrentlyExpanded = state.expandedProjectIds.some((id) => idAliases.has(String(id).trim()));
-    const next = isCurrentlyExpanded
-      ? state.expandedProjectIds.filter((id) => !idAliases.has(String(id).trim()))
-      : [...state.expandedProjectIds, canonicalId];
+    const remaining = state.expandedProjectIds.filter((id) => !idAliases.has(String(id).trim()));
+    const next = isCurrentlyExpanded ? remaining : [...remaining, canonicalId];
     return { expandedProjectIds: next };
   }),
   setExpandedProjectIds: (ids) => {
@@ -123284,6 +123075,7 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   zoomableImageSrc: null,
   setZoomableImageSrc: (zoomableImageSrc) => set({ zoomableImageSrc }),
 });
+
 
 ================================================================================
 FILE: src/store/storeSelectors.ts
@@ -130276,7 +130068,7 @@ export async function executeImportTasks({
 
   // Auto-expand affected projects in UI so user immediately sees imported tasks
   const curExpanded = useAppStore.getState().expandedProjectIds || [];
-  const affKeys = affectedProjects.flatMap(p => [p.id, p.code].filter(Boolean) as string[]);
+  const affKeys = affectedProjects.map(p => String(p.id || p.code || '')).filter(Boolean);
   useAppStore.getState().setExpandedProjectIds(Array.from(new Set([...curExpanded, ...affKeys])));
 
   // Persist affected projects to LocalDB (Dexie) in background and mark tasks_proj as loaded

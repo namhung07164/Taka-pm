@@ -107,13 +107,20 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       projectsList.find((p) => String(p.code || '').trim().toLowerCase() === strId.toLowerCase());
     const canonicalId = proj?.id ? String(proj.id).trim() : strId;
     const idAliases = new Set<string>([strId, canonicalId]);
-    if (proj && !proj.id && proj.code) {
-      idAliases.add(String(proj.code).trim());
+    if (proj?.code) {
+      const c = String(proj.code).trim();
+      idAliases.add(c);
+      idAliases.add(c.toLowerCase());
+      idAliases.add(c.toUpperCase());
+      idAliases.add(c.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-'));
+      idAliases.add(c.replace(/-/g, '–'));
+    }
+    if (proj?.id) {
+      idAliases.add(String(proj.id).trim());
     }
     const isCurrentlyExpanded = state.expandedProjectIds.some((id) => idAliases.has(String(id).trim()));
-    const next = isCurrentlyExpanded
-      ? state.expandedProjectIds.filter((id) => !idAliases.has(String(id).trim()))
-      : [...state.expandedProjectIds, canonicalId];
+    const remaining = state.expandedProjectIds.filter((id) => !idAliases.has(String(id).trim()));
+    const next = isCurrentlyExpanded ? remaining : [...remaining, canonicalId];
     return { expandedProjectIds: next };
   }),
   setExpandedProjectIds: (ids) => {

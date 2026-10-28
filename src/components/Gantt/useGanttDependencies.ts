@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Task, Project } from '../../types';
 import { DependencyLine, GanttTableRow } from './ganttTypes';
 import { computeAllTaskCodes } from '../../lib/ganttUtils';
@@ -179,6 +179,17 @@ export function useGanttDependencies({
   predecessorColWidth = 90,
 }: UseGanttDependenciesParams) {
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activeTooltip) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveTooltip(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTooltip]);
 
   const taskNoMap = useMemo(() => {
     const map = new Map<string, Task>();

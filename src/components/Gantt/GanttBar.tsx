@@ -106,61 +106,23 @@ export const GanttBar = React.memo(function GanttBar({
   const [isEditingPredecessor, setIsEditingPredecessor] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const lastMousePos = useRef({ x: 0, y: 0 });
-  const moveRafRef = useRef<number | null>(null);
   const isDraggingTooltipRef = useRef(false);
   const dragStartPos = useRef({ x: 0, y: 0 });
   const tooltipStartPos = useRef({ x: 0, y: 0 });
-  const hoverTimeoutRef = useRef<number | null>(null);
 
-  const handleBarMouseEnter = (e: React.MouseEvent) => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    setIsDismissed(false);
-    lastMousePos.current = { x: e.clientX, y: e.clientY };
+  const handleBarMouseEnter = () => {
     setIsHovered(true);
   };
 
   const handleBarMouseLeave = () => {
-    hoverTimeoutRef.current = window.setTimeout(() => {
-      setIsHovered(false);
-      setIsDismissed(false);
-    }, 200);
-  };
-
-  const handleTooltipMouseEnter = () => {
-    if (hoverTimeoutRef.current) {
-      clearTimeout(hoverTimeoutRef.current);
-      hoverTimeoutRef.current = null;
-    }
-    setIsHovered(true);
-  };
-
-  const handleTooltipMouseLeave = () => {
-    hoverTimeoutRef.current = window.setTimeout(() => {
-      setIsHovered(false);
-      setIsDismissed(false);
-    }, 150);
+    setIsHovered(false);
   };
 
   const handleCloseTooltip = React.useCallback(() => {
     setIsDismissed(true);
-    setIsHovered(false);
     setActiveTooltip(null);
     setIsEditingPredecessor(false);
   }, [setActiveTooltip]);
-
-  useEffect(() => {
-    return () => {
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-      }
-      if (moveRafRef.current !== null) {
-        cancelAnimationFrame(moveRafRef.current);
-      }
-    };
-  }, []);
 
   const isPinned = activeTooltip === id || isEditingPredecessor;
 
@@ -191,10 +153,10 @@ export const GanttBar = React.memo(function GanttBar({
   };
 
   useEffect(() => {
-    if ((isHovered || isPinned) && tooltipRef.current && !isDraggingTooltipRef.current) {
+    if (isPinned && tooltipRef.current && !isDraggingTooltipRef.current) {
       positionTooltip(tooltipRef.current, lastMousePos.current.x, lastMousePos.current.y);
     }
-  }, [isHovered, isPinned]);
+  }, [isPinned]);
 
   if (!dStart || !dEnd) {
     return null;
@@ -223,27 +185,9 @@ export const GanttBar = React.memo(function GanttBar({
             setIsDismissed(false);
             const nextPinned = activeTooltip !== id;
             setActiveTooltip(nextPinned ? id : null);
-            if (nextPinned && tooltipRef.current) {
-              positionTooltip(tooltipRef.current, e.clientX, e.clientY);
-            }
           }
         }}
         onMouseEnter={handleBarMouseEnter}
-        onMouseMove={(e) => {
-          if (!isPinned && !isDraggingTooltipRef.current) {
-            const clientX = e.clientX;
-            const clientY = e.clientY;
-            lastMousePos.current = { x: clientX, y: clientY };
-            if (moveRafRef.current === null) {
-              moveRafRef.current = requestAnimationFrame(() => {
-                if (tooltipRef.current) {
-                  positionTooltip(tooltipRef.current, lastMousePos.current.x, lastMousePos.current.y);
-                }
-                moveRafRef.current = null;
-              });
-            }
-          }
-        }}
         onMouseLeave={handleBarMouseLeave}
         className={cn(
           "absolute top-1.5 bottom-1.5 flex items-center transition-all cursor-pointer select-none group shadow-2xs before:absolute before:-inset-y-1.5 before:-inset-x-1 before:content-['']",
@@ -323,8 +267,8 @@ export const GanttBar = React.memo(function GanttBar({
         </div>
       )}
 
-      {/* Floating Tooltip via Portal */}
-      {!isDismissed && (isHovered || isPinned) && (
+      {/* Floating Tooltip via Portal - Only rendered on Click */}
+      {!isDismissed && isPinned && (
         <GanttBarTooltip
           id={id}
           label={label}
@@ -340,8 +284,6 @@ export const GanttBar = React.memo(function GanttBar({
           handlePointerDown={handlePointerDown}
           handlePointerMove={handlePointerMove}
           handlePointerUp={handlePointerUp}
-          onMouseEnter={handleTooltipMouseEnter}
-          onMouseLeave={handleTooltipMouseLeave}
           onClose={handleCloseTooltip}
         />
       )}

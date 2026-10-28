@@ -449,7 +449,7 @@ export async function executeImportTasks({
 
   // Auto-expand affected projects in UI so user immediately sees imported tasks
   const curExpanded = useAppStore.getState().expandedProjectIds || [];
-  const affKeys = affectedProjects.flatMap(p => [p.id, p.code].filter(Boolean) as string[]);
+  const affKeys = affectedProjects.map(p => String(p.id || p.code || '')).filter(Boolean);
   useAppStore.getState().setExpandedProjectIds(Array.from(new Set([...curExpanded, ...affKeys])));
 
   // Persist affected projects to LocalDB (Dexie) in background and mark tasks_proj as loaded

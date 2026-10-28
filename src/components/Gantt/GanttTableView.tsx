@@ -237,12 +237,7 @@ export function GanttTableView({
     }
   };
 
-  const showStart = visibleColumns.includes('start');
-  const showFinish = visibleColumns.includes('finish');
-  const showParty = visibleColumns.includes('party');
-  const showDuration = visibleColumns.includes('duration');
-  const showPredecessor = visibleColumns.includes('predecessor');
-
+  const showStart = visibleColumns.includes('start'), showFinish = visibleColumns.includes('finish'), showParty = visibleColumns.includes('party'), showDuration = visibleColumns.includes('duration'), showPredecessor = visibleColumns.includes('predecessor');
   const startColWidth = colWidths?.start ?? 85; const finishColWidth = colWidths?.finish ?? 85; const partyColWidth = colWidths?.party ?? 80; const durationColWidth = colWidths?.duration ?? 60; const predecessorColWidth = colWidths?.predecessor ?? 90;
 
   const taskCodeMap = useMemo(() => {
@@ -336,6 +331,11 @@ export function GanttTableView({
         ref={mainScrollRef}
         onScroll={handleCombinedMainScroll}
         onPointerDown={handlePointerDown}
+        onClick={(e) => {
+          if (activeTooltip && !(e.target as HTMLElement).closest('.cursor-pointer, button, input')) {
+            setActiveTooltip(null);
+          }
+        }}
         className={cn(
           "flex-grow overflow-auto relative flex min-h-0",
           isPanning ? "cursor-grabbing select-none" : "cursor-grab"
