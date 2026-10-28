@@ -15672,7 +15672,12 @@ export function buildCsvPreviewData({
             .replace(/[^a-z0-9]/g, '');
           return clean.includes('subtaskcode') || clean.includes('taskcodephu') || clean.includes('subtask');
         });
-        let subTaskCode = tcKey ? taskDef[tcKey] : '';
+        const mappedSubTaskCode = constantMapping['Sub-task code'] || proj[mapping['Sub-task code']];
+        let subTaskCode =
+          mappedSubTaskCode !== undefined && mappedSubTaskCode !== null && String(mappedSubTaskCode).trim() !== ''
+            ? String(mappedSubTaskCode).trim()
+            : (tcKey ? taskDef[tcKey] : '');
+
         if (
           keepOriginal['Sub-task code'] ||
           keepOriginal['Task code phụ']
@@ -15688,7 +15693,7 @@ export function buildCsvPreviewData({
           String(subTaskCode).trim() !== ''
         ) {
           const strVal = String(subTaskCode).trim();
-          subTaskCode = projCode && !strVal.includes('#') ? `${projCode}#${strVal}` : strVal;
+          subTaskCode = projCode && !strVal.includes('#') && !strVal.startsWith(projCode) ? `${projCode}#${strVal}` : strVal;
         } else {
           subTaskCode = projCode ? `${projCode}#${taskIndex}` : String(taskIndex);
         }
@@ -15697,7 +15702,12 @@ export function buildCsvPreviewData({
           const clean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
           return clean.includes('parenttaskcode') || clean.includes('parenttask') || clean.includes('taskme');
         });
-        let parentTaskCode = ptKey ? taskDef[ptKey] : '';
+        const mappedParentTaskCode = constantMapping['Parent task code'] || proj[mapping['Parent task code']];
+        let parentTaskCode =
+          mappedParentTaskCode !== undefined && mappedParentTaskCode !== null && String(mappedParentTaskCode).trim() !== ''
+            ? String(mappedParentTaskCode).trim()
+            : (ptKey ? taskDef[ptKey] : '');
+
         if (!keepOriginal['Parent task code']) {
           if (parentTaskCode !== undefined && parentTaskCode !== null && String(parentTaskCode).trim() !== '') {
             const strVal = String(parentTaskCode).trim();
@@ -15709,6 +15719,8 @@ export function buildCsvPreviewData({
           } else {
             parentTaskCode = '';
           }
+        } else {
+          parentTaskCode = parentTaskCode !== undefined && parentTaskCode !== null ? String(parentTaskCode).trim() : '';
         }
 
         let start = taskDef['start'] || '';
@@ -15731,34 +15743,56 @@ export function buildCsvPreviewData({
         if (typeof finish === 'number') finish = formatExcelDate(finish);
 
         const party = taskDef['party'] || '';
+        const durKey = Object.keys(taskDef).find((k) => k.toLowerCase().trim() === 'duration');
         const duration =
-          taskDef['duration'] !== undefined ? taskDef['duration'] : '';
-        const predKey = Object.keys(taskDef).find(
-          (k) => k.toLowerCase().replace(/\s+/g, '') === 'predecessor'
-        );
+          durKey && taskDef[durKey] !== undefined && taskDef[durKey] !== null
+            ? String(taskDef[durKey])
+            : (taskDef['duration'] !== undefined && taskDef['duration'] !== null ? String(taskDef['duration']) : '');
+
+        const predKey = Object.keys(taskDef).find((k) => {
+          const clean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return clean.includes('predecessor') || clean === 'tiennhiem';
+        });
         const templatePred = predKey ? taskDef[predKey] : '';
-        const mappedPred =
-          constantMapping['predecessor'] || proj[mapping['predecessor']];
+        const constPred = constantMapping['predecessor'];
+        const projPred = mapping['predecessor'] ? proj[mapping['predecessor']] : '';
         let pred =
-          mappedPred !== undefined &&
-          mappedPred !== null &&
-          String(mappedPred).trim() !== ''
-            ? mappedPred
-            : templatePred;
-        if (
-          !keepOriginal['predecessor'] &&
-          pred !== undefined &&
-          pred !== null &&
-          String(pred).trim() !== ''
-        ) {
-          pred = projCode
-            ? `${projCode}-${String(pred).trim()}`
-            : String(pred).trim();
+          constPred !== undefined && constPred !== null && String(constPred).trim() !== ''
+            ? constPred
+            : templatePred !== undefined && templatePred !== null && String(templatePred).trim() !== ''
+            ? templatePred
+            : projPred;
+
+        if (pred !== undefined && pred !== null && String(pred).trim() !== '') {
+          const strPred = String(pred).trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim();
+          if (keepOriginal['predecessor']) {
+            pred = strPred;
+          } else if (projCode) {
+            pred = strPred
+              .split(/[,;]+/)
+              .map((part) => {
+                let cleanPart = part.trim();
+                if (!cleanPart) return '';
+                cleanPart = cleanPart.replace(/^([A-Za-z0-9_-]+)-(\d+)(\s*(?:FS|SS|FF|SF).*)?$/i, '$1#$2$3');
+                if (cleanPart.includes('#') || cleanPart.toLowerCase().startsWith(String(projCode).toLowerCase())) {
+                  return cleanPart;
+                }
+                if (/^\d+/.test(cleanPart)) {
+                  return `${projCode}#${cleanPart}`;
+                }
+                return cleanPart;
+              })
+              .filter(Boolean)
+              .join(', ');
+          } else {
+            pred = strPred;
+          }
         }
+        const mappedDelegation = constantMapping['delegation'] || proj[mapping['delegation']];
         const delegation =
-          taskDef['delegation'] !== undefined
-            ? taskDef['delegation']
-            : constantMapping['delegation'] || 'true';
+          mappedDelegation !== undefined && mappedDelegation !== null && String(mappedDelegation).trim() !== ''
+            ? String(mappedDelegation).trim()
+            : (taskDef['delegation'] !== undefined ? String(taskDef['delegation']) : 'true');
         const comments =
           taskDef['comments'] !== undefined
             ? taskDef['comments']
@@ -15807,6 +15841,7 @@ export function buildCsvPreviewData({
 FILE: src/components/CsvExportParts/csvExportProcessing.ts
 ================================================================================
 import { TAB_CONFIG } from './csvExportTypes';
+import { METHOD_SHEET_ROWS, buildMassTaskExportRows } from './csvMassTaskBuilder';
 
 export const formatDateTime = (val: any, colName: string) => {
   if (!val && val !== 0) return '';
@@ -15871,11 +15906,29 @@ export const getCellValue = (
 ) => {
   if (!row || typeof row !== 'object') return '';
 
-  let val = constantMapping[colName] || row[mapping[colName]];
+  let val = constantMapping[colName] || (mapping[colName] ? row[mapping[colName]] : undefined);
+  if (val === undefined || val === null || String(val) === '') {
+    const cleanTarget = colName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const matchedKey = Object.keys(row).find((k) => {
+      const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanK === cleanTarget) return true;
+      if (cleanTarget === 'predecessor' && (cleanK.includes('predecessor') || cleanK === 'tiennhiem')) return true;
+      if (cleanTarget === 'subtaskcode' && (cleanK.includes('subtask') || cleanK.includes('taskcodephu'))) return true;
+      if (cleanTarget === 'parenttaskcode' && (cleanK.includes('parenttask') || cleanK.includes('taskme'))) return true;
+      return false;
+    });
+    if (matchedKey !== undefined) {
+      val = row[matchedKey];
+    }
+  }
 
   if (activeTab === 'task') {
     const projCode =
-      constantMapping['projectCode'] || row[mapping['projectCode']] || '';
+      constantMapping['projectCode'] ||
+      (mapping['projectCode'] ? row[mapping['projectCode']] : undefined) ||
+      row['projectCode'] ||
+      row['Project Code'] ||
+      '';
 
     if (colName === 'Sub-task code') {
       if (keepOriginal['Sub-task code'] && val !== undefined && val !== null && String(val).trim() !== '') {
@@ -15900,9 +15953,28 @@ export const getCellValue = (
           val = strVal;
         }
       }
-    } else if (colName.toLowerCase() === 'predecessor' && !keepOriginal[colName]) {
+    } else if (colName.toLowerCase() === 'predecessor') {
       if (val !== undefined && val !== null && String(val).trim() !== '') {
-        val = `${projCode}-${val}`;
+        const cleanedRaw = String(val).trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim();
+        if (keepOriginal[colName]) {
+          val = cleanedRaw;
+        } else {
+          val = cleanedRaw
+            .split(/[,;]+/)
+            .map((part) => {
+              let cleanPart = part.trim();
+              if (!cleanPart) return '';
+              cleanPart = cleanPart.replace(/^([A-Za-z0-9_-]+)-(\d+)(\s*(?:FS|SS|FF|SF).*)?$/i, '$1#$2$3');
+              if (projCode && !cleanPart.includes('#') && !cleanPart.toLowerCase().startsWith(String(projCode).toLowerCase())) {
+                if (/^\d+/.test(cleanPart)) {
+                  return `${projCode}#${cleanPart}`;
+                }
+              }
+              return cleanPart;
+            })
+            .filter(Boolean)
+            .join(', ');
+        }
       }
     }
   }
@@ -16012,20 +16084,7 @@ export async function executeCsvExport({
 
       const finalRows = [...headerRows];
       Object.keys(rowsByLevel).forEach((level) => {
-        finalRows.push([
-          level,
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          'Subtotal',
-          '',
-          '',
-          '',
-          '',
-        ]);
+        finalRows.push([level, '', '', '', '', '', '', 'Subtotal', '', '', '', '']);
         rowsByLevel[level].forEach((r) => finalRows.push(r));
       });
 
@@ -16039,207 +16098,22 @@ export async function executeCsvExport({
       return;
     }
 
-    const finalJson: any[] = [];
-    for (const proj of excelData) {
-      const projStore = getCellValue(
-        proj,
-        'store',
-        activeTab,
-        mapping,
-        constantMapping,
-        keepOriginal,
-        unitSizeMap
-      );
-      const projLocation = getCellValue(
-        proj,
-        'location',
-        activeTab,
-        mapping,
-        constantMapping,
-        keepOriginal,
-        unitSizeMap
-      );
-      const projCode = getCellValue(
-        proj,
-        'projectCode',
-        activeTab,
-        mapping,
-        constantMapping,
-        keepOriginal,
-        unitSizeMap
-      );
-      const projYear =
-        getCellValue(
-          proj,
-          'projectYear',
-          activeTab,
-          mapping,
-          constantMapping,
-          keepOriginal,
-          unitSizeMap
-        ) ||
-        getCellValue(
-          proj,
-          'YEAR',
-          activeTab,
-          mapping,
-          constantMapping,
-          keepOriginal,
-          unitSizeMap
-        );
-
-      let taskIndex = 0;
-      for (const taskDef of templateData) {
-        taskIndex++;
-        const taskName = taskDef['Task name'] || '';
-
-        const tcKey = Object.keys(taskDef).find((k) => {
-          const clean = k
-            .toLowerCase()
-            .replace(/á»¥/g, 'ụ')
-            .replace(/[^a-z0-9]/g, '');
-          return clean.includes('subtaskcode') || clean.includes('taskcodephu') || clean.includes('subtask');
-        });
-        let subTaskCode = tcKey ? taskDef[tcKey] : '';
-        if (
-          keepOriginal['Sub-task code'] ||
-          keepOriginal['Task code phụ']
-        ) {
-          if (subTaskCode !== undefined && subTaskCode !== null && String(subTaskCode).trim() !== '') {
-            subTaskCode = String(subTaskCode).trim();
-          } else {
-            subTaskCode = projCode ? `${projCode}#${taskIndex}` : String(taskIndex);
-          }
-        } else if (
-          subTaskCode !== undefined &&
-          subTaskCode !== null &&
-          String(subTaskCode).trim() !== ''
-        ) {
-          const strVal = String(subTaskCode).trim();
-          subTaskCode = projCode && !strVal.includes('#') ? `${projCode}#${strVal}` : strVal;
-        } else {
-          subTaskCode = projCode ? `${projCode}#${taskIndex}` : String(taskIndex);
-        }
-
-        const ptKey = Object.keys(taskDef).find((k) => {
-          const clean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
-          return clean.includes('parenttaskcode') || clean.includes('parenttask') || clean.includes('taskme');
-        });
-        let parentTaskCode = ptKey ? taskDef[ptKey] : '';
-        if (!keepOriginal['Parent task code']) {
-          if (parentTaskCode !== undefined && parentTaskCode !== null && String(parentTaskCode).trim() !== '') {
-            const strVal = String(parentTaskCode).trim();
-            if (projCode && !strVal.includes('#') && !strVal.includes('-') && !strVal.startsWith(projCode)) {
-              parentTaskCode = `${projCode}#${strVal}`;
-            } else {
-              parentTaskCode = strVal;
-            }
-          } else {
-            parentTaskCode = '';
-          }
-        }
-
-        let start = taskDef['start'] || '';
-        let finish = taskDef['finish'] || '';
-
-        const formatExcelDate = (val: any) => {
-          if (typeof val !== 'number') return val;
-          const date = new Date((val - 25569) * 86400 * 1000);
-          return (
-            date.toLocaleDateString('en-US') +
-            ' ' +
-            date.toLocaleTimeString('en-US', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            })
-          );
-        };
-        if (typeof start === 'number') start = formatExcelDate(start);
-        if (typeof finish === 'number') finish = formatExcelDate(finish);
-
-        const party = taskDef['party'] || '';
-        const duration =
-          taskDef['duration'] !== undefined ? taskDef['duration'] : '';
-        const predKey = Object.keys(taskDef).find(
-          (k) => k.toLowerCase().replace(/\s+/g, '') === 'predecessor'
-        );
-        const templatePred = predKey ? taskDef[predKey] : '';
-        const mappedPred =
-          constantMapping['predecessor'] || proj[mapping['predecessor']];
-        let pred =
-          mappedPred !== undefined &&
-          mappedPred !== null &&
-          String(mappedPred).trim() !== ''
-            ? mappedPred
-            : templatePred;
-        if (
-          !keepOriginal['predecessor'] &&
-          pred !== undefined &&
-          pred !== null &&
-          String(pred).trim() !== ''
-        ) {
-          pred = projCode ? `${projCode}-${String(pred).trim()}` : String(pred).trim();
-        }
-        const delegation =
-          taskDef['delegation'] !== undefined
-            ? taskDef['delegation']
-            : constantMapping['delegation'] || 'true';
-        const comments =
-          taskDef['comments'] !== undefined
-            ? taskDef['comments']
-            : constantMapping['comments'] || '';
-
-        finalJson.push({
-          store: projStore,
-          location: projLocation,
-          projectYear: projYear,
-          projectCode: projCode,
-          'Sub-task code': subTaskCode,
-          'Task name': taskName,
-          'Parent task code': parentTaskCode,
-          start: start,
-          finish: finish,
-          duration: duration,
-          party: party,
-          predecessor: pred,
-          delegation: delegation,
-          comments: comments,
-        });
-      }
-    }
+    const finalJson = buildMassTaskExportRows({
+      excelData,
+      templateData,
+      activeTab,
+      mapping,
+      constantMapping,
+      keepOriginal,
+      unitSizeMap,
+      getCellValue,
+    });
 
     const wb = xlsx.utils.book_new();
     const wsData = xlsx.utils.json_to_sheet(finalJson, { header: targetCols });
     xlsx.utils.book_append_sheet(wb, wsData, 'Data');
-
-    const methodRows = [
-      ['QUY ĐỊNH & HƯỚNG DẪN IMPORT DATA'],
-      [],
-      ['Cột', 'Quy tắc / Hướng dẫn'],
-      [
-        'Predecessor',
-        "Nếu không check 'Giữ nguyên', hệ thống sẽ tự ghép với Project Code. (VD: 23 thành VN26-23). Nếu nhiều task cách nhau bằng dấu phẩy.",
-      ],
-      ['Task code phụ', 'Hệ thống tự động ghép với Project Code ở đầu.'],
-      [
-        'Comments',
-        "Để xóa nội dung comments hiện tại trên hệ thống, bạn hãy điền một khoảng trắng (Space) vào ô này, hoặc nhập khoảng trắng ở 'Giá trị tĩnh'.",
-      ],
-      [
-        'Start / Finish',
-        'Định dạng chuẩn: MM/DD/YYYY HH:mm. Nếu không có giờ, Start mặc định là 22:00, Finish là 10:00.',
-      ],
-      ['Delegation', "Mặc định nếu để trống sẽ là 'true'."],
-      [],
-      [
-        'LƯU Ý QUAN TRỌNG:',
-        "Hệ thống Takashimaya hiện tại chỉ import được file đuôi .csv. Bạn hãy chỉnh sửa trên file này, sau đó mở Sheet 'Data' và chọn Save As -> định dạng CSV (Comma delimited) trước khi import nhé!",
-      ],
-    ];
-    const wsMethod = xlsx.utils.aoa_to_sheet(methodRows);
+    const wsMethod = xlsx.utils.aoa_to_sheet(METHOD_SHEET_ROWS);
     xlsx.utils.book_append_sheet(wb, wsMethod, 'Method');
-
     xlsx.writeFile(wb, `${TAB_CONFIG[activeTab].fileNamePrefix}.xlsx`);
   } else {
     const exportJson = excelData.map((row, rowIndex) => {
@@ -16262,38 +16136,11 @@ export async function executeCsvExport({
     const wb = xlsx.utils.book_new();
     const wsData = xlsx.utils.json_to_sheet(exportJson, { header: targetCols });
     xlsx.utils.book_append_sheet(wb, wsData, 'Data');
-
-    const methodRows = [
-      ['QUY ĐỊNH & HƯỚNG DẪN IMPORT DATA'],
-      [],
-      ['Cột', 'Quy tắc / Hướng dẫn'],
-      [
-        'Predecessor',
-        "Nếu không check 'Giữ nguyên', hệ thống sẽ tự ghép với Project Code. (VD: 23 thành VN26-23). Nếu nhiều task cách nhau bằng dấu phẩy.",
-      ],
-      ['Task code phụ', 'Hệ thống tự động ghép với Project Code ở đầu.'],
-      [
-        'Comments',
-        "Để xóa nội dung comments hiện tại trên hệ thống, bạn hãy điền một khoảng trắng (Space) vào ô này, hoặc nhập khoảng trắng ở 'Giá trị tĩnh'.",
-      ],
-      [
-        'Start / Finish',
-        'Định dạng chuẩn: MM/DD/YYYY HH:mm. Nếu không có giờ, Start mặc định là 22:00, Finish là 10:00.',
-      ],
-      ['Delegation', "Mặc định nếu để trống sẽ là 'true'."],
-      [],
-      [
-        'LƯU Ý QUAN TRỌNG:',
-        "Hệ thống Takashimaya hiện tại chỉ import được file đuôi .csv. Bạn hãy chỉnh sửa trên file này, sau đó mở Sheet 'Data' và chọn Save As -> định dạng CSV (Comma delimited) trước khi import nhé!",
-      ],
-    ];
-    const wsMethod = xlsx.utils.aoa_to_sheet(methodRows);
+    const wsMethod = xlsx.utils.aoa_to_sheet(METHOD_SHEET_ROWS);
     xlsx.utils.book_append_sheet(wb, wsMethod, 'Method');
-
     xlsx.writeFile(wb, `${TAB_CONFIG[activeTab].fileNamePrefix}.xlsx`);
   }
 }
-
 
 ================================================================================
 FILE: src/components/CsvExportParts/csvExportTypes.ts
@@ -16647,16 +16494,17 @@ export function useCsvExportState() {
         const headers = Object.keys(jsonData[0] || {});
         setExcelHeaders(headers);
 
-        if (!isLocked) {
-          const newMapping = { ...(mapping || {}) };
-          TAB_CONFIG[activeTab].columns.forEach((targetCol: string) => {
+        const newMapping = { ...(mapping || {}) };
+        TAB_CONFIG[activeTab].columns.forEach((targetCol: string) => {
+          const currentMapped = newMapping[targetCol];
+          if (!isLocked || !currentMapped || !headers.includes(currentMapped)) {
             const match = headers.find(
               (h) => h && h.toLowerCase().includes(targetCol.toLowerCase())
             );
             if (match) newMapping[targetCol] = match;
-          });
-          setMapping(newMapping);
-        }
+          }
+        });
+        setMapping(newMapping);
       } else {
         setExcelHeaders([]);
       }
@@ -23154,45 +23002,34 @@ export async function executeImportTasks({
       }
       delete t.importComment;
 
+      const defaultToday = getDefaultDatetimeLocal();
+      const csvPred = t.predecessor !== undefined ? String(t.predecessor || '').trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim() : undefined;
       if (!existing) {
-        const defaultToday = getDefaultDatetimeLocal();
         if (!t.start) t.start = defaultToday;
         if (!t.finish) t.finish = t.start || defaultToday;
         if (!t.baselineStart) t.baselineStart = t.start || defaultToday;
         if (!t.baselineFinish) t.baselineFinish = t.finish || defaultToday;
-        if (t.duration === undefined || t.duration === null || String(t.duration).trim() === '') {
-          t.duration = "0";
-        }
+        if (t.duration === undefined || t.duration === null || String(t.duration).trim() === '') t.duration = "0";
+      } else {
+        if (!t.start) t.start = existing.start || defaultToday;
+        if (!t.finish) t.finish = existing.finish || t.start || defaultToday;
       }
+      if (csvPred !== undefined) t.predecessor = csvPred;
 
       const hasImportedParentRef = Boolean(t.parentTaskId || t.parentTaskCode || t.parentTaskName);
       const finalTask: Task = existing
         ? {
-            ...existing,
-            ...t,
-            id,
+            ...existing, ...t, id,
+            predecessor: csvPred !== undefined ? (csvPred || existing.predecessor || '') : (existing.predecessor || ''),
             parentTaskId: hasImportedParentRef ? (t.parentTaskId || existing.parentTaskId) : undefined,
-            predecessorTaskIds: undefined,
-            predecessors: undefined,
-            isModularParent: false,
-            comments: updatedComments,
-            orderIndex: taskOrderIndex,
-            taskCodePhu,
-            durationManual: true,
-            finishManual: false,
-            startManual: false,
-            updatedAt: new Date().toISOString()
+            predecessorTaskIds: undefined, predecessors: undefined, isModularParent: false,
+            comments: updatedComments, orderIndex: taskOrderIndex, taskCodePhu,
+            durationManual: true, finishManual: false, startManual: false, updatedAt: new Date().toISOString()
           }
         : {
-            ...t,
-            id,
-            comments: updatedComments,
-            orderIndex: taskOrderIndex,
-            taskCodePhu,
-            durationManual: true,
-            finishManual: false,
-            startManual: false,
-            updatedAt: new Date().toISOString()
+            ...t, id, predecessor: csvPred || '',
+            comments: updatedComments, orderIndex: taskOrderIndex, taskCodePhu,
+            durationManual: true, finishManual: false, startManual: false, updatedAt: new Date().toISOString()
           };
       delete (finalTask as any)._isVirtualSummary;
 
@@ -23246,25 +23083,26 @@ export async function executeImportTasks({
       existingTasksById.set(finalTask.id, finalTask);
 
       const existingIndex = tasksToImport.findIndex(tk => tk.id === finalTask.id);
-      if (existingIndex >= 0) {
-        tasksToImport[existingIndex] = finalTask;
-      } else {
-        tasksToImport.push(finalTask);
-      }
+      if (existingIndex >= 0) tasksToImport[existingIndex] = finalTask;
+      else tasksToImport.push(finalTask);
     });
   });
 
   // 4. Resolve parent-child hierarchy across imported tasks and existing tasks
   resolveParentChildHierarchy(tasksToImport, allInitialTasks);
+  const importedPredById = new Map<string, string>();
+  tasksToImport.forEach(t => {
+    if (t.predecessor && String(t.predecessor).trim()) importedPredById.set(t.id, String(t.predecessor).trim());
+  });
 
   // 5. Prepare missing delegations BEFORE rolling up parent tasks & project summaries
-  // so Desktop, Firestore, and all devices compute 100% identical runningStatus & progress
   const commitNowIso = new Date().toISOString();
   const activeUser = useAppStore.getState().currentUser || currentUser;
   const precomputedDelegations = prepareMissingDelegationsForTasks(tasksToImport, activeUser, commitNowIso);
 
-  // 6. Calculate dates from predecessors and duration
-  useAppStore.getState().optimisticUpdateTasks(tasksToImport);
+  // 6. Sync hydrated context tasks + imported tasks into Zustand so cross-project predecessors resolve
+  const hydratedRealTasks = allInitialTasks.filter(t => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary);
+  useAppStore.getState().optimisticUpdateTasks([...hydratedRealTasks, ...tasksToImport]);
 
   const allCurrentTasks = useAppStore.getState().tasks;
   const tasksMapAfterCalc = new Map<string, Task>();
@@ -23284,16 +23122,21 @@ export async function executeImportTasks({
   const tasksToSaveIds = new Set<string>();
   calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
   updatedParents.forEach(p => {
-    if (p.id && !String(p.id).startsWith('ts_')) {
-      tasksToSaveIds.add(p.id);
-    }
+    if (p.id && !String(p.id).startsWith('ts_')) tasksToSaveIds.add(p.id);
   });
   const finalTasksToSave: Task[] = [];
   tasksToSaveIds.forEach(tid => {
     if (String(tid).startsWith('ts_')) return;
     const tk = allTasksMap.get(tid);
     if (tk) {
-      const stamped = { ...tk, updatedAt: commitNowIso };
+      const explicitPred = importedPredById.get(tid);
+      const stamped: Task = {
+        ...tk,
+        ...(!tk.isModularParent && explicitPred && (!tk.predecessor || !String(tk.predecessor).trim())
+          ? { predecessor: explicitPred }
+          : {}),
+        updatedAt: commitNowIso,
+      };
       delete (stamped as any)._isVirtualSummary;
       allTasksMap.set(tid, stamped);
       finalTasksToSave.push(stamped);
@@ -23370,7 +23213,6 @@ export async function executeImportTasks({
 
   return { count: tasksToImport.length, projectCount: affectedProjects.length };
 }
-
 
 ================================================================================
 FILE: src/components/DetailTabParts/detailTypes.ts
@@ -129240,23 +129082,20 @@ export const ScreenshotCropModal: React.FC<ScreenshotCropModalProps> = ({
 ================================================================================
 FILE: src/lib/taskImportService.ts
 ================================================================================
-import { Task, Project, DelegationGroup } from '../types';
+import { Task, Project, DelegationGroup, TakaDeltaItem } from '../types';
 import { 
   parsePredecessors, 
   buildTaskNoMap, 
   calculateTaskDatesFromPredecessors, 
   addDays 
 } from './ganttUtils';
-import { parseDateTime, formatToDatetimeLocal, generateId } from './utils';
+import { generateId } from './utils';
 import { calculateProjectComputedDates, syncProjectDatesToFirestore } from './projectDatesService';
-import { findAffectedProjects } from './taskStateService';
-import { doc } from 'firebase/firestore';
-import { db, APP_ID, writeBatch } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { recordBatchDeltas } from './deltaSyncService';
-import { markExplicitDelta } from './autoDeltaQueue';
 import { rollupParentTaskDatesAndStatus } from './taskRollupService';
 import { applyParentPredecessorsToTaskTree } from './parentTaskPredecessorService';
+import type { MassWriteOp } from './massBatchWriteEngine';
 
 /**
  * Normalizes a duration value (strips trailing 'd' or 'days', ensures valid number string).
@@ -129323,7 +129162,13 @@ export function calculateDatesFromPredecessorsAndDuration(
       const current = workingMap.get(t.id);
       if (!current) continue;
 
-      const predString = current.predecessor ? String(current.predecessor).trim() : '';
+      const predString = current.predecessor
+        ? String(current.predecessor).trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim()
+        : '';
+      if (predString !== (current.predecessor || '')) {
+        current.predecessor = predString;
+        workingMap.set(current.id, current);
+      }
       if (!predString) {
         // If no predecessor, ensure finish is consistent with start and duration if finish is missing or invalid
         if (current.start && (!current.finish || current.finish === current.start)) {
@@ -129347,6 +129192,20 @@ export function calculateDatesFromPredecessorsAndDuration(
         { ...current, predecessorTaskIds: undefined, predecessors: undefined }
       );
       if (!parsedPreds.length) continue;
+
+      const resolvedIds = parsedPreds.map(p => p.task?.id).filter((id): id is string => Boolean(id));
+      const prevIdsStr = (current.predecessorTaskIds || []).join(',');
+      if (resolvedIds.length > 0 && resolvedIds.join(',') !== prevIdsStr) {
+        current.predecessorTaskIds = resolvedIds;
+        current.predecessors = parsedPreds
+          .filter(p => Boolean(p.task?.id))
+          .map(p => ({
+            taskId: p.task.id,
+            type: (p.type || 'FS') as any,
+            lagDays: p.lagSign === '-' ? -(p.lagValue || 0) : (p.lagValue || 0),
+          }));
+        workingMap.set(current.id, current);
+      }
 
       const calcResult = calculateTaskDatesFromPredecessors(
         current,
@@ -129385,7 +129244,8 @@ export function rollupParentTaskDates(
   const { updatedTasks: tasksWithParentPreds, updatedParents: parentPredUpdates } =
     applyParentPredecessorsToTaskTree(allTasks, safeProjects);
 
-  const rolledUpList = rollupParentTaskDatesAndStatus(tasksWithParentPreds);
+  const delegationGroups = useAppStore.getState?.()?.delegationGroups || [];
+  const rolledUpList = rollupParentTaskDatesAndStatus(tasksWithParentPreds, delegationGroups);
   const taskMap = new Map<string, Task>();
   const updatedParents: Task[] = [];
   const parentPredMap = new Map<string, Task>();
@@ -129420,97 +129280,139 @@ export function rollupParentTaskDates(
 }
 
 /**
- * Saves tasks to LocalDB (Dexie) immediately and commits to Firestore in safe operation-counted chunks
- * (max 200 ops per batch) with Offline Queue fallback and multi-device upsert deltas.
+ * Prepares missing DelegationGroup records for imported tasks that have `delegation = true`
+ * without overwriting already-existing delegation groups in store/Firestore.
  */
-export async function batchSaveTasksToFirestore(
+export function prepareMissingDelegationsForTasks(
   tasksToSave: Task[],
-  currentUser?: { id?: string; username?: string }
-): Promise<void> {
-  if (!tasksToSave || tasksToSave.length === 0) return;
-
-  const now = new Date().toISOString();
-  const dateStr = now.substring(0, 10);
+  currentUser?: { id?: string; username?: string },
+  nowIso: string = new Date().toISOString()
+): { newDelegations: DelegationGroup[]; taskDelegationMap: Map<string, DelegationGroup> } {
+  const dateStr = nowIso.substring(0, 10);
   const activeUserId =
     currentUser?.id && currentUser.id !== 'guest'
       ? currentUser.id
       : currentUser?.username || 'system';
 
-  const generatedDelegations: DelegationGroup[] = [];
+  const existingDel = useAppStore.getState().delegationGroups || [];
+  const existingDelMap = new Map<string, DelegationGroup>(existingDel.map((d) => [d.id, d]));
+
+  const newDelegations: DelegationGroup[] = [];
   const taskDelegationMap = new Map<string, DelegationGroup>();
 
   tasksToSave.forEach((t) => {
-    if (t.delegation) {
-      const rawParty = t.party && t.party.trim() ? t.party.trim() : '';
-      const parsedParty =
-        rawParty
-          .split(/[,;/+]+/)
-          .map((s) => s.trim())
-          .filter(Boolean)[0] || rawParty;
-      if (parsedParty) {
-        const deterministicGroupId = `del_${t.id}`;
-        const delGroup: DelegationGroup = {
-          id: deterministicGroupId,
-          parentTaskId: t.id,
-          name: t.name || 'Delegated Task',
-          ...(t.projectId ? { projectId: t.projectId } : {}),
-          projectCode: t.projectCode,
-          projectStore: t.projectStore,
-          projectYear:
-            t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))
-              ? Number(t.projectYear)
-              : new Date().getFullYear(),
-          subTasks: [
-            {
-              id: generateId(),
-              name: '',
-              comments: '',
-              status: 'Assigned',
-              delegationStatus: 'Assigned',
-              priority: 'Mid',
-              party: parsedParty,
-              startAct: dateStr,
-              finishAct: dateStr,
-              updatedAt: now,
-            },
-          ],
-          updatedAt: now,
-          createdBy: activeUserId,
-        };
-        generatedDelegations.push(delGroup);
-        taskDelegationMap.set(t.id, delGroup);
-      }
+    if (!t.delegation) return;
+    const deterministicGroupId = `del_${t.id}`;
+    // Preserve existing delegation group if it already exists so subtask statuses are never reset
+    if (existingDelMap.has(deterministicGroupId)) {
+      return;
+    }
+    const rawParty = t.party && t.party.trim() ? t.party.trim() : '';
+    const parsedParty =
+      rawParty
+        .split(/[,;/+]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)[0] || rawParty;
+    if (parsedParty) {
+      const delGroup: DelegationGroup = {
+        id: deterministicGroupId,
+        parentTaskId: t.id,
+        name: t.name || 'Delegated Task',
+        ...(t.projectId ? { projectId: t.projectId } : {}),
+        projectCode: t.projectCode,
+        projectStore: t.projectStore,
+        projectYear:
+          t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))
+            ? Number(t.projectYear)
+            : new Date().getFullYear(),
+        subTasks: [
+          {
+            id: generateId(),
+            name: '',
+            comments: '',
+            status: 'Assigned',
+            delegationStatus: 'Assigned',
+            priority: 'Mid',
+            party: parsedParty,
+            startAct: dateStr,
+            finishAct: dateStr,
+            updatedAt: nowIso,
+          },
+        ],
+        updatedAt: nowIso,
+        createdBy: activeUserId,
+      };
+      newDelegations.push(delGroup);
+      taskDelegationMap.set(t.id, delGroup);
+      existingDelMap.set(deterministicGroupId, delGroup);
     }
   });
 
-  // 1. Persist immediately to local Dexie database & Zustand delegations so local cache is 100% synced
-  try {
-    const { bulkPersistTasks, bulkPersistDelegations } = await import('./localDb');
-    await bulkPersistTasks(tasksToSave).catch(() => {});
-    if (generatedDelegations.length > 0) {
-      await bulkPersistDelegations(generatedDelegations).catch(() => {});
+  if (newDelegations.length > 0) {
+    useAppStore.getState().setDelegationGroups(Array.from(existingDelMap.values()));
+  }
+
+  return { newDelegations, taskDelegationMap };
+}
+
+/**
+ * Saves tasks (and optional project summary ops) to LocalDB (Dexie) in background and commits
+ * to Firestore + Delta bus in a single unified parallel operation.
+ */
+export async function batchSaveTasksToFirestore(
+  tasksToSave: Task[],
+  currentUser?: { id?: string; username?: string },
+  options?: {
+    precomputedDelegations?: {
+      newDelegations: DelegationGroup[];
+      taskDelegationMap: Map<string, DelegationGroup>;
+    };
+    projectWriteOps?: MassWriteOp[];
+    projectDeltaItems?: TakaDeltaItem[];
+    skipTaskDeltaBroadcast?: boolean;
+  }
+): Promise<void> {
+  if (!tasksToSave || tasksToSave.length === 0) return;
+
+  const now = new Date().toISOString();
+  const { newDelegations, taskDelegationMap } =
+    options?.precomputedDelegations ||
+    prepareMissingDelegationsForTasks(tasksToSave, currentUser, now);
+
+  // 1. Offload persistence to local Dexie database in background (non-blocking)
+  import('./localDb')
+    .then(({ bulkPersistTasks, bulkPersistDelegations }) => {
+      bulkPersistTasks(tasksToSave).catch(() => {});
+      if (newDelegations.length > 0) {
+        bulkPersistDelegations(newDelegations).catch(() => {});
+      }
+    })
+    .catch(() => {});
+
+  // 2. Build unified MassWriteOp list and Delta list for project summaries + tasks + new delegations
+  const [{ executeMassBatchOperations }, { removeUndefinedDeep }] = await Promise.all([
+    import('./massBatchWriteEngine'),
+    import('./firestoreSanitizer'),
+  ]);
+  const writeOps: MassWriteOp[] = [];
+  const deltaItems: TakaDeltaItem[] = [];
+
+  // Put authoritative project summary delta items FIRST so receiving devices seal project summaries immediately
+  const syncedSummaryProjectIds = new Set<string>();
+  if (options?.projectDeltaItems && options.projectDeltaItems.length > 0) {
+    for (const pItem of options.projectDeltaItems) {
+      deltaItems.push({
+        ...pItem,
+        data: pItem.data ? removeUndefinedDeep(pItem.data) : pItem.data,
+      });
+      if (pItem.docId) syncedSummaryProjectIds.add(String(pItem.docId).trim());
+      if (pItem.projectId) syncedSummaryProjectIds.add(String(pItem.projectId).trim());
     }
-  } catch {
-    // Fallback if IndexedDB is unavailable
   }
-
-  if (generatedDelegations.length > 0) {
-    const store = useAppStore.getState();
-    const existingDel = store.delegationGroups || [];
-    const delMap = new Map<string, DelegationGroup>(existingDel.map((d) => [d.id, d]));
-    generatedDelegations.forEach((d) => {
-      if (!delMap.has(d.id)) delMap.set(d.id, d);
-    });
-    store.setDelegationGroups(Array.from(delMap.values()));
-  }
-
-  // 2. Build MassWriteOp list and Delta list for all tasks and generated delegations
-  const { executeMassBatchOperations } = await import('./massBatchWriteEngine');
-  const writeOps: import('./massBatchWriteEngine').MassWriteOp[] = [];
-  const deltaItems: any[] = [];
 
   for (const t of tasksToSave) {
-    const freshTask: Task = { ...t, updatedAt: now };
+    if (!t || !t.id || String(t.id).startsWith('ts_')) continue;
+    const freshTask: Task = removeUndefinedDeep({ ...t, updatedAt: t.updatedAt || now });
     writeOps.push({
       collectionName: 'taka_tasks',
       docId: freshTask.id,
@@ -129519,49 +129421,67 @@ export async function batchSaveTasksToFirestore(
       merge: true,
     });
 
-    deltaItems.push({
-      docId: freshTask.id,
-      collectionName: 'taka_tasks' as const,
-      action: 'create' as const,
-      isPatch: false,
-      data: freshTask,
-      year: freshTask.projectYear ? String(freshTask.projectYear) : undefined,
-      projectId: freshTask.projectId ? String(freshTask.projectId) : undefined,
-      projectCode: freshTask.projectCode ? String(freshTask.projectCode) : undefined,
-      projectStore: freshTask.projectStore ? String(freshTask.projectStore) : undefined,
-    });
+    if (!options?.skipTaskDeltaBroadcast) {
+      const tProjId = freshTask.projectId ? String(freshTask.projectId).trim() : '';
+      const hasAuthProjSummary = Boolean(tProjId && syncedSummaryProjectIds.has(tProjId));
+      deltaItems.push({
+        docId: freshTask.id,
+        collectionName: 'taka_tasks' as const,
+        action: 'create' as const,
+        isPatch: false,
+        data: freshTask,
+        year: freshTask.projectYear ? String(freshTask.projectYear) : undefined,
+        projectId: tProjId || undefined,
+        projectCode: freshTask.projectCode ? String(freshTask.projectCode) : undefined,
+        projectStore: freshTask.projectStore ? String(freshTask.projectStore) : undefined,
+        ...(hasAuthProjSummary ? { skipSummaryRollup: true } : {}),
+      } as TakaDeltaItem);
+    }
 
     const delGroup = taskDelegationMap.get(freshTask.id);
     if (delGroup) {
+      const cleanDelGroup = removeUndefinedDeep(delGroup);
       writeOps.push({
         collectionName: 'taka_delegation_groups',
-        docId: delGroup.id,
+        docId: cleanDelGroup.id,
         action: 'set',
-        data: delGroup,
+        data: cleanDelGroup,
         merge: true,
       });
 
-      deltaItems.push({
-        docId: delGroup.id,
-        collectionName: 'taka_delegations' as const,
-        action: 'create' as const,
-        isPatch: false,
-        data: delGroup,
-        year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
-        projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
-        projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
-        projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
-      });
+      if (!options?.skipTaskDeltaBroadcast) {
+        deltaItems.push({
+          docId: cleanDelGroup.id,
+          collectionName: 'taka_delegations' as const,
+          action: 'create' as const,
+          isPatch: false,
+          data: cleanDelGroup,
+          year: cleanDelGroup.projectYear ? String(cleanDelGroup.projectYear) : undefined,
+          projectId: cleanDelGroup.projectId ? String(cleanDelGroup.projectId) : undefined,
+          projectCode: cleanDelGroup.projectCode ? String(cleanDelGroup.projectCode) : undefined,
+          projectStore: cleanDelGroup.projectStore ? String(cleanDelGroup.projectStore) : undefined,
+        });
+      }
     }
   }
 
-  // 3. Commit all operations via Resilient Mass Batch Engine (byte-capped, retry with backoff, bisection, and Offline Queue fallback)
+  if (options?.projectWriteOps && options.projectWriteOps.length > 0) {
+    options.projectWriteOps.forEach((op) => {
+      writeOps.push({
+        ...op,
+        data: op.data ? removeUndefinedDeep(op.data) : op.data,
+      });
+    });
+  }
+
+  // 3. Commit Firestore batch FIRST, then broadcast coalesced delta so other devices always read committed docs
   await executeMassBatchOperations(writeOps, {
     suppressAutoDelta: true,
+    skipLocalMirror: true,
   });
-
-  // 4. Broadcast coalesced batch deltas (chunked by count & byte size with retry)
-  await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
+  if (deltaItems.length > 0) {
+    await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
+  }
 }
 
 /**
@@ -129604,6 +129524,7 @@ export async function syncAffectedProjectSummaries(
     })
   );
 }
+
 ================================================================================
 FILE: src/components/DetailTabParts/detailTaskImportExecutor.ts
 ================================================================================
@@ -160946,25 +160867,44 @@ export async function parseTasksFile(
     throw new Error('CSV file is empty or format is invalid. At least 1 header row and 1 data row are required.');
   }
 
-  const headers = rows[0].map(h => h.trim().toLowerCase());
+  const headers = rows[0].map(h => String(h || '').replace(/^\uFEFF/, '').trim().toLowerCase());
   const dataRows = rows.slice(1);
 
-  // Extract project keys from data rows to hydrate any projects not yet loaded in active year view
+  // Extract project keys from data rows (including cross-project predecessor references) to hydrate any projects not yet loaded in active year view
   const pCodeIdx = headers.findIndex(h => ['projectcode', 'project code', 'code'].includes(h));
   const pYearIdx = headers.findIndex(h => ['projectyear', 'project year', 'year'].includes(h));
   const pStoreIdx = headers.findIndex(h => ['projectstore', 'project store', 'store'].includes(h));
+  const predIdx = headers.findIndex(h =>
+    ['predecessor', 'predecessors', 'predecessor code', 'predecessor_code', 'predecessorcode', 'tiền nhiệm', 'tien nhiem'].includes(h)
+  );
 
   const rawKeys: RawImportProjectKey[] = [];
-  if (pCodeIdx !== -1) {
-    dataRows.forEach(r => {
+  dataRows.forEach(r => {
+    const year = pYearIdx !== -1 ? String(r[pYearIdx] || '').trim() : undefined;
+    const store = pStoreIdx !== -1 ? String(r[pStoreIdx] || '').trim() : undefined;
+    if (pCodeIdx !== -1) {
       const code = String(r[pCodeIdx] || '').trim();
-      const year = pYearIdx !== -1 ? String(r[pYearIdx] || '').trim() : undefined;
-      const store = pStoreIdx !== -1 ? String(r[pStoreIdx] || '').trim() : undefined;
       if (code) {
         rawKeys.push({ projectCode: code, projectYear: year, projectStore: store });
       }
-    });
-  }
+    }
+    if (predIdx !== -1) {
+      const rawPred = normalizeDashes(String(r[predIdx] || '')).trim();
+      if (rawPred) {
+        rawPred.split(/[,;]+/).forEach(tok => {
+          const cleanTok = tok.trim();
+          const hashIdx = cleanTok.indexOf('#');
+          if (hashIdx > 0) {
+            const extCode = cleanTok.substring(0, hashIdx).trim();
+            if (extCode) {
+              rawKeys.push({ projectCode: extCode, projectYear: year, projectStore: store });
+              rawKeys.push({ projectCode: extCode });
+            }
+          }
+        });
+      }
+    }
+  });
 
   const allKnownProjects = await hydrateProjectsForImport(rawKeys, projects);
 
@@ -160987,17 +160927,24 @@ export async function parseTasksFile(
   }
 
   dataRows.forEach((row, rowIndex) => {
-    if (row.length < headers.length) return;
+    if (!row || row.every(c => !String(c || '').trim())) return;
     const t: any = {};
 
     headers.forEach((h, i) => {
       let key = h;
-      if (h === 'task name') key = 'name';
+      if (h === 'task name' || h === 'taskname') key = 'name';
       if (h === 'projectid' || h === 'project_id' || h === 'project id') key = 'projectId';
-      if (h === 'projectcode') key = 'projectCode';
-      if (h === 'year' || h === 'projectyear') key = 'projectYear';
-      if (h === 'store' || h === 'projectstore') key = 'projectStore';
-      if (h === 'sub-task code' || h === 'sub task code' || h === 'subtask code' || h === 'sub_task_code' || h === 'taskcodephu' || h === 'task code phu' || h === 'task_code_phu') {
+      if (h === 'projectcode' || h === 'project code' || h === 'code') key = 'projectCode';
+      if (h === 'year' || h === 'projectyear' || h === 'project year') key = 'projectYear';
+      if (h === 'store' || h === 'projectstore' || h === 'project store') key = 'projectStore';
+      if (h === 'start date' || h === 'startdate') key = 'start';
+      if (h === 'finish date' || h === 'finishdate' || h === 'end') key = 'finish';
+      if (h === 'durations') key = 'duration';
+      if (h === 'pic' || h === 'department') key = 'party';
+      if (h === 'predecessor' || h === 'predecessors' || h === 'predecessor code' || h === 'predecessor_code' || h === 'predecessorcode' || h === 'tiền nhiệm' || h === 'tien nhiem') {
+        key = 'predecessor';
+      }
+      if (h === 'sub-task code' || h === 'sub task code' || h === 'subtask code' || h === 'sub_task_code' || h === 'taskcodephu' || h === 'task code phu' || h === 'task_code_phu' || h === 'task code phụ') {
         key = 'taskCodePhu';
       }
       if (h === 'orderindex' || h === 'order_index') key = 'orderIndex';
@@ -161027,11 +160974,13 @@ export async function parseTasksFile(
       }
 
       if (['projectId', 'projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
-        let val: any = row[i];
+        let val: any = row[i] !== undefined ? row[i] : '';
         if (key === 'start' || key === 'finish') {
           val = parseCSVDate(val);
         } else if (key === 'duration') {
           val = cleanDurationString(val);
+        } else if (key === 'predecessor') {
+          val = normalizeDashes(String(val ?? '')).trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim();
         } else if (key === 'delegation' || key === 'realtimeUpdate') {
           const strVal = String(val || '').trim().toLowerCase();
           val = (strVal === 'true' || strVal === '1' || strVal === 'yes' || strVal === 'on');
@@ -161084,8 +161033,6 @@ export async function parseTasksFile(
     allKnownProjects
   };
 }
-
-
 
 ================================================================================
 FILE: src/components/DetailTabParts/detailTaskImportHydrator.ts
@@ -161541,3 +161488,711 @@ export function useAppKeyboardAndTouch({
   }, [handleGoBackRef]);
 }
 
+================================================================================
+FILE: src/components/DetailTabParts/importValidator.ts
+================================================================================
+import { Project } from '../../types';
+import { normalizeStoreCode, normalizeYearString } from '../../lib/taskDeduplicationService';
+import { parseCSVDate } from './detailCsvUtils';
+import { ImportErrorDetail, ImportValidationResult, generateTaskErrorReportCSV } from './importTypes';
+import { normalizeDashes } from '../../lib/utils';
+import { matchProjectCode } from '../../lib/projectDatesService';
+
+export type { ImportErrorDetail, ImportValidationResult };
+export { generateTaskErrorReportCSV };
+
+/**
+ * Deeply validates all rows in a task CSV / Excel file before import.
+ * If any invalid, duplicate, or buggy data is found, returns isValid: false
+ * with a full list of errors.
+ */
+export function validateTasksImportData(
+  headers: string[],
+  dataRows: string[][],
+  existingProjects: Project[] = []
+): ImportValidationResult {
+  const errors: ImportErrorDetail[] = [];
+  const errorRowNumbers = new Set<number>();
+  const errorSummaryByType: Record<string, number> = {};
+
+  const addError = (err: ImportErrorDetail) => {
+    errors.push(err);
+    errorRowNumbers.add(err.rowNumber);
+    errorSummaryByType[err.errorType] = (errorSummaryByType[err.errorType] || 0) + 1;
+  };
+
+  const headerIndexMap = new Map<string, number>();
+  headers.forEach((h, i) => headerIndexMap.set(h.trim().toLowerCase(), i));
+
+  const getCol = (row: string[], ...names: string[]): string => {
+    for (const name of names) {
+      const idx = headerIndexMap.get(name.toLowerCase());
+      if (idx !== undefined && idx < row.length) {
+        return String(row[idx] || '').trim();
+      }
+    }
+    return '';
+  };
+
+  const seenTaskNamesWithinFile = new Map<string, { rowNumber: number; rawName: string }>();
+  const seenSubTaskCodesWithinFile = new Map<string, { rowNumber: number }>();
+
+  const projectLookup = new Map<string, Project>();
+  existingProjects.forEach(p => {
+    const pCode = normalizeDashes(String(p.code || '')).trim().toLowerCase();
+    const pYear = normalizeYearString(p.year);
+    const pStore = normalizeStoreCode(p.store);
+    if (pCode) {
+      if (pYear && pStore) projectLookup.set(`${pCode}__${pYear}__${pStore}`, p);
+      if (pStore) projectLookup.set(`${pCode}____${pStore}`, p);
+      if (pYear) projectLookup.set(`${pCode}__${pYear}__`, p);
+      if (!projectLookup.has(pCode)) projectLookup.set(pCode, p);
+    }
+    if (p.id) projectLookup.set(String(p.id).trim().toLowerCase(), p);
+  });
+
+  let totalDataRows = 0;
+
+  for (let idx = 0; idx < dataRows.length; idx++) {
+    const row = dataRows[idx];
+    const rowNumber = idx + 2;
+
+    if (row.every(c => !String(c).trim())) continue;
+    totalDataRows++;
+
+    const projectCode = getCol(row, 'projectcode', 'project code', 'code');
+    const projectYear = getCol(row, 'projectyear', 'project year', 'year');
+    const projectStore = getCol(row, 'projectstore', 'project store', 'store');
+    const taskName = getCol(row, 'task name', 'taskname', 'name');
+    const subTaskCode = getCol(row, 'sub-task code', 'sub task code', 'subtask code', 'sub_task_code', 'taskcodephu', 'task code phu');
+    const startDateRaw = getCol(row, 'start', 'start date', 'startdate');
+    const finishDateRaw = getCol(row, 'finish', 'finish date', 'finishdate', 'end');
+    const predecessor = getCol(row, 'predecessor', 'predecessors');
+
+    // 1. Missing Required Fields
+    if (!projectCode) {
+      addError({
+        rowNumber,
+        projectCode: '(empty)',
+        projectYear,
+        projectStore,
+        taskName: taskName || '(empty)',
+        errorType: 'MISSING_FIELD',
+        field: 'Project Code',
+        message: 'Missing required field: Project Code.'
+      });
+    }
+
+    if (!taskName) {
+      addError({
+        rowNumber,
+        projectCode,
+        projectYear,
+        projectStore,
+        taskName: '(empty)',
+        errorType: 'MISSING_FIELD',
+        field: 'Task Name',
+        message: 'Missing required field: Task Name. Every task must have a name.'
+      });
+    }
+
+    if (!projectYear) {
+      addError({
+        rowNumber,
+        projectCode,
+        projectYear: '(empty)',
+        projectStore,
+        taskName,
+        errorType: 'MISSING_FIELD',
+        field: 'Year',
+        message: 'Missing required field: Year.'
+      });
+    } else {
+      const yearNum = Number(projectYear);
+      if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATA',
+          field: 'Year',
+          message: `Invalid Year '${projectYear}'. Must be a valid 4-digit year between 2000 and 2100.`
+        });
+      }
+    }
+
+    if (!projectStore) {
+      addError({
+        rowNumber,
+        projectCode,
+        projectYear,
+        projectStore: '(empty)',
+        taskName,
+        errorType: 'MISSING_FIELD',
+        field: 'Store',
+        message: 'Missing required field: Store (must be HN or HCM).'
+      });
+    } else {
+      const normStore = normalizeStoreCode(projectStore);
+      if (normStore !== 'HN' && normStore !== 'HCM') {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATA',
+          field: 'Store',
+          message: `Unrecognized Store '${projectStore}'. Store must be 'HN' or 'HCM'.`
+        });
+      }
+    }
+
+    // 2. Project Existence
+    if (projectCode && existingProjects.length > 0) {
+      const pCodeClean = normalizeDashes(projectCode).trim();
+      const pCodeLower = pCodeClean.toLowerCase();
+      const pYearNorm = normalizeYearString(projectYear);
+      const pStoreNorm = normalizeStoreCode(projectStore);
+      let foundProject = (pYearNorm && pStoreNorm && projectLookup.get(`${pCodeLower}__${pYearNorm}__${pStoreNorm}`)) ||
+                         (pStoreNorm && projectLookup.get(`${pCodeLower}____${pStoreNorm}`)) ||
+                         projectLookup.get(pCodeLower);
+
+      if (!foundProject) {
+        foundProject = existingProjects.find(p => {
+          if (!p || p.isDeleted) return false;
+          const codeMatch = matchProjectCode(p.code, pCodeClean);
+          const storeMatch = !pStoreNorm || !p.store || normalizeStoreCode(p.store) === pStoreNorm;
+          const yearMatch = !pYearNorm || p.year === undefined || p.year === null || normalizeYearString(p.year) === pYearNorm;
+          return codeMatch && storeMatch && yearMatch;
+        });
+      }
+
+      if (!foundProject) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'PROJECT_NOT_FOUND',
+          field: 'Project Code',
+          message: `Project '${projectCode}' (${projectYear || 'no year'} - ${projectStore || 'no store'}) was not found in database.`
+        });
+      }
+    }
+
+    // 3. Duplicate Task Within File
+    if (projectCode && taskName) {
+      const pYearNorm = normalizeYearString(projectYear);
+      const pStoreNorm = normalizeStoreCode(projectStore);
+      const projKey = `${projectCode.toLowerCase()}__${pYearNorm}__${pStoreNorm}`;
+      
+      const absTaskName = taskName.trim().toLowerCase().replace(/\s+/g, ' ');
+      const cleanSubTaskCode = String(subTaskCode || '').trim();
+
+      // If subtask code is provided, different subtask codes uniquely identify different tasks even if they have the same name.
+      // Therefore, skip duplicate task name checking when subTaskCode is present.
+      if (!cleanSubTaskCode) {
+        const taskNameKey = `${projKey}:::name:::${absTaskName}`;
+        if (seenTaskNamesWithinFile.has(taskNameKey)) {
+          const firstOccurrence = seenTaskNamesWithinFile.get(taskNameKey)!;
+          addError({
+            rowNumber,
+            projectCode,
+            projectYear,
+            projectStore,
+            taskName,
+            errorType: 'DUPLICATE',
+            field: 'Task Name',
+            message: `Duplicate task name '${taskName}' in project ${projectCode} (conflicts with Row ${firstOccurrence.rowNumber}).`
+          });
+        } else {
+          seenTaskNamesWithinFile.set(taskNameKey, { rowNumber, rawName: taskName });
+        }
+      }
+
+      if (cleanSubTaskCode) {
+        const subTaskCodeKey = `${projKey}:::code:::${cleanSubTaskCode.toLowerCase()}`;
+        if (seenSubTaskCodesWithinFile.has(subTaskCodeKey)) {
+          const firstCodeOccurrence = seenSubTaskCodesWithinFile.get(subTaskCodeKey)!;
+          addError({
+            rowNumber,
+            projectCode,
+            projectYear,
+            projectStore,
+            taskName,
+            subTaskCode: cleanSubTaskCode,
+            errorType: 'DUPLICATE',
+            field: 'Sub-task code',
+            message: `Duplicate Sub-task Code '${cleanSubTaskCode}' in project ${projectCode} (conflicts with Row ${firstCodeOccurrence.rowNumber}).`
+          });
+        } else {
+          seenSubTaskCodesWithinFile.set(subTaskCodeKey, { rowNumber });
+        }
+      }
+    }
+
+    // 4. Date Formats & Chronological Logic
+    let parsedStart: string | null = null;
+    let parsedFinish: string | null = null;
+
+    if (startDateRaw) {
+      parsedStart = parseCSVDate(startDateRaw);
+      if (!parsedStart || isNaN(new Date(parsedStart).getTime())) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATE',
+          field: 'Start Date',
+          message: `Invalid Start Date format '${startDateRaw}'. Expected YYYY-MM-DD or DD/MM/YYYY.`
+        });
+      }
+    }
+
+    if (finishDateRaw) {
+      parsedFinish = parseCSVDate(finishDateRaw);
+      if (!parsedFinish || isNaN(new Date(parsedFinish).getTime())) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'INVALID_DATE',
+          field: 'Finish Date',
+          message: `Invalid Finish Date format '${finishDateRaw}'. Expected YYYY-MM-DD or DD/MM/YYYY.`
+        });
+      }
+    }
+
+    if (parsedStart && parsedFinish) {
+      const startTime = new Date(parsedStart).getTime();
+      const finishTime = new Date(parsedFinish).getTime();
+      if (startTime > finishTime) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          errorType: 'DATE_LOGIC',
+          field: 'Start/Finish Dates',
+          message: `Date Logic Error: Start date (${parsedStart}) is later than Finish date (${parsedFinish}).`
+        });
+      }
+    }
+
+    // 5. Predecessor Self-Reference (only when referencing the exact same project & subtask code)
+    if (predecessor && subTaskCode) {
+      const cleanSub = normalizeDashes(String(subTaskCode)).trim().toUpperCase();
+      const cleanProj = normalizeDashes(String(projectCode || '')).trim().toUpperCase();
+      const fullSelfCode = cleanSub.includes('#')
+        ? cleanSub
+        : (cleanProj ? `${cleanProj}#${cleanSub}` : cleanSub);
+      const predTokens = normalizeDashes(predecessor)
+        .split(/[,;]+/)
+        .map(tok => tok.trim().replace(/\s*(?:FS|SS|FF|SF)\s*(?:[+-]\s*\d+(?:\.\d+)?)?$/i, '').trim().toUpperCase())
+        .filter(Boolean);
+      const isSelfRef = predTokens.some(tok => {
+        if (tok === fullSelfCode) return true;
+        if (!tok.includes('#') && !tok.includes('-') && tok === cleanSub) return true;
+        return false;
+      });
+      if (isSelfRef) {
+        addError({
+          rowNumber,
+          projectCode,
+          projectYear,
+          projectStore,
+          taskName,
+          subTaskCode,
+          errorType: 'PREDECESSOR_ERROR',
+          field: 'Predecessor',
+          message: `Invalid Predecessor: Task cannot reference itself ('${subTaskCode}') as a predecessor.`
+        });
+      }
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    totalRows: totalDataRows,
+    validRowsCount: totalDataRows - errorRowNumbers.size,
+    errorCount: errors.length,
+    errors,
+    errorRowNumbers,
+    errorSummaryByType
+  };
+}
+
+/**
+ * Validates project CSV data rows.
+ */
+export function validateProjectsImportData(
+  headers: string[],
+  dataRows: string[][]
+): ImportValidationResult {
+  const errors: ImportErrorDetail[] = [];
+  const errorRowNumbers = new Set<number>();
+  const errorSummaryByType: Record<string, number> = {};
+
+  const addError = (err: ImportErrorDetail) => {
+    errors.push(err);
+    errorRowNumbers.add(err.rowNumber);
+    errorSummaryByType[err.errorType] = (errorSummaryByType[err.errorType] || 0) + 1;
+  };
+
+  const headerIndexMap = new Map<string, number>();
+  headers.forEach((h, i) => headerIndexMap.set(h.trim().toLowerCase(), i));
+
+  const getCol = (row: string[], ...names: string[]): string => {
+    for (const name of names) {
+      const idx = headerIndexMap.get(name.toLowerCase());
+      if (idx !== undefined && idx < row.length) {
+        return String(row[idx] || '').trim();
+      }
+    }
+    return '';
+  };
+
+  const seenProjectCodes = new Map<string, number>();
+  let totalDataRows = 0;
+
+  for (let idx = 0; idx < dataRows.length; idx++) {
+    const row = dataRows[idx];
+    const rowNumber = idx + 2;
+
+    if (row.every(c => !String(c).trim())) continue;
+    totalDataRows++;
+
+    const code = getCol(row, 'code', 'projectcode', 'project code');
+    const year = getCol(row, 'year', 'projectyear', 'project year');
+    const store = getCol(row, 'store', 'projectstore', 'project store');
+    const name = getCol(row, 'name', 'project name', 'projectname');
+
+    if (!code) {
+      addError({
+        rowNumber,
+        projectCode: '(empty)',
+        projectYear: year,
+        projectStore: store,
+        taskName: name,
+        errorType: 'MISSING_FIELD',
+        field: 'Project Code',
+        message: 'Missing required field: Project Code.'
+      });
+    }
+
+    if (!year) {
+      addError({
+        rowNumber,
+        projectCode: code,
+        projectYear: '(empty)',
+        projectStore: store,
+        taskName: name,
+        errorType: 'MISSING_FIELD',
+        field: 'Year',
+        message: 'Missing required field: Year.'
+      });
+    } else {
+      const yearNum = Number(year);
+      if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2100) {
+        addError({
+          rowNumber,
+          projectCode: code,
+          projectYear: year,
+          projectStore: store,
+          taskName: name,
+          errorType: 'INVALID_DATA',
+          field: 'Year',
+          message: `Invalid Year '${year}'. Year must be a 4-digit number between 2000 and 2100.`
+        });
+      }
+    }
+
+    if (!store) {
+      addError({
+        rowNumber,
+        projectCode: code,
+        projectYear: year,
+        projectStore: '(empty)',
+        taskName: name,
+        errorType: 'MISSING_FIELD',
+        field: 'Store',
+        message: 'Missing required field: Store (must be HN or HCM).'
+      });
+    } else {
+      const normStore = normalizeStoreCode(store);
+      if (normStore !== 'HN' && normStore !== 'HCM') {
+        addError({
+          rowNumber,
+          projectCode: code,
+          projectYear: year,
+          projectStore: store,
+          taskName: name,
+          errorType: 'INVALID_DATA',
+          field: 'Store',
+          message: `Unrecognized Store '${store}'. Must be 'HN' or 'HCM'.`
+        });
+      }
+    }
+
+    if (code && year && store) {
+      const pKey = `${code.toLowerCase()}__${normalizeYearString(year)}__${normalizeStoreCode(store)}`;
+      if (seenProjectCodes.has(pKey)) {
+        const firstRow = seenProjectCodes.get(pKey)!;
+        addError({
+          rowNumber,
+          projectCode: code,
+          projectYear: year,
+          projectStore: store,
+          taskName: name,
+          errorType: 'DUPLICATE',
+          field: 'Project Code',
+          message: `Duplicate Project Code '${code}' for Year ${year} - Store ${store} (conflicts with Row ${firstRow}).`
+        });
+      } else {
+        seenProjectCodes.set(pKey, rowNumber);
+      }
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    totalRows: totalDataRows,
+    validRowsCount: totalDataRows - errorRowNumbers.size,
+    errorCount: errors.length,
+    errors,
+    errorRowNumbers,
+    errorSummaryByType
+  };
+}
+
+================================================================================
+FILE: src/components/CsvExportParts/csvMassTaskBuilder.ts
+================================================================================
+export const METHOD_SHEET_ROWS = [
+  ['QUY ĐỊNH & HƯỚNG DẪN IMPORT DATA'],
+  [],
+  ['Cột', 'Quy tắc / Hướng dẫn'],
+  [
+    'Predecessor',
+    "Nếu không check 'Giữ nguyên', hệ thống sẽ tự ghép với Project Code. (VD: 23 thành VN26#23). Nếu nhiều task cách nhau bằng dấu phẩy.",
+  ],
+  ['Task code phụ', 'Hệ thống tự động ghép với Project Code ở đầu.'],
+  [
+    'Comments',
+    "Để xóa nội dung comments hiện tại trên hệ thống, bạn hãy điền một khoảng trắng (Space) vào ô này, hoặc nhập khoảng trắng ở 'Giá trị tĩnh'.",
+  ],
+  [
+    'Start / Finish',
+    'Định dạng chuẩn: MM/DD/YYYY HH:mm. Nếu không có giờ, Start mặc định là 22:00, Finish là 10:00.',
+  ],
+  ['Delegation', "Mặc định nếu để trống sẽ là 'true'."],
+  [],
+  [
+    'LƯU Ý QUAN TRỌNG:',
+    "Hệ thống Takashimaya hiện tại chỉ import được file đuôi .csv. Bạn hãy chỉnh sửa trên file này, sau đó mở Sheet 'Data' và chọn Save As -> định dạng CSV (Comma delimited) trước khi import nhé!",
+  ],
+];
+
+export function buildMassTaskExportRows(params: {
+  excelData: any[];
+  templateData: any[];
+  activeTab: string;
+  mapping: Record<string, string>;
+  constantMapping: Record<string, string>;
+  keepOriginal: Record<string, boolean>;
+  unitSizeMap: Record<string, string>;
+  getCellValue: (
+    row: any,
+    colName: string,
+    activeTab: string,
+    mapping: Record<string, string>,
+    constantMapping: Record<string, string>,
+    keepOriginal: Record<string, boolean>,
+    unitSizeMap: Record<string, string>,
+    rowIndex?: number
+  ) => any;
+}): any[] {
+  const {
+    excelData,
+    templateData,
+    activeTab,
+    mapping,
+    constantMapping,
+    keepOriginal,
+    unitSizeMap,
+    getCellValue,
+  } = params;
+
+  const finalJson: any[] = [];
+  for (const proj of excelData) {
+    const projStore = getCellValue(proj, 'store', activeTab, mapping, constantMapping, keepOriginal, unitSizeMap);
+    const projLocation = getCellValue(proj, 'location', activeTab, mapping, constantMapping, keepOriginal, unitSizeMap);
+    const projCode = getCellValue(proj, 'projectCode', activeTab, mapping, constantMapping, keepOriginal, unitSizeMap);
+    const projYear =
+      getCellValue(proj, 'projectYear', activeTab, mapping, constantMapping, keepOriginal, unitSizeMap) ||
+      getCellValue(proj, 'YEAR', activeTab, mapping, constantMapping, keepOriginal, unitSizeMap);
+
+    let taskIndex = 0;
+    for (const taskDef of templateData) {
+      taskIndex++;
+      const taskName = taskDef['Task name'] || '';
+
+      const tcKey = Object.keys(taskDef).find((k) => {
+        const clean = k.toLowerCase().replace(/á»¥/g, 'ụ').replace(/[^a-z0-9]/g, '');
+        return clean.includes('subtaskcode') || clean.includes('taskcodephu') || clean.includes('subtask');
+      });
+      const mappedSubTaskCode = constantMapping['Sub-task code'] || proj[mapping['Sub-task code']];
+      let subTaskCode =
+        mappedSubTaskCode !== undefined && mappedSubTaskCode !== null && String(mappedSubTaskCode).trim() !== ''
+          ? String(mappedSubTaskCode).trim()
+          : tcKey
+          ? taskDef[tcKey]
+          : '';
+
+      if (keepOriginal['Sub-task code'] || keepOriginal['Task code phụ']) {
+        if (subTaskCode !== undefined && subTaskCode !== null && String(subTaskCode).trim() !== '') {
+          subTaskCode = String(subTaskCode).trim();
+        } else {
+          subTaskCode = projCode ? `${projCode}#${taskIndex}` : String(taskIndex);
+        }
+      } else if (subTaskCode !== undefined && subTaskCode !== null && String(subTaskCode).trim() !== '') {
+        const strVal = String(subTaskCode).trim();
+        subTaskCode =
+          projCode && !strVal.includes('#') && !strVal.startsWith(projCode) ? `${projCode}#${strVal}` : strVal;
+      } else {
+        subTaskCode = projCode ? `${projCode}#${taskIndex}` : String(taskIndex);
+      }
+
+      const ptKey = Object.keys(taskDef).find((k) => {
+        const clean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return clean.includes('parenttaskcode') || clean.includes('parenttask') || clean.includes('taskme');
+      });
+      const mappedParentTaskCode = constantMapping['Parent task code'] || proj[mapping['Parent task code']];
+      let parentTaskCode =
+        mappedParentTaskCode !== undefined && mappedParentTaskCode !== null && String(mappedParentTaskCode).trim() !== ''
+          ? String(mappedParentTaskCode).trim()
+          : ptKey
+          ? taskDef[ptKey]
+          : '';
+
+      if (!keepOriginal['Parent task code']) {
+        if (parentTaskCode !== undefined && parentTaskCode !== null && String(parentTaskCode).trim() !== '') {
+          const strVal = String(parentTaskCode).trim();
+          if (projCode && !strVal.includes('#') && !strVal.includes('-') && !strVal.startsWith(projCode)) {
+            parentTaskCode = `${projCode}#${strVal}`;
+          } else {
+            parentTaskCode = strVal;
+          }
+        } else {
+          parentTaskCode = '';
+        }
+      } else {
+        parentTaskCode = parentTaskCode !== undefined && parentTaskCode !== null ? String(parentTaskCode).trim() : '';
+      }
+
+      let start = taskDef['start'] || '';
+      let finish = taskDef['finish'] || '';
+
+      const formatExcelDate = (val: any) => {
+        if (typeof val !== 'number') return val;
+        const date = new Date((val - 25569) * 86400 * 1000);
+        return (
+          date.toLocaleDateString('en-US') +
+          ' ' +
+          date.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          })
+        );
+      };
+      if (typeof start === 'number') start = formatExcelDate(start);
+      if (typeof finish === 'number') finish = formatExcelDate(finish);
+
+      const party = taskDef['party'] || '';
+      const durKey = Object.keys(taskDef).find((k) => k.toLowerCase().trim() === 'duration');
+      const duration =
+        durKey && taskDef[durKey] !== undefined && taskDef[durKey] !== null
+          ? String(taskDef[durKey])
+          : taskDef['duration'] !== undefined && taskDef['duration'] !== null
+          ? String(taskDef['duration'])
+          : '';
+
+      const predKey = Object.keys(taskDef).find((k) => {
+        const clean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return clean.includes('predecessor') || clean === 'tiennhiem';
+      });
+      const templatePred = predKey ? taskDef[predKey] : '';
+      const constPred = constantMapping['predecessor'];
+      const projPred = mapping['predecessor'] ? proj[mapping['predecessor']] : '';
+      let pred =
+        constPred !== undefined && constPred !== null && String(constPred).trim() !== ''
+          ? constPred
+          : templatePred !== undefined && templatePred !== null && String(templatePred).trim() !== ''
+          ? templatePred
+          : projPred;
+
+      if (pred !== undefined && pred !== null && String(pred).trim() !== '') {
+        const strPred = String(pred).trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim();
+        if (keepOriginal['predecessor']) {
+          pred = strPred;
+        } else if (projCode) {
+          pred = strPred
+            .split(/[,;]+/)
+            .map((part) => {
+              let cleanPart = part.trim();
+              if (!cleanPart) return '';
+              cleanPart = cleanPart.replace(/^([A-Za-z0-9_-]+)-(\d+)(\s*(?:FS|SS|FF|SF).*)?$/i, '$1#$2$3');
+              if (cleanPart.includes('#') || cleanPart.toLowerCase().startsWith(String(projCode).toLowerCase())) {
+                return cleanPart;
+              }
+              if (/^\d+/.test(cleanPart)) {
+                return `${projCode}#${cleanPart}`;
+              }
+              return cleanPart;
+            })
+            .filter(Boolean)
+            .join(', ');
+        } else {
+          pred = strPred;
+        }
+      }
+      const mappedDelegation = constantMapping['delegation'] || proj[mapping['delegation']];
+      const delegation =
+        mappedDelegation !== undefined && mappedDelegation !== null && String(mappedDelegation).trim() !== ''
+          ? String(mappedDelegation).trim()
+          : taskDef['delegation'] !== undefined
+          ? String(taskDef['delegation'])
+          : 'true';
+      const comments =
+        taskDef['comments'] !== undefined ? taskDef['comments'] : constantMapping['comments'] || '';
+
+      finalJson.push({
+        store: projStore,
+        location: projLocation,
+        projectYear: projYear,
+        projectCode: projCode,
+        'Sub-task code': subTaskCode,
+        'Task name': taskName,
+        'Parent task code': parentTaskCode,
+        start,
+        finish,
+        duration,
+        party,
+        predecessor: pred,
+        delegation,
+        comments,
+      });
+    }
+  }
+  return finalJson;
+}

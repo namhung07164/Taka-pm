@@ -148,27 +148,41 @@ export function buildMassTaskExportRows(params: {
           ? String(taskDef['duration'])
           : '';
 
-      const predKey = Object.keys(taskDef).find((k) => k.toLowerCase().replace(/\s+/g, '') === 'predecessor');
+      const predKey = Object.keys(taskDef).find((k) => {
+        const clean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return clean.includes('predecessor') || clean === 'tiennhiem';
+      });
       const templatePred = predKey ? taskDef[predKey] : '';
-      const mappedPred = constantMapping['predecessor'] || proj[mapping['predecessor']];
+      const constPred = constantMapping['predecessor'];
+      const projPred = mapping['predecessor'] ? proj[mapping['predecessor']] : '';
       let pred =
-        mappedPred !== undefined && mappedPred !== null && String(mappedPred).trim() !== ''
-          ? mappedPred
-          : templatePred;
+        constPred !== undefined && constPred !== null && String(constPred).trim() !== ''
+          ? constPred
+          : templatePred !== undefined && templatePred !== null && String(templatePred).trim() !== ''
+          ? templatePred
+          : projPred;
 
-      if (!keepOriginal['predecessor'] && pred !== undefined && pred !== null && String(pred).trim() !== '') {
-        const strPred = String(pred).trim();
-        if (projCode) {
+      if (pred !== undefined && pred !== null && String(pred).trim() !== '') {
+        const strPred = String(pred).trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim();
+        if (keepOriginal['predecessor']) {
+          pred = strPred;
+        } else if (projCode) {
           pred = strPred
-            .split(/([,;]\s*)/)
+            .split(/[,;]+/)
             .map((part) => {
-              if (part === ',' || part === ';' || /^\s*$/.test(part)) return part;
-              const cleanPart = part.trim();
-              if (!cleanPart) return part;
-              if (cleanPart.includes('#') || cleanPart.startsWith(projCode)) return cleanPart;
-              return `${projCode}#${cleanPart}`;
+              let cleanPart = part.trim();
+              if (!cleanPart) return '';
+              cleanPart = cleanPart.replace(/^([A-Za-z0-9_-]+)-(\d+)(\s*(?:FS|SS|FF|SF).*)?$/i, '$1#$2$3');
+              if (cleanPart.includes('#') || cleanPart.toLowerCase().startsWith(String(projCode).toLowerCase())) {
+                return cleanPart;
+              }
+              if (/^\d+/.test(cleanPart)) {
+                return `${projCode}#${cleanPart}`;
+              }
+              return cleanPart;
             })
-            .join('');
+            .filter(Boolean)
+            .join(', ');
         } else {
           pred = strPred;
         }

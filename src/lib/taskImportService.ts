@@ -78,7 +78,13 @@ export function calculateDatesFromPredecessorsAndDuration(
       const current = workingMap.get(t.id);
       if (!current) continue;
 
-      const predString = current.predecessor ? String(current.predecessor).trim() : '';
+      const predString = current.predecessor
+        ? String(current.predecessor).trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim()
+        : '';
+      if (predString !== (current.predecessor || '')) {
+        current.predecessor = predString;
+        workingMap.set(current.id, current);
+      }
       if (!predString) {
         // If no predecessor, ensure finish is consistent with start and duration if finish is missing or invalid
         if (current.start && (!current.finish || current.finish === current.start)) {
@@ -102,6 +108,20 @@ export function calculateDatesFromPredecessorsAndDuration(
         { ...current, predecessorTaskIds: undefined, predecessors: undefined }
       );
       if (!parsedPreds.length) continue;
+
+      const resolvedIds = parsedPreds.map(p => p.task?.id).filter((id): id is string => Boolean(id));
+      const prevIdsStr = (current.predecessorTaskIds || []).join(',');
+      if (resolvedIds.length > 0 && resolvedIds.join(',') !== prevIdsStr) {
+        current.predecessorTaskIds = resolvedIds;
+        current.predecessors = parsedPreds
+          .filter(p => Boolean(p.task?.id))
+          .map(p => ({
+            taskId: p.task.id,
+            type: (p.type || 'FS') as any,
+            lagDays: p.lagSign === '-' ? -(p.lagValue || 0) : (p.lagValue || 0),
+          }));
+        workingMap.set(current.id, current);
+      }
 
       const calcResult = calculateTaskDatesFromPredecessors(
         current,

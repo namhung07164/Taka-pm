@@ -145,16 +145,17 @@ export function useCsvExportState() {
         const headers = Object.keys(jsonData[0] || {});
         setExcelHeaders(headers);
 
-        if (!isLocked) {
-          const newMapping = { ...(mapping || {}) };
-          TAB_CONFIG[activeTab].columns.forEach((targetCol: string) => {
+        const newMapping = { ...(mapping || {}) };
+        TAB_CONFIG[activeTab].columns.forEach((targetCol: string) => {
+          const currentMapped = newMapping[targetCol];
+          if (!isLocked || !currentMapped || !headers.includes(currentMapped)) {
             const match = headers.find(
               (h) => h && h.toLowerCase().includes(targetCol.toLowerCase())
             );
             if (match) newMapping[targetCol] = match;
-          });
-          setMapping(newMapping);
-        }
+          }
+        });
+        setMapping(newMapping);
       } else {
         setExcelHeaders([]);
       }

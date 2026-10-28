@@ -276,45 +276,34 @@ export async function executeImportTasks({
       }
       delete t.importComment;
 
+      const defaultToday = getDefaultDatetimeLocal();
+      const csvPred = t.predecessor !== undefined ? String(t.predecessor || '').trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim() : undefined;
       if (!existing) {
-        const defaultToday = getDefaultDatetimeLocal();
         if (!t.start) t.start = defaultToday;
         if (!t.finish) t.finish = t.start || defaultToday;
         if (!t.baselineStart) t.baselineStart = t.start || defaultToday;
         if (!t.baselineFinish) t.baselineFinish = t.finish || defaultToday;
-        if (t.duration === undefined || t.duration === null || String(t.duration).trim() === '') {
-          t.duration = "0";
-        }
+        if (t.duration === undefined || t.duration === null || String(t.duration).trim() === '') t.duration = "0";
+      } else {
+        if (!t.start) t.start = existing.start || defaultToday;
+        if (!t.finish) t.finish = existing.finish || t.start || defaultToday;
       }
+      if (csvPred !== undefined) t.predecessor = csvPred;
 
       const hasImportedParentRef = Boolean(t.parentTaskId || t.parentTaskCode || t.parentTaskName);
       const finalTask: Task = existing
         ? {
-            ...existing,
-            ...t,
-            id,
+            ...existing, ...t, id,
+            predecessor: csvPred !== undefined ? (csvPred || existing.predecessor || '') : (existing.predecessor || ''),
             parentTaskId: hasImportedParentRef ? (t.parentTaskId || existing.parentTaskId) : undefined,
-            predecessorTaskIds: undefined,
-            predecessors: undefined,
-            isModularParent: false,
-            comments: updatedComments,
-            orderIndex: taskOrderIndex,
-            taskCodePhu,
-            durationManual: true,
-            finishManual: false,
-            startManual: false,
-            updatedAt: new Date().toISOString()
+            predecessorTaskIds: undefined, predecessors: undefined, isModularParent: false,
+            comments: updatedComments, orderIndex: taskOrderIndex, taskCodePhu,
+            durationManual: true, finishManual: false, startManual: false, updatedAt: new Date().toISOString()
           }
         : {
-            ...t,
-            id,
-            comments: updatedComments,
-            orderIndex: taskOrderIndex,
-            taskCodePhu,
-            durationManual: true,
-            finishManual: false,
-            startManual: false,
-            updatedAt: new Date().toISOString()
+            ...t, id, predecessor: csvPred || '',
+            comments: updatedComments, orderIndex: taskOrderIndex, taskCodePhu,
+            durationManual: true, finishManual: false, startManual: false, updatedAt: new Date().toISOString()
           };
       delete (finalTask as any)._isVirtualSummary;
 
@@ -368,25 +357,26 @@ export async function executeImportTasks({
       existingTasksById.set(finalTask.id, finalTask);
 
       const existingIndex = tasksToImport.findIndex(tk => tk.id === finalTask.id);
-      if (existingIndex >= 0) {
-        tasksToImport[existingIndex] = finalTask;
-      } else {
-        tasksToImport.push(finalTask);
-      }
+      if (existingIndex >= 0) tasksToImport[existingIndex] = finalTask;
+      else tasksToImport.push(finalTask);
     });
   });
 
   // 4. Resolve parent-child hierarchy across imported tasks and existing tasks
   resolveParentChildHierarchy(tasksToImport, allInitialTasks);
+  const importedPredById = new Map<string, string>();
+  tasksToImport.forEach(t => {
+    if (t.predecessor && String(t.predecessor).trim()) importedPredById.set(t.id, String(t.predecessor).trim());
+  });
 
   // 5. Prepare missing delegations BEFORE rolling up parent tasks & project summaries
-  // so Desktop, Firestore, and all devices compute 100% identical runningStatus & progress
   const commitNowIso = new Date().toISOString();
   const activeUser = useAppStore.getState().currentUser || currentUser;
   const precomputedDelegations = prepareMissingDelegationsForTasks(tasksToImport, activeUser, commitNowIso);
 
-  // 6. Calculate dates from predecessors and duration
-  useAppStore.getState().optimisticUpdateTasks(tasksToImport);
+  // 6. Sync hydrated context tasks + imported tasks into Zustand so cross-project predecessors resolve
+  const hydratedRealTasks = allInitialTasks.filter(t => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary);
+  useAppStore.getState().optimisticUpdateTasks([...hydratedRealTasks, ...tasksToImport]);
 
   const allCurrentTasks = useAppStore.getState().tasks;
   const tasksMapAfterCalc = new Map<string, Task>();
@@ -406,16 +396,21 @@ export async function executeImportTasks({
   const tasksToSaveIds = new Set<string>();
   calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
   updatedParents.forEach(p => {
-    if (p.id && !String(p.id).startsWith('ts_')) {
-      tasksToSaveIds.add(p.id);
-    }
+    if (p.id && !String(p.id).startsWith('ts_')) tasksToSaveIds.add(p.id);
   });
   const finalTasksToSave: Task[] = [];
   tasksToSaveIds.forEach(tid => {
     if (String(tid).startsWith('ts_')) return;
     const tk = allTasksMap.get(tid);
     if (tk) {
-      const stamped = { ...tk, updatedAt: commitNowIso };
+      const explicitPred = importedPredById.get(tid);
+      const stamped: Task = {
+        ...tk,
+        ...(!tk.isModularParent && explicitPred && (!tk.predecessor || !String(tk.predecessor).trim())
+          ? { predecessor: explicitPred }
+          : {}),
+        updatedAt: commitNowIso,
+      };
       delete (stamped as any)._isVirtualSummary;
       allTasksMap.set(tid, stamped);
       finalTasksToSave.push(stamped);

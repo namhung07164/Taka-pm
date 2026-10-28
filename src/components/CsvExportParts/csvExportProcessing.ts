@@ -64,11 +64,29 @@ export const getCellValue = (
 ) => {
   if (!row || typeof row !== 'object') return '';
 
-  let val = constantMapping[colName] || row[mapping[colName]];
+  let val = constantMapping[colName] || (mapping[colName] ? row[mapping[colName]] : undefined);
+  if (val === undefined || val === null || String(val) === '') {
+    const cleanTarget = colName.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const matchedKey = Object.keys(row).find((k) => {
+      const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (cleanK === cleanTarget) return true;
+      if (cleanTarget === 'predecessor' && (cleanK.includes('predecessor') || cleanK === 'tiennhiem')) return true;
+      if (cleanTarget === 'subtaskcode' && (cleanK.includes('subtask') || cleanK.includes('taskcodephu'))) return true;
+      if (cleanTarget === 'parenttaskcode' && (cleanK.includes('parenttask') || cleanK.includes('taskme'))) return true;
+      return false;
+    });
+    if (matchedKey !== undefined) {
+      val = row[matchedKey];
+    }
+  }
 
   if (activeTab === 'task') {
     const projCode =
-      constantMapping['projectCode'] || row[mapping['projectCode']] || '';
+      constantMapping['projectCode'] ||
+      (mapping['projectCode'] ? row[mapping['projectCode']] : undefined) ||
+      row['projectCode'] ||
+      row['Project Code'] ||
+      '';
 
     if (colName === 'Sub-task code') {
       if (keepOriginal['Sub-task code'] && val !== undefined && val !== null && String(val).trim() !== '') {
@@ -93,14 +111,27 @@ export const getCellValue = (
           val = strVal;
         }
       }
-    } else if (colName.toLowerCase() === 'predecessor' && !keepOriginal[colName]) {
+    } else if (colName.toLowerCase() === 'predecessor') {
       if (val !== undefined && val !== null && String(val).trim() !== '') {
-        const strVal = String(val).trim();
-        val = strVal.replace(/^([A-Za-z0-9_]+)-(\d+)(.*)$/, '$1#$2$3');
-        if (projCode && !val.includes('#') && !val.toLowerCase().startsWith(projCode.toLowerCase())) {
-          if (/^\d+/.test(val)) {
-            val = `${projCode}#${val}`;
-          }
+        const cleanedRaw = String(val).trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim();
+        if (keepOriginal[colName]) {
+          val = cleanedRaw;
+        } else {
+          val = cleanedRaw
+            .split(/[,;]+/)
+            .map((part) => {
+              let cleanPart = part.trim();
+              if (!cleanPart) return '';
+              cleanPart = cleanPart.replace(/^([A-Za-z0-9_-]+)-(\d+)(\s*(?:FS|SS|FF|SF).*)?$/i, '$1#$2$3');
+              if (projCode && !cleanPart.includes('#') && !cleanPart.toLowerCase().startsWith(String(projCode).toLowerCase())) {
+                if (/^\d+/.test(cleanPart)) {
+                  return `${projCode}#${cleanPart}`;
+                }
+              }
+              return cleanPart;
+            })
+            .filter(Boolean)
+            .join(', ');
         }
       }
     }

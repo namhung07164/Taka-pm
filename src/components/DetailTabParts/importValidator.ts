@@ -295,9 +295,23 @@ export function validateTasksImportData(
       }
     }
 
-    // 5. Predecessor Self-Reference
+    // 5. Predecessor Self-Reference (only when referencing the exact same project & subtask code)
     if (predecessor && subTaskCode) {
-      if (predecessor.toUpperCase().includes(subTaskCode.toUpperCase())) {
+      const cleanSub = normalizeDashes(String(subTaskCode)).trim().toUpperCase();
+      const cleanProj = normalizeDashes(String(projectCode || '')).trim().toUpperCase();
+      const fullSelfCode = cleanSub.includes('#')
+        ? cleanSub
+        : (cleanProj ? `${cleanProj}#${cleanSub}` : cleanSub);
+      const predTokens = normalizeDashes(predecessor)
+        .split(/[,;]+/)
+        .map(tok => tok.trim().replace(/\s*(?:FS|SS|FF|SF)\s*(?:[+-]\s*\d+(?:\.\d+)?)?$/i, '').trim().toUpperCase())
+        .filter(Boolean);
+      const isSelfRef = predTokens.some(tok => {
+        if (tok === fullSelfCode) return true;
+        if (!tok.includes('#') && !tok.includes('-') && tok === cleanSub) return true;
+        return false;
+      });
+      if (isSelfRef) {
         addError({
           rowNumber,
           projectCode,

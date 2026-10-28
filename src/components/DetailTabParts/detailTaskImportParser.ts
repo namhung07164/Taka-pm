@@ -40,25 +40,44 @@ export async function parseTasksFile(
     throw new Error('CSV file is empty or format is invalid. At least 1 header row and 1 data row are required.');
   }
 
-  const headers = rows[0].map(h => h.trim().toLowerCase());
+  const headers = rows[0].map(h => String(h || '').replace(/^\uFEFF/, '').trim().toLowerCase());
   const dataRows = rows.slice(1);
 
-  // Extract project keys from data rows to hydrate any projects not yet loaded in active year view
+  // Extract project keys from data rows (including cross-project predecessor references) to hydrate any projects not yet loaded in active year view
   const pCodeIdx = headers.findIndex(h => ['projectcode', 'project code', 'code'].includes(h));
   const pYearIdx = headers.findIndex(h => ['projectyear', 'project year', 'year'].includes(h));
   const pStoreIdx = headers.findIndex(h => ['projectstore', 'project store', 'store'].includes(h));
+  const predIdx = headers.findIndex(h =>
+    ['predecessor', 'predecessors', 'predecessor code', 'predecessor_code', 'predecessorcode', 'tiền nhiệm', 'tien nhiem'].includes(h)
+  );
 
   const rawKeys: RawImportProjectKey[] = [];
-  if (pCodeIdx !== -1) {
-    dataRows.forEach(r => {
+  dataRows.forEach(r => {
+    const year = pYearIdx !== -1 ? String(r[pYearIdx] || '').trim() : undefined;
+    const store = pStoreIdx !== -1 ? String(r[pStoreIdx] || '').trim() : undefined;
+    if (pCodeIdx !== -1) {
       const code = String(r[pCodeIdx] || '').trim();
-      const year = pYearIdx !== -1 ? String(r[pYearIdx] || '').trim() : undefined;
-      const store = pStoreIdx !== -1 ? String(r[pStoreIdx] || '').trim() : undefined;
       if (code) {
         rawKeys.push({ projectCode: code, projectYear: year, projectStore: store });
       }
-    });
-  }
+    }
+    if (predIdx !== -1) {
+      const rawPred = normalizeDashes(String(r[predIdx] || '')).trim();
+      if (rawPred) {
+        rawPred.split(/[,;]+/).forEach(tok => {
+          const cleanTok = tok.trim();
+          const hashIdx = cleanTok.indexOf('#');
+          if (hashIdx > 0) {
+            const extCode = cleanTok.substring(0, hashIdx).trim();
+            if (extCode) {
+              rawKeys.push({ projectCode: extCode, projectYear: year, projectStore: store });
+              rawKeys.push({ projectCode: extCode });
+            }
+          }
+        });
+      }
+    }
+  });
 
   const allKnownProjects = await hydrateProjectsForImport(rawKeys, projects);
 
@@ -81,17 +100,24 @@ export async function parseTasksFile(
   }
 
   dataRows.forEach((row, rowIndex) => {
-    if (row.length < headers.length) return;
+    if (!row || row.every(c => !String(c || '').trim())) return;
     const t: any = {};
 
     headers.forEach((h, i) => {
       let key = h;
-      if (h === 'task name') key = 'name';
+      if (h === 'task name' || h === 'taskname') key = 'name';
       if (h === 'projectid' || h === 'project_id' || h === 'project id') key = 'projectId';
-      if (h === 'projectcode') key = 'projectCode';
-      if (h === 'year' || h === 'projectyear') key = 'projectYear';
-      if (h === 'store' || h === 'projectstore') key = 'projectStore';
-      if (h === 'sub-task code' || h === 'sub task code' || h === 'subtask code' || h === 'sub_task_code' || h === 'taskcodephu' || h === 'task code phu' || h === 'task_code_phu') {
+      if (h === 'projectcode' || h === 'project code' || h === 'code') key = 'projectCode';
+      if (h === 'year' || h === 'projectyear' || h === 'project year') key = 'projectYear';
+      if (h === 'store' || h === 'projectstore' || h === 'project store') key = 'projectStore';
+      if (h === 'start date' || h === 'startdate') key = 'start';
+      if (h === 'finish date' || h === 'finishdate' || h === 'end') key = 'finish';
+      if (h === 'durations') key = 'duration';
+      if (h === 'pic' || h === 'department') key = 'party';
+      if (h === 'predecessor' || h === 'predecessors' || h === 'predecessor code' || h === 'predecessor_code' || h === 'predecessorcode' || h === 'tiền nhiệm' || h === 'tien nhiem') {
+        key = 'predecessor';
+      }
+      if (h === 'sub-task code' || h === 'sub task code' || h === 'subtask code' || h === 'sub_task_code' || h === 'taskcodephu' || h === 'task code phu' || h === 'task_code_phu' || h === 'task code phụ') {
         key = 'taskCodePhu';
       }
       if (h === 'orderindex' || h === 'order_index') key = 'orderIndex';
@@ -121,11 +147,13 @@ export async function parseTasksFile(
       }
 
       if (['projectId', 'projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
-        let val: any = row[i];
+        let val: any = row[i] !== undefined ? row[i] : '';
         if (key === 'start' || key === 'finish') {
           val = parseCSVDate(val);
         } else if (key === 'duration') {
           val = cleanDurationString(val);
+        } else if (key === 'predecessor') {
+          val = normalizeDashes(String(val ?? '')).trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim();
         } else if (key === 'delegation' || key === 'realtimeUpdate') {
           const strVal = String(val || '').trim().toLowerCase();
           val = (strVal === 'true' || strVal === '1' || strVal === 'yes' || strVal === 'on');
