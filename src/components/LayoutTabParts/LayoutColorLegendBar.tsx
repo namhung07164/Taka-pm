@@ -6,9 +6,6 @@ import {
   ChevronDown,
   Download,
   RefreshCw,
-  FileText,
-  Image as ImageIcon,
-  Printer,
   GripHorizontal,
   Compass,
   Search,
@@ -17,6 +14,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getHatchCssStyle } from './layoutPatternUtils';
+import { LayoutLegendExportMenu } from './LayoutLegendExportMenu';
 
 export type LegendDockPosition = 'top-right' | 'bottom-right' | 'bottom-left';
 
@@ -115,6 +113,19 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
     const q = groupSearch.toLowerCase().trim();
     return activeGroups.filter(g => g.name?.toLowerCase().includes(q));
   }, [activeGroups, groupSearch]);
+
+  const { totalUnitsAllGroups, totalAreaAllGroups } = useMemo(() => {
+    let unitsCount = 0;
+    let areaSum = 0;
+    activeGroups.forEach((g: any) => {
+      unitsCount += Number(g.matchCount || 0);
+      areaSum += Number(g.totalArea || 0);
+    });
+    return {
+      totalUnitsAllGroups: unitsCount,
+      totalAreaAllGroups: areaSum,
+    };
+  }, [activeGroups]);
 
   if (layoutTooltipVisibility?.legendColor === false) return null;
 
@@ -231,79 +242,13 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
 
                 {/* Export Dropdown Popover */}
                 {showExportMenu && (
-                  <div className="absolute top-full right-0 mt-1.5 w-56 bg-white dark:bg-[#1e1e20] rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-2 flex flex-col gap-1 z-40 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 border-b border-slate-100 dark:border-slate-800">
-                      Export Options
-                    </div>
-
-                    {canWrite && handleTriggerExport && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowExportMenu(false);
-                          handleTriggerExport();
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-left transition-colors cursor-pointer active:scale-95"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
-                        <div>
-                          <div className="font-bold">Sync to Cloud R2</div>
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">Auto-sync all floor layouts</div>
-                        </div>
-                      </button>
-                    )}
-
-                    {handleExport && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowExportMenu(false);
-                            handleExport('jpeg');
-                          }}
-                          className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition-colors cursor-pointer active:scale-95"
-                        >
-                          <ImageIcon className="w-3.5 h-3.5 shrink-0 text-blue-500" />
-                          <div>
-                            <div className="font-bold">Export Image (JPEG)</div>
-                            <div className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">High-resolution layout capture</div>
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowExportMenu(false);
-                            handleExport('pdf');
-                          }}
-                          className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition-colors cursor-pointer active:scale-95"
-                        >
-                          <FileText className="w-3.5 h-3.5 shrink-0 text-rose-500" />
-                          <div>
-                            <div className="font-bold">Export PDF</div>
-                            <div className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">Architectural A3/A4 document</div>
-                          </div>
-                        </button>
-                      </>
-                    )}
-
-                    {setIsPrintPreview && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowExportMenu(false);
-                          setIsPrintPreview(true);
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 text-left transition-colors cursor-pointer border-t border-slate-100 dark:border-slate-800 pt-1.5 active:scale-95"
-                      >
-                        <Printer className="w-3.5 h-3.5 shrink-0 text-purple-500" />
-                        <div>
-                          <div className="font-bold">Print Preview</div>
-                          <div className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">Direct blueprint print layout</div>
-                        </div>
-                      </button>
-                    )}
-                  </div>
+                  <LayoutLegendExportMenu
+                    canWrite={canWrite}
+                    handleTriggerExport={handleTriggerExport}
+                    handleExport={handleExport}
+                    setIsPrintPreview={setIsPrintPreview}
+                    onClose={() => setShowExportMenu(false)}
+                  />
                 )}
               </div>
 
@@ -436,6 +381,24 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
                       );
                     })
                   )}
+                </div>
+              )}
+
+              {/* Total Summary Footer */}
+              {filteredGroups.length >= 2 && totalUnitsAllGroups > 0 && (
+                <div className="flex items-center justify-between px-2.5 py-1 text-[10px] font-mono font-bold border-t border-slate-200/80 dark:border-slate-800 pt-1 mt-0.5 bg-slate-50/50 dark:bg-slate-900/30 rounded-lg">
+                  <span className="uppercase text-[9px] tracking-wider text-slate-500 dark:text-slate-400">Total</span>
+                  <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
+                    <span>{totalUnitsAllGroups} {totalUnitsAllGroups === 1 ? 'unit' : 'units'}</span>
+                    {totalAreaAllGroups > 0 && (
+                      <>
+                        <span className="text-slate-300 dark:text-slate-600">•</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">{Number(totalAreaAllGroups).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²</span>
+                        <span className="text-slate-300 dark:text-slate-600">•</span>
+                        <span className="text-indigo-600 dark:text-indigo-400">100%</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
