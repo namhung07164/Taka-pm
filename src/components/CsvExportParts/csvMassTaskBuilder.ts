@@ -188,11 +188,16 @@ export function buildMassTaskExportRows(params: {
         }
       }
       const mappedDelegation = constantMapping['delegation'] || proj[mapping['delegation']];
+      const delKey = Object.keys(taskDef).find((k) => {
+        const clean = k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return clean === 'delegation' || clean === 'taskdelegation' || clean === 'isdelegation';
+      });
+      const rawTaskDel = delKey ? taskDef[delKey] : taskDef['delegation'];
       const delegation =
         mappedDelegation !== undefined && mappedDelegation !== null && String(mappedDelegation).trim() !== ''
           ? String(mappedDelegation).trim()
-          : taskDef['delegation'] !== undefined
-          ? String(taskDef['delegation'])
+          : rawTaskDel !== undefined && rawTaskDel !== null && String(rawTaskDel).trim() !== ''
+          ? String(rawTaskDel).trim()
           : 'true';
       const comments =
         taskDef['comments'] !== undefined ? taskDef['comments'] : constantMapping['comments'] || '';

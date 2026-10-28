@@ -25,37 +25,30 @@ interface ExecuteImportTasksParams {
 }
 
 export async function executeImportTasks({
-  rawParsedRowsByProject,
-  projects,
-  tasks,
-  appUsers,
-  currentUser
+  rawParsedRowsByProject, projects, tasks, appUsers, currentUser
 }: ExecuteImportTasksParams): Promise<{ count: number; projectCount?: number }> {
   // 1. Gather all tasks across memory, local storage, and Firestore/summaries for target & referenced projects
   const initialCandidates = [...useAppStore.getState().tasks];
   tasks.forEach(t => {
-    if (!initialCandidates.some(existing => existing.id === t.id)) {
-      initialCandidates.push(t);
-    }
+    if (!initialCandidates.some(existing => existing.id === t.id)) initialCandidates.push(t);
   });
 
   try {
     const { localDb } = await import('../../lib/localDb');
-    const dbTasks = await localDb.tasks.toArray();
+    const [dbTasks, dbDels] = await Promise.all([localDb.tasks.toArray(), localDb.delegations.toArray()]);
     dbTasks.forEach(t => {
-      if (!initialCandidates.some(existing => existing.id === t.id)) {
-        initialCandidates.push(t);
-      }
+      if (!initialCandidates.some(existing => existing.id === t.id)) initialCandidates.push(t);
     });
-  } catch {
-    // localDb fallback
-  }
+    if (dbDels && dbDels.length > 0) {
+      const curDels = useAppStore.getState().delegationGroups || [];
+      const delMap = new Map(curDels.map(d => [d.id, d]));
+      let addedDel = false;
+      dbDels.forEach(d => { if (d?.id && !delMap.has(d.id)) { delMap.set(d.id, d); addedDel = true; } });
+      if (addedDel) useAppStore.getState().setDelegationGroups(Array.from(delMap.values()));
+    }
+  } catch { /* localDb fallback */ }
 
-  const allInitialTasks = await hydrateImportContextTasks(
-    rawParsedRowsByProject,
-    projects,
-    initialCandidates
-  );
+  const allInitialTasks = await hydrateImportContextTasks(rawParsedRowsByProject, projects, initialCandidates);
 
   // 2. Build multi-index maps for existing tasks
   const existingTasksById = new Map<string, Task>();
@@ -70,13 +63,9 @@ export async function executeImportTasks({
     if (tsk.name) {
       existingTasksByName.set(`${prjKey}:::${String(tsk.name).trim().toLowerCase()}`, tsk);
       const norm = normalizeTaskNameForComparison(tsk.name);
-      if (norm) {
-        existingTasksByNorm.set(`${prjKey}:::norm:::${norm}`, tsk);
-      }
+      if (norm) existingTasksByNorm.set(`${prjKey}:::norm:::${norm}`, tsk);
     }
-    if (tsk.taskCodePhu) {
-      existingTasksByCode.set(`${prjKey}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`, tsk);
-    }
+    if (tsk.taskCodePhu) existingTasksByCode.set(`${prjKey}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`, tsk);
   });
 
   const previousStates = new Map<string, any>();
@@ -100,22 +89,16 @@ export async function executeImportTasks({
 
     let maxExistingSubtaskNum = 0;
     let maxExistingOrderIndex = -1;
-
     projectExistingTasks.forEach(pt => {
       if (pt.orderIndex !== undefined && pt.orderIndex !== null) {
         const ord = Number(pt.orderIndex);
-        if (!isNaN(ord) && ord > maxExistingOrderIndex) {
-          maxExistingOrderIndex = ord;
-        }
+        if (!isNaN(ord) && ord > maxExistingOrderIndex) maxExistingOrderIndex = ord;
       }
       if (pt.taskCodePhu) {
         const n = extractSubtaskIndex(pt.taskCodePhu);
-        if (n !== null && n > maxExistingSubtaskNum) {
-          maxExistingSubtaskNum = n;
-        }
+        if (n !== null && n > maxExistingSubtaskNum) maxExistingSubtaskNum = n;
       }
     });
-
     let nextAutoNumber = Math.max(maxExistingSubtaskNum, maxExistingOrderIndex + 1);
 
     const sortedItems = [...items].sort((a, b) => {
@@ -290,10 +273,16 @@ export async function executeImportTasks({
       }
       if (csvPred !== undefined) t.predecessor = csvPred;
 
+      const resolvedDelegation =
+        t.delegation !== undefined
+          ? Boolean(t.delegation)
+          : existing?.delegation !== undefined
+          ? Boolean(existing.delegation)
+          : true;
       const hasImportedParentRef = Boolean(t.parentTaskId || t.parentTaskCode || t.parentTaskName);
       const finalTask: Task = existing
         ? {
-            ...existing, ...t, id,
+            ...existing, ...t, id, delegation: resolvedDelegation,
             predecessor: csvPred !== undefined ? (csvPred || existing.predecessor || '') : (existing.predecessor || ''),
             parentTaskId: hasImportedParentRef ? (t.parentTaskId || existing.parentTaskId) : undefined,
             predecessorTaskIds: undefined, predecessors: undefined, isModularParent: false,
@@ -301,7 +290,7 @@ export async function executeImportTasks({
             durationManual: true, finishManual: false, startManual: false, updatedAt: new Date().toISOString()
           }
         : {
-            ...t, id, predecessor: csvPred || '',
+            ...t, id, delegation: resolvedDelegation, predecessor: csvPred || '',
             comments: updatedComments, orderIndex: taskOrderIndex, taskCodePhu,
             durationManual: true, finishManual: false, startManual: false, updatedAt: new Date().toISOString()
           };
@@ -369,12 +358,10 @@ export async function executeImportTasks({
     if (t.predecessor && String(t.predecessor).trim()) importedPredById.set(t.id, String(t.predecessor).trim());
   });
 
-  // 5. Prepare missing delegations BEFORE rolling up parent tasks & project summaries
   const commitNowIso = new Date().toISOString();
   const activeUser = useAppStore.getState().currentUser || currentUser;
-  const precomputedDelegations = prepareMissingDelegationsForTasks(tasksToImport, activeUser, commitNowIso);
 
-  // 6. Sync hydrated context tasks + imported tasks into Zustand so cross-project predecessors resolve
+  // 5. Sync hydrated context tasks + imported tasks into Zustand so cross-project predecessors resolve
   const hydratedRealTasks = allInitialTasks.filter(t => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary);
   useAppStore.getState().optimisticUpdateTasks([...hydratedRealTasks, ...tasksToImport]);
 
@@ -416,6 +403,9 @@ export async function executeImportTasks({
       finalTasksToSave.push(stamped);
     }
   });
+
+  // 6. Prepare missing delegations on finalTasksToSave (after deduplication & rollup so IDs match 100%)
+  const precomputedDelegations = prepareMissingDelegationsForTasks(finalTasksToSave, activeUser, commitNowIso);
 
   // Optimistic update (0ms UI)
   useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);

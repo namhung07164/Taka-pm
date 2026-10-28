@@ -4,7 +4,7 @@ import { useEnrichedData } from '../hooks/useEnrichedData';
 import { Project, Task } from '../types';
 import { getEffectiveStoreFilter, scrollToElement } from '../lib/utils';
 import { backfillMissingProjectDates } from '../lib/projectDatesService';
-import { hydrateTasksFromLocal } from '../lib/backgroundSyncWorker';
+import { hydrateTasksFromLocal, hydrateDelegationsFromLocal } from '../lib/backgroundSyncWorker';
 import { lazyWithRetry } from '../lib/lazyWithRetry';
 import { safeSetItemSession } from '../lib/storage';
 
@@ -75,13 +75,20 @@ export function DetailTab({
   // Tri-Gate Lazy Loading Guard
   const isTasksRequested = useAppStore(state => state.isTasksRequested);
   const setIsTasksRequested = useAppStore(state => state.setIsTasksRequested);
+  const isDelegationsRequested = useAppStore(state => state.isDelegationsRequested);
+  const setIsDelegationsRequested = useAppStore(state => state.setIsDelegationsRequested);
   useEffect(() => {
     if (!isTasksRequested) setIsTasksRequested(true);
+    if (!isDelegationsRequested) setIsDelegationsRequested(true);
     const currentTasks = useAppStore.getState().tasks;
     if (!currentTasks || currentTasks.length === 0) {
       hydrateTasksFromLocal().catch(() => {});
     }
-  }, [isTasksRequested, setIsTasksRequested]);
+    const currentDels = useAppStore.getState().delegationGroups;
+    if (!currentDels || currentDels.length === 0) {
+      hydrateDelegationsFromLocal().catch(() => {});
+    }
+  }, [isTasksRequested, setIsTasksRequested, isDelegationsRequested, setIsDelegationsRequested]);
 
   // Options & Permissions Hook
   const {

@@ -77,6 +77,54 @@ export const TaskChat = React.memo(function TaskChat({
 
   const comments = localComments;
 
+  const linkedGroup = useMemo(() => {
+    if (!task?.id) return undefined;
+    const detId = `del_${task.id}`;
+    const byId =
+      delegationGroups.find(
+        (g) => g.parentTaskId === task.id || g.id === detId || g.id === task.id
+      ) ||
+      (useAppStore.getState().delegationGroups || []).find(
+        (g) => g.parentTaskId === task.id || g.id === detId || g.id === task.id
+      );
+    if (byId) return byId;
+    if (task.delegation && task.name && task.projectCode) {
+      const tName = String(task.name).trim().toLowerCase();
+      const tCode = String(task.projectCode).trim().toLowerCase();
+      const tStore = task.projectStore ? String(task.projectStore).trim().toLowerCase() : '';
+      const tYear = task.projectYear ? String(task.projectYear).trim() : '';
+      return (useAppStore.getState().delegationGroups || []).find(
+        (g) =>
+          String(g.name || '').trim().toLowerCase() === tName &&
+          String(g.projectCode || '').trim().toLowerCase() === tCode &&
+          (!tStore || !g.projectStore || String(g.projectStore).trim().toLowerCase() === tStore) &&
+          (!tYear || !g.projectYear || String(g.projectYear).trim() === tYear)
+      );
+    }
+    return undefined;
+  }, [delegationGroups, task?.id, task?.delegation, task?.name, task?.projectCode, task?.projectStore, task?.projectYear]);
+
+  useEffect(() => {
+    if (!task?.id || String(task.id).startsWith('ts_') || !task.delegation) return;
+    if (linkedGroup && Array.isArray(linkedGroup.subTasks) && linkedGroup.subTasks.length > 0) return;
+    import('../../lib/taskImportService')
+      .then(async ({ prepareMissingDelegationsForTasks }) => {
+        const { newDelegations } = prepareMissingDelegationsForTasks([task], currentUser);
+        if (newDelegations.length > 0) {
+          const [{ bulkPersistDelegations }, { doc }, { db, APP_ID, setDoc }] = await Promise.all([
+            import('../../lib/localDb'),
+            import('firebase/firestore'),
+            import('../../lib/firebase'),
+          ]);
+          bulkPersistDelegations(newDelegations).catch(() => {});
+          for (const dg of newDelegations) {
+            setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', dg.id), dg, { merge: true }).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
+  }, [task, linkedGroup, currentUser]);
+
   const picOptions = useMemo(() => {
     const list = new Set<string>();
     appUsers.forEach(u => u.username && list.add(u.username));
@@ -92,7 +140,6 @@ export const TaskChat = React.memo(function TaskChat({
       parts.forEach(p => list.add(p));
     }
 
-    const linkedGroup = delegationGroups.find(g => g.parentTaskId === task.id);
     if (linkedGroup && linkedGroup.subTasks) {
       linkedGroup.subTasks.forEach(st => {
         if (st.party) {
@@ -103,9 +150,7 @@ export const TaskChat = React.memo(function TaskChat({
     }
 
     return Array.from(list).sort();
-  }, [appUsers, subAppUsers, task?.party, delegationGroups, task?.id]);
-
-  const linkedGroup = delegationGroups.find(g => g.parentTaskId === task.id);
+  }, [appUsers, subAppUsers, task?.party, linkedGroup]);
 
   const { handleDeleteComment, handleEditComment, handleSendFromInput } = useTaskChatActions({
     task,

@@ -205,69 +205,71 @@ export function prepareMissingDelegationsForTasks(
   nowIso: string = new Date().toISOString()
 ): { newDelegations: DelegationGroup[]; taskDelegationMap: Map<string, DelegationGroup> } {
   const dateStr = nowIso.substring(0, 10);
-  const activeUserId =
-    currentUser?.id && currentUser.id !== 'guest'
-      ? currentUser.id
-      : currentUser?.username || 'system';
-
+  const activeUserId = currentUser?.id && currentUser.id !== 'guest' ? currentUser.id : currentUser?.username || 'system';
   const existingDel = useAppStore.getState().delegationGroups || [];
   const existingDelMap = new Map<string, DelegationGroup>(existingDel.map((d) => [d.id, d]));
+  const existingByParentId = new Map<string, DelegationGroup>();
+  existingDel.forEach((d) => { if (d?.parentTaskId) existingByParentId.set(d.parentTaskId, d); });
 
   const newDelegations: DelegationGroup[] = [];
   const taskDelegationMap = new Map<string, DelegationGroup>();
 
   tasksToSave.forEach((t) => {
-    if (!t.delegation) return;
+    if (!t || !t.delegation || !t.id || String(t.id).startsWith('ts_')) return;
     const deterministicGroupId = `del_${t.id}`;
-    // Preserve existing delegation group if it already exists so subtask statuses are never reset
-    if (existingDelMap.has(deterministicGroupId)) {
+    const rawParty = t.party && String(t.party).trim() ? String(t.party).trim() : '';
+    const parsedParty = rawParty.split(/[,;/+]+/).map((s) => s.trim()).filter(Boolean)[0] || rawParty || '';
+    const existingGroup = existingDelMap.get(deterministicGroupId) || existingByParentId.get(t.id) || existingDelMap.get(t.id);
+
+    if (existingGroup) {
+      const hasSubTasks = Array.isArray(existingGroup.subTasks) && existingGroup.subTasks.length > 0;
+      const firstSubNeedsParty = hasSubTasks && existingGroup.subTasks.length === 1 && !existingGroup.subTasks[0].party && Boolean(parsedParty);
+      if (existingGroup.parentTaskId !== t.id || !hasSubTasks || firstSubNeedsParty) {
+        const repairedSubTasks = hasSubTasks
+          ? existingGroup.subTasks.map((st, idx) => (idx === 0 && !st.party && parsedParty ? { ...st, party: parsedParty } : st))
+          : [{ id: generateId(), name: '', comments: '', status: 'Assigned' as const, delegationStatus: 'Assigned' as const, priority: 'Mid' as const, party: parsedParty, startAct: dateStr, finishAct: dateStr, updatedAt: nowIso }];
+        const repairedGroup: DelegationGroup = {
+          ...existingGroup,
+          parentTaskId: t.id,
+          name: t.name || existingGroup.name || 'Delegated Task',
+          ...(t.projectId ? { projectId: t.projectId } : {}),
+          projectCode: t.projectCode || existingGroup.projectCode,
+          projectStore: t.projectStore || existingGroup.projectStore,
+          projectYear: t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear)) ? Number(t.projectYear) : existingGroup.projectYear || new Date().getFullYear(),
+          subTasks: repairedSubTasks,
+          updatedAt: nowIso,
+        };
+        newDelegations.push(repairedGroup);
+        taskDelegationMap.set(t.id, repairedGroup);
+        existingDelMap.set(repairedGroup.id, repairedGroup);
+        existingByParentId.set(t.id, repairedGroup);
+      } else {
+        taskDelegationMap.set(t.id, existingGroup);
+      }
       return;
     }
-    const rawParty = t.party && t.party.trim() ? t.party.trim() : '';
-    const parsedParty =
-      rawParty
-        .split(/[,;/+]+/)
-        .map((s) => s.trim())
-        .filter(Boolean)[0] || rawParty;
-    if (parsedParty) {
-      const delGroup: DelegationGroup = {
-        id: deterministicGroupId,
-        parentTaskId: t.id,
-        name: t.name || 'Delegated Task',
-        ...(t.projectId ? { projectId: t.projectId } : {}),
-        projectCode: t.projectCode,
-        projectStore: t.projectStore,
-        projectYear:
-          t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))
-            ? Number(t.projectYear)
-            : new Date().getFullYear(),
-        subTasks: [
-          {
-            id: generateId(),
-            name: '',
-            comments: '',
-            status: 'Assigned',
-            delegationStatus: 'Assigned',
-            priority: 'Mid',
-            party: parsedParty,
-            startAct: dateStr,
-            finishAct: dateStr,
-            updatedAt: nowIso,
-          },
-        ],
-        updatedAt: nowIso,
-        createdBy: activeUserId,
-      };
-      newDelegations.push(delGroup);
-      taskDelegationMap.set(t.id, delGroup);
-      existingDelMap.set(deterministicGroupId, delGroup);
-    }
+
+    const delGroup: DelegationGroup = {
+      id: deterministicGroupId,
+      parentTaskId: t.id,
+      name: t.name || 'Delegated Task',
+      ...(t.projectId ? { projectId: t.projectId } : {}),
+      projectCode: t.projectCode,
+      projectStore: t.projectStore,
+      projectYear: t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear)) ? Number(t.projectYear) : new Date().getFullYear(),
+      subTasks: [{ id: generateId(), name: '', comments: '', status: 'Assigned', delegationStatus: 'Assigned', priority: 'Mid', party: parsedParty, startAct: dateStr, finishAct: dateStr, updatedAt: nowIso }],
+      updatedAt: nowIso,
+      createdBy: activeUserId,
+    };
+    newDelegations.push(delGroup);
+    taskDelegationMap.set(t.id, delGroup);
+    existingDelMap.set(deterministicGroupId, delGroup);
+    existingByParentId.set(t.id, delGroup);
   });
 
   if (newDelegations.length > 0) {
     useAppStore.getState().setDelegationGroups(Array.from(existingDelMap.values()));
   }
-
   return { newDelegations, taskDelegationMap };
 }
 

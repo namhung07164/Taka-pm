@@ -16,7 +16,7 @@ import {
   scheduleDependentTasks 
 } from '../../lib/ganttUtils';
 import { parseDateTime, formatToDatetimeLocal, generateId, isTaskBelongsToProject } from '../../lib/utils';
-import { cleanDurationString, rollupParentTaskDates } from '../../lib/taskImportService';
+import { cleanDurationString, rollupParentTaskDates, prepareMissingDelegationsForTasks } from '../../lib/taskImportService';
 import { normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { ensureProjectTasksLoaded, saveTaskStateUnified, deleteTaskStateUnified } from '../../lib/taskStateService';
 import { recordBatchDeltas } from '../../lib/deltaSyncService';
@@ -355,39 +355,13 @@ export function useDetailTaskMutations({
 
       batch.set(tRef, newT, { merge: true });
 
-      if (updates.delegation === true) {
-         const deterministicGroupId = `del_${t.id}`;
-         const existingGroup = delegationGroups.find(g => g.parentTaskId === t.id || g.id === deterministicGroupId);
-         if (!existingGroup) {
-            const dateStr = new Date().toISOString().substring(0, 10);
-            const rawParty = (t.party && t.party.trim()) ? t.party.trim() : (currentUser.username || '');
-            const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
-            const newGroup: DelegationGroup = {
-              id: deterministicGroupId,
-              parentTaskId: t.id,
-              name: t.name || 'Delegated Task',
-              projectCode: t.projectCode,
-              projectStore: t.projectStore,
-              projectYear: (t.projectYear !== undefined && t.projectYear !== null && !isNaN(Number(t.projectYear))) ? Number(t.projectYear) : (Number(activeProjects.find(p => p.code === t.projectCode)?.year) || new Date().getFullYear()),
-              subTasks: [{ 
-                 id: generateId(), 
-                 name: '', 
-                 comments: '', 
-                 status: 'Assigned', 
-                 delegationStatus: 'Assigned', 
-                 priority: 'Mid', 
-                 party: parsedParty, 
-                 startAct: dateStr, 
-                 finishAct: dateStr, 
-                 updatedAt: new Date().toISOString() 
-              }],
-              updatedAt: new Date().toISOString(),
-              createdBy: currentUser.id
-            };
-            const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
-            batch.set(delRef, newGroup, { merge: true });
-         }
-      }
+      const { newDelegations } = newT.delegation
+        ? prepareMissingDelegationsForTasks([newT], currentUser)
+        : { newDelegations: [] as DelegationGroup[] };
+      newDelegations.forEach((delGroup) => {
+        const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', delGroup.id);
+        batch.set(delRef, delGroup, { merge: true });
+      });
 
       const depUpdates = Array.from(depUpdateMap.values()).filter(d => d.id !== newT.id);
       depUpdates.forEach(depTask => {
@@ -415,6 +389,9 @@ export function useDetailTaskMutations({
       // 2. Offload Firestore commit, Delta broadcast, and Project Date sync in parallel
       setTimeout(async () => {
         try {
+          if (newDelegations.length > 0) {
+            import('../../lib/localDb').then(({ bulkPersistDelegations }) => bulkPersistDelegations(newDelegations)).catch(() => {});
+          }
           const prevTaskById = new Map<string, Task>();
           for (let i = 0; i < latestTasks.length; i++) {
             const item = latestTasks[i];
@@ -440,6 +417,20 @@ export function useDetailTaskMutations({
               if (!di.data.projectStore && newT.projectStore) di.data.projectStore = newT.projectStore;
               if (!di.data.projectYear && newT.projectYear) di.data.projectYear = newT.projectYear;
             }
+          });
+
+          newDelegations.forEach((delGroup) => {
+            deltaItems.push({
+              docId: delGroup.id,
+              collectionName: 'taka_delegations',
+              action: 'create',
+              isPatch: false,
+              data: delGroup,
+              year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
+              projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
+              projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
+              projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
+            });
           });
 
           const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');

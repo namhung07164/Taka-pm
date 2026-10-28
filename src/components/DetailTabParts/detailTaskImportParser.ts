@@ -154,8 +154,15 @@ export async function parseTasksFile(
           val = cleanDurationString(val);
         } else if (key === 'predecessor') {
           val = normalizeDashes(String(val ?? '')).trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim();
-        } else if (key === 'delegation' || key === 'realtimeUpdate') {
-          const strVal = String(val || '').trim().toLowerCase();
+        } else if (key === 'delegation') {
+          const strVal = String(val ?? '').trim().toLowerCase();
+          if (strVal === '') {
+            val = undefined;
+          } else {
+            val = !(strVal === 'false' || strVal === '0' || strVal === 'no' || strVal === 'off');
+          }
+        } else if (key === 'realtimeUpdate') {
+          const strVal = String(val ?? '').trim().toLowerCase();
           val = (strVal === 'true' || strVal === '1' || strVal === 'yes' || strVal === 'on');
         } else if (key === 'projectYear') {
           val = isNaN(Number(val)) ? val : Number(val);

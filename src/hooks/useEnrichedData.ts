@@ -364,7 +364,10 @@ export function useEnrichedData() {
     });
 
     // 4. Filter visibleDelegationGroups
+    const visibleTaskIds = new Set(filteredTasks.map((t) => t.id));
     const visibleDelegationGroups = delegationGroups.filter((group) => {
+      if (group.parentTaskId && visibleTaskIds.has(group.parentTaskId)) return true;
+      if (group.projectId && visibleProjectIds.has(String(group.projectId).trim())) return true;
       const isCreator = group.createdBy === currentUser.id;
       const isSubTaskInvolved = group.subTasks?.some(
         (st) => st.createdBy === currentUser.id || (st.involvedUsers && st.involvedUsers.includes(currentUser.id))

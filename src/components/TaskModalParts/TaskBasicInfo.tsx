@@ -30,8 +30,9 @@ export const TaskBasicInfo = memo(function TaskBasicInfo({
   } = logic;
 
   const currentTaskDelegationGroup = React.useMemo(() => {
-    if (!task) return null;
-    return delegationGroups.find(g => g.parentTaskId === task.id || g.id === task.id);
+    if (!task?.id) return null;
+    const detId = `del_${task.id}`;
+    return delegationGroups.find(g => g.parentTaskId === task.id || g.id === detId || g.id === task.id);
   }, [task, delegationGroups]);
 
   const subTasksOfCurrent = React.useMemo(() => {

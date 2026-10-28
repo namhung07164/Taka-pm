@@ -2,16 +2,7 @@ import { doc, deleteField } from 'firebase/firestore';
 import { db, APP_ID, writeBatch } from '../../lib/firebase';
 import { addPendingUpdate } from '../../lib/syncQueue';
 import { undoManager } from '../../lib/undoManager';
-import {
-  getPredecessorCodeUpdates,
-  updatePredecessorsStrings,
-  parsePredecessors,
-  computeTaskCode,
-  buildTaskNoMap,
-  scheduleDependentTasks,
-  splitPredecessors,
-  calculateTaskDatesFromPredecessors
-} from '../../lib/ganttUtils';
+import { getPredecessorCodeUpdates, updatePredecessorsStrings, parsePredecessors, computeTaskCode, buildTaskNoMap, scheduleDependentTasks, splitPredecessors, calculateTaskDatesFromPredecessors } from '../../lib/ganttUtils';
 import { resolvePredecessorString, PredecessorContext } from '../../lib/predecessorMatchUtils';
 import { generateId, getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime, isTaskBelongsToProject, normalizeDashes } from '../../lib/utils';
 import { syncProjectDatesByCode } from '../../lib/projectDatesService';
@@ -22,6 +13,7 @@ import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../
 import { recordBatchDeltas } from '../../lib/deltaSyncService';
 import { createPatchDeltaItem } from '../../lib/deltaPatchService';
 import { isTaskBelongToSameParentScope } from '../../lib/parentHierarchyUtils';
+import { prepareMissingDelegationsForTasks } from '../../lib/taskImportService';
 
 export interface TaskSaveParams {
   formData: Partial<Task>;
@@ -37,15 +29,7 @@ export interface TaskSaveParams {
 }
 
 export async function executeTaskSave({
-  formData,
-  task,
-  projects,
-  tasks,
-  cloudStatus,
-  currentUser,
-  setToast,
-  onClose,
-  setIsSubmitting
+  formData, task, projects, tasks, cloudStatus, currentUser, setToast, onClose, setIsSubmitting
 }: TaskSaveParams): Promise<boolean> {
   const currentProject = projects.find(p => 
     p.code === formData.projectCode &&
@@ -63,36 +47,17 @@ export async function executeTaskSave({
     ? Number(currentProject.year) 
     : (formData.projectYear && !isNaN(Number(formData.projectYear)) ? Number(formData.projectYear) : new Date().getFullYear());
 
-  const targetPrjKey = buildCanonicalProjectKey(
-    currentProject.code || formData.projectCode,
-    currentProject.year || formData.projectYear,
-    currentProject.store || formData.projectStore,
-    projects
-  );
-
-  // Check for duplicate task name or code in the same project
+  const targetPrjKey = buildCanonicalProjectKey(currentProject.code || formData.projectCode, currentProject.year || formData.projectYear, currentProject.store || formData.projectStore, projects);
   const normFormName = normalizeTaskNameForComparison(formData.name, formData.projectCode || currentProject?.code);
   const formTaskCode = formData.taskCodePhu ? String(formData.taskCodePhu).trim().toLowerCase() : '';
 
   const isDuplicate = tasks.some(t => {
     if (t.id === task?.id || t.isDeleted) return false;
-    
-    const sameProject = isTaskBelongsToProject(t, currentProject, projects);
-    if (!sameProject) return false;
-
-    // Check exact name
-    if (t.name && String(t.name).trim().toLowerCase() === String(formData.name || '').trim().toLowerCase()) {
-      return true;
-    }
-    // Check normalized name
+    if (!isTaskBelongsToProject(t, currentProject, projects)) return false;
+    if (t.name && String(t.name).trim().toLowerCase() === String(formData.name || '').trim().toLowerCase()) return true;
     const tNorm = normalizeTaskNameForComparison(t.name);
-    if (normFormName && tNorm && normFormName === tNorm) {
-      return true;
-    }
-    // Check taskCodePhu
-    if (formTaskCode && t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === formTaskCode) {
-      return true;
-    }
+    if (normFormName && tNorm && normFormName === tNorm) return true;
+    if (formTaskCode && t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === formTaskCode) return true;
     return false;
   });
 
@@ -351,6 +316,12 @@ export async function executeTaskSave({
 
     const batch = writeBatch(db);
     batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave, { merge: true });
+    const { newDelegations } = dataToSave.delegation
+      ? prepareMissingDelegationsForTasks([dataToSave as Task], currentUser)
+      : { newDelegations: [] };
+    newDelegations.forEach((delGroup) => {
+      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', delGroup.id), delGroup, { merge: true });
+    });
 
     depUpdates.forEach(depTask => {
       const depProj = projects.find(p => p.code === depTask.projectCode);
@@ -400,6 +371,9 @@ export async function executeTaskSave({
     // 3. Offload network commit, delta emission, Dexie persistence, and project date rollups in parallel
     setTimeout(async () => {
       try {
+        if (newDelegations.length > 0) {
+          import('../../lib/localDb').then(({ bulkPersistDelegations }) => bulkPersistDelegations(newDelegations)).catch(() => {});
+        }
         const deltaItems = optimisticList.map(item => {
           const prev = tasks.find(t => t.id === item.id);
           return createPatchDeltaItem({
@@ -409,6 +383,19 @@ export async function executeTaskSave({
             updated: item,
             action: prev ? 'update' : 'create',
             year: item.projectYear ? String(item.projectYear) : (task?.projectYear ? String(task.projectYear) : undefined),
+          });
+        });
+        newDelegations.forEach((delGroup) => {
+          deltaItems.push({
+            docId: delGroup.id,
+            collectionName: 'taka_delegations',
+            action: 'create',
+            isPatch: false,
+            data: delGroup,
+            year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
+            projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
+            projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
+            projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
           });
         });
         const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
