@@ -170,22 +170,6 @@ export function useAppKeyboardAndTouch({
         }
         return;
       }
-
-      const tabNumberMap: Record<string, TabId> = {
-        '1': 'general',
-        '2': 'calendar',
-        '3': 'gantt',
-        '4': 'detail',
-        '5': 'budget',
-        '6': 'cost',
-        '7': 'layout',
-        '8': 'summary',
-        '9': 'taskDelegation',
-      };
-      if (tabNumberMap[e.key]) {
-        e.preventDefault();
-        handleTabChangeRef.current(tabNumberMap[e.key]);
-      }
     };
 
     window.addEventListener('keydown', handleKeyDown);

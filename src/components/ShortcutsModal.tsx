@@ -36,7 +36,6 @@ export function ShortcutsModal({ isOpen, onClose}: ShortcutsModalProps) {
     { keys: ['Ctrl', 'Z'], description: 'Undo last action' },
     { keys: ['T'], description: 'New Task' },
     { keys: ['P'], description: 'New Project' },
-    { keys: ['1', '-', '9'], description: 'Switch tabs' },
   ];
 
   return (
