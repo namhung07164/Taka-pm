@@ -2,6 +2,8 @@ import { Project } from '../../types';
 import { normalizeStoreCode, normalizeYearString } from '../../lib/taskDeduplicationService';
 import { parseCSVDate } from './detailCsvUtils';
 import { ImportErrorDetail, ImportValidationResult, generateTaskErrorReportCSV } from './importTypes';
+import { normalizeDashes } from '../../lib/utils';
+import { matchProjectCode } from '../../lib/projectDatesService';
 
 export type { ImportErrorDetail, ImportValidationResult };
 export { generateTaskErrorReportCSV };

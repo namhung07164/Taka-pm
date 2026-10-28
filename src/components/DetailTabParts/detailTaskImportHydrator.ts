@@ -79,7 +79,7 @@ export async function hydrateImportContextTasks(
         const tokens = splitPredecessors(predRaw);
         for (const tok of tokens) {
           const parsedTok = parsePredecessorToken(tok);
-          const refCode = normalizeDashes(parsedTok.code || tok).trim();
+          const refCode = normalizeDashes(parsedTok.query || tok).trim();
           const hashIdx = refCode.indexOf('#');
           let projPrefix = hashIdx > 0 ? refCode.slice(0, hashIdx).trim() : '';
           if (!projPrefix) {
@@ -198,6 +198,8 @@ export async function hydrateImportContextTasks(
         projectYear: proj.year !== undefined && proj.year !== null ? Number(proj.year) : undefined,
         baselineStart: ts.baselineStart,
         baselineFinish: ts.baselineFinish,
+        durationManual: false,
+        finishManual: false,
       };
 
       if (synthId.startsWith('ts_')) {
