@@ -23649,7 +23649,6 @@ describe('importValidator', () => {
 
 ================================================================================
 FILE: src/components/DetailTabParts/importValidator.ts
-================================================================================
 import { Project } from '../../types';
 import { normalizeStoreCode, normalizeYearString } from '../../lib/taskDeduplicationService';
 import { parseCSVDate } from './detailCsvUtils';
@@ -23850,26 +23849,31 @@ export function validateTasksImportData(
       const projKey = `${projectCode.toLowerCase()}__${pYearNorm}__${pStoreNorm}`;
       
       const absTaskName = taskName.trim().toLowerCase().replace(/\s+/g, ' ');
-      const taskNameKey = `${projKey}:::name:::${absTaskName}`;
+      const cleanSubTaskCode = String(subTaskCode || '').trim();
 
-      if (seenTaskNamesWithinFile.has(taskNameKey)) {
-        const firstOccurrence = seenTaskNamesWithinFile.get(taskNameKey)!;
-        addError({
-          rowNumber,
-          projectCode,
-          projectYear,
-          projectStore,
-          taskName,
-          errorType: 'DUPLICATE',
-          field: 'Task Name',
-          message: `Duplicate task name '${taskName}' in project ${projectCode} (conflicts with Row ${firstOccurrence.rowNumber}).`
-        });
-      } else {
-        seenTaskNamesWithinFile.set(taskNameKey, { rowNumber, rawName: taskName });
+      // If subtask code is provided, different subtask codes uniquely identify different tasks even if they have the same name.
+      // Therefore, skip duplicate task name checking when subTaskCode is present.
+      if (!cleanSubTaskCode) {
+        const taskNameKey = `${projKey}:::name:::${absTaskName}`;
+        if (seenTaskNamesWithinFile.has(taskNameKey)) {
+          const firstOccurrence = seenTaskNamesWithinFile.get(taskNameKey)!;
+          addError({
+            rowNumber,
+            projectCode,
+            projectYear,
+            projectStore,
+            taskName,
+            errorType: 'DUPLICATE',
+            field: 'Task Name',
+            message: `Duplicate task name '${taskName}' in project ${projectCode} (conflicts with Row ${firstOccurrence.rowNumber}).`
+          });
+        } else {
+          seenTaskNamesWithinFile.set(taskNameKey, { rowNumber, rawName: taskName });
+        }
       }
 
-      if (subTaskCode) {
-        const subTaskCodeKey = `${projKey}:::code:::${subTaskCode.toLowerCase()}`;
+      if (cleanSubTaskCode) {
+        const subTaskCodeKey = `${projKey}:::code:::${cleanSubTaskCode.toLowerCase()}`;
         if (seenSubTaskCodesWithinFile.has(subTaskCodeKey)) {
           const firstCodeOccurrence = seenSubTaskCodesWithinFile.get(subTaskCodeKey)!;
           addError({
@@ -23878,10 +23882,10 @@ export function validateTasksImportData(
             projectYear,
             projectStore,
             taskName,
-            subTaskCode,
+            subTaskCode: cleanSubTaskCode,
             errorType: 'DUPLICATE',
             field: 'Sub-task code',
-            message: `Duplicate Sub-task Code '${subTaskCode}' in project ${projectCode} (conflicts with Row ${firstCodeOccurrence.rowNumber}).`
+            message: `Duplicate Sub-task Code '${cleanSubTaskCode}' in project ${projectCode} (conflicts with Row ${firstCodeOccurrence.rowNumber}).`
           });
         } else {
           seenSubTaskCodesWithinFile.set(subTaskCodeKey, { rowNumber });
@@ -24114,8 +24118,6 @@ export function validateProjectsImportData(
   };
 }
 
-
-================================================================================
 FILE: src/components/DetailTabParts/useDetailBulkActions.ts
 ================================================================================
 import React, { Dispatch, SetStateAction } from 'react';
@@ -49414,17 +49416,24 @@ export function getMdStatusColorClass(mdStatus: string): string {
 
 ================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/useTooltipImages.ts
-================================================================================
 import React, { useEffect, useMemo, useState } from 'react';
 import { Project } from '../../../types';
 import { useAppStore } from '../../../store/useAppStore';
-import { doc, deleteField } from 'firebase/firestore';
+import { doc, deleteField, onSnapshot } from 'firebase/firestore';
 import { setDoc } from '../../../lib/firestoreWrites';
 import { db, APP_ID } from '../../../lib/firebase';
 import { extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../../lib/utils';
 import { TooltipImageItem } from './tooltipTypes';
 import { deleteR2ImageCleanly } from '../../../lib/r2StorageUtils';
 import { recordDelta } from '../../../lib/deltaSyncService';
+
+function normalizeStore(store?: string | null): string {
+  if (!store) return '';
+  const s = String(store).trim().toUpperCase();
+  if (s.includes('HN') || s.includes('HÀ NỘI') || s.includes('HA NOI') || s.includes('HANOI')) return 'HN';
+  if (s.includes('HCM') || s.includes('HỒ CHÍ MINH') || s.includes('HO CHI MINH') || s.includes('SAI GON') || s.includes('SG')) return 'HCM';
+  return s;
+}
 
 interface UseTooltipImagesParams {
   p?: Project;
@@ -49447,53 +49456,69 @@ export function useTooltipImages({
   const [enlargedImage, setEnlargedImage] = useState<{ url: string; title?: string; initialScale?: number } | null>(null);
   const [customUnitImages, setCustomUnitImages] = useState<Array<{ id: string; url: string; title?: string; createdAt?: string; store?: string }>>([]);
 
-  const activeStore = (
+  const rawStore = (
     p?.store ||
     data?.store ||
     (p ? extractProjectMetadata(p).store : '') ||
     (storeFilter && storeFilter.toUpperCase() !== 'ALL' ? storeFilter : '') ||
     'HCM'
-  ).toUpperCase().trim();
+  );
+  const activeStore = normalizeStore(rawStore) || 'HCM';
 
-  const cleanCode = String(data?.code || unitCode || 'default').trim();
+  const cleanCode = String(data?.code || data?.unit || data?.name || unitCode || 'default').trim();
   const activeUnitStorageKey = `taka_unit_images_${activeStore}_${cleanCode}`;
+  const unitImagesDocKey = `${activeStore}_${cleanCode}`;
 
-  // Load custom images from localStorage with strict store separation
+  // 1. Instant 0ms load from localStorage
+  // 2. Real-time Firestore sync on taka_unit_images for cross-device sync (Desktop <-> iOS <-> Android)
   useEffect(() => {
+    let localImages: any[] = [];
     try {
       const saved = localStorage.getItem(activeUnitStorageKey);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          setCustomUnitImages(parsed.filter(item => !item.store || item.store.toUpperCase() === activeStore));
-          return;
+          localImages = parsed.filter(item => !item.store || normalizeStore(item.store) === activeStore);
+          setCustomUnitImages(localImages);
         }
       }
-      const legacyKey = `taka_unit_images_${cleanCode}`;
-      const legacySaved = localStorage.getItem(legacyKey);
-      if (legacySaved && activeStore === 'HN') {
-        const parsedLegacy = JSON.parse(legacySaved);
-        if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) {
-          const tagged = parsedLegacy.map(item => ({ ...item, store: 'HN' }));
-          localStorage.setItem(activeUnitStorageKey, JSON.stringify(tagged));
-          localStorage.removeItem(legacyKey);
-          setCustomUnitImages(tagged);
-          return;
-        }
-      }
-      setCustomUnitImages([]);
     } catch {
       setCustomUnitImages([]);
     }
-  }, [activeUnitStorageKey, activeStore, cleanCode]);
 
-  // Sync panel open state when unit or quickImageMode changes
+    const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_unit_images", unitImagesDocKey);
+    const unsub = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        const cloudData = snap.data();
+        if (Array.isArray(cloudData?.images)) {
+          const cloudImages = cloudData.images.filter((item: any) => !item.store || normalizeStore(item.store) === activeStore);
+          setCustomUnitImages(cloudImages);
+          try {
+            localStorage.setItem(activeUnitStorageKey, JSON.stringify(cloudImages));
+          } catch {}
+          return;
+        }
+      } else if (localImages.length > 0 && canWrite) {
+        // Auto-heal: If images existed in desktop's localStorage, sync them up to Firestore so iOS receives them
+        setDoc(docRef, {
+          unitCode: cleanCode,
+          store: activeStore,
+          images: localImages,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true }).catch(() => {});
+      }
+    }, (err) => {
+      console.warn("[useTooltipImages] Cloud sync listener:", err);
+    });
+
+    return () => unsub();
+  }, [activeUnitStorageKey, activeStore, cleanCode, unitImagesDocKey, canWrite]);
+
   useEffect(() => {
     setShowImagePanel(Boolean(quickImageMode));
     setShowAddLinkInput(false);
-  }, [data.code, unitCode, quickImageMode]);
+  }, [data.code, data.unit, unitCode, quickImageMode]);
 
-  // Re-evaluate position & smoothly scroll tooltip when image panel opens
   useEffect(() => {
     if (!tooltipRef.current) return;
     positionTooltip(true);
@@ -49509,13 +49534,10 @@ export function useTooltipImages({
     return () => clearTimeout(timer1);
   }, [showImagePanel, quickImageMode, positionTooltip, tooltipRef]);
 
-  // Close enlarged image modal with Escape key
   useEffect(() => {
     if (!enlargedImage) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setEnlargedImage(null);
-      }
+      if (e.key === 'Escape') setEnlargedImage(null);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -49548,20 +49570,30 @@ export function useTooltipImages({
       window.dispatchEvent(new CustomEvent('taka_unit_images_changed'));
     }
 
-    // Persist link to project ONLY IF project strictly belongs to activeStore
+    // 1. Direct Cloud Firestore persistence for taka_unit_images (Multi-device sync iOS <-> Desktop)
+    const unitImagesDocRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_unit_images", unitImagesDocKey);
+    setDoc(unitImagesDocRef, {
+      unitCode: cleanCode,
+      store: activeStore,
+      images: updated,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(err => {
+      console.error("[useTooltipImages] Failed to save unit images to Firestore:", err);
+    });
+
+    // 2. Also persist link to matched project document
     try {
       const allProjects = useAppStore.getState().projects;
-      const targetProj = (p && extractProjectMetadata(p).store === activeStore ? p : null) || allProjects.find(item => {
-        if (item.id === p?.id && extractProjectMetadata(item).store === activeStore) return true;
-        const itemStore = extractProjectMetadata(item).store;
+      const targetProj = (p && normalizeStore(extractProjectMetadata(p).store) === activeStore ? p : null) || allProjects.find(item => {
+        if (item.id === p?.id && normalizeStore(extractProjectMetadata(item).store) === activeStore) return true;
+        const itemStore = normalizeStore(extractProjectMetadata(item).store);
         if (itemStore && itemStore !== activeStore) return false;
         const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
-        const targetCode = String(data.code || unitCode || '').toLowerCase();
+        const targetCode = String(data?.code || data?.unit || data?.name || unitCode || '').toLowerCase();
         return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
       });
 
-      if (targetProj && extractProjectMetadata(targetProj).store === activeStore) {
-        // Purge any legacy fake "Link / Photo:" tasks from taskSummaries to keep the task list & detail box clean
+      if (targetProj && normalizeStore(extractProjectMetadata(targetProj).store) === activeStore) {
         const cleanedSummaries = (targetProj.taskSummaries || []).filter(
           ts => !ts.name?.startsWith('Link / Photo:') && !ts.name?.startsWith('http://') && !ts.name?.startsWith('https://')
         );
@@ -49585,12 +49617,10 @@ export function useTooltipImages({
           imageLinks: updatedImageLinks,
         };
 
-        // 1. Instant Zustand 0ms optimistic update
         useAppStore.getState().setProjects(
           allProjects.map(proj => proj.id === targetProj.id ? updatedProject : proj)
         );
 
-        // 2. Cloud Firestore persistence for real-time multi-device sync (iOS <-> Desktop)
         if (targetProj.id) {
           const updateData = {
             taskSummaries: cleanedSummaries,
@@ -49623,14 +49653,6 @@ export function useTooltipImages({
     try {
       if (updated.length === 0) {
         localStorage.removeItem(activeUnitStorageKey);
-        localStorage.removeItem(`taka_unit_images_${activeStore}_${data.code || ''}`);
-        localStorage.removeItem(`taka_unit_images_${activeStore}_${unitCode || ''}`);
-        if (p?.code) localStorage.removeItem(`taka_unit_images_${activeStore}_${p.code}`);
-        // Also remove legacy keys if any
-        localStorage.removeItem(`taka_unit_images_${cleanCode}`);
-        localStorage.removeItem(`taka_unit_images_${data.code || ''}`);
-        localStorage.removeItem(`taka_unit_images_${unitCode || ''}`);
-        if (p?.code) localStorage.removeItem(`taka_unit_images_${p.code}`);
       } else {
         localStorage.setItem(activeUnitStorageKey, JSON.stringify(updated));
       }
@@ -49640,7 +49662,16 @@ export function useTooltipImages({
       window.dispatchEvent(new CustomEvent('taka_unit_images_changed'));
     }
 
-    // Clean up from project.taskSummaries & project.imageLinks ONLY if project belongs to activeStore
+    // 1. Update Firestore taka_unit_images doc
+    const unitImagesDocRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_unit_images", unitImagesDocKey);
+    setDoc(unitImagesDocRef, {
+      unitCode: cleanCode,
+      store: activeStore,
+      images: updated,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(console.error);
+
+    // 2. Clean up from project.taskSummaries & project.imageLinks
     try {
       const targetUrl = urlToDelete || customUnitImages.find(item => item.id === id)?.url;
       if (targetUrl) {
@@ -49650,16 +49681,16 @@ export function useTooltipImages({
       }
 
       const allProjects = useAppStore.getState().projects;
-      const targetProj = (p && extractProjectMetadata(p).store === activeStore ? p : null) || allProjects.find(item => {
-        if (item.id === p?.id && extractProjectMetadata(item).store === activeStore) return true;
-        const itemStore = extractProjectMetadata(item).store;
+      const targetProj = (p && normalizeStore(extractProjectMetadata(p).store) === activeStore ? p : null) || allProjects.find(item => {
+        if (item.id === p?.id && normalizeStore(extractProjectMetadata(item).store) === activeStore) return true;
+        const itemStore = normalizeStore(extractProjectMetadata(item).store);
         if (itemStore && itemStore !== activeStore) return false;
         const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
-        const targetCode = String(data.code || unitCode || '').toLowerCase();
+        const targetCode = String(data?.code || data?.unit || data?.name || unitCode || '').toLowerCase();
         return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
       });
 
-      if (targetProj && extractProjectMetadata(targetProj).store === activeStore) {
+      if (targetProj && normalizeStore(extractProjectMetadata(targetProj).store) === activeStore) {
         const filteredSummaries = (targetProj.taskSummaries || []).filter(
           ts => ts.link !== urlToDelete && ts.imageUrl !== urlToDelete && !ts.name?.includes(urlToDelete || '') && !ts.name?.startsWith('Link / Photo:')
         );
@@ -49697,18 +49728,10 @@ export function useTooltipImages({
             imageLinks: updatedImageLinks,
             updatedAt: new Date().toISOString(),
           };
-          if (targetProj.imageUrl === urlToDelete) {
-            firestoreUpdate.imageUrl = deleteField();
-          }
-          if (targetProj.thumbnail === urlToDelete) {
-            firestoreUpdate.thumbnail = deleteField();
-          }
-          if ((targetProj as any).photo === urlToDelete) {
-            firestoreUpdate.photo = deleteField();
-          }
-          if ((targetProj as any).image === urlToDelete) {
-            firestoreUpdate.image = deleteField();
-          }
+          if (targetProj.imageUrl === urlToDelete) firestoreUpdate.imageUrl = deleteField();
+          if (targetProj.thumbnail === urlToDelete) firestoreUpdate.thumbnail = deleteField();
+          if ((targetProj as any).photo === urlToDelete) firestoreUpdate.photo = deleteField();
+          if ((targetProj as any).image === urlToDelete) firestoreUpdate.image = deleteField();
 
           setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), firestoreUpdate, { merge: true }).catch(console.error);
           recordDelta({
@@ -49738,16 +49761,26 @@ export function useTooltipImages({
     const list: TooltipImageItem[] = [];
     const seenUrls = new Set<string>();
 
-    const projStore = p ? extractProjectMetadata(p).store : '';
-    const isProjMatchingStore = !p || !projStore || !activeStore || projStore === activeStore;
+    const allProjects = useAppStore.getState().projects;
+    const resolvedProj = (p && normalizeStore(extractProjectMetadata(p).store) === activeStore ? p : null) || allProjects.find(item => {
+      const itemStore = normalizeStore(extractProjectMetadata(item).store);
+      if (itemStore && itemStore !== activeStore) return false;
+      const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
+      const targetCode = String(data?.code || data?.unit || data?.name || unitCode || '').toLowerCase();
+      return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
+    });
 
-    // 1. Cloud-backed project.imageLinks (Realtime synchronized across iOS, Android, and Desktop)
-    if (isProjMatchingStore && p?.imageLinks && Array.isArray(p.imageLinks)) {
-      p.imageLinks.forEach((imgItem: any, idx: number) => {
+    const targetP = resolvedProj || p;
+    const projStore = targetP ? normalizeStore(extractProjectMetadata(targetP).store) : '';
+    const isProjMatchingStore = !targetP || !projStore || !activeStore || projStore === activeStore;
+
+    // 1. Cloud-backed project.imageLinks
+    if (isProjMatchingStore && targetP?.imageLinks && Array.isArray(targetP.imageLinks)) {
+      targetP.imageLinks.forEach((imgItem: any, idx: number) => {
         const url = typeof imgItem === 'string' ? imgItem : imgItem?.url;
-        const itemStore = typeof imgItem === 'object' ? imgItem?.store : '';
+        const itemStore = typeof imgItem === 'object' ? normalizeStore(imgItem?.store) : '';
         if (url && typeof url === 'string' && !seenUrls.has(url)) {
-          if (!itemStore || itemStore.toUpperCase() === activeStore) {
+          if (!itemStore || itemStore === activeStore) {
             seenUrls.add(url);
             list.push({
               id: typeof imgItem === 'object' && imgItem.id ? imgItem.id : `img_cloud_${idx}`,
@@ -49761,9 +49794,9 @@ export function useTooltipImages({
       });
     }
 
-    // 2. Project taskSummaries links (Prioritized cloud-backed task summarize, strictly matching store)
-    if (isProjMatchingStore && p?.taskSummaries && Array.isArray(p.taskSummaries)) {
-      p.taskSummaries.forEach((ts, tsIdx) => {
+    // 2. Project taskSummaries links
+    if (isProjMatchingStore && targetP?.taskSummaries && Array.isArray(targetP.taskSummaries)) {
+      targetP.taskSummaries.forEach((ts, tsIdx) => {
         const url = ts.link || ts.imageUrl || ts.thumbnail || (typeof ts.name === 'string' ? ts.name.match(/https?:\/\/[^\s]+/)?.[0] : null);
         if (url && typeof url === 'string' && !seenUrls.has(url)) {
           seenUrls.add(url);
@@ -49778,10 +49811,10 @@ export function useTooltipImages({
       });
     }
 
-    // 3. Custom user-posted links from localStorage (fallback for offline/local cache, strictly filtered by activeStore)
+    // 3. Custom user-posted links (real-time Firestore sync & localStorage fallback)
     customUnitImages.forEach((c) => {
       if (c.url && !seenUrls.has(c.url)) {
-        if (!c.store || c.store.toUpperCase() === activeStore) {
+        if (!c.store || normalizeStore(c.store) === activeStore) {
           seenUrls.add(c.url);
           list.push({
             id: c.id,
@@ -49794,86 +49827,44 @@ export function useTooltipImages({
       }
     });
 
-    // 3. Project direct image / thumbnail fields (strictly matching activeStore)
-    if (isProjMatchingStore) {
-      if (p?.thumbnail && typeof p.thumbnail === 'string' && !seenUrls.has(p.thumbnail)) {
-        seenUrls.add(p.thumbnail);
-        list.push({
-          id: 'proj_thumb',
-          url: p.thumbnail,
-          title: 'Project Thumbnail',
-          source: 'Project Data',
-          isCustom: true,
-        });
-      }
-      if (p?.imageUrl && typeof p.imageUrl === 'string' && !seenUrls.has(p.imageUrl)) {
-        seenUrls.add(p.imageUrl);
-        list.push({
-          id: 'proj_image',
-          url: p.imageUrl,
-          title: 'Project Image',
-          source: 'Project Data',
-          isCustom: true,
-        });
-      }
-      if ((p as any)?.image && typeof (p as any).image === 'string' && !seenUrls.has((p as any).image)) {
-        seenUrls.add((p as any).image);
-        list.push({
-          id: 'proj_img',
-          url: (p as any).image,
-          title: 'Project Image',
-          source: 'Project Data',
-          isCustom: true,
-        });
-      }
-      if ((p as any)?.photo && typeof (p as any).photo === 'string' && !seenUrls.has((p as any).photo)) {
-        seenUrls.add((p as any).photo);
-        list.push({
-          id: 'proj_photo',
-          url: (p as any).photo,
-          title: 'Project Photo',
-          source: 'Project Data',
-          isCustom: true,
-        });
-      }
+    // 4. Project direct image / thumbnail fields
+    if (isProjMatchingStore && targetP) {
+      ['thumbnail', 'imageUrl', 'image', 'photo'].forEach((key) => {
+        const val = (targetP as any)[key];
+        if (val && typeof val === 'string' && !seenUrls.has(val)) {
+          seenUrls.add(val);
+          list.push({
+            id: `proj_${key}`,
+            url: val,
+            title: key === 'thumbnail' ? 'Project Thumbnail' : 'Project Image',
+            source: 'Project Data',
+            isCustom: true,
+          });
+        }
+      });
     }
 
-    // 4. Unit image from layout data (strictly matching activeStore)
-    const dataStore = (data.store || '').toUpperCase().trim();
+    // 5. Unit image from layout data
+    const dataStore = normalizeStore(data?.store || '');
     const isDataMatchingStore = !dataStore || !activeStore || dataStore === activeStore;
     if (isDataMatchingStore) {
-      if (data.imageUrl && typeof data.imageUrl === 'string' && !seenUrls.has(data.imageUrl)) {
-        seenUrls.add(data.imageUrl);
-        list.push({
-          id: 'data_image',
-          url: data.imageUrl,
-          title: 'Unit Layout Image',
-          source: 'Layout Data',
-        });
-      }
-      if (data.thumbnail && typeof data.thumbnail === 'string' && !seenUrls.has(data.thumbnail)) {
-        seenUrls.add(data.thumbnail);
-        list.push({
-          id: 'data_thumb',
-          url: data.thumbnail,
-          title: 'Unit Thumbnail',
-          source: 'Layout Data',
-        });
-      }
-      if (data.image && typeof data.image === 'string' && !seenUrls.has(data.image)) {
-        seenUrls.add(data.image);
-        list.push({
-          id: 'data_img',
-          url: data.image,
-          title: 'Floor Image',
-          source: 'Layout Data',
-        });
-      }
+      ['imageUrl', 'thumbnail', 'image'].forEach((key) => {
+        const val = data[key];
+        if (val && typeof val === 'string' && !seenUrls.has(val)) {
+          seenUrls.add(val);
+          list.push({
+            id: `data_${key}`,
+            url: val,
+            title: key === 'thumbnail' ? 'Unit Thumbnail' : 'Unit Layout Image',
+            source: 'Layout Data',
+          });
+        }
+      });
     }
 
-    // 5. Project comments attachments (strictly matching activeStore)
-    if (isProjMatchingStore && p?.comments && Array.isArray(p.comments)) {
-      p.comments.forEach((c, cIdx) => {
+    // 6. Project comments attachments
+    if (isProjMatchingStore && targetP?.comments && Array.isArray(targetP.comments)) {
+      targetP.comments.forEach((c, cIdx) => {
         if (c.attachments && Array.isArray(c.attachments)) {
           c.attachments.forEach((att, aIdx) => {
             if (att.url && !seenUrls.has(att.url)) {
@@ -49891,7 +49882,7 @@ export function useTooltipImages({
     }
 
     return list;
-  }, [customUnitImages, activeStore, data.store, data.imageUrl, data.thumbnail, data.image, p, p?.comments, p?.taskSummaries, p?.thumbnail, p?.imageUrl, (p as any)?.image, (p as any)?.photo]);
+  }, [customUnitImages, activeStore, data, p, unitCode]);
 
   return {
     showImagePanel,
@@ -49910,7 +49901,6 @@ export function useTooltipImages({
   };
 }
 
-================================================================================
 FILE: src/components/LayoutTabParts/TooltipParts/useTooltipPosition.ts
 ================================================================================
 import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
@@ -159914,6 +159904,8 @@ import { Project } from '../../types';
 import { normalizeStoreCode, normalizeYearString } from '../../lib/taskDeduplicationService';
 import { parseCSVDate } from './detailCsvUtils';
 import { ImportErrorDetail, ImportValidationResult, generateTaskErrorReportCSV } from './importTypes';
+import { normalizeDashes } from '../../lib/utils';
+import { matchProjectCode } from '../../lib/projectDatesService';
 
 export type { ImportErrorDetail, ImportValidationResult };
 export { generateTaskErrorReportCSV };
@@ -160108,26 +160100,31 @@ export function validateTasksImportData(
       const projKey = `${projectCode.toLowerCase()}__${pYearNorm}__${pStoreNorm}`;
       
       const absTaskName = taskName.trim().toLowerCase().replace(/\s+/g, ' ');
-      const taskNameKey = `${projKey}:::name:::${absTaskName}`;
+      const cleanSubTaskCode = String(subTaskCode || '').trim();
 
-      if (seenTaskNamesWithinFile.has(taskNameKey)) {
-        const firstOccurrence = seenTaskNamesWithinFile.get(taskNameKey)!;
-        addError({
-          rowNumber,
-          projectCode,
-          projectYear,
-          projectStore,
-          taskName,
-          errorType: 'DUPLICATE',
-          field: 'Task Name',
-          message: `Duplicate task name '${taskName}' in project ${projectCode} (conflicts with Row ${firstOccurrence.rowNumber}).`
-        });
-      } else {
-        seenTaskNamesWithinFile.set(taskNameKey, { rowNumber, rawName: taskName });
+      // If subtask code is provided, different subtask codes uniquely identify different tasks even if they have the same name.
+      // Therefore, skip duplicate task name checking when subTaskCode is present.
+      if (!cleanSubTaskCode) {
+        const taskNameKey = `${projKey}:::name:::${absTaskName}`;
+        if (seenTaskNamesWithinFile.has(taskNameKey)) {
+          const firstOccurrence = seenTaskNamesWithinFile.get(taskNameKey)!;
+          addError({
+            rowNumber,
+            projectCode,
+            projectYear,
+            projectStore,
+            taskName,
+            errorType: 'DUPLICATE',
+            field: 'Task Name',
+            message: `Duplicate task name '${taskName}' in project ${projectCode} (conflicts with Row ${firstOccurrence.rowNumber}).`
+          });
+        } else {
+          seenTaskNamesWithinFile.set(taskNameKey, { rowNumber, rawName: taskName });
+        }
       }
 
-      if (subTaskCode) {
-        const subTaskCodeKey = `${projKey}:::code:::${subTaskCode.toLowerCase()}`;
+      if (cleanSubTaskCode) {
+        const subTaskCodeKey = `${projKey}:::code:::${cleanSubTaskCode.toLowerCase()}`;
         if (seenSubTaskCodesWithinFile.has(subTaskCodeKey)) {
           const firstCodeOccurrence = seenSubTaskCodesWithinFile.get(subTaskCodeKey)!;
           addError({
@@ -160136,10 +160133,10 @@ export function validateTasksImportData(
             projectYear,
             projectStore,
             taskName,
-            subTaskCode,
+            subTaskCode: cleanSubTaskCode,
             errorType: 'DUPLICATE',
             field: 'Sub-task code',
-            message: `Duplicate Sub-task Code '${subTaskCode}' in project ${projectCode} (conflicts with Row ${firstCodeOccurrence.rowNumber}).`
+            message: `Duplicate Sub-task Code '${cleanSubTaskCode}' in project ${projectCode} (conflicts with Row ${firstCodeOccurrence.rowNumber}).`
           });
         } else {
           seenSubTaskCodesWithinFile.set(subTaskCodeKey, { rowNumber });

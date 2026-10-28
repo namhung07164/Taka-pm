@@ -198,26 +198,31 @@ export function validateTasksImportData(
       const projKey = `${projectCode.toLowerCase()}__${pYearNorm}__${pStoreNorm}`;
       
       const absTaskName = taskName.trim().toLowerCase().replace(/\s+/g, ' ');
-      const taskNameKey = `${projKey}:::name:::${absTaskName}`;
+      const cleanSubTaskCode = String(subTaskCode || '').trim();
 
-      if (seenTaskNamesWithinFile.has(taskNameKey)) {
-        const firstOccurrence = seenTaskNamesWithinFile.get(taskNameKey)!;
-        addError({
-          rowNumber,
-          projectCode,
-          projectYear,
-          projectStore,
-          taskName,
-          errorType: 'DUPLICATE',
-          field: 'Task Name',
-          message: `Duplicate task name '${taskName}' in project ${projectCode} (conflicts with Row ${firstOccurrence.rowNumber}).`
-        });
-      } else {
-        seenTaskNamesWithinFile.set(taskNameKey, { rowNumber, rawName: taskName });
+      // If subtask code is provided, different subtask codes uniquely identify different tasks even if they have the same name.
+      // Therefore, skip duplicate task name checking when subTaskCode is present.
+      if (!cleanSubTaskCode) {
+        const taskNameKey = `${projKey}:::name:::${absTaskName}`;
+        if (seenTaskNamesWithinFile.has(taskNameKey)) {
+          const firstOccurrence = seenTaskNamesWithinFile.get(taskNameKey)!;
+          addError({
+            rowNumber,
+            projectCode,
+            projectYear,
+            projectStore,
+            taskName,
+            errorType: 'DUPLICATE',
+            field: 'Task Name',
+            message: `Duplicate task name '${taskName}' in project ${projectCode} (conflicts with Row ${firstOccurrence.rowNumber}).`
+          });
+        } else {
+          seenTaskNamesWithinFile.set(taskNameKey, { rowNumber, rawName: taskName });
+        }
       }
 
-      if (subTaskCode) {
-        const subTaskCodeKey = `${projKey}:::code:::${subTaskCode.toLowerCase()}`;
+      if (cleanSubTaskCode) {
+        const subTaskCodeKey = `${projKey}:::code:::${cleanSubTaskCode.toLowerCase()}`;
         if (seenSubTaskCodesWithinFile.has(subTaskCodeKey)) {
           const firstCodeOccurrence = seenSubTaskCodesWithinFile.get(subTaskCodeKey)!;
           addError({
@@ -226,10 +231,10 @@ export function validateTasksImportData(
             projectYear,
             projectStore,
             taskName,
-            subTaskCode,
+            subTaskCode: cleanSubTaskCode,
             errorType: 'DUPLICATE',
             field: 'Sub-task code',
-            message: `Duplicate Sub-task Code '${subTaskCode}' in project ${projectCode} (conflicts with Row ${firstCodeOccurrence.rowNumber}).`
+            message: `Duplicate Sub-task Code '${cleanSubTaskCode}' in project ${projectCode} (conflicts with Row ${firstCodeOccurrence.rowNumber}).`
           });
         } else {
           seenSubTaskCodesWithinFile.set(subTaskCodeKey, { rowNumber });
