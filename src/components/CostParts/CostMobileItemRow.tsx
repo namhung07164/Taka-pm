@@ -193,7 +193,7 @@ export const CostMobileItemRow = React.memo(function CostMobileItemRow({
               canWrite={canWrite}
             />
           </span>
-          {c.firstPaidAt && (
+          {Boolean(c.firstPaidAt && formatDisplayDateMain(c.firstPaidAt)) && (
             <span
               className={cn(
                 'text-[8px] font-mono truncate mt-0.5',
@@ -228,7 +228,7 @@ export const CostMobileItemRow = React.memo(function CostMobileItemRow({
               canWrite={canWrite}
             />
           </span>
-          {c.secondPaidAt && (
+          {Boolean(c.secondPaidAt && formatDisplayDateMain(c.secondPaidAt)) && (
             <span
               className={cn(
                 'text-[8px] font-mono truncate mt-0.5',
@@ -263,7 +263,7 @@ export const CostMobileItemRow = React.memo(function CostMobileItemRow({
               canWrite={canWrite}
             />
           </span>
-          {c.thirdPaidAt && (
+          {Boolean(c.thirdPaidAt && formatDisplayDateMain(c.thirdPaidAt)) && (
             <span
               className={cn(
                 'text-[8px] font-mono truncate mt-0.5',

@@ -121,46 +121,87 @@ export function getTodayMidnightMs(): number {
   return _cachedTodayMidnightMs;
 }
 
-export function parseDateTimeMs(dateStr: string | undefined): number | null {
+export function parseDateTimeMs(dateStr: string | any | undefined): number | null {
   if (!dateStr) return null;
-  const cached = _dateTimeMsCache.get(dateStr);
+  if (typeof dateStr === "object") {
+    if (dateStr instanceof Date) {
+      const ms = dateStr.getTime();
+      return isNaN(ms) ? null : ms;
+    }
+    if (typeof (dateStr as any).toMillis === "function") {
+      try {
+        const ms = (dateStr as any).toMillis();
+        return typeof ms === "number" && !isNaN(ms) ? ms : null;
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof (dateStr as any).toDate === "function") {
+      try {
+        const d = (dateStr as any).toDate();
+        const ms = d.getTime();
+        return isNaN(ms) ? null : ms;
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof (dateStr as any).seconds === "number") {
+      const ms = (dateStr as any).seconds * 1000 + Math.floor(((dateStr as any).nanoseconds || 0) / 1e6);
+      return isNaN(ms) ? null : ms;
+    }
+    if (typeof (dateStr as any)._seconds === "number") {
+      const ms = (dateStr as any)._seconds * 1000 + Math.floor(((dateStr as any)._nanoseconds || 0) / 1e6);
+      return isNaN(ms) ? null : ms;
+    }
+    return null;
+  }
+  const s = String(dateStr).trim();
+  if (!s) return null;
+  const cached = _dateTimeMsCache.get(s);
   if (cached !== undefined) {
     return isNaN(cached) ? null : cached;
   }
-  const d = dateStr.length === 10 ? new Date(dateStr + "T09:00") : new Date(dateStr);
+  const d = s.length === 10 ? new Date(s + "T09:00") : new Date(s);
   const ms = d.getTime();
   if (_dateTimeMsCache.size >= MAX_DATE_PARSE_CACHE) {
     _dateTimeMsCache.clear();
   }
-  _dateTimeMsCache.set(dateStr, ms);
+  _dateTimeMsCache.set(s, ms);
   return isNaN(ms) ? null : ms;
 }
 
-export function parseDateMidnightMs(dateStr: string | undefined): number | null {
+export function parseDateMidnightMs(dateStr: string | any | undefined): number | null {
   if (!dateStr) return null;
-  const cached = _dateMidnightMsCache.get(dateStr);
-  if (cached !== undefined) {
-    return isNaN(cached) ? null : cached;
+  const sKey = typeof dateStr === "string" ? dateStr : undefined;
+  if (sKey) {
+    const cached = _dateMidnightMsCache.get(sKey);
+    if (cached !== undefined) {
+      return isNaN(cached) ? null : cached;
+    }
   }
   const ms = parseDateTimeMs(dateStr);
   if (ms === null) {
-    if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
-      _dateMidnightMsCache.clear();
+    if (sKey) {
+      if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
+        _dateMidnightMsCache.clear();
+      }
+      _dateMidnightMsCache.set(sKey, NaN);
     }
-    _dateMidnightMsCache.set(dateStr, NaN);
     return null;
   }
   const d = new Date(ms);
   d.setHours(0, 0, 0, 0);
   const midMs = d.getTime();
-  if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
-    _dateMidnightMsCache.clear();
+  if (sKey) {
+    if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
+      _dateMidnightMsCache.clear();
+    }
+    _dateMidnightMsCache.set(sKey, midMs);
   }
-  _dateMidnightMsCache.set(dateStr, midMs);
   return midMs;
 }
 
-export function parseDateTime(dateStr: string | undefined): Date | null {
+export function parseDateTime(dateStr: string | any | undefined): Date | null {
   if (!dateStr) return null;
   const ms = parseDateTimeMs(dateStr);
   if (ms === null) return new Date(NaN);
@@ -255,10 +296,14 @@ const displayDateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-export function formatDisplayDateMain(dateStr: string | undefined): string {
+export function formatDisplayDateMain(dateStr: string | any | undefined): string {
   if (!dateStr) return "";
   const d = parseDateTime(dateStr);
-  if (!d || isNaN(d.getTime())) return dateStr || "";
+  if (!d || isNaN(d.getTime())) {
+    if (typeof dateStr === "string") return dateStr;
+    if (typeof dateStr === "number") return String(dateStr);
+    return "";
+  }
   return displayDateFormatter.format(d);
 }
 
@@ -271,10 +316,14 @@ export function ensureUrlProtocol(url: string | undefined): string {
   return `http://${trimmedUrl}`;
 }
 
-export function formatDisplayDateTime(dateStr: string | undefined): string {
+export function formatDisplayDateTime(dateStr: string | any | undefined): string {
   if (!dateStr) return "";
   const d = parseDateTime(dateStr);
-  if (!d || isNaN(d.getTime())) return dateStr || "";
+  if (!d || isNaN(d.getTime())) {
+    if (typeof dateStr === "string") return dateStr;
+    if (typeof dateStr === "number") return String(dateStr);
+    return "";
+  }
   return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",

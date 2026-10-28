@@ -10632,7 +10632,7 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
               onSave={(val) => handleUpdateCost(c, 'firstPaid', val)}
               canWrite={canWrite}
             />
-            {c.firstPaidAt && (
+            {Boolean(c.firstPaidAt && formatDisplayDateMain(c.firstPaidAt)) && (
               <span
                 className={cn(
                   'text-[10px] font-normal mt-1',
@@ -10666,7 +10666,7 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
               onSave={(val) => handleUpdateCost(c, 'secondPaid', val)}
               canWrite={canWrite}
             />
-            {c.secondPaidAt && (
+            {Boolean(c.secondPaidAt && formatDisplayDateMain(c.secondPaidAt)) && (
               <span
                 className={cn(
                   'text-[10px] font-normal mt-1',
@@ -10700,7 +10700,7 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
               onSave={(val) => handleUpdateCost(c, 'thirdPaid', val)}
               canWrite={canWrite}
             />
-            {c.thirdPaidAt && (
+            {Boolean(c.thirdPaidAt && formatDisplayDateMain(c.thirdPaidAt)) && (
               <span
                 className={cn(
                   'text-[10px] font-normal mt-1',
@@ -10778,7 +10778,7 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
                 </button>
               )}
             </div>
-            {c.updatedAt && (
+            {Boolean(c.updatedAt && formatDisplayDateMain(c.updatedAt)) && (
               <div className="text-[9px] text-slate-400 dark:text-[#838383] font-mono text-center leading-tight">
                 Update
                 <br />
@@ -11523,7 +11523,7 @@ export const CostMobileItemRow = React.memo(function CostMobileItemRow({
               canWrite={canWrite}
             />
           </span>
-          {c.firstPaidAt && (
+          {Boolean(c.firstPaidAt && formatDisplayDateMain(c.firstPaidAt)) && (
             <span
               className={cn(
                 'text-[8px] font-mono truncate mt-0.5',
@@ -11558,7 +11558,7 @@ export const CostMobileItemRow = React.memo(function CostMobileItemRow({
               canWrite={canWrite}
             />
           </span>
-          {c.secondPaidAt && (
+          {Boolean(c.secondPaidAt && formatDisplayDateMain(c.secondPaidAt)) && (
             <span
               className={cn(
                 'text-[8px] font-mono truncate mt-0.5',
@@ -11593,7 +11593,7 @@ export const CostMobileItemRow = React.memo(function CostMobileItemRow({
               canWrite={canWrite}
             />
           </span>
-          {c.thirdPaidAt && (
+          {Boolean(c.thirdPaidAt && formatDisplayDateMain(c.thirdPaidAt)) && (
             <span
               className={cn(
                 'text-[8px] font-mono truncate mt-0.5',
@@ -14189,13 +14189,13 @@ export function useCostDateFilter() {
     setPaidStageFilter('all');
   };
 
-  const checkDateInRange = (dateVal: string | undefined, start: string, end: string): boolean => {
+  const checkDateInRange = (dateVal: string | any | undefined, start: string, end: string): boolean => {
     if (!dateVal) return false;
-    const s = String(dateVal).trim();
-    if (!s) return false;
-    let isoDate = s.substring(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
-      const parsed = parseDateTime(s);
+    let isoDate = '';
+    if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateVal.trim())) {
+      isoDate = dateVal.trim().substring(0, 10);
+    } else {
+      const parsed = parseDateTime(dateVal);
       if (!parsed || isNaN(parsed.getTime())) return false;
       const y = parsed.getFullYear();
       const m = String(parsed.getMonth() + 1).padStart(2, '0');
@@ -75064,7 +75064,7 @@ export const ProjectModalHeader = memo(function ProjectModalHeader({
         {project && project.id && typeof window !== 'undefined' && (
           <QRCodeButton
             title={project.name || project.code}
-            url={`${window.location.origin}${window.location.pathname}?targetType=project&targetId=${project.id || project.no}&code=${encodeURIComponent(project.code || '')}&store=${project.store || ''}&year=${project.year || ''}`}
+            url={`${window.location.origin}${window.location.pathname}?targetType=project&targetId=${project.id || project.no}&code=${encodeURIComponent(project.code || '')}&store=${project.store || ''}&year=${project.year || ''}&tab=layout`}
           />
         )}
         <button
@@ -75078,7 +75078,6 @@ export const ProjectModalHeader = memo(function ProjectModalHeader({
     </div>
   );
 });
-
 
 ================================================================================
 FILE: src/components/ProjectModalParts/projectModalIdentityService.ts
@@ -91661,14 +91660,15 @@ export function useTaskModalFormState({
 }
 
 ================================================================================
-FILE: src/hooks/useDeepLinkLogic.ts
+FILE: src/hooks/deepLinkLayoutHelper.ts
 ================================================================================
-import React, { useCallback, useEffect, useRef } from 'react';
-import { doc, getDoc, getDocs, collection, query, where, limit } from 'firebase/firestore';
-import { db, APP_ID } from '../lib/firebase';
-import { useAppStore } from '../store/useAppStore';
-import { Project, Task } from '../types';
-import { resolveStoreAndYearForQuery, findProjectWithCompositeIsolation } from './deepLinkStoreResolver';
+import { doc, getDoc, getDocs, collection, query, where, limit } from "firebase/firestore";
+import { db, APP_ID } from "../lib/firebase";
+import { Project } from "../types";
+import { useAppStore } from "../store/useAppStore";
+import { safeSetItemLocal } from "../lib/storage";
+import { extractFloorFromCodeOrName } from "../lib/layoutUnitFinder";
+import { findProjectWithCompositeIsolation } from "./deepLinkStoreResolver";
 
 export interface DeepLinkExtraParams {
   store?: string;
@@ -91677,7 +91677,200 @@ export interface DeepLinkExtraParams {
   projectId?: string;
   openChat?: boolean;
   openModal?: boolean;
+  tab?: string;
+  isQrOrUrl?: boolean;
 }
+
+export const isMobileDevice = (): boolean => {
+  if (typeof window === "undefined") return false;
+  return (
+    /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(
+      navigator.userAgent
+    ) || window.innerWidth < 768
+  );
+};
+
+export function navigateToProjectLayout(
+  project: Project | null,
+  options: DeepLinkExtraParams | undefined,
+  handleTabChange: (tab: any) => void
+) {
+  const currentUser = useAppStore.getState().currentUser;
+  const p = project;
+
+  const unitCode = (p as any)?.unit || options?.code || p?.code || "";
+  const rawCode = p?.code || (p as any)?.unit || options?.code || "";
+  const targetUnitCode = unitCode || rawCode;
+
+  const extractedFloor =
+    extractFloorFromCodeOrName(targetUnitCode) ||
+    extractFloorFromCodeOrName((p as any)?.unit) ||
+    extractFloorFromCodeOrName(p?.code) ||
+    extractFloorFromCodeOrName(options?.code);
+  const targetFloor =
+    p?.location && p.location !== "all" && p.location !== "ALL"
+      ? p.location
+      : extractedFloor || "all";
+
+  const yearVal = p?.year || (options?.year ? Number(options.year) : null);
+  const targetYear = yearVal ? String(yearVal) : "all";
+  const storeVal = p?.store || options?.store;
+  const targetStore = storeVal ? String(storeVal).toUpperCase().trim() : "all";
+
+  if (targetStore && targetStore !== "all" && currentUser?.id) {
+    safeSetItemLocal(`taka_store_filter_${currentUser.id}`, targetStore);
+  }
+
+  const updates: any = {
+    globalYearFilter: targetYear,
+    globalStoreFilter: targetStore,
+    activeTab: "layout",
+  };
+
+  if (targetFloor && targetFloor !== "all" && targetFloor !== "ALL") {
+    updates.globalLocationFilter = [targetFloor];
+  }
+
+  updates.layoutTabFilters = {
+    store: targetStore,
+    location: targetFloor,
+    projectCode: targetUnitCode,
+    _ts: Date.now(),
+  };
+
+  // Close any open modals
+  updates.isProjectModalOpen = false;
+  updates.editingProject = null;
+
+  useAppStore.setState(updates);
+  handleTabChange("layout");
+  window.history.replaceState({}, document.title, window.location.pathname);
+}
+
+export async function openProjectTarget(
+  targetId: string,
+  extraParams: DeepLinkExtraParams | undefined,
+  enrichedProjects: Project[],
+  checkAccessLocally: (data: any) => boolean,
+  syncProjectScopeFilters: (pStore?: string, pYear?: string | number, pLocation?: string, pId?: string) => void,
+  handleTabChange: (tab: any) => void
+) {
+  const isMobile = isMobileDevice();
+  const shouldOpenLayout =
+    extraParams?.tab === "layout" ||
+    (extraParams?.isQrOrUrl && isMobile && !extraParams?.openChat);
+
+  const curProjects = useAppStore.getState().projects || [];
+  const curNotifProjects = useAppStore.getState().allProjectsForNotifs || [];
+
+  let p = findProjectWithCompositeIsolation(
+    [enrichedProjects, curProjects, curNotifProjects],
+    String(targetId),
+    extraParams
+  );
+
+  if (!p) {
+    try {
+      const { localDb } = await import("../lib/localDb");
+      if (localDb) {
+        const allLocalProjs = await localDb.projects.toArray();
+        p = findProjectWithCompositeIsolation([allLocalProjs], String(targetId), extraParams);
+      }
+    } catch {}
+  }
+
+  const activateProjectTarget = (proj: Project) => {
+    if (!checkAccessLocally(proj)) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      useAppStore.getState().setToast({
+        title: "Access Denied",
+        message: "You do not have permission to access this project's store."
+      });
+      return;
+    }
+
+    if (shouldOpenLayout) {
+      navigateToProjectLayout(proj, extraParams, handleTabChange);
+      return;
+    }
+
+    syncProjectScopeFilters(proj.store, proj.year, proj.location, proj.id);
+    handleTabChange("detail");
+    if (proj.code) useAppStore.getState().setDetailTabFilterCode(proj.code);
+    if (extraParams?.openModal !== false) {
+      useAppStore.getState().setEditingProject(proj);
+      useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
+      useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
+      useAppStore.getState().setIsProjectModalOpen(true);
+    }
+    window.history.replaceState({}, document.title, window.location.pathname);
+  };
+
+  if (p) {
+    activateProjectTarget(p);
+    return;
+  }
+
+  // Fast Firestore point read (<100ms) with strict store isolation
+  try {
+    let fetchedProj: Project | null = null;
+    const docIdCandidate =
+      extraParams?.projectId ||
+      (String(targetId).includes("_") || String(targetId).length > 8 ? String(targetId) : "");
+    if (docIdCandidate) {
+      const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", docIdCandidate);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) fetchedProj = { id: snap.id, ...snap.data() } as Project;
+    }
+    if (!fetchedProj) {
+      const isNum = !isNaN(Number(targetId));
+      const constraints: any[] = [isNum ? where("no", "==", Number(targetId)) : where("code", "==", targetId)];
+      if (extraParams?.store && extraParams.store.toLowerCase() !== "all") {
+        constraints.push(where("store", "==", extraParams.store.trim().toUpperCase()));
+      }
+      const q = query(collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"), ...constraints, limit(5));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
+        fetchedProj = findProjectWithCompositeIsolation([docs], String(targetId), extraParams) || docs[0];
+      }
+    }
+
+    if (fetchedProj) {
+      activateProjectTarget(fetchedProj);
+    } else if (shouldOpenLayout && extraParams?.code) {
+      // If project record is not found in DB but unit code is provided, still zoom to layout unit
+      navigateToProjectLayout(null, extraParams, handleTabChange);
+    } else {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      useAppStore.getState().setToast({
+        title: "Not Found",
+        message: "This project was not found or data has been deleted."
+      });
+    }
+  } catch (err) {
+    console.error("Error fetching project deep link:", err);
+    if (shouldOpenLayout && extraParams?.code) {
+      navigateToProjectLayout(null, extraParams, handleTabChange);
+    } else {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      useAppStore.getState().setToast({ title: "Error", message: "Could not load project." });
+    }
+  }
+}
+
+================================================================================
+FILE: src/hooks/useDeepLinkLogic.ts
+================================================================================
+import React, { useCallback, useEffect, useRef } from 'react';
+import { doc, getDoc, getDocs, collection, query, where, limit } from 'firebase/firestore';
+import { db, APP_ID } from '../lib/firebase';
+import { useAppStore } from '../store/useAppStore';
+import { Project, Task } from '../types';
+import { resolveStoreAndYearForQuery, findProjectWithCompositeIsolation } from './deepLinkStoreResolver';
+import { DeepLinkExtraParams, openProjectTarget } from './deepLinkLayoutHelper';
+
+export type { DeepLinkExtraParams };
 
 export function useDeepLinkLogic(
   handleTabChange: (tab: any) => void,
@@ -91763,92 +91956,14 @@ export function useDeepLinkLogic(
       // 1. PROJECT TARGET
       if (targetType === "project") {
         const curEnriched = enrichedProjectsRef.current || [];
-        const curProjects = useAppStore.getState().projects || [];
-        const curNotifProjects = useAppStore.getState().allProjectsForNotifs || [];
-
-        let p = findProjectWithCompositeIsolation(
-          [curEnriched, curProjects, curNotifProjects],
+        await openProjectTarget(
           String(targetId),
-          extraParams
+          extraParams,
+          curEnriched,
+          checkAccessLocally,
+          syncProjectScopeFilters,
+          handleTabChange
         );
-
-        if (!p) {
-          try {
-            const { localDb } = await import("../lib/localDb");
-            if (localDb) {
-              const allLocalProjs = await localDb.projects.toArray();
-              p = findProjectWithCompositeIsolation([allLocalProjs], String(targetId), extraParams);
-            }
-          } catch {}
-        }
-
-        if (p) {
-          if (!checkAccessLocally(p)) {
-            window.history.replaceState({}, document.title, window.location.pathname);
-            useAppStore.getState().setToast({ title: "Access Denied", message: "You do not have permission to access this project's store." });
-            return;
-          }
-          syncProjectScopeFilters(p.store, p.year, p.location, p.id);
-          handleTabChange("detail");
-          if (p.code) useAppStore.getState().setDetailTabFilterCode(p.code);
-          if (extraParams?.openModal !== false) {
-            useAppStore.getState().setEditingProject(p);
-            useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
-            useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
-            useAppStore.getState().setIsProjectModalOpen(true);
-          }
-          window.history.replaceState({}, document.title, window.location.pathname);
-          return;
-        }
-
-        // Fast Firestore point read (<100ms) with strict store isolation
-        try {
-          let fetchedProj: Project | null = null;
-          const docIdCandidate = extraParams?.projectId || (String(targetId).includes("_") || String(targetId).length > 8 ? String(targetId) : "");
-          if (docIdCandidate) {
-            const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", docIdCandidate);
-            const snap = await getDoc(docRef);
-            if (snap.exists()) fetchedProj = { id: snap.id, ...snap.data() } as Project;
-          }
-          if (!fetchedProj) {
-            const isNum = !isNaN(Number(targetId));
-            const constraints: any[] = [isNum ? where("no", "==", Number(targetId)) : where("code", "==", targetId)];
-            if (extraParams?.store && extraParams.store.toLowerCase() !== "all") {
-              constraints.push(where("store", "==", extraParams.store.trim().toUpperCase()));
-            }
-            const q = query(collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"), ...constraints, limit(5));
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-              const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
-              fetchedProj = findProjectWithCompositeIsolation([docs], String(targetId), extraParams) || docs[0];
-            }
-          }
-
-          if (fetchedProj) {
-            if (!checkAccessLocally(fetchedProj)) {
-              window.history.replaceState({}, document.title, window.location.pathname);
-              useAppStore.getState().setToast({ title: "Access Denied", message: "You do not have permission to access this project's store." });
-              return;
-            }
-            syncProjectScopeFilters(fetchedProj.store, fetchedProj.year, fetchedProj.location, fetchedProj.id);
-            handleTabChange("detail");
-            if (fetchedProj.code) useAppStore.getState().setDetailTabFilterCode(fetchedProj.code);
-            if (extraParams?.openModal !== false) {
-              useAppStore.getState().setEditingProject(fetchedProj);
-              useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
-              useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
-              useAppStore.getState().setIsProjectModalOpen(true);
-            }
-            window.history.replaceState({}, document.title, window.location.pathname);
-          } else {
-            window.history.replaceState({}, document.title, window.location.pathname);
-            useAppStore.getState().setToast({ title: "Not Found", message: "This project was not found or data has been deleted." });
-          }
-        } catch (err) {
-          console.error("Error fetching project deep link:", err);
-          window.history.replaceState({}, document.title, window.location.pathname);
-          useAppStore.getState().setToast({ title: "Error", message: "Could not load project." });
-        }
         return;
       }
 
@@ -92106,7 +92221,13 @@ export function useDeepLinkLogic(
         }
 
         if (targetType && targetId) {
-          executeDeepLink(targetType, targetId, { store, year, code });
+          executeDeepLink(targetType, targetId, {
+            store,
+            year,
+            code,
+            tab: searchTab || undefined,
+            isQrOrUrl: true,
+          });
         } else if (rawInput.startsWith("http://") || rawInput.startsWith("https://")) {
           window.open(rawInput, "_blank");
         }
@@ -118800,46 +118921,87 @@ export function getTodayMidnightMs(): number {
   return _cachedTodayMidnightMs;
 }
 
-export function parseDateTimeMs(dateStr: string | undefined): number | null {
+export function parseDateTimeMs(dateStr: string | any | undefined): number | null {
   if (!dateStr) return null;
-  const cached = _dateTimeMsCache.get(dateStr);
+  if (typeof dateStr === "object") {
+    if (dateStr instanceof Date) {
+      const ms = dateStr.getTime();
+      return isNaN(ms) ? null : ms;
+    }
+    if (typeof (dateStr as any).toMillis === "function") {
+      try {
+        const ms = (dateStr as any).toMillis();
+        return typeof ms === "number" && !isNaN(ms) ? ms : null;
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof (dateStr as any).toDate === "function") {
+      try {
+        const d = (dateStr as any).toDate();
+        const ms = d.getTime();
+        return isNaN(ms) ? null : ms;
+      } catch {
+        // ignore
+      }
+    }
+    if (typeof (dateStr as any).seconds === "number") {
+      const ms = (dateStr as any).seconds * 1000 + Math.floor(((dateStr as any).nanoseconds || 0) / 1e6);
+      return isNaN(ms) ? null : ms;
+    }
+    if (typeof (dateStr as any)._seconds === "number") {
+      const ms = (dateStr as any)._seconds * 1000 + Math.floor(((dateStr as any)._nanoseconds || 0) / 1e6);
+      return isNaN(ms) ? null : ms;
+    }
+    return null;
+  }
+  const s = String(dateStr).trim();
+  if (!s) return null;
+  const cached = _dateTimeMsCache.get(s);
   if (cached !== undefined) {
     return isNaN(cached) ? null : cached;
   }
-  const d = dateStr.length === 10 ? new Date(dateStr + "T09:00") : new Date(dateStr);
+  const d = s.length === 10 ? new Date(s + "T09:00") : new Date(s);
   const ms = d.getTime();
   if (_dateTimeMsCache.size >= MAX_DATE_PARSE_CACHE) {
     _dateTimeMsCache.clear();
   }
-  _dateTimeMsCache.set(dateStr, ms);
+  _dateTimeMsCache.set(s, ms);
   return isNaN(ms) ? null : ms;
 }
 
-export function parseDateMidnightMs(dateStr: string | undefined): number | null {
+export function parseDateMidnightMs(dateStr: string | any | undefined): number | null {
   if (!dateStr) return null;
-  const cached = _dateMidnightMsCache.get(dateStr);
-  if (cached !== undefined) {
-    return isNaN(cached) ? null : cached;
+  const sKey = typeof dateStr === "string" ? dateStr : undefined;
+  if (sKey) {
+    const cached = _dateMidnightMsCache.get(sKey);
+    if (cached !== undefined) {
+      return isNaN(cached) ? null : cached;
+    }
   }
   const ms = parseDateTimeMs(dateStr);
   if (ms === null) {
-    if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
-      _dateMidnightMsCache.clear();
+    if (sKey) {
+      if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
+        _dateMidnightMsCache.clear();
+      }
+      _dateMidnightMsCache.set(sKey, NaN);
     }
-    _dateMidnightMsCache.set(dateStr, NaN);
     return null;
   }
   const d = new Date(ms);
   d.setHours(0, 0, 0, 0);
   const midMs = d.getTime();
-  if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
-    _dateMidnightMsCache.clear();
+  if (sKey) {
+    if (_dateMidnightMsCache.size >= MAX_DATE_PARSE_CACHE) {
+      _dateMidnightMsCache.clear();
+    }
+    _dateMidnightMsCache.set(sKey, midMs);
   }
-  _dateMidnightMsCache.set(dateStr, midMs);
   return midMs;
 }
 
-export function parseDateTime(dateStr: string | undefined): Date | null {
+export function parseDateTime(dateStr: string | any | undefined): Date | null {
   if (!dateStr) return null;
   const ms = parseDateTimeMs(dateStr);
   if (ms === null) return new Date(NaN);
@@ -118934,10 +119096,14 @@ const displayDateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-export function formatDisplayDateMain(dateStr: string | undefined): string {
+export function formatDisplayDateMain(dateStr: string | any | undefined): string {
   if (!dateStr) return "";
   const d = parseDateTime(dateStr);
-  if (!d || isNaN(d.getTime())) return dateStr || "";
+  if (!d || isNaN(d.getTime())) {
+    if (typeof dateStr === "string") return dateStr;
+    if (typeof dateStr === "number") return String(dateStr);
+    return "";
+  }
   return displayDateFormatter.format(d);
 }
 
@@ -118950,10 +119116,14 @@ export function ensureUrlProtocol(url: string | undefined): string {
   return `http://${trimmedUrl}`;
 }
 
-export function formatDisplayDateTime(dateStr: string | undefined): string {
+export function formatDisplayDateTime(dateStr: string | any | undefined): string {
   if (!dateStr) return "";
   const d = parseDateTime(dateStr);
-  if (!d || isNaN(d.getTime())) return dateStr || "";
+  if (!d || isNaN(d.getTime())) {
+    if (typeof dateStr === "string") return dateStr;
+    if (typeof dateStr === "number") return String(dateStr);
+    return "";
+  }
   return d.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
@@ -119080,6 +119250,7 @@ export function formatCurrencyValue(val: number | undefined, currency: 'VND' | '
   }
   return Math.round(num).toLocaleString("en-US");
 }
+
 
 ================================================================================
 FILE: src/lib/utilsParts/notificationEngineUtils.ts

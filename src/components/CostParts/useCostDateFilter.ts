@@ -64,13 +64,13 @@ export function useCostDateFilter() {
     setPaidStageFilter('all');
   };
 
-  const checkDateInRange = (dateVal: string | undefined, start: string, end: string): boolean => {
+  const checkDateInRange = (dateVal: string | any | undefined, start: string, end: string): boolean => {
     if (!dateVal) return false;
-    const s = String(dateVal).trim();
-    if (!s) return false;
-    let isoDate = s.substring(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
-      const parsed = parseDateTime(s);
+    let isoDate = '';
+    if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dateVal.trim())) {
+      isoDate = dateVal.trim().substring(0, 10);
+    } else {
+      const parsed = parseDateTime(dateVal);
       if (!parsed || isNaN(parsed.getTime())) return false;
       const y = parsed.getFullYear();
       const m = String(parsed.getMonth() + 1).padStart(2, '0');

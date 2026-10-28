@@ -68,7 +68,7 @@ export const ProjectModalHeader = memo(function ProjectModalHeader({
         {project && project.id && typeof window !== 'undefined' && (
           <QRCodeButton
             title={project.name || project.code}
-            url={`${window.location.origin}${window.location.pathname}?targetType=project&targetId=${project.id || project.no}&code=${encodeURIComponent(project.code || '')}&store=${project.store || ''}&year=${project.year || ''}`}
+            url={`${window.location.origin}${window.location.pathname}?targetType=project&targetId=${project.id || project.no}&code=${encodeURIComponent(project.code || '')}&store=${project.store || ''}&year=${project.year || ''}&tab=layout`}
           />
         )}
         <button

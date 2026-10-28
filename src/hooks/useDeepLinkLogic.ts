@@ -4,15 +4,9 @@ import { db, APP_ID } from '../lib/firebase';
 import { useAppStore } from '../store/useAppStore';
 import { Project, Task } from '../types';
 import { resolveStoreAndYearForQuery, findProjectWithCompositeIsolation } from './deepLinkStoreResolver';
+import { DeepLinkExtraParams, openProjectTarget } from './deepLinkLayoutHelper';
 
-export interface DeepLinkExtraParams {
-  store?: string;
-  year?: string;
-  code?: string;
-  projectId?: string;
-  openChat?: boolean;
-  openModal?: boolean;
-}
+export type { DeepLinkExtraParams };
 
 export function useDeepLinkLogic(
   handleTabChange: (tab: any) => void,
@@ -98,92 +92,14 @@ export function useDeepLinkLogic(
       // 1. PROJECT TARGET
       if (targetType === "project") {
         const curEnriched = enrichedProjectsRef.current || [];
-        const curProjects = useAppStore.getState().projects || [];
-        const curNotifProjects = useAppStore.getState().allProjectsForNotifs || [];
-
-        let p = findProjectWithCompositeIsolation(
-          [curEnriched, curProjects, curNotifProjects],
+        await openProjectTarget(
           String(targetId),
-          extraParams
+          extraParams,
+          curEnriched,
+          checkAccessLocally,
+          syncProjectScopeFilters,
+          handleTabChange
         );
-
-        if (!p) {
-          try {
-            const { localDb } = await import("../lib/localDb");
-            if (localDb) {
-              const allLocalProjs = await localDb.projects.toArray();
-              p = findProjectWithCompositeIsolation([allLocalProjs], String(targetId), extraParams);
-            }
-          } catch {}
-        }
-
-        if (p) {
-          if (!checkAccessLocally(p)) {
-            window.history.replaceState({}, document.title, window.location.pathname);
-            useAppStore.getState().setToast({ title: "Access Denied", message: "You do not have permission to access this project's store." });
-            return;
-          }
-          syncProjectScopeFilters(p.store, p.year, p.location, p.id);
-          handleTabChange("detail");
-          if (p.code) useAppStore.getState().setDetailTabFilterCode(p.code);
-          if (extraParams?.openModal !== false) {
-            useAppStore.getState().setEditingProject(p);
-            useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
-            useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
-            useAppStore.getState().setIsProjectModalOpen(true);
-          }
-          window.history.replaceState({}, document.title, window.location.pathname);
-          return;
-        }
-
-        // Fast Firestore point read (<100ms) with strict store isolation
-        try {
-          let fetchedProj: Project | null = null;
-          const docIdCandidate = extraParams?.projectId || (String(targetId).includes("_") || String(targetId).length > 8 ? String(targetId) : "");
-          if (docIdCandidate) {
-            const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", docIdCandidate);
-            const snap = await getDoc(docRef);
-            if (snap.exists()) fetchedProj = { id: snap.id, ...snap.data() } as Project;
-          }
-          if (!fetchedProj) {
-            const isNum = !isNaN(Number(targetId));
-            const constraints: any[] = [isNum ? where("no", "==", Number(targetId)) : where("code", "==", targetId)];
-            if (extraParams?.store && extraParams.store.toLowerCase() !== "all") {
-              constraints.push(where("store", "==", extraParams.store.trim().toUpperCase()));
-            }
-            const q = query(collection(db, "artifacts", APP_ID, "public", "data", "taka_projects"), ...constraints, limit(5));
-            const snap = await getDocs(q);
-            if (!snap.empty) {
-              const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
-              fetchedProj = findProjectWithCompositeIsolation([docs], String(targetId), extraParams) || docs[0];
-            }
-          }
-
-          if (fetchedProj) {
-            if (!checkAccessLocally(fetchedProj)) {
-              window.history.replaceState({}, document.title, window.location.pathname);
-              useAppStore.getState().setToast({ title: "Access Denied", message: "You do not have permission to access this project's store." });
-              return;
-            }
-            syncProjectScopeFilters(fetchedProj.store, fetchedProj.year, fetchedProj.location, fetchedProj.id);
-            handleTabChange("detail");
-            if (fetchedProj.code) useAppStore.getState().setDetailTabFilterCode(fetchedProj.code);
-            if (extraParams?.openModal !== false) {
-              useAppStore.getState().setEditingProject(fetchedProj);
-              useAppStore.getState().setModalInitialTab(extraParams?.openChat ? "chat" : "details");
-              useAppStore.getState().setIsReadOnlyModal(!extraParams?.openChat);
-              useAppStore.getState().setIsProjectModalOpen(true);
-            }
-            window.history.replaceState({}, document.title, window.location.pathname);
-          } else {
-            window.history.replaceState({}, document.title, window.location.pathname);
-            useAppStore.getState().setToast({ title: "Not Found", message: "This project was not found or data has been deleted." });
-          }
-        } catch (err) {
-          console.error("Error fetching project deep link:", err);
-          window.history.replaceState({}, document.title, window.location.pathname);
-          useAppStore.getState().setToast({ title: "Error", message: "Could not load project." });
-        }
         return;
       }
 
@@ -441,7 +357,13 @@ export function useDeepLinkLogic(
         }
 
         if (targetType && targetId) {
-          executeDeepLink(targetType, targetId, { store, year, code });
+          executeDeepLink(targetType, targetId, {
+            store,
+            year,
+            code,
+            tab: searchTab || undefined,
+            isQrOrUrl: true,
+          });
         } else if (rawInput.startsWith("http://") || rawInput.startsWith("https://")) {
           window.open(rawInput, "_blank");
         }

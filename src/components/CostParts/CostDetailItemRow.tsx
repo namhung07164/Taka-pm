@@ -157,7 +157,7 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
               onSave={(val) => handleUpdateCost(c, 'firstPaid', val)}
               canWrite={canWrite}
             />
-            {c.firstPaidAt && (
+            {Boolean(c.firstPaidAt && formatDisplayDateMain(c.firstPaidAt)) && (
               <span
                 className={cn(
                   'text-[10px] font-normal mt-1',
@@ -191,7 +191,7 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
               onSave={(val) => handleUpdateCost(c, 'secondPaid', val)}
               canWrite={canWrite}
             />
-            {c.secondPaidAt && (
+            {Boolean(c.secondPaidAt && formatDisplayDateMain(c.secondPaidAt)) && (
               <span
                 className={cn(
                   'text-[10px] font-normal mt-1',
@@ -225,7 +225,7 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
               onSave={(val) => handleUpdateCost(c, 'thirdPaid', val)}
               canWrite={canWrite}
             />
-            {c.thirdPaidAt && (
+            {Boolean(c.thirdPaidAt && formatDisplayDateMain(c.thirdPaidAt)) && (
               <span
                 className={cn(
                   'text-[10px] font-normal mt-1',
@@ -303,7 +303,7 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
                 </button>
               )}
             </div>
-            {c.updatedAt && (
+            {Boolean(c.updatedAt && formatDisplayDateMain(c.updatedAt)) && (
               <div className="text-[9px] text-slate-400 dark:text-[#838383] font-mono text-center leading-tight">
                 Update
                 <br />
