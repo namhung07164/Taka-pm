@@ -134314,10 +134314,21 @@ export function useDynamicUnitSummary({
           item.appProjectParty = p.party || (p as any).contractor || '';
           item.appProjectBudget = p.budget || 0;
           item.appProjectActual = p.actual || 0;
-          item.appProjectSizeM2 = p.sizeM2 || item.sizeM2 || 0;
-          if (!item.sizeM2 && p.sizeM2) {
-            item.sizeM2 = p.sizeM2;
-            if (!item.size) item.size = p.sizeM2;
+          const rawPSize = p.sizeM2 ?? (p as any)?.size ?? (p as any)?.area;
+          const parsedPSize = Number(String(rawPSize ?? '').replace(/,/g, ''));
+          const pEffectiveSize = !isNaN(parsedPSize) && parsedPSize > 0 ? parsedPSize : 0;
+
+          if (pEffectiveSize > 0) {
+            item.appProjectSizeM2 = pEffectiveSize;
+            item.sizeM2 = pEffectiveSize;
+            item.size = pEffectiveSize;
+          } else {
+            item.appProjectSizeM2 = item.appProjectSizeM2 || item.sizeM2 || 0;
+          }
+          item.matchedProject = p;
+          item.appProjectShopType = p.shopType || (p as any).type || '';
+          if (!(item as any).shopType && p.shopType) {
+            (item as any).shopType = p.shopType;
           }
           item.planProgress = p.computedPlanProgress ?? 0;
           item.actProgress = p.computedActProgress ?? 0;
@@ -134349,6 +134360,8 @@ export function useDynamicUnitSummary({
             item.matchedGroupName = group.name;
             item.color = group.color;
             item.opacity = typeof group.opacity === 'number' ? group.opacity : 0.65;
+            item.hatchPattern = group.hatchPattern || 'none';
+            item.symbol = group.symbol || '';
             item.matchedRuleReason = group.rules
               .map((r) => `${r.field} ${r.operator} ${r.value}`)
               .join(' AND ');
@@ -134379,7 +134392,6 @@ export function useDynamicUnitSummary({
     effectiveYear,
   };
 }
-
 
 === FILE: src/components/PictureMapping/components/DataMapping/DynamicUnitSummaryTable.tsx ===
 import React, { useState, useMemo } from "react";
@@ -136409,7 +136421,7 @@ export function buildAggregatedUnitData({
       size: initialUnitSize, sizeM2: initialUnitSize, sales: 0, salesByCp: 0, salesByHcmcate: 0,
       profit: 0, profitByCp: 0, profitByHcmcate: 0,
       margin: 0, marginByCp: 0, hcmSalesEffi: 0, hcmMargin: 0,
-      mdStatus: "", task: "", projectStatus: "", actStatus: "",
+      mdStatus: "", task: "", projectStatus: "", actStatus: "", shopType: "",
       endDate: "", status: "", vendorCode: "",
       brandCode: "", brandName: "", classCode: "", floor: u.location || locationFilter || "",
       appProjectStatus: "", appProjectBudget: 0, appProjectActual: 0, appProjectCode: "", appProjectYear: "", projectName: "", startDate: "", handoverDate: "", openingDate: "", detail: "", party: "",
@@ -136437,6 +136449,7 @@ export function buildAggregatedUnitData({
           status: sumData.status || "",
           brandName: sumData.brandName || "",
           floor: dataMap[key].floor || (sumData as any).floor || "",
+          shopType: (sumData as any).shopType || (sumData as any).shop_type || dataMap[key].shopType || "",
       });
     }
   });
@@ -136656,11 +136669,21 @@ export function buildAggregatedUnitData({
           dataMap[code].appProjectParty = partyStr;
           dataMap[code].appParty = partyStr;
 
-          dataMap[code].sizeM2 = p.sizeM2 || dataMap[code].sizeM2 || 0;
-          dataMap[code].appProjectSizeM2 = p.sizeM2 || 0;
-          if (p.sizeM2 && !dataMap[code].size) {
-            dataMap[code].size = p.sizeM2;
+          const rawPSize = p.sizeM2 ?? (p as any)?.size ?? (p as any)?.area;
+          const parsedPSize = Number(String(rawPSize ?? '').replace(/,/g, ''));
+          const pEffectiveSize = !isNaN(parsedPSize) && parsedPSize > 0 ? parsedPSize : 0;
+
+          if (pEffectiveSize > 0) {
+            dataMap[code].sizeM2 = pEffectiveSize;
+            dataMap[code].size = pEffectiveSize;
+            dataMap[code].appProjectSizeM2 = pEffectiveSize;
+          } else if (p.sizeM2) {
+            dataMap[code].sizeM2 = p.sizeM2;
+            dataMap[code].appProjectSizeM2 = p.sizeM2;
           }
+          dataMap[code].matchedProject = p;
+          dataMap[code].shopType = p.shopType || (p as any).shop_type || dataMap[code].shopType || '';
+          dataMap[code].appProjectShopType = p.shopType || (p as any).shop_type || '';
 
           dataMap[code].matchedTasks = allMatchedTasks;
           dataMap[code].subTasks = allMatchedTasks.length > 0 ? allMatchedTasks : (p.taskSummaries || []);
@@ -136792,7 +136815,6 @@ export function buildAggregatedUnitData({
 
   return dataMap;
 }
-
 
 === FILE: src/components/LayoutTabParts/useLayoutAggregates.ts ===
 import React, { useMemo, useRef } from 'react';
@@ -165344,4 +165366,2003 @@ export const LayoutLegendExportMenu: React.FC<LayoutLegendExportMenuProps> = ({
     </div>
   );
 };
+
+
+=== FILE: src/lib/r2AutoBackupPayload.ts ===
+import { useAppStore } from '../store/useAppStore';
+import { localDb } from './localDb';
+import { safeGetItemLocal, safeSetItemLocal } from './storage';
+
+export interface R2AutoBackupConfig {
+  enabled: boolean;
+  intervalHours: number;
+  retentionCount: number;
+  targetYearHorizon: string;
+  onlyWhenChanged: boolean;
+}
+
+export interface R2BackupSnapshotMeta {
+  key: string;
+  fileName: string;
+  createdAtIso: string;
+  timestampMs: number;
+  triggeredBy: 'cron_auto' | 'manual';
+  triggeredUser?: string;
+  rawSizeBytes: number;
+  compressedSizeBytes: number;
+  compressionRatioPercent: number;
+  projectsCount: number;
+  tasksCount: number;
+  costsCount: number;
+  delegationsCount: number;
+  dataChecksum: string;
+}
+
+export interface R2AutoBackupState {
+  config: R2AutoBackupConfig;
+  lastBackupTimeMs: number;
+  lastBackupMeta: R2BackupSnapshotMeta | null;
+  lastDataChecksum: string;
+  isRunning: boolean;
+  lastError: string | null;
+}
+
+const LS_CONFIG_KEY = 'taka_r2_auto_backup_config_v1';
+const LS_STATE_KEY = 'taka_r2_auto_backup_state_v1';
+
+const DEFAULT_CONFIG: R2AutoBackupConfig = {
+  enabled: true,
+  intervalHours: 6,
+  retentionCount: 30,
+  targetYearHorizon: '2027',
+  onlyWhenChanged: true,
+};
+
+let _isBackupInFlight = false;
+const _listeners = new Set<(state: R2AutoBackupState) => void>();
+
+export function getBackupInFlight(): boolean {
+  return _isBackupInFlight;
+}
+
+export function setBackupInFlight(val: boolean): void {
+  _isBackupInFlight = val;
+  notifyBackupListeners();
+}
+
+export function getR2AutoBackupConfig(): R2AutoBackupConfig {
+  try {
+    const raw = safeGetItemLocal(LS_CONFIG_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        enabled: parsed.enabled !== undefined ? Boolean(parsed.enabled) : DEFAULT_CONFIG.enabled,
+        intervalHours: Number(parsed.intervalHours) > 0 ? Number(parsed.intervalHours) : DEFAULT_CONFIG.intervalHours,
+        retentionCount: Number(parsed.retentionCount) >= 5 ? Number(parsed.retentionCount) : DEFAULT_CONFIG.retentionCount,
+        targetYearHorizon: parsed.targetYearHorizon || DEFAULT_CONFIG.targetYearHorizon,
+        onlyWhenChanged: parsed.onlyWhenChanged !== undefined ? Boolean(parsed.onlyWhenChanged) : DEFAULT_CONFIG.onlyWhenChanged,
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return { ...DEFAULT_CONFIG };
+}
+
+export function saveR2AutoBackupConfig(partial: Partial<R2AutoBackupConfig>): R2AutoBackupConfig {
+  const next = { ...getR2AutoBackupConfig(), ...partial };
+  try {
+    safeSetItemLocal(LS_CONFIG_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+  notifyBackupListeners();
+  return next;
+}
+
+export function getR2AutoBackupState(): R2AutoBackupState {
+  const config = getR2AutoBackupConfig();
+  let lastBackupTimeMs = 0;
+  let lastBackupMeta: R2BackupSnapshotMeta | null = null;
+  let lastDataChecksum = '';
+  let lastError: string | null = null;
+
+  try {
+    const raw = safeGetItemLocal(LS_STATE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      lastBackupTimeMs = Number(parsed.lastBackupTimeMs) || 0;
+      lastBackupMeta = parsed.lastBackupMeta || null;
+      lastDataChecksum = parsed.lastDataChecksum || '';
+      lastError = parsed.lastError || null;
+    }
+  } catch {
+    // ignore
+  }
+
+  return {
+    config,
+    lastBackupTimeMs,
+    lastBackupMeta,
+    lastDataChecksum,
+    isRunning: _isBackupInFlight,
+    lastError,
+  };
+}
+
+export function updateStoredBackupState(patch: Partial<Omit<R2AutoBackupState, 'config' | 'isRunning'>>) {
+  const current = getR2AutoBackupState();
+  const next = {
+    lastBackupTimeMs: patch.lastBackupTimeMs !== undefined ? patch.lastBackupTimeMs : current.lastBackupTimeMs,
+    lastBackupMeta: patch.lastBackupMeta !== undefined ? patch.lastBackupMeta : current.lastBackupMeta,
+    lastDataChecksum: patch.lastDataChecksum !== undefined ? patch.lastDataChecksum : current.lastDataChecksum,
+    lastError: patch.lastError !== undefined ? patch.lastError : current.lastError,
+  };
+  try {
+    safeSetItemLocal(LS_STATE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+  notifyBackupListeners();
+}
+
+export function subscribeR2AutoBackupState(listener: (state: R2AutoBackupState) => void): () => void {
+  _listeners.add(listener);
+  listener(getR2AutoBackupState());
+  return () => {
+    _listeners.delete(listener);
+  };
+}
+
+export function notifyBackupListeners() {
+  const st = getR2AutoBackupState();
+  _listeners.forEach((fn) => {
+    try {
+      fn(st);
+    } catch {
+      // ignore
+    }
+  });
+}
+
+function computeFastDataChecksum(
+  projects: any[],
+  tasks: any[],
+  costs: any[],
+  delegations: any[]
+): string {
+  let maxUpdated = '';
+  const scanUpdated = (arr: any[]) => {
+    for (let i = 0; i < arr.length; i++) {
+      const u = String(arr[i]?.updatedAt || '');
+      if (u > maxUpdated) maxUpdated = u;
+    }
+  };
+  scanUpdated(projects);
+  scanUpdated(tasks);
+  scanUpdated(costs);
+  scanUpdated(delegations);
+  return `P${projects.length}_T${tasks.length}_C${costs.length}_D${delegations.length}_${maxUpdated}`;
+}
+
+export async function collectFullSystemBackupPayload() {
+  const storeState = useAppStore.getState();
+
+  const mergeById = <T extends { id?: string; isDeleted?: boolean; _isVirtualSummary?: boolean }>(
+    dbItems: T[],
+    memItems: T[]
+  ): T[] => {
+    const map = new Map<string, T>();
+    for (let i = 0; i < dbItems.length; i++) {
+      const it = dbItems[i];
+      if (it?.id && !it.isDeleted && !it._isVirtualSummary) {
+        map.set(it.id, it);
+      }
+    }
+    for (let i = 0; i < memItems.length; i++) {
+      const it = memItems[i];
+      if (it?.id && !it.isDeleted && !it._isVirtualSummary) {
+        map.set(it.id, it);
+      }
+    }
+    return Array.from(map.values());
+  };
+
+  let dbProjects: any[] = [];
+  let dbTasks: any[] = [];
+  let dbCosts: any[] = [];
+  let dbDelegations: any[] = [];
+
+  try {
+    [dbProjects, dbTasks, dbCosts, dbDelegations] = await Promise.all([
+      localDb.projects.toArray(),
+      localDb.tasks.toArray(),
+      localDb.costs.toArray(),
+      localDb.delegations.toArray(),
+    ]);
+  } catch {
+    // Fallback to in-memory Zustand store if IndexedDB is restricted
+  }
+
+  const projects = mergeById(dbProjects, storeState.projects || []);
+  const tasks = mergeById(dbTasks, storeState.tasks || []);
+  const costs = mergeById(dbCosts, storeState.costs || []);
+  const delegations = mergeById(dbDelegations, storeState.delegationGroups || []);
+
+  const checksum = computeFastDataChecksum(projects, tasks, costs, delegations);
+  const now = new Date();
+
+  let layoutMappingBackup: any = null;
+  try {
+    const rawLayout = safeGetItemLocal('taka_mapping_config_backup');
+    if (rawLayout) layoutMappingBackup = JSON.parse(rawLayout);
+  } catch {
+    // ignore
+  }
+
+  const payload = {
+    schemaVersion: '2027.1',
+    protectionHorizon: '2027-Operations-Guard',
+    createdAtIso: now.toISOString(),
+    timestampMs: now.getTime(),
+    dataChecksum: checksum,
+    counts: {
+      projects: projects.length,
+      tasks: tasks.length,
+      costs: costs.length,
+      delegations: delegations.length,
+    },
+    systemConfig: {
+      locations: storeState.locations || [],
+      parties: storeState.parties || [],
+      jpyRate: storeState.jpyRate,
+      usdRate: storeState.usdRate,
+      notificationRules: storeState.notificationRules || [],
+    },
+    layoutMappingBackup,
+    data: {
+      projects,
+      tasks,
+      costs,
+      delegationGroups: delegations,
+    },
+  };
+
+  return { payload, checksum };
+}
+
+export async function compressStringToGzip(jsonString: string): Promise<{
+  bytes: Uint8Array;
+  isGzipped: boolean;
+  rawSizeBytes: number;
+  compressedSizeBytes: number;
+}> {
+  const encoder = new TextEncoder();
+  const rawBytes = encoder.encode(jsonString);
+  const rawSizeBytes = rawBytes.byteLength;
+
+  if (typeof CompressionStream !== 'undefined') {
+    try {
+      const cs = new CompressionStream('gzip');
+      const writer = cs.writable.getWriter();
+      await writer.write(rawBytes);
+      await writer.close();
+      const buffer = await new Response(cs.readable).arrayBuffer();
+      const compressedBytes = new Uint8Array(buffer);
+      return {
+        bytes: compressedBytes,
+        isGzipped: true,
+        rawSizeBytes,
+        compressedSizeBytes: compressedBytes.byteLength,
+      };
+    } catch (e) {
+      console.warn('[R2AutoBackup] Native CompressionStream failed, falling back to plain UTF-8:', e);
+    }
+  }
+
+  return {
+    bytes: rawBytes,
+    isGzipped: false,
+    rawSizeBytes,
+    compressedSizeBytes: rawSizeBytes,
+  };
+}
+
+export async function decompressBackupBytes(bytes: Uint8Array): Promise<string> {
+  const isGzip = bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+  if (isGzip && typeof DecompressionStream !== 'undefined') {
+    const ds = new DecompressionStream('gzip');
+    const writer = ds.writable.getWriter();
+    await writer.write(bytes);
+    await writer.close();
+    return await new Response(ds.readable).text();
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+
+=== FILE: src/lib/r2AutoBackupService.ts ===
+import { useAppStore } from '../store/useAppStore';
+import {
+  getS3Sdk,
+  getStoredR2CredentialsAsync,
+  isR2CredentialsValid,
+  R2Credentials,
+} from '../components/PictureMapping/lib/r2Upload';
+import {
+  R2AutoBackupConfig,
+  R2BackupSnapshotMeta,
+  R2AutoBackupState,
+  getBackupInFlight,
+  setBackupInFlight,
+  getR2AutoBackupConfig,
+  saveR2AutoBackupConfig,
+  getR2AutoBackupState,
+  updateStoredBackupState,
+  subscribeR2AutoBackupState,
+  collectFullSystemBackupPayload,
+  compressStringToGzip,
+  decompressBackupBytes,
+} from './r2AutoBackupPayload';
+
+export type {
+  R2AutoBackupConfig,
+  R2BackupSnapshotMeta,
+  R2AutoBackupState,
+};
+export {
+  getR2AutoBackupConfig,
+  saveR2AutoBackupConfig,
+  getR2AutoBackupState,
+  subscribeR2AutoBackupState,
+  collectFullSystemBackupPayload,
+  compressStringToGzip,
+  decompressBackupBytes,
+};
+
+const R2_BACKUP_PREFIX = 'Taka-Pm-folder/AutoBackups/';
+const R2_MANIFEST_KEY = 'Taka-Pm-folder/AutoBackups/manifest_2027.json';
+const R2_LATEST_KEY = 'Taka-Pm-folder/AutoBackups/latest/taka_system_latest.json.gz';
+
+let _cronIntervalId: ReturnType<typeof setInterval> | null = null;
+
+async function createR2S3Client(creds: R2Credentials) {
+  const { S3Client } = await getS3Sdk();
+  const cleanAccountId = creds.accountId.trim().replace(/^https?:\/\//, '').split('.')[0];
+  return new S3Client({
+    region: 'auto',
+    endpoint: `https://${cleanAccountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: creds.accessKeyId.trim(),
+      secretAccessKey: creds.secretAccessKey.trim(),
+    },
+  });
+}
+
+export async function executeR2BackupNow(options?: {
+  triggeredBy?: 'cron_auto' | 'manual';
+  force?: boolean;
+}): Promise<{
+  success: boolean;
+  skipped?: boolean;
+  reason?: string;
+  meta?: R2BackupSnapshotMeta;
+}> {
+  if (getBackupInFlight()) {
+    return { success: false, skipped: true, reason: 'A backup operation is already in progress.' };
+  }
+
+  const triggeredBy = options?.triggeredBy || 'manual';
+  const force = Boolean(options?.force);
+  const currentState = getR2AutoBackupState();
+
+  if (triggeredBy === 'cron_auto' && !currentState.config.enabled && !force) {
+    return { success: false, skipped: true, reason: 'Auto-backup cron is disabled.' };
+  }
+
+  setBackupInFlight(true);
+
+  try {
+    const creds = await getStoredR2CredentialsAsync();
+    if (!isR2CredentialsValid(creds)) {
+      const msg = 'Cloudflare R2 credentials are not configured yet.';
+      updateStoredBackupState({ lastError: msg });
+      return { success: false, reason: msg };
+    }
+
+    const { payload, checksum } = await collectFullSystemBackupPayload();
+    const totalRecords =
+      payload.counts.projects +
+      payload.counts.tasks +
+      payload.counts.costs +
+      payload.counts.delegations;
+
+    if (totalRecords === 0 && !force) {
+      return {
+        success: false,
+        skipped: true,
+        reason: 'Local database is empty or still hydrating; skipping backup.',
+      };
+    }
+
+    if (
+      triggeredBy === 'cron_auto' &&
+      !force &&
+      currentState.config.onlyWhenChanged &&
+      currentState.lastDataChecksum === checksum &&
+      currentState.lastBackupTimeMs > 0
+    ) {
+      return {
+        success: true,
+        skipped: true,
+        reason: 'No data changes detected since last R2 snapshot.',
+      };
+    }
+
+    const jsonString = JSON.stringify(payload);
+    const { bytes, isGzipped, rawSizeBytes, compressedSizeBytes } =
+      await compressStringToGzip(jsonString);
+
+    const now = new Date(payload.timestampMs);
+    const yyyy = now.getUTCFullYear();
+    const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(now.getUTCDate()).padStart(2, '0');
+    const hh = String(now.getUTCHours()).padStart(2, '0');
+    const min = String(now.getUTCMinutes()).padStart(2, '0');
+    const ss = String(now.getUTCSeconds()).padStart(2, '0');
+
+    const ext = isGzipped ? 'json.gz' : 'json';
+    const fileName = `taka_backup_${yyyy}${mm}${dd}_${hh}${min}${ss}_${triggeredBy}.${ext}`;
+    const snapshotKey = `${R2_BACKUP_PREFIX}snapshots/${yyyy}-${mm}/${fileName}`;
+
+    const { PutObjectCommand } = await getS3Sdk();
+    const s3Client = await createR2S3Client(creds);
+    const bucketName = creds.bucketName.trim();
+    const currentUser = useAppStore.getState().currentUser;
+
+    const ratio =
+      rawSizeBytes > 0
+        ? Math.max(0, Math.round((1 - compressedSizeBytes / rawSizeBytes) * 100))
+        : 0;
+
+    const snapshotMeta: R2BackupSnapshotMeta = {
+      key: snapshotKey,
+      fileName,
+      createdAtIso: payload.createdAtIso,
+      timestampMs: payload.timestampMs,
+      triggeredBy,
+      triggeredUser: currentUser?.username || currentUser?.id || 'system',
+      rawSizeBytes,
+      compressedSizeBytes,
+      compressionRatioPercent: ratio,
+      projectsCount: payload.counts.projects,
+      tasksCount: payload.counts.tasks,
+      costsCount: payload.counts.costs,
+      delegationsCount: payload.counts.delegations,
+      dataChecksum: checksum,
+    };
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: snapshotKey,
+        Body: bytes,
+        ContentType: isGzipped ? 'application/gzip' : 'application/json',
+      })
+    );
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: R2_LATEST_KEY,
+        Body: bytes,
+        ContentType: isGzipped ? 'application/gzip' : 'application/json',
+      })
+    );
+
+    await updateR2BackupManifestAndRetention(
+      s3Client,
+      bucketName,
+      snapshotMeta,
+      currentState.config.retentionCount
+    );
+
+    updateStoredBackupState({
+      lastBackupTimeMs: payload.timestampMs,
+      lastBackupMeta: snapshotMeta,
+      lastDataChecksum: checksum,
+      lastError: null,
+    });
+
+    return { success: true, meta: snapshotMeta };
+  } catch (err: any) {
+    const errMsg = err?.message || String(err);
+    console.error('[R2AutoBackup] Backup failed:', err);
+    updateStoredBackupState({ lastError: errMsg });
+    return { success: false, reason: errMsg };
+  } finally {
+    setBackupInFlight(false);
+  }
+}
+
+async function updateR2BackupManifestAndRetention(
+  s3Client: any,
+  bucketName: string,
+  newMeta: R2BackupSnapshotMeta,
+  retentionCount: number
+) {
+  try {
+    const { GetObjectCommand, PutObjectCommand, DeleteObjectCommand } = await getS3Sdk();
+    let history: R2BackupSnapshotMeta[] = [];
+
+    try {
+      const resp = await s3Client.send(
+        new GetObjectCommand({ Bucket: bucketName, Key: R2_MANIFEST_KEY })
+      );
+      if (resp.Body) {
+        const text = await resp.Body.transformToString();
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed?.snapshots)) {
+          history = parsed.snapshots;
+        }
+      }
+    } catch {
+      // Manifest may not exist on first run
+    }
+
+    const merged = [newMeta, ...history.filter((item) => item.key !== newMeta.key)].sort(
+      (a, b) => b.timestampMs - a.timestampMs
+    );
+
+    const maxKeep = Math.max(5, retentionCount || 30);
+    const toKeep = merged.slice(0, maxKeep);
+    const toDelete = merged.slice(maxKeep);
+
+    for (const oldItem of toDelete) {
+      try {
+        await s3Client.send(
+          new DeleteObjectCommand({ Bucket: bucketName, Key: oldItem.key })
+        );
+      } catch {
+        // Ignore individual deletion failure
+      }
+    }
+
+    const manifestPayload = {
+      updatedAtIso: new Date().toISOString(),
+      protectionHorizon: '2027-Operations-Guard',
+      latestSnapshot: newMeta,
+      snapshots: toKeep,
+    };
+
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: bucketName,
+        Key: R2_MANIFEST_KEY,
+        Body: new TextEncoder().encode(JSON.stringify(manifestPayload, null, 2)),
+        ContentType: 'application/json',
+      })
+    );
+  } catch (e) {
+    console.warn('[R2AutoBackup] Manifest update warning:', e);
+  }
+}
+
+export async function listR2BackupSnapshots(): Promise<R2BackupSnapshotMeta[]> {
+  const creds = await getStoredR2CredentialsAsync();
+  if (!isR2CredentialsValid(creds)) return [];
+
+  const { GetObjectCommand, ListObjectsV2Command } = await getS3Sdk();
+  const s3Client = await createR2S3Client(creds);
+  const bucketName = creds.bucketName.trim();
+
+  try {
+    const resp = await s3Client.send(
+      new GetObjectCommand({ Bucket: bucketName, Key: R2_MANIFEST_KEY })
+    );
+    if (resp.Body) {
+      const text = await resp.Body.transformToString();
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed?.snapshots)) {
+        return parsed.snapshots;
+      }
+    }
+  } catch {
+    // Fallback to S3 ListObjectsV2
+  }
+
+  try {
+    const listResp = await s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: `${R2_BACKUP_PREFIX}snapshots/`,
+      })
+    );
+    const contents = listResp.Contents || [];
+    return contents
+      .filter((obj: any) => obj.Key && !obj.Key.endsWith('/'))
+      .map((obj: any) => {
+        const key = String(obj.Key);
+        const fileName = key.split('/').pop() || key;
+        const ts = obj.LastModified ? new Date(obj.LastModified).getTime() : Date.now();
+        return {
+          key,
+          fileName,
+          createdAtIso: new Date(ts).toISOString(),
+          timestampMs: ts,
+          triggeredBy: fileName.includes('cron_auto') ? 'cron_auto' : 'manual',
+          rawSizeBytes: Number(obj.Size) || 0,
+          compressedSizeBytes: Number(obj.Size) || 0,
+          compressionRatioPercent: 0,
+          projectsCount: 0,
+          tasksCount: 0,
+          costsCount: 0,
+          delegationsCount: 0,
+          dataChecksum: '',
+        } as R2BackupSnapshotMeta;
+      })
+      .sort((a: R2BackupSnapshotMeta, b: R2BackupSnapshotMeta) => b.timestampMs - a.timestampMs);
+  } catch (e) {
+    console.warn('[R2AutoBackup] Failed to list snapshots from R2:', e);
+    return [];
+  }
+}
+
+export async function downloadAndDecompressR2Backup(key: string): Promise<any> {
+  const creds = await getStoredR2CredentialsAsync();
+  if (!isR2CredentialsValid(creds)) {
+    throw new Error('Cloudflare R2 credentials are not valid.');
+  }
+
+  const { GetObjectCommand } = await getS3Sdk();
+  const s3Client = await createR2S3Client(creds);
+  const resp = await s3Client.send(
+    new GetObjectCommand({
+      Bucket: creds.bucketName.trim(),
+      Key: key,
+    })
+  );
+
+  if (!resp.Body) {
+    throw new Error('Empty backup object body from R2.');
+  }
+
+  const byteArray = await resp.Body.transformToByteArray();
+  const jsonText = await decompressBackupBytes(byteArray);
+  return JSON.parse(jsonText);
+}
+
+export async function deleteR2BackupSnapshot(key: string): Promise<boolean> {
+  const creds = await getStoredR2CredentialsAsync();
+  if (!isR2CredentialsValid(creds)) return false;
+
+  const { DeleteObjectCommand, GetObjectCommand, PutObjectCommand } = await getS3Sdk();
+  const s3Client = await createR2S3Client(creds);
+  const bucketName = creds.bucketName.trim();
+
+  await s3Client.send(new DeleteObjectCommand({ Bucket: bucketName, Key: key }));
+
+  try {
+    const resp = await s3Client.send(
+      new GetObjectCommand({ Bucket: bucketName, Key: R2_MANIFEST_KEY })
+    );
+    if (resp.Body) {
+      const text = await resp.Body.transformToString();
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed?.snapshots)) {
+        parsed.snapshots = parsed.snapshots.filter((s: any) => s.key !== key);
+        await s3Client.send(
+          new PutObjectCommand({
+            Bucket: bucketName,
+            Key: R2_MANIFEST_KEY,
+            Body: new TextEncoder().encode(JSON.stringify(parsed, null, 2)),
+            ContentType: 'application/json',
+          })
+        );
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return true;
+}
+
+export async function downloadLocalBackupFile(compressed = true): Promise<void> {
+  const { payload } = await collectFullSystemBackupPayload();
+  const jsonString = JSON.stringify(payload, null, 2);
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+  if (compressed) {
+    const { bytes, isGzipped } = await compressStringToGzip(jsonString);
+    const blob = new Blob([bytes], {
+      type: isGzipped ? 'application/gzip' : 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `taka_2027_backup_${stamp}.${isGzipped ? 'json.gz' : 'json'}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } else {
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `taka_2027_backup_${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+}
+
+export function startR2AutoBackupCronDaemon(): () => void {
+  if (_cronIntervalId) {
+    clearInterval(_cronIntervalId);
+    _cronIntervalId = null;
+  }
+
+  const checkAndTriggerCron = async () => {
+    try {
+      const currentUser = useAppStore.getState().currentUser;
+      if (!currentUser || currentUser.role === 'guest') return;
+
+      const state = getR2AutoBackupState();
+      if (!state.config.enabled || state.isRunning) return;
+
+      const intervalMs = Math.max(1, state.config.intervalHours) * 3600 * 1000;
+      const elapsed = Date.now() - state.lastBackupTimeMs;
+
+      if (elapsed >= intervalMs) {
+        setTimeout(() => {
+          executeR2BackupNow({ triggeredBy: 'cron_auto', force: false }).catch((err) => {
+            console.warn('[R2AutoBackupCron] Scheduled run warning:', err);
+          });
+        }, 1500);
+      }
+    } catch (e) {
+      console.warn('[R2AutoBackupCron] Check cycle error:', e);
+    }
+  };
+
+  const initialTimer = setTimeout(() => {
+    checkAndTriggerCron();
+  }, 25000);
+
+  _cronIntervalId = setInterval(checkAndTriggerCron, 5 * 60 * 1000);
+
+  const handleVisibilityWake = () => {
+    if (document.visibilityState === 'visible') {
+      checkAndTriggerCron();
+    }
+  };
+  document.addEventListener('visibilitychange', handleVisibilityWake);
+
+  return () => {
+    clearTimeout(initialTimer);
+    if (_cronIntervalId) {
+      clearInterval(_cronIntervalId);
+      _cronIntervalId = null;
+    }
+    document.removeEventListener('visibilitychange', handleVisibilityWake);
+  };
+}
+
+
+=== FILE: src/components/SettingTabParts/R2AutoBackupPanel.tsx ===
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  Cloud,
+  UploadCloud,
+  Download,
+  RefreshCw,
+  Clock,
+  ShieldCheck,
+  Trash2,
+  HardDriveDownload,
+  CheckCircle2,
+  AlertTriangle,
+  Database,
+  RotateCcw,
+} from 'lucide-react';
+import {
+  R2AutoBackupState,
+  R2BackupSnapshotMeta,
+  getR2AutoBackupState,
+  subscribeR2AutoBackupState,
+  saveR2AutoBackupConfig,
+  executeR2BackupNow,
+  listR2BackupSnapshots,
+  downloadAndDecompressR2Backup,
+  deleteR2BackupSnapshot,
+  downloadLocalBackupFile,
+} from '../../lib/r2AutoBackupService';
+import { useAppStore } from '../../store/useAppStore';
+import { localDb } from '../../lib/localDb';
+
+interface R2AutoBackupPanelProps {
+  isAdmin: boolean;
+  onConfirmAction: (title: string, message: string, onConfirm: () => Promise<void>) => void;
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(2)} MB`;
+}
+
+export const R2AutoBackupPanel: React.FC<R2AutoBackupPanelProps> = ({
+  isAdmin,
+  onConfirmAction,
+}) => {
+  const [backupState, setBackupState] = useState<R2AutoBackupState>(() => getR2AutoBackupState());
+  const [snapshots, setSnapshots] = useState<R2BackupSnapshotMeta[]>([]);
+  const [isLoadingList, setIsLoadingList] = useState(false);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    return subscribeR2AutoBackupState((nextState) => {
+      setBackupState(nextState);
+    });
+  }, []);
+
+  const refreshSnapshotList = useCallback(async () => {
+    setIsLoadingList(true);
+    try {
+      const list = await listR2BackupSnapshots();
+      setSnapshots(list);
+    } catch (e) {
+      console.warn('[R2AutoBackupPanel] Failed to load snapshots:', e);
+    } finally {
+      setIsLoadingList(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshSnapshotList();
+  }, [refreshSnapshotList]);
+
+  const handleManualBackupToR2 = async () => {
+    const res = await executeR2BackupNow({ triggeredBy: 'manual', force: true });
+    if (res.success && res.meta) {
+      useAppStore.getState().setToast({
+        title: 'R2 Backup Complete',
+        message: `Compressed ${formatBytes(res.meta.rawSizeBytes)} → ${formatBytes(
+          res.meta.compressedSizeBytes
+        )} (-${res.meta.compressionRatioPercent}%) and archived to Cloudflare R2.`,
+      });
+      await refreshSnapshotList();
+    } else {
+      useAppStore.getState().setToast({
+        title: 'R2 Backup Notice',
+        message: res.reason || 'Could not complete backup to Cloudflare R2.',
+      });
+    }
+  };
+
+  const handleDownloadSnapshotJson = async (snap: R2BackupSnapshotMeta) => {
+    setBusyKey(snap.key);
+    try {
+      const parsed = await downloadAndDecompressR2Backup(snap.key);
+      const blob = new Blob([JSON.stringify(parsed, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = snap.fileName.replace(/\.gz$/i, '');
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      useAppStore.getState().setToast({
+        title: 'Snapshot Downloaded',
+        message: `Decompressed and downloaded ${snap.fileName}`,
+      });
+    } catch (e: any) {
+      useAppStore.getState().setToast({
+        title: 'Download Failed',
+        message: e?.message || 'Failed to download snapshot from R2.',
+      });
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const handleRestoreSnapshotToLocalCache = (snap: R2BackupSnapshotMeta) => {
+    onConfirmAction(
+      'Restore Snapshot to Local Cache',
+      `Are you sure you want to restore snapshot "${snap.fileName}" (${new Date(
+        snap.timestampMs
+      ).toLocaleString()}) into your local IndexedDB & in-memory state?`,
+      async () => {
+        setBusyKey(snap.key);
+        try {
+          const backupDoc = await downloadAndDecompressR2Backup(snap.key);
+          const data = backupDoc?.data;
+          if (!data) {
+            throw new Error('Snapshot does not contain a valid data payload.');
+          }
+
+          const projects = Array.isArray(data.projects) ? data.projects : [];
+          const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+          const costs = Array.isArray(data.costs) ? data.costs : [];
+          const delegations = Array.isArray(data.delegationGroups) ? data.delegationGroups : [];
+
+          await Promise.all([
+            projects.length > 0 ? localDb.projects.bulkPut(projects) : Promise.resolve(),
+            tasks.length > 0 ? localDb.tasks.bulkPut(tasks) : Promise.resolve(),
+            costs.length > 0 ? localDb.costs.bulkPut(costs) : Promise.resolve(),
+            delegations.length > 0 ? localDb.delegations.bulkPut(delegations) : Promise.resolve(),
+          ]);
+
+          const store = useAppStore.getState();
+          if (projects.length > 0) store.setProjects(projects);
+          if (tasks.length > 0) store.setTasks(tasks);
+          if (costs.length > 0) store.setCosts(costs);
+          if (delegations.length > 0) store.setDelegationGroups(delegations);
+
+          useAppStore.getState().setToast({
+            title: 'Snapshot Restored',
+            message: `Restored ${projects.length} projects, ${tasks.length} tasks, ${costs.length} costs from R2 backup.`,
+          });
+        } catch (e: any) {
+          useAppStore.getState().setToast({
+            title: 'Restore Failed',
+            message: e?.message || 'Failed to restore snapshot.',
+          });
+        } finally {
+          setBusyKey(null);
+        }
+      }
+    );
+  };
+
+  const handleDeleteSnapshot = (snap: R2BackupSnapshotMeta) => {
+    onConfirmAction(
+      'Delete R2 Backup Snapshot',
+      `Remove backup archive "${snap.fileName}" permanently from Cloudflare R2?`,
+      async () => {
+        setBusyKey(snap.key);
+        try {
+          await deleteR2BackupSnapshot(snap.key);
+          setSnapshots((prev) => prev.filter((item) => item.key !== snap.key));
+          useAppStore.getState().setToast({
+            title: 'Snapshot Deleted',
+            message: `Deleted ${snap.fileName} from Cloudflare R2.`,
+          });
+        } catch (e: any) {
+          useAppStore.getState().setToast({
+            title: 'Delete Failed',
+            message: e?.message || 'Could not delete snapshot.',
+          });
+        } finally {
+          setBusyKey(null);
+        }
+      }
+    );
+  };
+
+  if (!isAdmin) return null;
+
+  const { config, lastBackupTimeMs, lastBackupMeta, isRunning, lastError } = backupState;
+  const nextScheduledMs =
+    lastBackupTimeMs > 0 ? lastBackupTimeMs + config.intervalHours * 3600 * 1000 : 0;
+
+  return (
+    <div className="p-4 md:p-5 bg-cyan-50/40 dark:bg-cyan-950/15 border-b border-cyan-200/70 dark:border-cyan-900/40 flex flex-col gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-start gap-2.5">
+          <Cloud className="w-5 h-5 text-cyan-600 dark:text-cyan-400 shrink-0 mt-0.5" />
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-bold text-cyan-950 dark:text-cyan-200">
+                Cloudflare R2 Auto-Backup & Compression Cron Engine
+              </h3>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                2027 Operations Data Insurance
+              </span>
+            </div>
+            <p className="text-xs text-cyan-800/80 dark:text-cyan-300/70 mt-0.5">
+              Background Cron Trigger periodically exports all Projects, Tasks, Costs, Delegations, and Floor Layouts from local cache (0 Firestore Reads), compresses via GZIP (~85% size reduction), and archives to Cloudflare R2 through 2027.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            onClick={handleManualBackupToR2}
+            disabled={isRunning}
+            className="px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95"
+          >
+            <UploadCloud className={`w-4 h-4 ${isRunning ? 'animate-bounce' : ''}`} />
+            {isRunning ? 'Compressing & Uploading...' : 'Backup Now to R2'}
+          </button>
+
+          <button
+            onClick={() => downloadLocalBackupFile(true)}
+            className="px-3 py-2 rounded-lg border border-cyan-300 dark:border-cyan-800 bg-white dark:bg-[#1e1e20] hover:bg-cyan-50 dark:hover:bg-cyan-950/40 text-cyan-800 dark:text-cyan-200 text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95"
+            title="Download GZIP Compressed Backup Archive (.json.gz)"
+          >
+            <HardDriveDownload className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+            Export .json.gz
+          </button>
+
+          <button
+            onClick={refreshSnapshotList}
+            disabled={isLoadingList}
+            className="px-2.5 py-2 rounded-lg border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] hover:bg-slate-50 dark:hover:bg-[#28282a] text-slate-600 dark:text-slate-300 text-xs font-medium flex items-center gap-1 transition-all active:scale-95"
+            title="Refresh R2 Snapshot List"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoadingList ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Cron Configuration Controls */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white dark:bg-[#1e1e20] p-3.5 rounded-xl border border-cyan-200/60 dark:border-[#333336] shadow-xs">
+        <div className="flex items-center justify-between md:justify-start gap-3">
+          <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={config.enabled}
+              onChange={(e) => saveR2AutoBackupConfig({ enabled: e.target.checked })}
+              className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 w-4 h-4"
+            />
+            Enable Background Cron
+          </label>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-slate-400 shrink-0" />
+          <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+            Cron Interval:
+          </span>
+          <select
+            value={config.intervalHours}
+            onChange={(e) => saveR2AutoBackupConfig({ intervalHours: Number(e.target.value) })}
+            className="text-xs font-bold bg-slate-50 dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 outline-none"
+          >
+            <option value={1}>Every 1 Hour</option>
+            <option value={6}>Every 6 Hours (Recommended)</option>
+            <option value={12}>Every 12 Hours</option>
+            <option value={24}>Every 24 Hours (Daily)</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Database className="w-4 h-4 text-slate-400 shrink-0" />
+          <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+            Keep Snapshots:
+          </span>
+          <select
+            value={config.retentionCount}
+            onChange={(e) => saveR2AutoBackupConfig({ retentionCount: Number(e.target.value) })}
+            className="text-xs font-bold bg-slate-50 dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-lg px-2.5 py-1.5 text-slate-800 dark:text-slate-200 outline-none"
+          >
+            <option value={15}>Last 15 Snapshots</option>
+            <option value={30}>Last 30 Snapshots</option>
+            <option value={60}>Last 60 Snapshots</option>
+            <option value={90}>Last 90 Snapshots</option>
+          </select>
+        </div>
+
+        <div className="flex items-center justify-between md:justify-end gap-2">
+          <label className="text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={config.onlyWhenChanged}
+              onChange={(e) => saveR2AutoBackupConfig({ onlyWhenChanged: e.target.checked })}
+              className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 w-3.5 h-3.5"
+            />
+            Skip if no data changed
+          </label>
+        </div>
+      </div>
+
+      {/* Status & Telemetry Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-3.5 py-2.5 rounded-lg bg-slate-100/80 dark:bg-[#252528] text-xs text-slate-600 dark:text-slate-300">
+        <div className="flex flex-wrap items-center gap-4">
+          <span className="flex items-center gap-1.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <strong>Last R2 Backup:</strong>{' '}
+            {lastBackupTimeMs > 0 ? new Date(lastBackupTimeMs).toLocaleString() : 'Never run yet'}
+          </span>
+          {nextScheduledMs > 0 && config.enabled && (
+            <span>
+              <strong>Next Cron Trigger:</strong> {new Date(nextScheduledMs).toLocaleString()}
+            </span>
+          )}
+          {lastBackupMeta && (
+            <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 font-semibold">
+              {formatBytes(lastBackupMeta.rawSizeBytes)} →{' '}
+              {formatBytes(lastBackupMeta.compressedSizeBytes)} (-
+              {lastBackupMeta.compressionRatioPercent}% GZIP) • {lastBackupMeta.projectsCount}P /{' '}
+              {lastBackupMeta.tasksCount}T / {lastBackupMeta.costsCount}C
+            </span>
+          )}
+        </div>
+
+        {lastError && (
+          <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            {lastError}
+          </span>
+        )}
+      </div>
+
+      {/* R2 Cloud Snapshot History Table */}
+      <div className="bg-white dark:bg-[#1e1e20] rounded-xl border border-slate-200 dark:border-[#333336] overflow-hidden">
+        <div className="px-4 py-2.5 bg-slate-50 dark:bg-[#252528] border-b border-slate-200 dark:border-[#333336] flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
+            Cloudflare R2 Archived Snapshots ({snapshots.length})
+          </span>
+          <span className="text-[11px] text-slate-400">
+            Bucket Path: Taka-Pm-folder/AutoBackups/snapshots/
+          </span>
+        </div>
+
+        {snapshots.length === 0 ? (
+          <div className="p-6 text-center text-xs text-slate-400">
+            {isLoadingList
+              ? 'Loading snapshots from Cloudflare R2...'
+              : 'No R2 backup snapshots found yet. Click "Backup Now to R2" to create your first compressed archive.'}
+          </div>
+        ) : (
+          <div className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-[#2e2e32]">
+            {snapshots.map((snap) => {
+              const isBusy = busyKey === snap.key;
+              return (
+                <div
+                  key={snap.key}
+                  className="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-50/80 dark:hover:bg-[#252528]/60 transition-colors text-xs"
+                >
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-semibold text-slate-800 dark:text-slate-200 truncate">
+                        {snap.fileName}
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          snap.triggeredBy === 'cron_auto'
+                            ? 'bg-purple-500/15 text-purple-600 dark:text-purple-300'
+                            : 'bg-blue-500/15 text-blue-600 dark:text-blue-300'
+                        }`}
+                      >
+                        {snap.triggeredBy === 'cron_auto' ? 'Auto Cron' : 'Manual'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-2">
+                      <span>{new Date(snap.timestampMs).toLocaleString()}</span>
+                      <span>•</span>
+                      <span>
+                        Size: <strong>{formatBytes(snap.compressedSizeBytes)}</strong>
+                        {snap.rawSizeBytes > snap.compressedSizeBytes
+                          ? ` (Raw ${formatBytes(snap.rawSizeBytes)}, -${snap.compressionRatioPercent}%)`
+                          : ''}
+                      </span>
+                      {snap.projectsCount > 0 && (
+                        <>
+                          <span>•</span>
+                          <span>
+                            {snap.projectsCount} Projects, {snap.tasksCount} Tasks, {snap.costsCount}{' '}
+                            Costs
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => handleDownloadSnapshotJson(snap)}
+                      disabled={isBusy}
+                      className="px-2.5 py-1 rounded border border-slate-200 dark:border-[#444446] hover:bg-slate-100 dark:hover:bg-[#333336] text-slate-700 dark:text-slate-200 font-medium flex items-center gap-1 transition-all active:scale-95"
+                      title="Download & Decompress to JSON"
+                    >
+                      <Download className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+                      JSON
+                    </button>
+                    <button
+                      onClick={() => handleRestoreSnapshotToLocalCache(snap)}
+                      disabled={isBusy}
+                      className="px-2.5 py-1 rounded border border-emerald-300 dark:border-emerald-800/70 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 font-medium flex items-center gap-1 transition-all active:scale-95"
+                      title="Restore Snapshot into Local Database"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      Restore
+                    </button>
+                    <button
+                      onClick={() => handleDeleteSnapshot(snap)}
+                      disabled={isBusy}
+                      className="p-1 rounded border border-rose-200 dark:border-rose-900/50 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 transition-all active:scale-95"
+                      title="Delete Snapshot from R2"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+=== FILE: src/components/SettingTab.tsx ===
+import React, { Suspense, useState } from 'react';
+import { useLanguage } from "../lib/LanguageContext";
+import { RefreshCw, Smartphone, Monitor, Bell, Activity, Database, Cloud, ChevronDown, ChevronUp } from "lucide-react";
+import { cn } from "../lib/utils";
+import { doc } from 'firebase/firestore';
+import { setDoc } from '../lib/firestoreWrites';
+import { db, APP_ID } from "../lib/firebase";
+import { requestNotificationPermission } from "../lib/notifications";
+import { useAppStore } from "../store/useAppStore";
+import { bumpConfigVersion } from "../lib/configCacheService";
+import { lazyWithRetry } from "../lib/lazyWithRetry";
+import { FirestorePerformanceDashboard } from "./FirestorePerformanceDashboard";
+import { SettingNotificationRules } from "./SettingTabParts/SettingNotificationRules";
+import { SettingDataMaintenance } from "./SettingTabParts/SettingDataMaintenance";
+import { R2AutoBackupPanel } from "./SettingTabParts/R2AutoBackupPanel";
+import { SettingTabProps, ConfirmModalState } from "./SettingTabParts/settingTypes";
+
+const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
+const DesktopOptimizationModal = lazyWithRetry(() => import('./DesktopOptimizationModal').then(m => ({ default: m.DesktopOptimizationModal })), 'DesktopOptimizationModal');
+
+export function SettingTab({ rules }: SettingTabProps) {
+  const currentUser = useAppStore(state => state.currentUser)!;
+  const { t } = useLanguage();
+  
+  const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
+  const [showDataMaintenance, setShowDataMaintenance] = useState(false);
+  const [showR2AutoBackup, setShowR2AutoBackup] = useState(false);
+  const [showDesktopOptModal, setShowDesktopOptModal] = useState(false);
+
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  const canWrite = currentUser.role === 'admin' || currentUser.canWrite;
+  const isAdmin = currentUser.role === 'admin';
+  const roleLower = String(currentUser.role || '').toLowerCase();
+  const canViewPerformance = isAdmin || roleLower === 'manager' || roleLower === 'cp';
+
+  const jpyRate = useAppStore(state => state.jpyRate);
+  const usdRate = useAppStore(state => state.usdRate);
+  const [jpyRateInput, setJpyRateInput] = useState(jpyRate.toString());
+  const [usdRateInput, setUsdRateInput] = useState(usdRate.toString());
+
+  const handleSaveExchangeRates = async () => {
+    const parsedJpy = parseFloat(jpyRateInput);
+    const parsedUsd = parseFloat(usdRateInput);
+    
+    if (isNaN(parsedJpy) || isNaN(parsedUsd)) {
+      useAppStore.getState().setToast({ title: "Notice", message: "Please enter valid numbers for exchange rates." });
+      return;
+    }
+    
+    useAppStore.getState().setJpyRate(parsedJpy);
+    useAppStore.getState().setUsdRate(parsedUsd);
+    
+    try {
+      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_settings", "exchange_rates"), { 
+        jpyRate: parsedJpy,
+        usdRate: parsedUsd
+      }, { merge: true });
+      bumpConfigVersion('rates');
+      useAppStore.getState().setToast({ title: "Notice", message: "Exchange rates updated successfully." });
+    } catch (error) { 
+      console.error(error); 
+      useAppStore.getState().setToast({ title: "Notice", message: "Failed to update exchange rates." });
+    }
+  };
+
+  const handleEnablePush = async () => {
+    if (currentUser.id === "guest") {
+      useAppStore.getState().setToast({ title: "Notice", message: "Please login first to enable push notifications." });
+      return;
+    }
+    if (currentUser.notification === false) {
+      useAppStore.getState().setToast({ title: "Notice", message: "Push notifications are disabled for your account by the administrator." });
+      return;
+    }
+    await requestNotificationPermission(currentUser.id);
+  };
+
+  const triggerConfirmAction = (title: string, message: string, onConfirm: () => Promise<void>) => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: async () => {
+        await onConfirm();
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  return (
+    <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm overflow-hidden overflow-y-auto">
+      <Suspense fallback={null}>
+        {confirmModal.isOpen && (
+          <ConfirmModal 
+            isOpen={confirmModal.isOpen}
+            title={confirmModal.title}
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          />
+        )}
+      </Suspense>
+
+      <div className="px-5 py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 shrink-0">
+        <h2 className="text-lg font-bold text-slate-800 dark:text-[#e3e3e3]">{t("Settings")}</h2>
+      </div>
+      
+      <div className="p-5 flex flex-col md:flex-row flex-wrap gap-4 border-b border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] items-center">
+        {currentUser.role !== 'guest' && (
+          <>
+            <button 
+              title="Update to latest Cloudflare build without clearing local database cache (0 Firestore Reads/Writes)"
+              onClick={() => {
+                triggerConfirmAction(
+                  "Force Update App (Zero-Read Smart Update)",
+                  "This will fetch the latest application build from Cloudflare and refresh static assets while preserving your local database (IndexedDB/Dexie) and Delta Sync state (0 extra Firestore Reads/Writes). Proceed?",
+                  async () => {
+                    try {
+                      if ('serviceWorker' in navigator) {
+                        const registrations = await navigator.serviceWorker.getRegistrations();
+                        await Promise.all(
+                          registrations.map(async (reg) => {
+                            try {
+                              await reg.update();
+                              if (reg.waiting) {
+                                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                              }
+                            } catch {}
+                          })
+                        );
+                      }
+                      if ('caches' in window) {
+                        const cacheNames = await window.caches.keys();
+                        await Promise.all(cacheNames.map((name) => window.caches.delete(name)));
+                      }
+                    } catch (e) {
+                      console.warn('[ForceUpdate] Asset cache refresh warning:', e);
+                    }
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('v', String(Date.now()));
+                    window.location.replace(url.toString());
+                  }
+                );
+              }}
+              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm"
+            >
+              <RefreshCw className="w-5 h-5 text-emerald-500" />
+              Force Update App
+            </button>
+            
+            <button 
+              title="Enable Push (iOS/PWA)"
+              onClick={handleEnablePush}
+              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm"
+            >
+              <Smartphone className="w-5 h-5 text-blue-500" />
+              Enable Push (iOS/PWA)
+            </button>
+
+            <button 
+              title="Cấu hình tối ưu Desktop (Chống ngủ tab Chrome/Edge)"
+              onClick={() => setShowDesktopOptModal(true)}
+              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm"
+            >
+              <Monitor className="w-5 h-5 text-indigo-500" />
+              Tối ưu Desktop (Chống ngủ tab)
+            </button>
+            
+            <button 
+              onClick={async () => {
+                const { testLocalNotification } = await import("../lib/notifications");
+                testLocalNotification();
+              }}
+              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm"
+            >
+              <Bell className="w-5 h-5 text-blue-500" />
+              Test Local Notification
+            </button>
+
+            {canViewPerformance && (
+              <button 
+                onClick={() => setShowPerformanceDashboard(prev => !prev)}
+                title="Toggle Firestore Performance & Read Monitor"
+                className={cn(
+                  "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
+                  showPerformanceDashboard 
+                    ? "bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300"
+                    : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
+                )}
+              >
+                <Activity className="w-5 h-5 text-blue-500" />
+                Performance Monitor
+                {showPerformanceDashboard ? (
+                  <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-blue-500" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
+                )}
+              </button>
+            )}
+
+            {isAdmin && (
+              <>
+                <button 
+                  onClick={() => setShowDataMaintenance(prev => !prev)}
+                  title="Bảo trì Dữ liệu & Bộ nhớ đệm (Database Maintenance)"
+                  className={cn(
+                    "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
+                    showDataMaintenance 
+                      ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300"
+                      : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
+                  )}
+                >
+                  <Database className="w-5 h-5 text-amber-500" />
+                  Database Maintenance
+                  {showDataMaintenance ? (
+                    <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-amber-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
+                  )}
+                </button>
+
+                <button 
+                  onClick={() => setShowR2AutoBackup(prev => !prev)}
+                  title="Cloudflare R2 Auto-Backup & 2027 Data Protection Cron"
+                  className={cn(
+                    "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
+                    showR2AutoBackup 
+                      ? "bg-cyan-50 dark:bg-cyan-950/40 border-cyan-300 dark:border-cyan-800 text-cyan-700 dark:text-cyan-300"
+                      : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
+                  )}
+                >
+                  <Cloud className="w-5 h-5 text-cyan-500" />
+                  R2 Auto-Backup (2027)
+                  {showR2AutoBackup ? (
+                    <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-cyan-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
+                  )}
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </div>
+
+      {isAdmin && showR2AutoBackup && (
+        <R2AutoBackupPanel
+          isAdmin={isAdmin}
+          onConfirmAction={triggerConfirmAction}
+        />
+      )}
+
+      {isAdmin && showDataMaintenance && (
+        <SettingDataMaintenance 
+          isAdmin={isAdmin}
+          onConfirmAction={triggerConfirmAction}
+        />
+      )}
+
+      {canViewPerformance && showPerformanceDashboard && (
+        <FirestorePerformanceDashboard onClose={() => setShowPerformanceDashboard(false)} />
+      )}
+
+      {isAdmin && (
+        <>
+          <div className="px-5 py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex justify-between items-center shrink-0">
+            <h2 className="text-md font-bold text-slate-800 dark:text-[#e3e3e3]">Currency Exchange</h2>
+          </div>
+          <div className="p-4 md:p-5 flex flex-col bg-white dark:bg-[#1e1e20] border-b border-slate-100 dark:border-[#333336] gap-4">
+            <div className="flex flex-col md:flex-row flex-wrap gap-4 items-end w-full">
+              <div className="w-full md:w-auto">
+                <label className="block text-xs font-bold text-slate-500 dark:text-[#a3a3a3] uppercase mb-1">JPY Rate (1 JPY = x VND)</label>
+                <input 
+                  type="number" 
+                  value={jpyRateInput}
+                  onChange={(e) => setJpyRateInput(e.target.value)}
+                  className="w-full md:w-48 p-2 rounded-lg border border-slate-300 dark:border-[#555558] text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-[#1e1e20]" 
+                />
+              </div>
+              <div className="w-full md:w-auto">
+                <label className="block text-xs font-bold text-slate-500 dark:text-[#a3a3a3] uppercase mb-1">USD Rate (1 USD = x VND)</label>
+                <input 
+                  type="number" 
+                  value={usdRateInput}
+                  onChange={(e) => setUsdRateInput(e.target.value)}
+                  className="w-full md:w-48 p-2 rounded-lg border border-slate-300 dark:border-[#555558] text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-[#1e1e20]" 
+                />
+              </div>
+              <button 
+                onClick={handleSaveExchangeRates}
+                disabled={!canWrite}
+                className="px-6 py-2 bg-emerald-600 dark:bg-emerald-500 hover:bg-emerald-700 text-white rounded-lg font-bold text-sm shadow-md transition-colors h-[38px] disabled:opacity-50 w-full md:w-auto mt-2 md:mt-0"
+              >
+                Save Rates
+              </button>
+            </div>
+          </div>
+
+          <SettingNotificationRules
+            rules={rules}
+            canWrite={canWrite}
+            onConfirmDelete={triggerConfirmAction}
+          />
+        </>
+      )}
+
+      <Suspense fallback={null}>
+        {showDesktopOptModal && (
+          <DesktopOptimizationModal 
+            isOpen={showDesktopOptModal} 
+            onClose={() => setShowDesktopOptModal(false)} 
+          />
+        )}
+      </Suspense>
+    </div>
+  );
+}
+
+export default SettingTab;
+
+
+=== FILE: src/hooks/appParts/useAppLifecycleEffects.ts ===
+import { useEffect, useCallback, MutableRefObject } from "react";
+import {
+  safeGetItemLocal,
+  safeSetItemLocal,
+  safeRemoveItemLocal,
+} from "../../lib/storage";
+import { requestNotificationPermission } from "../../lib/notifications";
+import { cleanupLocalStorage } from "../../lib/cleanup";
+import { undoManager } from "../../lib/undoManager";
+import { useAppStore } from "../../store/useAppStore";
+import { AppUser } from "../../types";
+import { startR2AutoBackupCronDaemon } from "../../lib/r2AutoBackupService";
+
+interface UseAppLifecycleEffectsProps {
+  currentUser: AppUser;
+  setCurrentUser: (user: AppUser) => void;
+  setShowTour: (show: boolean) => void;
+  setActiveTab: (tab: string) => void;
+  setUndoStack: (stack: any[]) => void;
+  setRedoStack: (stack: any[]) => void;
+  ribbonDisplayMode: string;
+  setRibbonDisplayMode: (mode: any) => void;
+  theme: string;
+  setTheme: (theme: "light" | "dark") => void;
+  setToast: (toast: any) => void;
+  isAnyModalOpen: boolean;
+  activeTab: string;
+  setIsLoginModalOpen: (open: boolean) => void;
+  handleTabChange: (tab: string) => void;
+  pendingDeepLinkRef: MutableRefObject<any>;
+  executeDeepLinkRef: MutableRefObject<any>;
+}
+
+export function useAppLifecycleEffects({
+  currentUser,
+  setCurrentUser,
+  setShowTour,
+  setActiveTab,
+  setUndoStack,
+  setRedoStack,
+  ribbonDisplayMode,
+  setRibbonDisplayMode,
+  theme,
+  setTheme,
+  setToast,
+  isAnyModalOpen,
+  activeTab,
+  setIsLoginModalOpen,
+  handleTabChange,
+  pendingDeepLinkRef,
+  executeDeepLinkRef,
+}: UseAppLifecycleEffectsProps) {
+  useEffect(() => {
+    if (currentUser?.role === "guest") {
+      const hasSeenTour = safeGetItemLocal("taka_has_seen_tour");
+      if (!hasSeenTour) {
+        setShowTour(true);
+      }
+    }
+  }, [currentUser, setShowTour]);
+
+  const handleCloseTour = useCallback(() => {
+    safeSetItemLocal("taka_has_seen_tour", "true");
+    setShowTour(false);
+  }, [setShowTour]);
+
+  useEffect(() => {
+    cleanupLocalStorage();
+    if (typeof window !== "undefined") {
+      const savedAuth = safeGetItemLocal("taka_auth_v1");
+      if (savedAuth) {
+        try {
+          const savedAppUser = JSON.parse(savedAuth) as AppUser;
+          if (savedAppUser.preferences?.defaultStore) {
+            useAppStore.getState().setGlobalStoreFilter(savedAppUser.preferences.defaultStore);
+          }
+          if (savedAppUser.preferences?.defaultYear) {
+            useAppStore
+              .getState()
+              .setGlobalYearFilter(String(savedAppUser.preferences.defaultYear));
+          }
+          if (savedAppUser.preferences?.currency) {
+            useAppStore.getState().setCurrency(savedAppUser.preferences.currency);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+  }, [setActiveTab]);
+
+  useEffect(() => {
+    return undoManager.subscribe((undo, redo) => {
+      setUndoStack(undo);
+      setRedoStack(redo);
+    });
+  }, [setUndoStack, setRedoStack]);
+
+  useEffect(() => {
+    if (ribbonDisplayMode !== "fullscreen") return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setRibbonDisplayMode("always_show");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [ribbonDisplayMode, setRibbonDisplayMode]);
+
+  useEffect(() => {
+    safeRemoveItemLocal("taka_gantt_custom_today");
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.role === "guest") return;
+    return startR2AutoBackupCronDaemon();
+  }, [currentUser?.id, currentUser?.role]);
+
+  useEffect(() => {
+    const savedTheme = safeGetItemLocal("taka_theme_v1");
+    if (savedTheme === "dark") {
+      setTheme("dark");
+      document.documentElement.classList.add("dark");
+    } else {
+      setTheme("light");
+      document.documentElement.classList.remove("dark");
+    }
+  }, [setTheme]);
+
+  const toggleTheme = useCallback(() => {
+    const newTheme = theme === "light" ? "dark" : "light";
+    setTheme(newTheme);
+    safeSetItemLocal("taka_theme_v1", newTheme);
+    if (newTheme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [theme, setTheme]);
+
+  const handleRequestPermission = useCallback(async () => {
+    const token = await requestNotificationPermission(currentUser.id);
+    if (token) {
+      setTimeout(() => {
+        setToast({ title: "Success", message: "Push notifications enabled!" });
+      }, 500);
+    }
+  }, [currentUser.id, setToast]);
+
+  useEffect(() => {
+    if (
+      currentUser.id !== "guest" &&
+      "Notification" in window &&
+      Notification.permission === "granted"
+    ) {
+      requestNotificationPermission(currentUser.id, true).catch(console.error);
+    }
+  }, [currentUser.id]);
+
+  useEffect(() => {
+    if (isAnyModalOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+  }, [isAnyModalOpen]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+  }, [activeTab]);
+
+  const handleLogin = useCallback(
+    (appUser: AppUser) => {
+      setCurrentUser(appUser);
+      safeSetItemLocal("taka_auth_v1", JSON.stringify(appUser));
+
+      if (appUser.preferences?.defaultStore) {
+        useAppStore.getState().setGlobalStoreFilter(appUser.preferences.defaultStore);
+      }
+      if (appUser.preferences?.defaultYear) {
+        useAppStore.getState().setGlobalYearFilter(String(appUser.preferences.defaultYear));
+      }
+      if (appUser.preferences?.currency) {
+        useAppStore.getState().setCurrency(appUser.preferences.currency);
+      }
+
+      setIsLoginModalOpen(false);
+
+      if (pendingDeepLinkRef.current && executeDeepLinkRef.current) {
+        const pending = pendingDeepLinkRef.current;
+        pendingDeepLinkRef.current = null;
+        executeDeepLinkRef.current(pending.targetType, pending.targetId, pending.extraParams);
+      } else {
+        setActiveTab("general");
+      }
+    },
+    [setCurrentUser, setIsLoginModalOpen, pendingDeepLinkRef, executeDeepLinkRef, setActiveTab]
+  );
+
+  const handleLogout = useCallback(() => {
+    const guest: AppUser = {
+      id: "guest",
+      username: "Guest",
+      role: "guest",
+      canSee: false,
+      canWrite: false,
+    };
+    setCurrentUser(guest);
+    safeSetItemLocal("taka_auth_v1", JSON.stringify(guest));
+    handleTabChange("calendar");
+  }, [setCurrentUser, handleTabChange]);
+
+  return {
+    handleCloseTour,
+    toggleTheme,
+    handleRequestPermission,
+    handleLogin,
+    handleLogout,
+  };
+}
+
+
+=== FILE: src/components/LayoutTabParts/layoutActiveGroupsHelper.ts ===
+export interface ActiveGroupCalculationParams {
+  units: any[];
+  filteredVersionForPaint: any;
+  dynamicSummaryMap: Map<string, any>;
+  aggregatedData: Record<string, any>;
+  restrictedProjectCodes: Set<string>;
+}
+
+export interface ActiveGroupResult {
+  unitColorMap: Record<string, string>;
+  unitGroupMap: Record<string, string>;
+  unitOpacityMap: Record<string, number>;
+  unitHatchMap: Record<string, string>;
+  unitSymbolMap: Record<string, string>;
+  activeGroups: any[];
+}
+
+export function computeActiveGroupsAndColorMaps({
+  units,
+  filteredVersionForPaint,
+  dynamicSummaryMap,
+  aggregatedData,
+  restrictedProjectCodes,
+}: ActiveGroupCalculationParams): ActiveGroupResult {
+  const colorMap: Record<string, string> = {};
+  const groupMap: Record<string, string> = {};
+  const opacityMap: Record<string, number> = {};
+  const hatchMap: Record<string, string> = {};
+  const symbolMap: Record<string, string> = {};
+  const groupsInUseMap = new Map<string, any>();
+
+  const activeVersionGroups = filteredVersionForPaint?.groups;
+  if (!filteredVersionForPaint || !activeVersionGroups) {
+    return {
+      unitColorMap: colorMap,
+      unitGroupMap: groupMap,
+      unitOpacityMap: opacityMap,
+      unitHatchMap: hatchMap,
+      unitSymbolMap: symbolMap,
+      activeGroups: [],
+    };
+  }
+
+  const getUnitProject = (u: any, dynamicItem: any, uName: string): any => {
+    return (
+      dynamicItem?.matchedProject ||
+      aggregatedData[uName]?.matchedProject ||
+      (u?.id ? aggregatedData[String(u.id).toLowerCase()]?.matchedProject : null) ||
+      null
+    );
+  };
+
+  const getUnitProjectSize = (u: any, dynamicItem: any, uName: string): number => {
+    const proj = getUnitProject(u, dynamicItem, uName);
+    const rawPSize =
+      proj?.sizeM2 ??
+      (proj as any)?.size ??
+      (proj as any)?.area ??
+      dynamicItem?.appProjectSizeM2 ??
+      aggregatedData[uName]?.appProjectSizeM2 ??
+      (u?.id ? aggregatedData[String(u.id).toLowerCase()]?.appProjectSizeM2 : 0);
+    const parsed = Number(String(rawPSize ?? '').replace(/,/g, ''));
+    return !isNaN(parsed) && parsed > 0 ? parsed : 0;
+  };
+
+  const getUnitArea = (u: any, dynamicItem: any, uName: string): number => {
+    // 1. Highest priority: The Project's actual size (p.sizeM2 / appProjectSizeM2)
+    const projSize = getUnitProjectSize(u, dynamicItem, uName);
+    if (projSize > 0) return projSize;
+
+    // 2. Fallback to dynamicItem / aggregatedData / unit shape
+    const rawSize =
+      dynamicItem?.sizeM2 ??
+      dynamicItem?.size ??
+      aggregatedData[uName]?.sizeM2 ??
+      aggregatedData[uName]?.size ??
+      (u?.id ? aggregatedData[String(u.id).toLowerCase()]?.sizeM2 : 0) ??
+      (u?.id ? aggregatedData[String(u.id).toLowerCase()]?.size : 0) ??
+      u?.sizeM2 ??
+      u?.size ??
+      0;
+    const parsed = Number(String(rawSize).replace(/,/g, ''));
+    return !isNaN(parsed) && parsed > 0 ? parsed : 0;
+  };
+
+  // Step 1: Assign color and matched group for each unit with active app project
+  units.forEach((u: any) => {
+    const uName = String(u.name || '').toLowerCase().trim();
+    if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) return;
+
+    const dynamicItem = dynamicSummaryMap.get(u.id) || (uName ? dynamicSummaryMap.get(uName) : null);
+    if (!dynamicItem?.hasAppProject) {
+      return;
+    }
+
+    if (dynamicItem.matchedGroupId && dynamicItem.color) {
+      colorMap[u.id] = dynamicItem.color;
+      groupMap[u.id] = dynamicItem.matchedGroupId;
+      opacityMap[u.id] = dynamicItem.opacity ?? 0.85;
+      const matchedG = activeVersionGroups.find((g: any) => g.id === dynamicItem.matchedGroupId);
+      hatchMap[u.id] = matchedG?.hatchPattern || dynamicItem.hatchPattern || 'none';
+      symbolMap[u.id] = matchedG?.symbol || dynamicItem.symbol || '';
+    }
+  });
+
+  // Step 2: Group matched units and collect distinct project sizes
+  const matchedUnitsByGroup = new Map<string, any[]>();
+  const seenFloorProjectKeys = new Set<string>();
+  let totalFloorUnitsArea = 0;
+
+  units.forEach((u: any) => {
+    const uName = String(u.name || '').toLowerCase().trim();
+    if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) return;
+
+    const dynamicItem = dynamicSummaryMap.get(u.id) || (uName ? dynamicSummaryMap.get(uName) : null);
+    const proj = getUnitProject(u, dynamicItem, uName);
+    const projSize = getUnitProjectSize(u, dynamicItem, uName);
+    const area = getUnitArea(u, dynamicItem, uName);
+
+    const projKey = proj
+      ? String(proj.id || proj.code || u.name).trim().toLowerCase()
+      : null;
+
+    if (projKey && projSize > 0) {
+      if (!seenFloorProjectKeys.has(projKey)) {
+        seenFloorProjectKeys.add(projKey);
+        totalFloorUnitsArea += projSize;
+      }
+    } else {
+      totalFloorUnitsArea += area;
+    }
+
+    const gid = groupMap[u.id];
+    if (gid) {
+      let list = matchedUnitsByGroup.get(gid);
+      if (!list) {
+        list = [];
+        matchedUnitsByGroup.set(gid, list);
+      }
+      list.push({
+        id: u.id,
+        name: u.name,
+        sizeM2: area,
+        project: proj,
+        projectSize: projSize,
+      });
+    }
+  });
+
+  totalFloorUnitsArea = Math.round(totalFloorUnitsArea * 10) / 10;
+
+  // Step 3: Compute total area for each group by summing projects' sizeM2
+  let totalCategorizedArea = 0;
+
+  activeVersionGroups.forEach((group: any) => {
+    const matchedUnits = matchedUnitsByGroup.get(group.id) || [];
+    if (matchedUnits.length > 0) {
+      const seenGroupProjectKeys = new Set<string>();
+      let groupAreaSum = 0;
+
+      matchedUnits.forEach((item) => {
+        const proj = item.project;
+        const projKey = proj
+          ? String(proj.id || proj.code || item.name).trim().toLowerCase()
+          : null;
+
+        if (projKey && item.projectSize > 0) {
+          if (!seenGroupProjectKeys.has(projKey)) {
+            seenGroupProjectKeys.add(projKey);
+            groupAreaSum += item.projectSize;
+          }
+        } else {
+          groupAreaSum += item.sizeM2 || 0;
+        }
+      });
+
+      const totalArea = Math.round(groupAreaSum * 10) / 10;
+      totalCategorizedArea += totalArea;
+
+      groupsInUseMap.set(group.id, {
+        ...group,
+        matchCount: matchedUnits.length,
+        matchedUnits,
+        totalArea,
+      });
+    }
+  });
+
+  totalCategorizedArea = Math.round(totalCategorizedArea * 10) / 10;
+
+  // Step 4: Calculate final percentages
+  groupsInUseMap.forEach((group, gid) => {
+    const totalArea = group.totalArea || 0;
+    const areaPercent = totalCategorizedArea > 0 ? (totalArea / totalCategorizedArea) * 100 : 0;
+    const floorAreaPercent = totalFloorUnitsArea > 0 ? (totalArea / totalFloorUnitsArea) * 100 : 0;
+
+    groupsInUseMap.set(gid, {
+      ...group,
+      areaPercent,
+      floorAreaPercent,
+    });
+  });
+
+  return {
+    unitColorMap: colorMap,
+    unitGroupMap: groupMap,
+    unitOpacityMap: opacityMap,
+    unitHatchMap: hatchMap,
+    unitSymbolMap: symbolMap,
+    activeGroups: Array.from(groupsInUseMap.values()),
+  };
+}
 

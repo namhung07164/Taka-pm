@@ -9,6 +9,7 @@ import { cleanupLocalStorage } from "../../lib/cleanup";
 import { undoManager } from "../../lib/undoManager";
 import { useAppStore } from "../../store/useAppStore";
 import { AppUser } from "../../types";
+import { startR2AutoBackupCronDaemon } from "../../lib/r2AutoBackupService";
 
 interface UseAppLifecycleEffectsProps {
   currentUser: AppUser;
@@ -109,6 +110,11 @@ export function useAppLifecycleEffects({
   useEffect(() => {
     safeRemoveItemLocal("taka_gantt_custom_today");
   }, []);
+
+  useEffect(() => {
+    if (!currentUser || currentUser.role === "guest") return;
+    return startR2AutoBackupCronDaemon();
+  }, [currentUser?.id, currentUser?.role]);
 
   useEffect(() => {
     const savedTheme = safeGetItemLocal("taka_theme_v1");

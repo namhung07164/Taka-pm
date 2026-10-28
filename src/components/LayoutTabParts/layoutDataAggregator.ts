@@ -311,11 +311,19 @@ export function buildAggregatedUnitData({
           dataMap[code].appProjectParty = partyStr;
           dataMap[code].appParty = partyStr;
 
-          dataMap[code].sizeM2 = p.sizeM2 || dataMap[code].sizeM2 || 0;
-          dataMap[code].appProjectSizeM2 = p.sizeM2 || 0;
-          if (p.sizeM2 && !dataMap[code].size) {
-            dataMap[code].size = p.sizeM2;
+          const rawPSize = p.sizeM2 ?? (p as any)?.size ?? (p as any)?.area;
+          const parsedPSize = Number(String(rawPSize ?? '').replace(/,/g, ''));
+          const pEffectiveSize = !isNaN(parsedPSize) && parsedPSize > 0 ? parsedPSize : 0;
+
+          if (pEffectiveSize > 0) {
+            dataMap[code].sizeM2 = pEffectiveSize;
+            dataMap[code].size = pEffectiveSize;
+            dataMap[code].appProjectSizeM2 = pEffectiveSize;
+          } else if (p.sizeM2) {
+            dataMap[code].sizeM2 = p.sizeM2;
+            dataMap[code].appProjectSizeM2 = p.sizeM2;
           }
+          dataMap[code].matchedProject = p;
           dataMap[code].shopType = p.shopType || (p as any).shop_type || dataMap[code].shopType || '';
           dataMap[code].appProjectShopType = p.shopType || (p as any).shop_type || '';
 

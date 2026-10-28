@@ -1,6 +1,6 @@
 import React, { Suspense, useState } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
-import { RefreshCw, Smartphone, Monitor, Bell, Activity, Database, ChevronDown, ChevronUp } from "lucide-react";
+import { RefreshCw, Smartphone, Monitor, Bell, Activity, Database, Cloud, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "../lib/utils";
 import { doc } from 'firebase/firestore';
 import { setDoc } from '../lib/firestoreWrites';
@@ -12,6 +12,7 @@ import { lazyWithRetry } from "../lib/lazyWithRetry";
 import { FirestorePerformanceDashboard } from "./FirestorePerformanceDashboard";
 import { SettingNotificationRules } from "./SettingTabParts/SettingNotificationRules";
 import { SettingDataMaintenance } from "./SettingTabParts/SettingDataMaintenance";
+import { R2AutoBackupPanel } from "./SettingTabParts/R2AutoBackupPanel";
 import { SettingTabProps, ConfirmModalState } from "./SettingTabParts/settingTypes";
 
 const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
@@ -23,6 +24,7 @@ export function SettingTab({ rules }: SettingTabProps) {
   
   const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
   const [showDataMaintenance, setShowDataMaintenance] = useState(false);
+  const [showR2AutoBackup, setShowR2AutoBackup] = useState(false);
   const [showDesktopOptModal, setShowDesktopOptModal] = useState(false);
 
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({
@@ -109,7 +111,7 @@ export function SettingTab({ rules }: SettingTabProps) {
         <h2 className="text-lg font-bold text-slate-800 dark:text-[#e3e3e3]">{t("Settings")}</h2>
       </div>
       
-      <div className="p-5 flex flex-col md:flex-row gap-4 border-b border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] items-center">
+      <div className="p-5 flex flex-col md:flex-row flex-wrap gap-4 border-b border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] items-center">
         {currentUser.role !== 'guest' && (
           <>
             <button 
@@ -203,28 +205,56 @@ export function SettingTab({ rules }: SettingTabProps) {
             )}
 
             {isAdmin && (
-              <button 
-                onClick={() => setShowDataMaintenance(prev => !prev)}
-                title="Bảo trì Dữ liệu & Bộ nhớ đệm (Database Maintenance)"
-                className={cn(
-                  "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
-                  showDataMaintenance 
-                    ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300"
-                    : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
-                )}
-              >
-                <Database className="w-5 h-5 text-amber-500" />
-                Database Maintenance
-                {showDataMaintenance ? (
-                  <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-amber-500" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
-                )}
-              </button>
+              <>
+                <button 
+                  onClick={() => setShowDataMaintenance(prev => !prev)}
+                  title="Bảo trì Dữ liệu & Bộ nhớ đệm (Database Maintenance)"
+                  className={cn(
+                    "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
+                    showDataMaintenance 
+                      ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300"
+                      : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
+                  )}
+                >
+                  <Database className="w-5 h-5 text-amber-500" />
+                  Database Maintenance
+                  {showDataMaintenance ? (
+                    <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-amber-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
+                  )}
+                </button>
+
+                <button 
+                  onClick={() => setShowR2AutoBackup(prev => !prev)}
+                  title="Cloudflare R2 Auto-Backup & 2027 Data Protection Cron"
+                  className={cn(
+                    "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
+                    showR2AutoBackup 
+                      ? "bg-cyan-50 dark:bg-cyan-950/40 border-cyan-300 dark:border-cyan-800 text-cyan-700 dark:text-cyan-300"
+                      : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
+                  )}
+                >
+                  <Cloud className="w-5 h-5 text-cyan-500" />
+                  R2 Auto-Backup (2027)
+                  {showR2AutoBackup ? (
+                    <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-cyan-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
+                  )}
+                </button>
+              </>
             )}
           </>
         )}
       </div>
+
+      {isAdmin && showR2AutoBackup && (
+        <R2AutoBackupPanel
+          isAdmin={isAdmin}
+          onConfirmAction={triggerConfirmAction}
+        />
+      )}
 
       {isAdmin && showDataMaintenance && (
         <SettingDataMaintenance 

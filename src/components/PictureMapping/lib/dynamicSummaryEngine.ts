@@ -367,11 +367,18 @@ export function useDynamicUnitSummary({
           item.appProjectParty = p.party || (p as any).contractor || '';
           item.appProjectBudget = p.budget || 0;
           item.appProjectActual = p.actual || 0;
-          item.appProjectSizeM2 = p.sizeM2 || item.sizeM2 || 0;
-          if (!item.sizeM2 && p.sizeM2) {
-            item.sizeM2 = p.sizeM2;
-            if (!item.size) item.size = p.sizeM2;
+          const rawPSize = p.sizeM2 ?? (p as any)?.size ?? (p as any)?.area;
+          const parsedPSize = Number(String(rawPSize ?? '').replace(/,/g, ''));
+          const pEffectiveSize = !isNaN(parsedPSize) && parsedPSize > 0 ? parsedPSize : 0;
+
+          if (pEffectiveSize > 0) {
+            item.appProjectSizeM2 = pEffectiveSize;
+            item.sizeM2 = pEffectiveSize;
+            item.size = pEffectiveSize;
+          } else {
+            item.appProjectSizeM2 = item.appProjectSizeM2 || item.sizeM2 || 0;
           }
+          item.matchedProject = p;
           item.appProjectShopType = p.shopType || (p as any).type || '';
           if (!(item as any).shopType && p.shopType) {
             (item as any).shopType = p.shopType;

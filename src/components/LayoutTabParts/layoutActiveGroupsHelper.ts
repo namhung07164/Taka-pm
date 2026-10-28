@@ -41,12 +41,41 @@ export function computeActiveGroupsAndColorMaps({
     };
   }
 
+  const getUnitProject = (u: any, dynamicItem: any, uName: string): any => {
+    return (
+      dynamicItem?.matchedProject ||
+      aggregatedData[uName]?.matchedProject ||
+      (u?.id ? aggregatedData[String(u.id).toLowerCase()]?.matchedProject : null) ||
+      null
+    );
+  };
+
+  const getUnitProjectSize = (u: any, dynamicItem: any, uName: string): number => {
+    const proj = getUnitProject(u, dynamicItem, uName);
+    const rawPSize =
+      proj?.sizeM2 ??
+      (proj as any)?.size ??
+      (proj as any)?.area ??
+      dynamicItem?.appProjectSizeM2 ??
+      aggregatedData[uName]?.appProjectSizeM2 ??
+      (u?.id ? aggregatedData[String(u.id).toLowerCase()]?.appProjectSizeM2 : 0);
+    const parsed = Number(String(rawPSize ?? '').replace(/,/g, ''));
+    return !isNaN(parsed) && parsed > 0 ? parsed : 0;
+  };
+
   const getUnitArea = (u: any, dynamicItem: any, uName: string): number => {
+    // 1. Highest priority: The Project's actual size (p.sizeM2 / appProjectSizeM2)
+    const projSize = getUnitProjectSize(u, dynamicItem, uName);
+    if (projSize > 0) return projSize;
+
+    // 2. Fallback to dynamicItem / aggregatedData / unit shape
     const rawSize =
       dynamicItem?.sizeM2 ??
       dynamicItem?.size ??
       aggregatedData[uName]?.sizeM2 ??
       aggregatedData[uName]?.size ??
+      (u?.id ? aggregatedData[String(u.id).toLowerCase()]?.sizeM2 : 0) ??
+      (u?.id ? aggregatedData[String(u.id).toLowerCase()]?.size : 0) ??
       u?.sizeM2 ??
       u?.size ??
       0;
@@ -54,6 +83,7 @@ export function computeActiveGroupsAndColorMaps({
     return !isNaN(parsed) && parsed > 0 ? parsed : 0;
   };
 
+  // Step 1: Assign color and matched group for each unit with active app project
   units.forEach((u: any) => {
     const uName = String(u.name || '').toLowerCase().trim();
     if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) return;
@@ -73,7 +103,9 @@ export function computeActiveGroupsAndColorMaps({
     }
   });
 
+  // Step 2: Group matched units and collect distinct project sizes
   const matchedUnitsByGroup = new Map<string, any[]>();
+  const seenFloorProjectKeys = new Set<string>();
   let totalFloorUnitsArea = 0;
 
   units.forEach((u: any) => {
@@ -81,8 +113,22 @@ export function computeActiveGroupsAndColorMaps({
     if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) return;
 
     const dynamicItem = dynamicSummaryMap.get(u.id) || (uName ? dynamicSummaryMap.get(uName) : null);
+    const proj = getUnitProject(u, dynamicItem, uName);
+    const projSize = getUnitProjectSize(u, dynamicItem, uName);
     const area = getUnitArea(u, dynamicItem, uName);
-    totalFloorUnitsArea += area;
+
+    const projKey = proj
+      ? String(proj.id || proj.code || u.name).trim().toLowerCase()
+      : null;
+
+    if (projKey && projSize > 0) {
+      if (!seenFloorProjectKeys.has(projKey)) {
+        seenFloorProjectKeys.add(projKey);
+        totalFloorUnitsArea += projSize;
+      }
+    } else {
+      totalFloorUnitsArea += area;
+    }
 
     const gid = groupMap[u.id];
     if (gid) {
@@ -91,33 +137,68 @@ export function computeActiveGroupsAndColorMaps({
         list = [];
         matchedUnitsByGroup.set(gid, list);
       }
-      list.push({ id: u.id, name: u.name, sizeM2: area });
+      list.push({
+        id: u.id,
+        name: u.name,
+        sizeM2: area,
+        project: proj,
+        projectSize: projSize,
+      });
     }
   });
 
+  totalFloorUnitsArea = Math.round(totalFloorUnitsArea * 10) / 10;
+
+  // Step 3: Compute total area for each group by summing projects' sizeM2
   let totalCategorizedArea = 0;
-  matchedUnitsByGroup.forEach((uList) => {
-    uList.forEach((item) => {
-      totalCategorizedArea += item.sizeM2 || 0;
-    });
-  });
 
   activeVersionGroups.forEach((group: any) => {
     const matchedUnits = matchedUnitsByGroup.get(group.id) || [];
     if (matchedUnits.length > 0) {
-      const totalArea = matchedUnits.reduce((acc, item) => acc + (item.sizeM2 || 0), 0);
-      const areaPercent = totalCategorizedArea > 0 ? (totalArea / totalCategorizedArea) * 100 : 0;
-      const floorAreaPercent = totalFloorUnitsArea > 0 ? (totalArea / totalFloorUnitsArea) * 100 : 0;
+      const seenGroupProjectKeys = new Set<string>();
+      let groupAreaSum = 0;
+
+      matchedUnits.forEach((item) => {
+        const proj = item.project;
+        const projKey = proj
+          ? String(proj.id || proj.code || item.name).trim().toLowerCase()
+          : null;
+
+        if (projKey && item.projectSize > 0) {
+          if (!seenGroupProjectKeys.has(projKey)) {
+            seenGroupProjectKeys.add(projKey);
+            groupAreaSum += item.projectSize;
+          }
+        } else {
+          groupAreaSum += item.sizeM2 || 0;
+        }
+      });
+
+      const totalArea = Math.round(groupAreaSum * 10) / 10;
+      totalCategorizedArea += totalArea;
 
       groupsInUseMap.set(group.id, {
         ...group,
         matchCount: matchedUnits.length,
         matchedUnits,
         totalArea,
-        areaPercent,
-        floorAreaPercent,
       });
     }
+  });
+
+  totalCategorizedArea = Math.round(totalCategorizedArea * 10) / 10;
+
+  // Step 4: Calculate final percentages
+  groupsInUseMap.forEach((group, gid) => {
+    const totalArea = group.totalArea || 0;
+    const areaPercent = totalCategorizedArea > 0 ? (totalArea / totalCategorizedArea) * 100 : 0;
+    const floorAreaPercent = totalFloorUnitsArea > 0 ? (totalArea / totalFloorUnitsArea) * 100 : 0;
+
+    groupsInUseMap.set(gid, {
+      ...group,
+      areaPercent,
+      floorAreaPercent,
+    });
   });
 
   return {
