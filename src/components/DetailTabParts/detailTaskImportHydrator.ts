@@ -41,9 +41,10 @@ export async function hydrateImportContextTasks(
       if (byId) return byId;
     }
     if (!code) return undefined;
+    const cleanCode = normalizeDashes(code).trim();
     return safeProjects.find((p) => {
       if (!p || p.isDeleted) return false;
-      const codeMatch = matchProjectCode(p.code, code);
+      const codeMatch = matchProjectCode(p.code, cleanCode);
       const storeMatch =
         !store ||
         !p.store ||

@@ -4,6 +4,8 @@ import { cleanDurationString } from '../../lib/taskImportService';
 import { parseCSVDate } from './detailCsvUtils';
 import { validateTasksImportData, generateTaskErrorReportCSV, ImportValidationResult } from './importValidator';
 import { hydrateProjectsForImport, RawImportProjectKey } from './detailProjectImportHydrator';
+import { normalizeDashes } from '../../lib/utils';
+import { matchProjectCode } from '../../lib/projectDatesService';
 
 export interface ParsedTasksFileResult {
   rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
@@ -11,6 +13,7 @@ export interface ParsedTasksFileResult {
   dataRows: string[][];
   validation: ImportValidationResult;
   errorReportCSV: string;
+  allKnownProjects: Project[];
 }
 
 export async function parseTasksFile(
@@ -72,7 +75,8 @@ export async function parseTasksFile(
       headers,
       dataRows,
       validation,
-      errorReportCSV
+      errorReportCSV,
+      allKnownProjects
     };
   }
 
@@ -133,8 +137,10 @@ export async function parseTasksFile(
     });
 
     if (t.projectCode && t.name) {
+      const cleanPCode = normalizeDashes(t.projectCode).trim();
+      t.projectCode = cleanPCode;
       if (!t.projectYear || !t.projectStore) {
-        const possibleProjects = projects.filter(p => String(p.code).trim().toLowerCase() === String(t.projectCode).trim().toLowerCase());
+        const possibleProjects = allKnownProjects.filter(p => matchProjectCode(p.code, cleanPCode));
         if (possibleProjects.length === 1) {
           if (!t.projectYear) t.projectYear = possibleProjects[0].year;
           if (!t.projectStore) t.projectStore = possibleProjects[0].store;
@@ -142,7 +148,7 @@ export async function parseTasksFile(
       }
 
       if (!t.projectYear) {
-        const matchedProj = projects.find(p => String(p.code).trim().toLowerCase() === String(t.projectCode).trim().toLowerCase());
+        const matchedProj = allKnownProjects.find(p => matchProjectCode(p.code, cleanPCode));
         t.projectYear = (matchedProj?.year && !isNaN(Number(matchedProj.year))) ? Number(matchedProj.year) : new Date().getFullYear();
       }
 
@@ -154,7 +160,7 @@ export async function parseTasksFile(
 
       const yearKey = t.projectYear ? String(t.projectYear).trim().toLowerCase() : '';
       const storeKey = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-      const prjKey = `${String(t.projectCode).trim().toLowerCase()}_${yearKey}_${storeKey}`;
+      const prjKey = `${String(cleanPCode).toLowerCase()}_${yearKey}_${storeKey}`;
 
       if (!rawParsedRowsByProject.has(prjKey)) {
         rawParsedRowsByProject.set(prjKey, []);
@@ -168,6 +174,7 @@ export async function parseTasksFile(
     headers,
     dataRows,
     validation,
-    errorReportCSV
+    errorReportCSV,
+    allKnownProjects
   };
 }

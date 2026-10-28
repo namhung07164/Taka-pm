@@ -132,7 +132,9 @@ export function useDetailTaskCsv({
       }
 
       // Safe to execute import with the latest hydrated projects across all years
-      const latestProjects = useAppStore.getState().projects || projects;
+      const latestProjects = parsed.allKnownProjects && parsed.allKnownProjects.length > 0
+        ? parsed.allKnownProjects
+        : (useAppStore.getState().projects || projects);
       const { count, projectCount } = await executeImportTasks({
         rawParsedRowsByProject: parsed.rawParsedRowsByProject,
         projects: latestProjects,

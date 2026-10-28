@@ -99,24 +99,38 @@ export async function hydrateProjectsForImport(
       for (const k of stillMissing) {
         const cleanCode = normalizeDashes(k.projectCode).trim();
         const cleanYear = normalizeYearString(k.projectYear);
-        const cleanStore = normalizeStoreCode(k.projectStore);
 
-        if (cleanYear && cleanStore && !queriedYears.has(`${cleanYear}__${cleanStore}`)) {
-          queriedYears.add(`${cleanYear}__${cleanStore}`);
+        // A. Single-field queries on year (safe, built-in single field index, no composite index needed)
+        if (cleanYear && !queriedYears.has(cleanYear)) {
+          queriedYears.add(cleanYear);
           fetchPromises.push(
-            getDocs(
-              query(
-                colRef,
-                where('year', 'in', [cleanYear, Number(cleanYear)]),
-                where('store', '==', cleanStore)
-              )
-            ).catch(() => null)
+            getDocs(query(colRef, where('year', '==', cleanYear))).catch(() => null)
           );
-        } else if (cleanCode && !queriedCodes.has(cleanCode.toLowerCase())) {
+          if (!isNaN(Number(cleanYear))) {
+            fetchPromises.push(
+              getDocs(query(colRef, where('year', '==', Number(cleanYear)))).catch(() => null)
+            );
+          }
+        }
+
+        // B. Single-field query on code variants (both hyphen, en-dash, upper, lower)
+        if (cleanCode && !queriedCodes.has(cleanCode.toLowerCase())) {
           queriedCodes.add(cleanCode.toLowerCase());
+          const dashHyphen = cleanCode.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+          const dashEn = cleanCode.replace(/-/g, '–');
           const codeVariants = Array.from(
-            new Set([cleanCode, cleanCode.toUpperCase(), cleanCode.toLowerCase()])
-          );
+            new Set([
+              cleanCode,
+              cleanCode.toUpperCase(),
+              cleanCode.toLowerCase(),
+              dashHyphen,
+              dashHyphen.toUpperCase(),
+              dashHyphen.toLowerCase(),
+              dashEn,
+              dashEn.toUpperCase(),
+              dashEn.toLowerCase(),
+            ])
+          ).slice(0, 10);
           fetchPromises.push(
             getDocs(
               codeVariants.length > 1

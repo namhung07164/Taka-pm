@@ -22875,22 +22875,24 @@ export const parseCSVDate = (csvDate: any): string => {
 
 ================================================================================
 FILE: src/components/DetailTabParts/detailTaskImportExecutor.ts
+================================================================================
 import { Task, Project, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { doc } from 'firebase/firestore';
-import { writeBatch } from '../../lib/firestoreWrites';
-import { db, APP_ID } from '../../lib/firebase';
+import { executeMassBatchOperations, MassWriteOp } from '../../lib/massBatchWriteEngine';
 import { undoManager } from '../../lib/undoManager';
 import { formatToDatetimeLocal, getDefaultDatetimeLocal } from '../../lib/utils';
-import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../../lib/projectDatesService';
-import { 
-  calculateDatesFromPredecessorsAndDuration, 
-  rollupParentTaskDates, 
-  batchSaveTasksToFirestore 
+import { getTasksForProject, calculateProjectComputedDates, matchProjectCode } from '../../lib/projectDatesService';
+import {
+  calculateDatesFromPredecessorsAndDuration, rollupParentTaskDates,
+  prepareMissingDelegationsForTasks, batchSaveTasksToFirestore
 } from '../../lib/taskImportService';
 import { healAllTasksPredecessors } from '../../lib/ganttUtils';
+import { extractSubtaskIndex } from '../../lib/ganttUtilsParts/taskSortingAndCodes';
 import { findAffectedProjects } from '../../lib/taskStateService';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
+import { resolveParentChildHierarchy } from './detailTaskImportHierarchy';
+import { buildAffectedProjectsSyncOps } from './detailTaskImportProjectSync';
+import { hydrateImportContextTasks } from './detailTaskImportHydrator';
 
 interface ExecuteImportTasksParams {
   rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
@@ -22906,28 +22908,52 @@ export async function executeImportTasks({
   tasks,
   appUsers,
   currentUser
-}: ExecuteImportTasksParams): Promise<{ count: number }> {
-  // Build fast multi-index maps for existing tasks
+}: ExecuteImportTasksParams): Promise<{ count: number; projectCount?: number }> {
+  // 1. Gather all tasks across memory, local storage, and Firestore/summaries for target & referenced projects
+  const initialCandidates = [...useAppStore.getState().tasks];
+  tasks.forEach(t => {
+    if (!initialCandidates.some(existing => existing.id === t.id)) {
+      initialCandidates.push(t);
+    }
+  });
+
+  try {
+    const { localDb } = await import('../../lib/localDb');
+    const dbTasks = await localDb.tasks.toArray();
+    dbTasks.forEach(t => {
+      if (!initialCandidates.some(existing => existing.id === t.id)) {
+        initialCandidates.push(t);
+      }
+    });
+  } catch {
+    // localDb fallback
+  }
+
+  const allInitialTasks = await hydrateImportContextTasks(
+    rawParsedRowsByProject,
+    projects,
+    initialCandidates
+  );
+
+  // 2. Build multi-index maps for existing tasks
   const existingTasksById = new Map<string, Task>();
   const existingTasksByName = new Map<string, Task>();
   const existingTasksByNorm = new Map<string, Task>();
   const existingTasksByCode = new Map<string, Task>();
 
-  tasks.forEach(tsk => {
+  allInitialTasks.forEach(tsk => {
+    if (!tsk || !tsk.id) return;
     existingTasksById.set(tsk.id, tsk);
     const prjKey = buildCanonicalProjectKey(tsk.projectCode, tsk.projectYear, tsk.projectStore, projects);
-    const pCode = String(tsk.projectCode || '').trim().toLowerCase();
     if (tsk.name) {
-      const nameKey = `${prjKey}:::${String(tsk.name).trim().toLowerCase()}`;
-      existingTasksByName.set(nameKey, tsk);
+      existingTasksByName.set(`${prjKey}:::${String(tsk.name).trim().toLowerCase()}`, tsk);
       const norm = normalizeTaskNameForComparison(tsk.name);
       if (norm) {
         existingTasksByNorm.set(`${prjKey}:::norm:::${norm}`, tsk);
       }
     }
     if (tsk.taskCodePhu) {
-      const codeKey = `${prjKey}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`;
-      existingTasksByCode.set(codeKey, tsk);
+      existingTasksByCode.set(`${prjKey}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`, tsk);
     }
   });
 
@@ -22936,16 +22962,46 @@ export async function executeImportTasks({
   const tasksToImport: Task[] = [];
   const processedImportTasksMap = new Map<string, Task>();
 
-  // Process rows project by project
+  // 3. Process rows project by project
   rawParsedRowsByProject.forEach((items, prjKey) => {
+    const sample = items[0]?.rowData;
+    const targetProject = projects.find(p => {
+      const codeMatch = matchProjectCode(p.code, sample?.projectCode);
+      const storeMatch = !sample?.projectStore || !p.store || String(p.store).trim().toLowerCase() === String(sample.projectStore).trim().toLowerCase();
+      const yearMatch = !sample?.projectYear || p.year === undefined || p.year === null || String(p.year).trim() === String(sample.projectYear).trim();
+      return codeMatch && storeMatch && yearMatch;
+    });
+
+    const projectExistingTasks = targetProject
+      ? getTasksForProject(targetProject, allInitialTasks)
+      : allInitialTasks.filter(t => buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects) === prjKey);
+
+    let maxExistingSubtaskNum = 0;
+    let maxExistingOrderIndex = -1;
+
+    projectExistingTasks.forEach(pt => {
+      if (pt.orderIndex !== undefined && pt.orderIndex !== null) {
+        const ord = Number(pt.orderIndex);
+        if (!isNaN(ord) && ord > maxExistingOrderIndex) {
+          maxExistingOrderIndex = ord;
+        }
+      }
+      if (pt.taskCodePhu) {
+        const n = extractSubtaskIndex(pt.taskCodePhu);
+        if (n !== null && n > maxExistingSubtaskNum) {
+          maxExistingSubtaskNum = n;
+        }
+      }
+    });
+
+    let nextAutoNumber = Math.max(maxExistingSubtaskNum, maxExistingOrderIndex + 1);
+
     const sortedItems = [...items].sort((a, b) => {
       const codeA = String(a.rowData.taskCodePhu || '').trim();
       const codeB = String(b.rowData.taskCodePhu || '').trim();
-      const numMatchA = codeA.match(/-(\d+)$/);
-      const numMatchB = codeB.match(/-(\d+)$/);
-      if (numMatchA && numMatchB) {
-        const numA = parseInt(numMatchA[1], 10);
-        const numB = parseInt(numMatchB[1], 10);
+      const numA = extractSubtaskIndex(codeA);
+      const numB = extractSubtaskIndex(codeB);
+      if (numA !== null && numB !== null) {
         if (numA !== numB) return numA - numB;
       } else if (codeA && codeB) {
         const comp = codeA.localeCompare(codeB, undefined, { numeric: true });
@@ -22964,48 +23020,82 @@ export async function executeImportTasks({
       return a.originalCsvIndex - b.originalCsvIndex;
     });
 
-    sortedItems.forEach((item, index) => {
+    sortedItems.forEach((item) => {
       const t = item.rowData;
-      // Dùng index thực tế của dòng trong file CSV để đánh số lại, đảm bảo không nhảy cóc
-      const taskOrderIndex = index; 
-      const exactProjectCode = String(t.projectCode || '').trim();
-      
-      // Ép buộc tạo Subtask code: Lấy tuyệt đối Project Code + # + (Thứ tự dòng + 1)
-      const taskCodePhu = `${exactProjectCode}#${taskOrderIndex + 1}`;
-
+      const exactProjectCode = String(t.projectCode || targetProject?.code || '').trim();
       const canonicalPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
-      const pCode = exactProjectCode.toLowerCase();
+
+      const rawCode = String(t.taskCodePhu || '').trim();
+      const explicitNum = extractSubtaskIndex(rawCode);
+      const hasExplicitSubtaskNumber = explicitNum !== null;
+
+      let taskCodePhu: string;
+      let taskOrderIndex: number;
+
+      if (explicitNum !== null) {
+        taskCodePhu = `${exactProjectCode}#${explicitNum}`;
+        nextAutoNumber = Math.max(nextAutoNumber, explicitNum);
+        taskOrderIndex = t.orderIndex !== undefined && t.orderIndex !== '' && !isNaN(Number(t.orderIndex))
+          ? Number(t.orderIndex)
+          : explicitNum - 1;
+      } else if (rawCode) {
+        taskCodePhu = rawCode.startsWith(exactProjectCode) ? rawCode : `${exactProjectCode}#${rawCode}`;
+        nextAutoNumber += 1;
+        taskOrderIndex = t.orderIndex !== undefined && t.orderIndex !== '' && !isNaN(Number(t.orderIndex))
+          ? Number(t.orderIndex)
+          : nextAutoNumber - 1;
+      } else {
+        nextAutoNumber += 1;
+        taskCodePhu = `${exactProjectCode}#${nextAutoNumber}`;
+        taskOrderIndex = t.orderIndex !== undefined && t.orderIndex !== '' && !isNaN(Number(t.orderIndex))
+          ? Number(t.orderIndex)
+          : nextAutoNumber - 1;
+      }
+
       const rawName = String(t.name || '').trim().toLowerCase();
       const normName = normalizeTaskNameForComparison(t.name);
       const nameKey = `${canonicalPrjKey}:::${rawName}`;
       const normKey = `${canonicalPrjKey}:::norm:::${normName}`;
-      const codeKey = `${canonicalPrjKey}:::code:::${String(taskCodePhu).trim().toLowerCase()}`;
+      const codeKey = `${canonicalPrjKey}:::code:::${taskCodePhu.toLowerCase()}`;
 
-      // Match against existing tasks in priority:
-      // 1. Matched in current import batch (by exact name, norm name, or code)
-      // 2. By ID
-      // 3. By exact project + name
-      // 4. By normalized project + name
-      // 5. By project + taskCodePhu
-      let existing: Task | undefined = processedImportTasksMap.get(nameKey) ||
-                                       (normName ? processedImportTasksMap.get(normKey) : undefined) ||
-                                       (taskCodePhu ? processedImportTasksMap.get(codeKey) : undefined);
+      let existing: Task | undefined = undefined;
+
+      if (hasExplicitSubtaskNumber) {
+        existing = processedImportTasksMap.get(codeKey);
+      } else {
+        existing = processedImportTasksMap.get(codeKey) ||
+                   processedImportTasksMap.get(nameKey) ||
+                   (normName ? processedImportTasksMap.get(normKey) : undefined);
+      }
+
       if (!existing && t.id) {
         existing = existingTasksById.get(t.id);
       }
-      if (!existing && nameKey) {
-        existing = existingTasksByName.get(nameKey);
-      }
-      if (!existing && normKey) {
-        existing = existingTasksByNorm.get(normKey);
-      }
-      if (!existing && taskCodePhu) {
-        existing = existingTasksByCode.get(codeKey);
+
+      if (!existing && hasExplicitSubtaskNumber) {
+        const candidate = existingTasksByCode.get(codeKey);
+        if (candidate) {
+          const candidateNorm = normalizeTaskNameForComparison(candidate.name);
+          if (!candidateNorm || !normName || candidateNorm === normName) {
+            existing = candidate;
+          } else {
+            nextAutoNumber = Math.max(nextAutoNumber, maxExistingSubtaskNum) + 1;
+            taskCodePhu = `${exactProjectCode}#${nextAutoNumber}`;
+            taskOrderIndex = nextAutoNumber - 1;
+          }
+        }
       }
 
-      const id = existing ? existing.id : `t_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${tasksToImport.length}`;
+      if (!existing && !hasExplicitSubtaskNumber) {
+        if (nameKey) existing = existingTasksByName.get(nameKey);
+        if (!existing && normKey) existing = existingTasksByNorm.get(normKey);
+        if (!existing && codeKey) existing = existingTasksByCode.get(codeKey);
+      }
 
-      if (existing) {
+      const hasRealExistingId = Boolean(existing?.id && !String(existing.id).startsWith('ts_'));
+      const id = hasRealExistingId ? existing!.id : `t_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${tasksToImport.length}`;
+
+      if (existing && hasRealExistingId) {
         if (!previousStates.has(id)) {
           previousStates.set(id, existing);
         }
@@ -23075,11 +23165,16 @@ export async function executeImportTasks({
         }
       }
 
+      const hasImportedParentRef = Boolean(t.parentTaskId || t.parentTaskCode || t.parentTaskName);
       const finalTask: Task = existing
         ? {
             ...existing,
             ...t,
-            id: existing.id,
+            id,
+            parentTaskId: hasImportedParentRef ? (t.parentTaskId || existing.parentTaskId) : undefined,
+            predecessorTaskIds: undefined,
+            predecessors: undefined,
+            isModularParent: false,
             comments: updatedComments,
             orderIndex: taskOrderIndex,
             taskCodePhu,
@@ -23099,20 +23194,22 @@ export async function executeImportTasks({
             startManual: false,
             updatedAt: new Date().toISOString()
           };
+      delete (finalTask as any)._isVirtualSummary;
 
-      // Tự động phân giải và gán projectId từ danh sách projects theo bộ 3 mã (code + store + year)
-      if (!finalTask.projectId && projects && projects.length > 0) {
+      if ((!finalTask.projectId || !finalTask.projectStore || finalTask.projectYear === undefined) && projects && projects.length > 0) {
         const pCode = String(finalTask.projectCode || '').trim().toLowerCase();
         const pStore = String(finalTask.projectStore || '').trim().toLowerCase();
         const pYear = String(finalTask.projectYear ?? '').trim();
         const matched = projects.find(p => {
-          const matchCode = String(p.code || '').trim().toLowerCase() === pCode || String(p.no || '').trim().toLowerCase() === pCode;
+          if (finalTask.projectId && String(p.id) === String(finalTask.projectId)) return true;
+          const matchCode = matchProjectCode(p.code, pCode) || String(p.no || '').trim().toLowerCase() === pCode;
           const matchStore = !pStore || !p.store || String(p.store).trim().toLowerCase() === pStore;
           const matchYear = !pYear || p.year === undefined || p.year === null || String(p.year).trim() === pYear;
           return matchCode && matchStore && matchYear;
         });
         if (matched) {
           finalTask.projectId = matched.id;
+          if (matched.code) finalTask.projectCode = matched.code;
           if (!finalTask.projectStore && matched.store) finalTask.projectStore = matched.store;
           if (finalTask.projectYear === undefined && matched.year !== undefined) finalTask.projectYear = matched.year;
         }
@@ -23140,7 +23237,6 @@ export async function executeImportTasks({
         finalTask.durationManual = true;
       }
 
-      // Register immediately into lookup maps to prevent duplicate tasks within same import
       processedImportTasksMap.set(nameKey, finalTask);
       if (normKey) processedImportTasksMap.set(normKey, finalTask);
       if (codeKey) processedImportTasksMap.set(codeKey, finalTask);
@@ -23158,288 +23254,121 @@ export async function executeImportTasks({
     });
   });
 
-  // Resolve parent-child hierarchy across imported tasks and existing tasks
-  const lookupTaskMap = new Map<string, Task>();
-  tasks.forEach(t => lookupTaskMap.set(t.id, t));
-  tasksToImport.forEach(t => lookupTaskMap.set(t.id, t));
+  // 4. Resolve parent-child hierarchy across imported tasks and existing tasks
+  resolveParentChildHierarchy(tasksToImport, allInitialTasks);
 
-  tasksToImport.forEach(t => {
-    let resolvedParentId: string | undefined = undefined;
+  // 5. Prepare missing delegations BEFORE rolling up parent tasks & project summaries
+  // so Desktop, Firestore, and all devices compute 100% identical runningStatus & progress
+  const commitNowIso = new Date().toISOString();
+  const activeUser = useAppStore.getState().currentUser || currentUser;
+  const precomputedDelegations = prepareMissingDelegationsForTasks(tasksToImport, activeUser, commitNowIso);
 
-    if (t.parentTaskId && lookupTaskMap.has(t.parentTaskId)) {
-      resolvedParentId = t.parentTaskId;
-    } else if ((t as any).parentTaskCode) {
-      const pCode = String((t as any).parentTaskCode).trim().toLowerCase();
-      const cleanNumMatch = pCode.match(/^#?(\d+)$/);
-      const targetIndex = cleanNumMatch ? parseInt(cleanNumMatch[1], 10) - 1 : -1;
-
-      const matchedParent = Array.from(lookupTaskMap.values()).find(
-        pt => pt.projectCode === t.projectCode &&
-              (pt.projectYear == t.projectYear || (!pt.projectYear && !t.projectYear)) &&
-              (pt.projectStore == t.projectStore || (!pt.projectStore && !t.projectStore)) &&
-              (
-                String(pt.taskCodePhu || '').trim().toLowerCase() === pCode ||
-                String(pt.id).toLowerCase() === pCode ||
-                (cleanNumMatch && String(pt.taskCodePhu || '').trim().toLowerCase().endsWith(`#${cleanNumMatch[1]}`)) ||
-                (targetIndex >= 0 && pt.orderIndex === targetIndex)
-              )
-      );
-      if (matchedParent && matchedParent.id !== t.id) {
-        resolvedParentId = matchedParent.id;
-      }
-    } else if ((t as any).parentTaskName) {
-      const pName = String((t as any).parentTaskName).trim().toLowerCase();
-      const matchedParent = Array.from(lookupTaskMap.values()).find(
-        pt => pt.projectCode === t.projectCode &&
-              (pt.projectYear == t.projectYear || (!pt.projectYear && !t.projectYear)) &&
-              (pt.projectStore == t.projectStore || (!pt.projectStore && !t.projectStore)) &&
-              String(pt.name || '').trim().toLowerCase() === pName
-      );
-      if (matchedParent && matchedParent.id !== t.id) {
-        resolvedParentId = matchedParent.id;
-      }
-    }
-
-    if (resolvedParentId && resolvedParentId !== t.id) {
-      t.parentTaskId = resolvedParentId;
-      (t as any).parentId = resolvedParentId;
-    } else if (resolvedParentId === t.id) {
-      delete t.parentTaskId;
-      delete (t as any).parentId;
-    }
-
-    delete (t as any).parentTaskCode;
-    delete (t as any).parentTaskName;
-    delete (t as any).isParent;
-    delete (t as any).level;
-  });
-
-  // Calculate dates from predecessors and duration
+  // 6. Calculate dates from predecessors and duration
   useAppStore.getState().optimisticUpdateTasks(tasksToImport);
 
   const allCurrentTasks = useAppStore.getState().tasks;
+  const tasksMapAfterCalc = new Map<string, Task>();
+  allInitialTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
+  allCurrentTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
+
   const calculatedTasks = calculateDatesFromPredecessorsAndDuration(
     tasksToImport,
-    allCurrentTasks,
+    Array.from(tasksMapAfterCalc.values()),
     projects
   );
 
-  const tasksMapAfterCalc = new Map<string, Task>();
-  allCurrentTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
   calculatedTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
-  const allTasksWithCalc = Array.from(tasksMapAfterCalc.values());
-  const { updatedParents, allTasksMap } = rollupParentTaskDates(allTasksWithCalc, undefined, projects);
+  const healedAll = healAllTasksPredecessors(Array.from(tasksMapAfterCalc.values()), projects);
+  const { updatedParents, allTasksMap } = rollupParentTaskDates(healedAll.updatedTasks, undefined, projects);
 
-  const tasksToSaveMap = new Map<string, Task>();
-  calculatedTasks.forEach(t => tasksToSaveMap.set(t.id, t));
-  updatedParents.forEach(p => tasksToSaveMap.set(p.id, p));
-  const rawTasksToSave = Array.from(tasksToSaveMap.values());
+  const tasksToSaveIds = new Set<string>();
+  calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
+  updatedParents.forEach(p => {
+    if (p.id && !String(p.id).startsWith('ts_')) {
+      tasksToSaveIds.add(p.id);
+    }
+  });
+  const finalTasksToSave: Task[] = [];
+  tasksToSaveIds.forEach(tid => {
+    if (String(tid).startsWith('ts_')) return;
+    const tk = allTasksMap.get(tid);
+    if (tk) {
+      const stamped = { ...tk, updatedAt: commitNowIso };
+      delete (stamped as any)._isVirtualSummary;
+      allTasksMap.set(tid, stamped);
+      finalTasksToSave.push(stamped);
+    }
+  });
 
-  // Auto-heal predecessor string codes on imported CSV/Excel tasks
-  const healed = healAllTasksPredecessors(rawTasksToSave, projects);
-  const finalTasksToSave = healed.updatedTasks;
-
-  // Optimistic update
+  // Optimistic update (0ms UI)
   useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
 
-  // Sync project summaries
+  // Compute & sync project summaries in memory BEFORE overwriting store.projects
   const finalFullTasksList = Array.from(allTasksMap.values());
   const affectedProjects = findAffectedProjects(finalTasksToSave, projects);
   const delegationGroups = useAppStore.getState().delegationGroups;
-  const currentProjects = useAppStore.getState().projects;
-  const updatedProjects = currentProjects.map(proj => {
+  const currentProjects = projects && projects.length > 0 ? projects : useAppStore.getState().projects;
+  const computedByProjectId = new Map<string, ReturnType<typeof calculateProjectComputedDates>>();
+  const touchedProjectsForPersistence: Project[] = [];
+
+  currentProjects.forEach(proj => {
     const isAffected = affectedProjects.some(ap => ap.id === proj.id);
-    if (!isAffected) return proj;
-    const pTasks = getTasksForProject(proj, finalFullTasksList);
+    if (!isAffected) return;
+    const pTasks = getTasksForProject(proj, finalFullTasksList, { realTasksOnly: true });
     const computed = calculateProjectComputedDates(proj, pTasks, delegationGroups);
-    return { ...proj, ...computed };
+    computedByProjectId.set(proj.id, computed);
+    touchedProjectsForPersistence.push({ ...proj, ...computed, updatedAt: commitNowIso });
   });
-  useAppStore.getState().setProjects(updatedProjects);
 
-  // Save to Firestore
-  const activeUser = useAppStore.getState().currentUser || currentUser;
-  await batchSaveTasksToFirestore(finalTasksToSave, activeUser);
+  const storeProjects = useAppStore.getState().projects || [];
+  const mergedProjectsMap = new Map<string, Project>(storeProjects.map(p => [p.id, p]));
+  touchedProjectsForPersistence.forEach(p => mergedProjectsMap.set(p.id, p));
+  useAppStore.getState().setProjects(Array.from(mergedProjectsMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0)));
 
-  for (const p of affectedProjects) {
-    const pTasks = getTasksForProject(p, finalFullTasksList);
-    const computed = calculateProjectComputedDates(p, pTasks, delegationGroups);
-    await syncProjectDatesToFirestore(p.id, computed);
+  // Auto-expand affected projects in UI so user immediately sees imported tasks
+  const curExpanded = useAppStore.getState().expandedProjectIds || [];
+  const affKeys = affectedProjects.flatMap(p => [p.id, p.code].filter(Boolean) as string[]);
+  useAppStore.getState().setExpandedProjectIds(Array.from(new Set([...curExpanded, ...affKeys])));
+
+  // Persist affected projects to LocalDB (Dexie) in background and mark tasks_proj as loaded
+  if (touchedProjectsForPersistence.length > 0) {
+    import('../../lib/localDb').then(({ bulkPersistProjects }) => bulkPersistProjects(touchedProjectsForPersistence)).catch(() => {});
+    import('../../lib/loadedMarkers').then(({ markLoaded }) => {
+      touchedProjectsForPersistence.forEach(proj => { if (proj.id) markLoaded('tasks_proj', proj.id).catch(() => {}); });
+    }).catch(() => {});
   }
+
+  // Build authoritative project summary ops and commit tasks + delegations + project summaries
+  // in ONE unified Firestore batch + parallel coalesced delta broadcast
+  const { writeOps: projectWriteOps, projDeltaItems } = buildAffectedProjectsSyncOps(
+    affectedProjects,
+    computedByProjectId,
+    commitNowIso
+  );
+
+  await batchSaveTasksToFirestore(finalTasksToSave, activeUser, {
+    precomputedDelegations,
+    projectWriteOps,
+    projectDeltaItems: projDeltaItems,
+  });
 
   if (finalTasksToSave.length > 0) {
     undoManager.push({
       description: 'Import Tasks',
       revert: async () => {
-        const batch = writeBatch(db);
+        const revertOps: MassWriteOp[] = [];
         previousStates.forEach((oldData, id) => {
-          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), oldData);
+          revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'set', data: oldData, merge: false });
         });
-        newIds.forEach(id => {
-          batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id));
+        newIds.forEach((id) => {
+          revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'delete' });
         });
-        await batch.commit();
-      }
+        await executeMassBatchOperations(revertOps);
+      },
     });
   }
 
-  return { count: tasksToImport.length };
-}
-
-
-FILE: src/components/DetailTabParts/detailTaskImportParser.ts
-================================================================================
-import { Project } from '../../types';
-import { parseCSV } from '../../lib/csvUtils';
-import { cleanDurationString } from '../../lib/taskImportService';
-import { parseCSVDate } from './detailCsvUtils';
-import { validateTasksImportData, generateTaskErrorReportCSV, ImportValidationResult } from './importValidator';
-
-export interface ParsedTasksFileResult {
-  rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
-  headers: string[];
-  dataRows: string[][];
-  validation: ImportValidationResult;
-  errorReportCSV: string;
-}
-
-export async function parseTasksFile(
-  file: File,
-  projects: Project[]
-): Promise<ParsedTasksFileResult> {
-  let rows: string[][] = [];
-  const fileName = file.name.toLowerCase();
-
-  if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-    const XLSX = await import('xlsx');
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array' });
-    const sheetName = workbook.SheetNames.includes('tasks') ? 'tasks' : workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: false });
-    rows = rawRows.map(row => row.map((cell: any) => String(cell !== null && cell !== undefined ? cell : '').trim()));
-  } else {
-    const text = await file.text();
-    rows = parseCSV(text);
-  }
-
-  if (!rows || rows.length < 2) {
-    throw new Error('CSV file is empty or format is invalid. At least 1 header row and 1 data row are required.');
-  }
-
-  const headers = rows[0].map(h => h.trim().toLowerCase());
-  const dataRows = rows.slice(1);
-
-  // 1. Run Comprehensive Validation
-  const validation = validateTasksImportData(headers, dataRows, projects);
-  const errorReportCSV = validation.isValid ? '' : generateTaskErrorReportCSV(headers, dataRows, validation);
-
-  const rawParsedRowsByProject = new Map<string, Array<{ rowData: any; originalCsvIndex: number }>>();
-
-  // If validation failed, return immediately without parsing into project maps to ensure 0 writes
-  if (!validation.isValid) {
-    return {
-      rawParsedRowsByProject,
-      headers,
-      dataRows,
-      validation,
-      errorReportCSV
-    };
-  }
-
-  dataRows.forEach((row, rowIndex) => {
-    if (row.length < headers.length) return;
-    const t: any = {};
-
-    headers.forEach((h, i) => {
-      let key = h;
-      if (h === 'task name') key = 'name';
-      if (h === 'projectid' || h === 'project_id' || h === 'project id') key = 'projectId';
-      if (h === 'projectcode') key = 'projectCode';
-      if (h === 'year' || h === 'projectyear') key = 'projectYear';
-      if (h === 'store' || h === 'projectstore') key = 'projectStore';
-      if (h === 'sub-task code' || h === 'sub task code' || h === 'subtask code' || h === 'sub_task_code' || h === 'taskcodephu' || h === 'task code phu' || h === 'task_code_phu') {
-        key = 'taskCodePhu';
-      }
-      if (h === 'orderindex' || h === 'order_index') key = 'orderIndex';
-      if (h === 'delegation' || h === 'task delegation' || h === 'task_delegation' || h === 'isdelegation') {
-        key = 'delegation';
-      }
-      if (h === 'task flexible' || h === 'task_flexible' || h === 'taskflexible' || h === 'flexible' || h === 'realtimeupdate' || h === 'realtime_update') {
-        key = 'realtimeUpdate';
-      }
-      if (h === 'comments' || h === 'comment') {
-        key = 'importComment';
-      }
-      if (h === 'parent task code' || h === 'parenttaskcode' || h === 'parent_task_code' || h === 'parent code' || h === 'parent_code' || h === 'task mẹ code' || h === 'task me code') {
-        key = 'parentTaskCode';
-      }
-      if (h === 'parent task name' || h === 'parenttaskname' || h === 'parent_task_name' || h === 'parent name' || h === 'parent_name' || h === 'task mẹ name' || h === 'task me name' || h === 'task mẹ' || h === 'task me' || h === 'parent task' || h === 'parenttask') {
-        key = 'parentTaskName';
-      }
-      if (h === 'parenttaskid' || h === 'parent_task_id' || h === 'parent id' || h === 'parentid') {
-        key = 'parentTaskId';
-      }
-      if (h === 'is parent' || h === 'is_parent' || h === 'isparent') {
-        key = 'isParent';
-      }
-      if (h === 'level' || h === 'wbs level' || h === 'wbs_level') {
-        key = 'level';
-      }
-
-      if (['projectId', 'projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
-        let val: any = row[i];
-        if (key === 'start' || key === 'finish') {
-          val = parseCSVDate(val);
-        } else if (key === 'duration') {
-          val = cleanDurationString(val);
-        } else if (key === 'delegation' || key === 'realtimeUpdate') {
-          const strVal = String(val || '').trim().toLowerCase();
-          val = (strVal === 'true' || strVal === '1' || strVal === 'yes' || strVal === 'on');
-        } else if (key === 'projectYear') {
-          val = isNaN(Number(val)) ? val : Number(val);
-        }
-        t[key] = val;
-      }
-    });
-
-    if (t.projectCode && t.name) {
-      if (!t.projectYear || !t.projectStore) {
-        const possibleProjects = projects.filter(p => String(p.code).trim().toLowerCase() === String(t.projectCode).trim().toLowerCase());
-        if (possibleProjects.length === 1) {
-          if (!t.projectYear) t.projectYear = possibleProjects[0].year;
-          if (!t.projectStore) t.projectStore = possibleProjects[0].store;
-        }
-      }
-
-      if (!t.projectYear) {
-        const matchedProj = projects.find(p => String(p.code).trim().toLowerCase() === String(t.projectCode).trim().toLowerCase());
-        t.projectYear = (matchedProj?.year && !isNaN(Number(matchedProj.year))) ? Number(matchedProj.year) : new Date().getFullYear();
-      }
-
-      if (t.projectYear !== undefined && !isNaN(Number(t.projectYear))) {
-        t.projectYear = Number(t.projectYear);
-      } else {
-        t.projectYear = new Date().getFullYear();
-      }
-
-      const yearKey = t.projectYear ? String(t.projectYear).trim().toLowerCase() : '';
-      const storeKey = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
-      const prjKey = `${String(t.projectCode).trim().toLowerCase()}_${yearKey}_${storeKey}`;
-
-      if (!rawParsedRowsByProject.has(prjKey)) {
-        rawParsedRowsByProject.set(prjKey, []);
-      }
-      rawParsedRowsByProject.get(prjKey)!.push({ rowData: t, originalCsvIndex: rowIndex });
-    }
-  });
-
-  return {
-    rawParsedRowsByProject,
-    headers,
-    dataRows,
-    validation,
-    errorReportCSV
-  };
+  return { count: tasksToImport.length, projectCount: affectedProjects.length };
 }
 
 
@@ -23767,7 +23696,7 @@ export function validateTasksImportData(
 
   const projectLookup = new Map<string, Project>();
   existingProjects.forEach(p => {
-    const pCode = String(p.code || '').trim().toLowerCase();
+    const pCode = normalizeDashes(String(p.code || '')).trim().toLowerCase();
     const pYear = normalizeYearString(p.year);
     const pStore = normalizeStoreCode(p.store);
     if (pCode) {
@@ -23880,12 +23809,24 @@ export function validateTasksImportData(
 
     // 2. Project Existence
     if (projectCode && existingProjects.length > 0) {
-      const pCodeLower = projectCode.toLowerCase();
+      const pCodeClean = normalizeDashes(projectCode).trim();
+      const pCodeLower = pCodeClean.toLowerCase();
       const pYearNorm = normalizeYearString(projectYear);
       const pStoreNorm = normalizeStoreCode(projectStore);
-      const foundProject = (pYearNorm && pStoreNorm && projectLookup.get(`${pCodeLower}__${pYearNorm}__${pStoreNorm}`)) ||
-                           (pStoreNorm && projectLookup.get(`${pCodeLower}____${pStoreNorm}`)) ||
-                           projectLookup.get(pCodeLower);
+      let foundProject = (pYearNorm && pStoreNorm && projectLookup.get(`${pCodeLower}__${pYearNorm}__${pStoreNorm}`)) ||
+                         (pStoreNorm && projectLookup.get(`${pCodeLower}____${pStoreNorm}`)) ||
+                         projectLookup.get(pCodeLower);
+
+      if (!foundProject) {
+        foundProject = existingProjects.find(p => {
+          if (!p || p.isDeleted) return false;
+          const codeMatch = matchProjectCode(p.code, pCodeClean);
+          const storeMatch = !pStoreNorm || !p.store || normalizeStoreCode(p.store) === pStoreNorm;
+          const yearMatch = !pYearNorm || p.year === undefined || p.year === null || normalizeYearString(p.year) === pYearNorm;
+          return codeMatch && storeMatch && yearMatch;
+        });
+      }
+
       if (!foundProject) {
         addError({
           rowNumber,
@@ -114168,12 +114109,13 @@ describe('Kiểm thử tính toán Pre-computed Dates của Project (calculatePr
 
 ================================================================================
 FILE: src/lib/projectDatesService.ts
+================================================================================
 import { setDoc, updateDoc, writeBatch } from "./firestoreWrites";
 import { db, APP_ID } from "./firebase";
 import { doc, collection, getDocs } from 'firebase/firestore';
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
-import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries, getStatus, resolveActualStatus, isTaskBelongsToProject, isProjectTasksHydrated } from "./utils";
+import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries, getStatus, resolveActualStatus, isTaskBelongsToProject, isProjectTasksHydrated, normalizeDashes } from "./utils";
 import { sortGroupTasks } from "./ganttUtils";
 import { isTaskDeletedInTracker } from "./taskDeletedTracker";
 import { buildTaskByIdMap, isForeignSummaryEntry } from './summaryGhostFilter';
@@ -114190,12 +114132,12 @@ export interface ComputedProjectDates {
 
 /**
  * So sánh 2 mã dự án: hỗ trợ chuỗi đơn, chuỗi nhiều mã phân tách bởi dấu phẩy/chấm phẩy,
- * không phân biệt chữ hoa/thường và khoảng trắng thừa.
+ * không phân biệt chữ hoa/thường, khoảng trắng thừa và chuẩn hóa mọi loại dấu gạch ngang (hyphen, en-dash, em-dash).
  */
 export function matchProjectCode(codeA?: string, codeB?: string): boolean {
   if (!codeA || !codeB) return false;
-  const a = String(codeA).trim().toLowerCase();
-  const b = String(codeB).trim().toLowerCase();
+  const a = normalizeDashes(String(codeA)).trim().toLowerCase();
+  const b = normalizeDashes(String(codeB)).trim().toLowerCase();
   if (a === b) return true;
   const partsA = a.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
   const partsB = b.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
@@ -114664,382 +114606,7 @@ export {
 
 
 
-FILE: src/lib/r2StorageUtils.ts
-================================================================================
-import { getStoredR2Credentials, getS3Sdk, extractR2Key, listR2Objects, deleteR2Object, R2Credentials } from '../components/PictureMapping/lib/r2Upload';
-import { doc, getDoc } from 'firebase/firestore';
-import { db, APP_ID } from './firebase';
-import { useAppStore } from '../store/useAppStore';
-import { compressImageToWebp } from './imageCompression';
 
-/**
- * R2 Storage Garbage Collector & Cleanup Utilities.
- * Mirrors the storageUtils.ts architecture for Firebase Storage, dedicated to Cloudflare R2 CAD/Floorplan assets.
- */
-
-/**
- * Extracts all unique R2 object keys (bg_* images) referenced in an item, version, or full store dataset.
- */
-export function extractR2ImageKeys(data: any): string[] {
-  if (!data) return [];
-  const keys = new Set<string>();
-
-  const processUrl = (url: any) => {
-    if (typeof url === 'string') {
-      const k = extractR2Key(url);
-      if (k) keys.add(k);
-    }
-  };
-
-  const processVersion = (v: any) => {
-    if (!v) return;
-    if (v.backgroundUrl) processUrl(v.backgroundUrl);
-    if (v.r2Key) processUrl(v.r2Key);
-  };
-
-  if (Array.isArray(data)) {
-    data.forEach((item) => {
-      if (typeof item === 'string') processUrl(item);
-      else if (item && typeof item === 'object') {
-        if (item.backgroundUrl || item.r2Key) processVersion(item);
-        if (Array.isArray(item.mapVersions)) item.mapVersions.forEach(processVersion);
-        if (Array.isArray(item.versions)) item.versions.forEach(processVersion);
-      }
-    });
-  } else if (typeof data === 'object') {
-    // Single version object
-    if (data.backgroundUrl || data.r2Key) {
-      processVersion(data);
-    }
-    // StoreLocationData partitions
-    if (data.storeLocationData && typeof data.storeLocationData === 'object') {
-      Object.values(data.storeLocationData).forEach((part: any) => {
-        if (Array.isArray(part?.mapVersions)) part.mapVersions.forEach(processVersion);
-      });
-    }
-    if (Array.isArray(data.mapVersions)) {
-      data.mapVersions.forEach(processVersion);
-    }
-    if (Array.isArray(data.versions)) {
-      data.versions.forEach(processVersion);
-    }
-  }
-
-  return Array.from(keys);
-}
-
-/**
- * Deletes specific R2 object keys/URLs from the Cloudflare R2 bucket in the background.
- */
-export async function deleteR2StorageFiles(
-  keysOrUrls: string[],
-  customCreds?: R2Credentials | null
-): Promise<{ deletedCount: number; deletedKeys: string[] }> {
-  if (!keysOrUrls || keysOrUrls.length === 0) {
-    return { deletedCount: 0, deletedKeys: [] };
-  }
-
-  const creds = customCreds || getStoredR2Credentials();
-  if (!creds || !creds.accountId || !creds.bucketName) {
-    console.warn('[R2 GC] Bỏ qua xóa file: Chưa cấu hình thông tin R2 credentials.');
-    return { deletedCount: 0, deletedKeys: [] };
-  }
-
-  const targetKeys = Array.from(
-    new Set(keysOrUrls.map((k) => extractR2Key(k) || k).filter((k): k is string => !!k && typeof k === 'string'))
-  );
-
-  if (targetKeys.length === 0) {
-    return { deletedCount: 0, deletedKeys: [] };
-  }
-
-  try {
-    const { S3Client } = await getS3Sdk();
-    const s3 = new S3Client({
-      region: 'auto',
-      endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
-      credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
-    });
-
-    const deletedKeys: string[] = [];
-    for (const key of targetKeys) {
-      try {
-        const ok = await deleteR2Object(key, creds, s3);
-        if (ok) {
-          deletedKeys.push(key);
-          console.log(`[R2 GC] Đã dọn dẹp file mồ côi trên R2: ${key}`);
-        }
-      } catch (err) {
-        console.warn(`[R2 GC] Không thể xóa file ${key}:`, err);
-      }
-    }
-
-    return { deletedCount: deletedKeys.length, deletedKeys };
-  } catch (err) {
-    console.error('[R2 GC] Lỗi khởi tạo kết nối xóa file R2:', err);
-    return { deletedCount: 0, deletedKeys: [] };
-  }
-}
-
-/**
- * Scans all files on R2 bucket and deletes any orphan background images
- * that are no longer referenced anywhere in activeData (all floors & versions).
- */
-export async function cleanOrphanR2Files(
-  activeData: any,
-  options?: {
-    customCreds?: R2Credentials | null;
-    onProgress?: (status: string) => void;
-  }
-): Promise<{ scannedCount: number; deletedCount: number; deletedKeys: string[] }> {
-  const creds = options?.customCreds || getStoredR2Credentials();
-  if (!creds || !creds.accountId || !creds.bucketName) {
-    return { scannedCount: 0, deletedCount: 0, deletedKeys: [] };
-  }
-
-  try {
-    options?.onProgress?.('Đang kết nối R2 để quét các file ảnh nền...');
-    const { S3Client } = await getS3Sdk();
-    const s3 = new S3Client({
-      region: 'auto',
-      endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
-      credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
-    });
-
-    // 1. List all background files on R2
-    const allR2Keys = await listR2Objects(creds, s3, 'bg_');
-    if (allR2Keys.length === 0) {
-      options?.onProgress?.('Không có file ảnh nền nào cần quét trên R2.');
-      return { scannedCount: 0, deletedCount: 0, deletedKeys: [] };
-    }
-
-    // 2. Extract all actively used keys across all locations, floors & versions
-    const activeKeys = new Set(extractR2ImageKeys(activeData).map((k) => k.toLowerCase()));
-
-    // 3. Find orphaned files (present in R2 but NOT referenced in activeData)
-    const orphanKeys = allR2Keys.filter((key) => {
-      const lower = key.toLowerCase();
-      return lower.startsWith('bg_') && !activeKeys.has(lower);
-    });
-
-    if (orphanKeys.length === 0) {
-      options?.onProgress?.('Toàn bộ file trên R2 đều đang được sử dụng hợp lệ (0 file rác).');
-      return { scannedCount: allR2Keys.length, deletedCount: 0, deletedKeys: [] };
-    }
-
-    options?.onProgress?.(`Tìm thấy ${orphanKeys.length} file rác mồ côi. Đang tiến hành thu gom...`);
-
-    const deletedKeys: string[] = [];
-    for (let i = 0; i < orphanKeys.length; i++) {
-      const key = orphanKeys[i];
-      options?.onProgress?.(`Đang xóa file rác: ${key} (${i + 1}/${orphanKeys.length})...`);
-      const ok = await deleteR2Object(key, creds, s3);
-      if (ok) {
-        deletedKeys.push(key);
-      }
-      await new Promise((r) => setTimeout(r, 40));
-    }
-
-    options?.onProgress?.(`Đã thu gom và giải phóng thành công ${deletedKeys.length} file rác trên R2!`);
-    return { scannedCount: allR2Keys.length, deletedCount: deletedKeys.length, deletedKeys };
-  } catch (err) {
-    console.error('[R2 GC] Lỗi trong quá trình quét và dọn dẹp R2:', err);
-    return { scannedCount: 0, deletedCount: 0, deletedKeys: [] };
-  }
-}
-
-/**
- * Uploads a picture file to Cloudflare R2 bucket under `Taka-Pm-folder/`
- * and returns the public HTTP URL: https://hcm.taka-pm.org/Taka-Pm-folder/<filename>
- */
-export async function uploadPictureToTakaFolder(
-  file: File,
-  unitCode?: string,
-  store?: string
-): Promise<{ success: boolean; publicUrl?: string; error?: string }> {
-  let creds = getStoredR2Credentials() || useAppStore.getState().r2Config;
-  if (!creds) {
-    try {
-      const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
-      if (snap.exists()) {
-        const data = snap.data() as any;
-        if (data.accountId && data.accessKeyId && data.secretAccessKey && data.bucketName) {
-          creds = {
-            accountId: data.accountId,
-            accessKeyId: data.accessKeyId,
-            secretAccessKey: data.secretAccessKey,
-            bucketName: data.bucketName,
-          };
-          useAppStore.getState().setR2Config(data);
-        }
-      }
-    } catch (e) {
-      console.error("[R2 Upload] Error fetching R2 credentials:", e);
-    }
-  }
-
-  if (!creds) {
-    return { success: false, error: "Chưa cấu hình thông tin Cloudflare R2 (r2_credentials)." };
-  }
-
-  try {
-    const { S3Client, PutObjectCommand } = await getS3Sdk();
-    const s3 = new S3Client({
-      region: 'auto',
-      endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
-      credentials: {
-        accessKeyId: creds.accessKeyId.trim(),
-        secretAccessKey: creds.secretAccessKey.trim(),
-      },
-    });
-
-    // Auto-compress photo to ultra-lightweight WebP format (Canva & Cloudinary standard: max 1920px, quality 0.82)
-    let uploadFile = file;
-    let compressionInfo = '';
-    try {
-      const compressed = await compressImageToWebp(file, { maxWidth: 1920, maxHeight: 1920, quality: 0.82 });
-      uploadFile = compressed.file;
-      if (compressed.compressionRatio > 0) {
-        compressionInfo = ` (Đã nén ${(compressed.originalSize / 1024).toFixed(0)}KB → ${(compressed.compressedSize / 1024).toFixed(0)}KB, tiết kiệm ${compressed.compressionRatio}%)`;
-      }
-    } catch (compressErr) {
-      console.warn('[R2 Upload] Lỗi nén WebP, sử dụng file gốc:', compressErr);
-    }
-
-    const cleanName = uploadFile.name.replace(/[\/\\]/g, '_').replace(/\s+/g, '_');
-    const storePrefix = store ? `${store.toUpperCase().trim()}_` : '';
-    const prefix = unitCode ? `${unitCode.replace(/[^a-zA-Z0-9_-]/g, '_')}_` : '';
-    const keyName = `${storePrefix}${prefix}${Date.now()}_${cleanName}`;
-    const fullKey = `Taka-Pm-folder/${keyName}`;
-
-    const arrayBuffer = await uploadFile.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
-
-    const command = new PutObjectCommand({
-      Bucket: creds.bucketName.trim(),
-      Key: fullKey,
-      Body: uint8Array,
-      ContentType: uploadFile.type || 'image/webp',
-      CacheControl: 'public, max-age=604800, immutable',
-    });
-
-    await s3.send(command);
-
-    const publicUrl = `https://hcm.taka-pm.org/${fullKey}`;
-    return { success: true, publicUrl, compressionInfo } as any;
-  } catch (err: any) {
-    console.error("[R2 Upload] Failed to upload picture to Taka-Pm-folder:", err);
-    return { success: false, error: err?.message || "Lỗi tải ảnh lên Cloudflare R2." };
-  }
-}
-
-/**
- * Permanently deletes an image file from Cloudflare R2 Cloud Storage.
- * Handles both full public URLs (e.g. https://hcm.taka-pm.org/Taka-Pm-folder/file.jpg),
- * r2:// protocol links, and direct key names, ensuring zero leftover files or versions on R2.
- */
-export async function deleteR2ImageCleanly(
-  urlOrKey: string,
-  customCreds?: R2Credentials | null
-): Promise<{ success: boolean; deletedKeys: string[] }> {
-  if (!urlOrKey || typeof urlOrKey !== 'string') {
-    return { success: false, deletedKeys: [] };
-  }
-
-  const trimmed = urlOrKey.trim();
-  if (!trimmed || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
-    return { success: false, deletedKeys: [] };
-  }
-
-  let creds = customCreds || getStoredR2Credentials() || useAppStore.getState().r2Config;
-  if (!creds) {
-    try {
-      const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "r2_credentials"));
-      if (snap.exists()) {
-        const data = snap.data() as any;
-        if (data.accountId && data.accessKeyId && data.secretAccessKey && data.bucketName) {
-          creds = {
-            accountId: data.accountId,
-            accessKeyId: data.accessKeyId,
-            secretAccessKey: data.secretAccessKey,
-            bucketName: data.bucketName,
-          };
-          useAppStore.getState().setR2Config(data);
-        }
-      }
-    } catch (e) {
-      console.error("[R2 Purge] Error fetching credentials:", e);
-    }
-  }
-
-  if (!creds || !creds.accountId || !creds.bucketName) {
-    console.warn('[R2 Purge] Cannot delete from R2: Credentials missing.');
-    return { success: false, deletedKeys: [] };
-  }
-
-  // Extract all potential object key candidates
-  const keysToDelete = new Set<string>();
-
-  if (trimmed.startsWith('r2://')) {
-    keysToDelete.add(trimmed.replace('r2://', ''));
-  }
-
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    try {
-      const parsed = new URL(trimmed);
-      const pathname = decodeURIComponent(parsed.pathname).replace(/^\/+/, '');
-      if (pathname) {
-        keysToDelete.add(pathname);
-        const parts = pathname.split('/');
-        if (parts.length > 1) {
-          keysToDelete.add(parts[parts.length - 1]);
-        }
-      }
-    } catch {}
-  } else {
-    keysToDelete.add(trimmed);
-  }
-
-  const r2Key = extractR2Key(trimmed);
-  if (r2Key) {
-    keysToDelete.add(r2Key);
-  }
-
-  const uniqueKeys = Array.from(keysToDelete).filter(Boolean);
-  if (uniqueKeys.length === 0) {
-    return { success: false, deletedKeys: [] };
-  }
-
-  try {
-    const { S3Client } = await getS3Sdk();
-    const s3 = new S3Client({
-      region: 'auto',
-      endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
-      credentials: {
-        accessKeyId: creds.accessKeyId.trim(),
-        secretAccessKey: creds.secretAccessKey.trim(),
-      },
-    });
-
-    const deletedKeys: string[] = [];
-    for (const key of uniqueKeys) {
-      try {
-        const ok = await deleteR2Object(key, creds, s3);
-        if (ok) {
-          deletedKeys.push(key);
-          console.log(`[R2 Purge] Permanently deleted object from R2: "${key}"`);
-        }
-      } catch (err) {
-        console.warn(`[R2 Purge] Error deleting key "${key}":`, err);
-      }
-    }
-
-    return { success: deletedKeys.length > 0, deletedKeys };
-  } catch (err) {
-    console.error('[R2 Purge] Error connecting to R2 for deletion:', err);
-    return { success: false, deletedKeys: [] };
-  }
-}
 ================================================================================
 FILE: src/lib/schemas.ts
 ================================================================================
@@ -118988,9 +118555,21 @@ export async function ensureProjectTasksLoaded(
         queries.push(getDocs(query(colRef, where('projectId', '==', ctxProjectId))));
       }
       if (cleanCode) {
+        const dashHyphen = cleanCode.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+        const dashEn = cleanCode.replace(/-/g, '–');
         const codeVariants = Array.from(
-          new Set([cleanCode, cleanCode.toUpperCase(), cleanCode.toLowerCase()])
-        );
+          new Set([
+            cleanCode,
+            cleanCode.toUpperCase(),
+            cleanCode.toLowerCase(),
+            dashHyphen,
+            dashHyphen.toUpperCase(),
+            dashHyphen.toLowerCase(),
+            dashEn,
+            dashEn.toUpperCase(),
+            dashEn.toLowerCase(),
+          ])
+        ).slice(0, 10);
         queries.push(
           getDocs(
             codeVariants.length > 1
@@ -119291,6 +118870,7 @@ export async function reorderTasksStateUnified(
 
   await syncAffectedProjects(targetProjects, allUpdatedTasks);
 }
+
 
 ================================================================================
 FILE: src/lib/undoManager.ts
@@ -130250,17 +129830,17 @@ import { executeMassBatchOperations, MassWriteOp } from '../../lib/massBatchWrit
 import { undoManager } from '../../lib/undoManager';
 import { formatToDatetimeLocal, getDefaultDatetimeLocal } from '../../lib/utils';
 import { getTasksForProject, calculateProjectComputedDates, matchProjectCode } from '../../lib/projectDatesService';
-import { 
-  calculateDatesFromPredecessorsAndDuration, 
-  rollupParentTaskDates, 
-  batchSaveTasksToFirestore 
+import {
+  calculateDatesFromPredecessorsAndDuration, rollupParentTaskDates,
+  prepareMissingDelegationsForTasks, batchSaveTasksToFirestore
 } from '../../lib/taskImportService';
 import { healAllTasksPredecessors } from '../../lib/ganttUtils';
 import { extractSubtaskIndex } from '../../lib/ganttUtilsParts/taskSortingAndCodes';
 import { findAffectedProjects } from '../../lib/taskStateService';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { resolveParentChildHierarchy } from './detailTaskImportHierarchy';
-import { syncAffectedProjectsSummaries } from './detailTaskImportProjectSync';
+import { buildAffectedProjectsSyncOps } from './detailTaskImportProjectSync';
+import { hydrateImportContextTasks } from './detailTaskImportHydrator';
 
 interface ExecuteImportTasksParams {
   rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
@@ -130277,11 +129857,11 @@ export async function executeImportTasks({
   appUsers,
   currentUser
 }: ExecuteImportTasksParams): Promise<{ count: number; projectCount?: number }> {
-  // 1. Gather all tasks across memory and local storage to guarantee 100% presence
-  const allInitialTasks = [...useAppStore.getState().tasks];
+  // 1. Gather all tasks across memory, local storage, and Firestore/summaries for target & referenced projects
+  const initialCandidates = [...useAppStore.getState().tasks];
   tasks.forEach(t => {
-    if (!allInitialTasks.some(existing => existing.id === t.id)) {
-      allInitialTasks.push(t);
+    if (!initialCandidates.some(existing => existing.id === t.id)) {
+      initialCandidates.push(t);
     }
   });
 
@@ -130289,13 +129869,19 @@ export async function executeImportTasks({
     const { localDb } = await import('../../lib/localDb');
     const dbTasks = await localDb.tasks.toArray();
     dbTasks.forEach(t => {
-      if (!allInitialTasks.some(existing => existing.id === t.id)) {
-        allInitialTasks.push(t);
+      if (!initialCandidates.some(existing => existing.id === t.id)) {
+        initialCandidates.push(t);
       }
     });
   } catch {
     // localDb fallback
   }
+
+  const allInitialTasks = await hydrateImportContextTasks(
+    rawParsedRowsByProject,
+    projects,
+    initialCandidates
+  );
 
   // 2. Build multi-index maps for existing tasks
   const existingTasksById = new Map<string, Task>();
@@ -130338,7 +129924,6 @@ export async function executeImportTasks({
       ? getTasksForProject(targetProject, allInitialTasks)
       : allInitialTasks.filter(t => buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects) === prjKey);
 
-    // Compute maximum existing subtask code number and max orderIndex for this project
     let maxExistingSubtaskNum = 0;
     let maxExistingOrderIndex = -1;
 
@@ -130388,7 +129973,6 @@ export async function executeImportTasks({
       const exactProjectCode = String(t.projectCode || targetProject?.code || '').trim();
       const canonicalPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
 
-      // Determine taskCodePhu and orderIndex: respect explicit subtask number from CSV
       const rawCode = String(t.taskCodePhu || '').trim();
       const explicitNum = extractSubtaskIndex(rawCode);
       const hasExplicitSubtaskNumber = explicitNum !== null;
@@ -130409,7 +129993,6 @@ export async function executeImportTasks({
           ? Number(t.orderIndex)
           : nextAutoNumber - 1;
       } else {
-        // No code specified in CSV -> auto-continue after max existing task
         nextAutoNumber += 1;
         taskCodePhu = `${exactProjectCode}#${nextAutoNumber}`;
         taskOrderIndex = t.orderIndex !== undefined && t.orderIndex !== '' && !isNaN(Number(t.orderIndex))
@@ -130425,7 +130008,6 @@ export async function executeImportTasks({
 
       let existing: Task | undefined = undefined;
 
-      // Priority 1: Match within current import batch
       if (hasExplicitSubtaskNumber) {
         existing = processedImportTasksMap.get(codeKey);
       } else {
@@ -130434,27 +130016,34 @@ export async function executeImportTasks({
                    (normName ? processedImportTasksMap.get(normKey) : undefined);
       }
 
-      // Priority 2: Direct ID match if row contains ID
       if (!existing && t.id) {
         existing = existingTasksById.get(t.id);
       }
 
-      // Priority 3: When explicit subtask code was provided, ONLY match existing task with exact same code!
-      // NEVER match by name if code does not match!
       if (!existing && hasExplicitSubtaskNumber) {
-        existing = existingTasksByCode.get(codeKey);
+        const candidate = existingTasksByCode.get(codeKey);
+        if (candidate) {
+          const candidateNorm = normalizeTaskNameForComparison(candidate.name);
+          if (!candidateNorm || !normName || candidateNorm === normName) {
+            existing = candidate;
+          } else {
+            nextAutoNumber = Math.max(nextAutoNumber, maxExistingSubtaskNum) + 1;
+            taskCodePhu = `${exactProjectCode}#${nextAutoNumber}`;
+            taskOrderIndex = nextAutoNumber - 1;
+          }
+        }
       }
 
-      // Priority 4: When NO explicit subtask code was provided, match by name
       if (!existing && !hasExplicitSubtaskNumber) {
         if (nameKey) existing = existingTasksByName.get(nameKey);
         if (!existing && normKey) existing = existingTasksByNorm.get(normKey);
         if (!existing && codeKey) existing = existingTasksByCode.get(codeKey);
       }
 
-      const id = existing ? existing.id : `t_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${tasksToImport.length}`;
+      const hasRealExistingId = Boolean(existing?.id && !String(existing.id).startsWith('ts_'));
+      const id = hasRealExistingId ? existing!.id : `t_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${tasksToImport.length}`;
 
-      if (existing) {
+      if (existing && hasRealExistingId) {
         if (!previousStates.has(id)) {
           previousStates.set(id, existing);
         }
@@ -130529,7 +130118,7 @@ export async function executeImportTasks({
         ? {
             ...existing,
             ...t,
-            id: existing.id,
+            id,
             parentTaskId: hasImportedParentRef ? (t.parentTaskId || existing.parentTaskId) : undefined,
             predecessorTaskIds: undefined,
             predecessors: undefined,
@@ -130553,15 +130142,15 @@ export async function executeImportTasks({
             startManual: false,
             updatedAt: new Date().toISOString()
           };
+      delete (finalTask as any)._isVirtualSummary;
 
-      // Tự động phân giải và gán projectId từ danh sách projects theo bộ 3 mã (code + store + year)
       if ((!finalTask.projectId || !finalTask.projectStore || finalTask.projectYear === undefined) && projects && projects.length > 0) {
         const pCode = String(finalTask.projectCode || '').trim().toLowerCase();
         const pStore = String(finalTask.projectStore || '').trim().toLowerCase();
         const pYear = String(finalTask.projectYear ?? '').trim();
         const matched = projects.find(p => {
           if (finalTask.projectId && String(p.id) === String(finalTask.projectId)) return true;
-          const matchCode = String(p.code || '').trim().toLowerCase() === pCode || String(p.no || '').trim().toLowerCase() === pCode;
+          const matchCode = matchProjectCode(p.code, pCode) || String(p.no || '').trim().toLowerCase() === pCode;
           const matchStore = !pStore || !p.store || String(p.store).trim().toLowerCase() === pStore;
           const matchYear = !pYear || p.year === undefined || p.year === null || String(p.year).trim() === pYear;
           return matchCode && matchStore && matchYear;
@@ -130596,7 +130185,6 @@ export async function executeImportTasks({
         finalTask.durationManual = true;
       }
 
-      // Register immediately into lookup maps to prevent duplicate tasks within same import
       processedImportTasksMap.set(nameKey, finalTask);
       if (normKey) processedImportTasksMap.set(normKey, finalTask);
       if (codeKey) processedImportTasksMap.set(codeKey, finalTask);
@@ -130617,7 +130205,13 @@ export async function executeImportTasks({
   // 4. Resolve parent-child hierarchy across imported tasks and existing tasks
   resolveParentChildHierarchy(tasksToImport, allInitialTasks);
 
-  // 5. Calculate dates from predecessors and duration
+  // 5. Prepare missing delegations BEFORE rolling up parent tasks & project summaries
+  // so Desktop, Firestore, and all devices compute 100% identical runningStatus & progress
+  const commitNowIso = new Date().toISOString();
+  const activeUser = useAppStore.getState().currentUser || currentUser;
+  const precomputedDelegations = prepareMissingDelegationsForTasks(tasksToImport, activeUser, commitNowIso);
+
+  // 6. Calculate dates from predecessors and duration
   useAppStore.getState().optimisticUpdateTasks(tasksToImport);
 
   const allCurrentTasks = useAppStore.getState().tasks;
@@ -130637,13 +130231,18 @@ export async function executeImportTasks({
 
   const tasksToSaveIds = new Set<string>();
   calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
-  updatedParents.forEach(p => tasksToSaveIds.add(p.id));
-  const commitNowIso = new Date().toISOString();
+  updatedParents.forEach(p => {
+    if (p.id && !String(p.id).startsWith('ts_')) {
+      tasksToSaveIds.add(p.id);
+    }
+  });
   const finalTasksToSave: Task[] = [];
   tasksToSaveIds.forEach(tid => {
+    if (String(tid).startsWith('ts_')) return;
     const tk = allTasksMap.get(tid);
     if (tk) {
       const stamped = { ...tk, updatedAt: commitNowIso };
+      delete (stamped as any)._isVirtualSummary;
       allTasksMap.set(tid, stamped);
       finalTasksToSave.push(stamped);
     }
@@ -130652,52 +130251,54 @@ export async function executeImportTasks({
   // Optimistic update (0ms UI)
   useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
 
-  // Persist tasks to LocalDB (Dexie) immediately
-  if (finalTasksToSave.length > 0) {
-    import('../../lib/localDb')
-      .then(({ bulkPersistTasks }) => bulkPersistTasks(finalTasksToSave))
-      .catch(() => {});
-  }
-
   // Compute & sync project summaries in memory BEFORE overwriting store.projects
   const finalFullTasksList = Array.from(allTasksMap.values());
   const affectedProjects = findAffectedProjects(finalTasksToSave, projects);
   const delegationGroups = useAppStore.getState().delegationGroups;
-  const currentProjects = useAppStore.getState().projects;
+  const currentProjects = projects && projects.length > 0 ? projects : useAppStore.getState().projects;
   const computedByProjectId = new Map<string, ReturnType<typeof calculateProjectComputedDates>>();
   const touchedProjectsForPersistence: Project[] = [];
 
-  const updatedProjects = currentProjects.map(proj => {
+  currentProjects.forEach(proj => {
     const isAffected = affectedProjects.some(ap => ap.id === proj.id);
-    if (!isAffected) return proj;
+    if (!isAffected) return;
     const pTasks = getTasksForProject(proj, finalFullTasksList, { realTasksOnly: true });
     const computed = calculateProjectComputedDates(proj, pTasks, delegationGroups);
     computedByProjectId.set(proj.id, computed);
-    const nextProj = { ...proj, ...computed, updatedAt: commitNowIso };
-    touchedProjectsForPersistence.push(nextProj);
-    return nextProj;
+    touchedProjectsForPersistence.push({ ...proj, ...computed, updatedAt: commitNowIso });
   });
-  useAppStore.getState().setProjects(updatedProjects);
 
-  // Persist affected projects to LocalDB (Dexie) immediately and mark tasks_proj as loaded
+  const storeProjects = useAppStore.getState().projects || [];
+  const mergedProjectsMap = new Map<string, Project>(storeProjects.map(p => [p.id, p]));
+  touchedProjectsForPersistence.forEach(p => mergedProjectsMap.set(p.id, p));
+  useAppStore.getState().setProjects(Array.from(mergedProjectsMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0)));
+
+  // Auto-expand affected projects in UI so user immediately sees imported tasks
+  const curExpanded = useAppStore.getState().expandedProjectIds || [];
+  const affKeys = affectedProjects.flatMap(p => [p.id, p.code].filter(Boolean) as string[]);
+  useAppStore.getState().setExpandedProjectIds(Array.from(new Set([...curExpanded, ...affKeys])));
+
+  // Persist affected projects to LocalDB (Dexie) in background and mark tasks_proj as loaded
   if (touchedProjectsForPersistence.length > 0) {
-    import('../../lib/localDb')
-      .then(({ bulkPersistProjects }) => bulkPersistProjects(touchedProjectsForPersistence))
-      .catch(() => {});
-    import('../../lib/loadedMarkers')
-      .then(({ markLoaded }) => {
-        touchedProjectsForPersistence.forEach(proj => {
-          if (proj.id) markLoaded('tasks_proj', proj.id).catch(() => {});
-        });
-      })
-      .catch(() => {});
+    import('../../lib/localDb').then(({ bulkPersistProjects }) => bulkPersistProjects(touchedProjectsForPersistence)).catch(() => {});
+    import('../../lib/loadedMarkers').then(({ markLoaded }) => {
+      touchedProjectsForPersistence.forEach(proj => { if (proj.id) markLoaded('tasks_proj', proj.id).catch(() => {}); });
+    }).catch(() => {});
   }
 
-  // Save tasks FIRST, then project summaries to Firestore + Delta bus sequentially so other devices
-  // always receive the complete task set before the authoritative project summary seals the state.
-  const activeUser = useAppStore.getState().currentUser || currentUser;
-  await batchSaveTasksToFirestore(finalTasksToSave, activeUser);
-  await syncAffectedProjectsSummaries(affectedProjects, computedByProjectId, activeUser);
+  // Build authoritative project summary ops and commit tasks + delegations + project summaries
+  // in ONE unified Firestore batch + parallel coalesced delta broadcast
+  const { writeOps: projectWriteOps, projDeltaItems } = buildAffectedProjectsSyncOps(
+    affectedProjects,
+    computedByProjectId,
+    commitNowIso
+  );
+
+  await batchSaveTasksToFirestore(finalTasksToSave, activeUser, {
+    precomputedDelegations,
+    projectWriteOps,
+    projectDeltaItems: projDeltaItems,
+  });
 
   if (finalTasksToSave.length > 0) {
     undoManager.push({
@@ -130705,20 +130306,10 @@ export async function executeImportTasks({
       revert: async () => {
         const revertOps: MassWriteOp[] = [];
         previousStates.forEach((oldData, id) => {
-          revertOps.push({
-            collectionName: 'taka_tasks',
-            docId: id,
-            action: 'set',
-            data: oldData,
-            merge: false,
-          });
+          revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'set', data: oldData, merge: false });
         });
         newIds.forEach((id) => {
-          revertOps.push({
-            collectionName: 'taka_tasks',
-            docId: id,
-            action: 'delete',
-          });
+          revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'delete' });
         });
         await executeMassBatchOperations(revertOps);
       },
@@ -130727,6 +130318,8 @@ export async function executeImportTasks({
 
   return { count: tasksToImport.length, projectCount: affectedProjects.length };
 }
+
+
 ================================================================================
 FILE: index.html
 ================================================================================
@@ -161336,6 +160929,369 @@ export function useDetailTaskCsv({
     parseCSVDate,
     formatToCSVDate,
     importErrorModal
+  };
+}
+
+
+
+================================================================================
+FILE: src/components/DetailTabParts/detailProjectImportHydrator.ts
+================================================================================
+import { Project } from '../../types';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db, APP_ID } from '../../lib/firebase';
+import { normalizeYearString, normalizeStoreCode } from '../../lib/taskDeduplicationService';
+import { matchProjectCode } from '../../lib/projectDatesService';
+import { normalizeDashes } from '../../lib/utils';
+import { isProjectDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { useAppStore } from '../../store/useAppStore';
+
+export interface RawImportProjectKey {
+  projectCode: string;
+  projectYear?: string;
+  projectStore?: string;
+}
+
+/**
+ * Hydrates projects for import validation from Zustand, Dexie (localDb), and Firestore.
+ * This guarantees that when an import file references projects in years or stores not
+ * currently loaded in the active view (e.g. year 2027 HN when viewing 2026 HCM),
+ * the validator can find the project, hydrate it into the local store, and succeed.
+ */
+export async function hydrateProjectsForImport(
+  keys: RawImportProjectKey[],
+  currentProjects: Project[]
+): Promise<Project[]> {
+  const projectMap = new Map<string, Project>();
+
+  // 1. Index in-memory projects
+  (currentProjects || []).forEach((p) => {
+    if (p && p.id && !p.isDeleted && !isProjectDeletedInTracker(p.id)) {
+      projectMap.set(String(p.id).trim(), p);
+    }
+  });
+
+  const missingKeys: RawImportProjectKey[] = [];
+
+  const matchesKey = (p: Project, k: RawImportProjectKey): boolean => {
+    if (!p || p.isDeleted || (p.id && isProjectDeletedInTracker(p.id))) return false;
+    const pCodeMatch = matchProjectCode(p.code, k.projectCode);
+    const pStore = normalizeStoreCode(p.store);
+    const kStore = normalizeStoreCode(k.projectStore);
+    if (pStore && kStore && pStore !== kStore) return false;
+    const pYear = normalizeYearString(p.year);
+    const kYear = normalizeYearString(k.projectYear);
+    if (pYear && kYear && pYear !== kYear) return false;
+    return pCodeMatch;
+  };
+
+  for (const k of keys) {
+    if (!k.projectCode) continue;
+    let found = false;
+    for (const p of projectMap.values()) {
+      if (matchesKey(p, k)) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      missingKeys.push(k);
+    }
+  }
+
+  if (missingKeys.length === 0) {
+    return Array.from(projectMap.values());
+  }
+
+  // 2. Check Dexie localDb for missing project years / codes
+  try {
+    const { getLocalProjects, bulkPersistProjects } = await import('../../lib/localDb');
+    const allLocal = await getLocalProjects('all');
+    for (const p of allLocal) {
+      if (p && p.id && !p.isDeleted && !isProjectDeletedInTracker(p.id)) {
+        projectMap.set(String(p.id).trim(), p);
+      }
+    }
+
+    const stillMissing: RawImportProjectKey[] = [];
+    for (const k of missingKeys) {
+      let found = false;
+      for (const p of projectMap.values()) {
+        if (matchesKey(p, k)) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        stillMissing.push(k);
+      }
+    }
+
+    // 3. If still missing from localDb, query Firestore taka_projects directly
+    if (stillMissing.length > 0) {
+      const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects');
+      const fetchPromises: Promise<any>[] = [];
+
+      const queriedYears = new Set<string>();
+      const queriedCodes = new Set<string>();
+
+      for (const k of stillMissing) {
+        const cleanCode = normalizeDashes(k.projectCode).trim();
+        const cleanYear = normalizeYearString(k.projectYear);
+
+        // A. Single-field queries on year (safe, built-in single field index, no composite index needed)
+        if (cleanYear && !queriedYears.has(cleanYear)) {
+          queriedYears.add(cleanYear);
+          fetchPromises.push(
+            getDocs(query(colRef, where('year', '==', cleanYear))).catch(() => null)
+          );
+          if (!isNaN(Number(cleanYear))) {
+            fetchPromises.push(
+              getDocs(query(colRef, where('year', '==', Number(cleanYear)))).catch(() => null)
+            );
+          }
+        }
+
+        // B. Single-field query on code variants (both hyphen, en-dash, upper, lower)
+        if (cleanCode && !queriedCodes.has(cleanCode.toLowerCase())) {
+          queriedCodes.add(cleanCode.toLowerCase());
+          const dashHyphen = cleanCode.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+          const dashEn = cleanCode.replace(/-/g, '–');
+          const codeVariants = Array.from(
+            new Set([
+              cleanCode,
+              cleanCode.toUpperCase(),
+              cleanCode.toLowerCase(),
+              dashHyphen,
+              dashHyphen.toUpperCase(),
+              dashHyphen.toLowerCase(),
+              dashEn,
+              dashEn.toUpperCase(),
+              dashEn.toLowerCase(),
+            ])
+          ).slice(0, 10);
+          fetchPromises.push(
+            getDocs(
+              codeVariants.length > 1
+                ? query(colRef, where('code', 'in', codeVariants))
+                : query(colRef, where('code', '==', codeVariants[0]))
+            ).catch(() => null)
+          );
+        }
+      }
+
+      const snapshots = await Promise.all(fetchPromises);
+      const newlyFetched: Project[] = [];
+      snapshots.forEach((snap) => {
+        if (!snap) return;
+        snap.forEach((docSnap: any) => {
+          const data = { id: docSnap.id, ...docSnap.data() } as Project;
+          if (data && !data.isDeleted && !isProjectDeletedInTracker(data.id)) {
+            newlyFetched.push(data);
+            projectMap.set(data.id, data);
+          }
+        });
+      });
+
+      if (newlyFetched.length > 0) {
+        bulkPersistProjects(newlyFetched).catch(() => {});
+        const storeProjects = useAppStore.getState().projects || [];
+        const mergedById = new Map<string, Project>(storeProjects.map((p) => [p.id, p]));
+        newlyFetched.forEach((p) => mergedById.set(p.id, p));
+        const mergedList = Array.from(mergedById.values()).sort((a, b) => (a.no || 0) - (b.no || 0));
+        useAppStore.getState().setProjects(mergedList);
+      }
+    }
+  } catch (err) {
+    console.warn('[hydrateProjectsForImport] error hydrating projects:', err);
+  }
+
+  return Array.from(projectMap.values());
+}
+
+
+
+================================================================================
+FILE: src/components/DetailTabParts/detailTaskImportParser.ts
+================================================================================
+import { Project } from '../../types';
+import { parseCSV } from '../../lib/csvUtils';
+import { cleanDurationString } from '../../lib/taskImportService';
+import { parseCSVDate } from './detailCsvUtils';
+import { validateTasksImportData, generateTaskErrorReportCSV, ImportValidationResult } from './importValidator';
+import { hydrateProjectsForImport, RawImportProjectKey } from './detailProjectImportHydrator';
+import { normalizeDashes } from '../../lib/utils';
+import { matchProjectCode } from '../../lib/projectDatesService';
+
+export interface ParsedTasksFileResult {
+  rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
+  headers: string[];
+  dataRows: string[][];
+  validation: ImportValidationResult;
+  errorReportCSV: string;
+  allKnownProjects: Project[];
+}
+
+export async function parseTasksFile(
+  file: File,
+  projects: Project[]
+): Promise<ParsedTasksFileResult> {
+  let rows: string[][] = [];
+  const fileName = file.name.toLowerCase();
+
+  if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+    const XLSX = await import('xlsx');
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheetName = workbook.SheetNames.includes('tasks') ? 'tasks' : workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: false });
+    rows = rawRows.map(row => row.map((cell: any) => String(cell !== null && cell !== undefined ? cell : '').trim()));
+  } else {
+    const text = await file.text();
+    rows = parseCSV(text);
+  }
+
+  if (!rows || rows.length < 2) {
+    throw new Error('CSV file is empty or format is invalid. At least 1 header row and 1 data row are required.');
+  }
+
+  const headers = rows[0].map(h => h.trim().toLowerCase());
+  const dataRows = rows.slice(1);
+
+  // Extract project keys from data rows to hydrate any projects not yet loaded in active year view
+  const pCodeIdx = headers.findIndex(h => ['projectcode', 'project code', 'code'].includes(h));
+  const pYearIdx = headers.findIndex(h => ['projectyear', 'project year', 'year'].includes(h));
+  const pStoreIdx = headers.findIndex(h => ['projectstore', 'project store', 'store'].includes(h));
+
+  const rawKeys: RawImportProjectKey[] = [];
+  if (pCodeIdx !== -1) {
+    dataRows.forEach(r => {
+      const code = String(r[pCodeIdx] || '').trim();
+      const year = pYearIdx !== -1 ? String(r[pYearIdx] || '').trim() : undefined;
+      const store = pStoreIdx !== -1 ? String(r[pStoreIdx] || '').trim() : undefined;
+      if (code) {
+        rawKeys.push({ projectCode: code, projectYear: year, projectStore: store });
+      }
+    });
+  }
+
+  const allKnownProjects = await hydrateProjectsForImport(rawKeys, projects);
+
+  // 1. Run Comprehensive Validation against all known projects across all years
+  const validation = validateTasksImportData(headers, dataRows, allKnownProjects);
+  const errorReportCSV = validation.isValid ? '' : generateTaskErrorReportCSV(headers, dataRows, validation);
+
+  const rawParsedRowsByProject = new Map<string, Array<{ rowData: any; originalCsvIndex: number }>>();
+
+  // If validation failed, return immediately without parsing into project maps to ensure 0 writes
+  if (!validation.isValid) {
+    return {
+      rawParsedRowsByProject,
+      headers,
+      dataRows,
+      validation,
+      errorReportCSV,
+      allKnownProjects
+    };
+  }
+
+  dataRows.forEach((row, rowIndex) => {
+    if (row.length < headers.length) return;
+    const t: any = {};
+
+    headers.forEach((h, i) => {
+      let key = h;
+      if (h === 'task name') key = 'name';
+      if (h === 'projectid' || h === 'project_id' || h === 'project id') key = 'projectId';
+      if (h === 'projectcode') key = 'projectCode';
+      if (h === 'year' || h === 'projectyear') key = 'projectYear';
+      if (h === 'store' || h === 'projectstore') key = 'projectStore';
+      if (h === 'sub-task code' || h === 'sub task code' || h === 'subtask code' || h === 'sub_task_code' || h === 'taskcodephu' || h === 'task code phu' || h === 'task_code_phu') {
+        key = 'taskCodePhu';
+      }
+      if (h === 'orderindex' || h === 'order_index') key = 'orderIndex';
+      if (h === 'delegation' || h === 'task delegation' || h === 'task_delegation' || h === 'isdelegation') {
+        key = 'delegation';
+      }
+      if (h === 'task flexible' || h === 'task_flexible' || h === 'taskflexible' || h === 'flexible' || h === 'realtimeupdate' || h === 'realtime_update') {
+        key = 'realtimeUpdate';
+      }
+      if (h === 'comments' || h === 'comment') {
+        key = 'importComment';
+      }
+      if (h === 'parent task code' || h === 'parenttaskcode' || h === 'parent_task_code' || h === 'parent code' || h === 'parent_code' || h === 'task mẹ code' || h === 'task me code') {
+        key = 'parentTaskCode';
+      }
+      if (h === 'parent task name' || h === 'parenttaskname' || h === 'parent_task_name' || h === 'parent name' || h === 'parent_name' || h === 'task mẹ name' || h === 'task me name' || h === 'task mẹ' || h === 'task me' || h === 'parent task' || h === 'parenttask') {
+        key = 'parentTaskName';
+      }
+      if (h === 'parenttaskid' || h === 'parent_task_id' || h === 'parent id' || h === 'parentid') {
+        key = 'parentTaskId';
+      }
+      if (h === 'is parent' || h === 'is_parent' || h === 'isparent') {
+        key = 'isParent';
+      }
+      if (h === 'level' || h === 'wbs level' || h === 'wbs_level') {
+        key = 'level';
+      }
+
+      if (['projectId', 'projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
+        let val: any = row[i];
+        if (key === 'start' || key === 'finish') {
+          val = parseCSVDate(val);
+        } else if (key === 'duration') {
+          val = cleanDurationString(val);
+        } else if (key === 'delegation' || key === 'realtimeUpdate') {
+          const strVal = String(val || '').trim().toLowerCase();
+          val = (strVal === 'true' || strVal === '1' || strVal === 'yes' || strVal === 'on');
+        } else if (key === 'projectYear') {
+          val = isNaN(Number(val)) ? val : Number(val);
+        }
+        t[key] = val;
+      }
+    });
+
+    if (t.projectCode && t.name) {
+      const cleanPCode = normalizeDashes(t.projectCode).trim();
+      t.projectCode = cleanPCode;
+      if (!t.projectYear || !t.projectStore) {
+        const possibleProjects = allKnownProjects.filter(p => matchProjectCode(p.code, cleanPCode));
+        if (possibleProjects.length === 1) {
+          if (!t.projectYear) t.projectYear = possibleProjects[0].year;
+          if (!t.projectStore) t.projectStore = possibleProjects[0].store;
+        }
+      }
+
+      if (!t.projectYear) {
+        const matchedProj = allKnownProjects.find(p => matchProjectCode(p.code, cleanPCode));
+        t.projectYear = (matchedProj?.year && !isNaN(Number(matchedProj.year))) ? Number(matchedProj.year) : new Date().getFullYear();
+      }
+
+      if (t.projectYear !== undefined && !isNaN(Number(t.projectYear))) {
+        t.projectYear = Number(t.projectYear);
+      } else {
+        t.projectYear = new Date().getFullYear();
+      }
+
+      const yearKey = t.projectYear ? String(t.projectYear).trim().toLowerCase() : '';
+      const storeKey = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+      const prjKey = `${String(cleanPCode).toLowerCase()}_${yearKey}_${storeKey}`;
+
+      if (!rawParsedRowsByProject.has(prjKey)) {
+        rawParsedRowsByProject.set(prjKey, []);
+      }
+      rawParsedRowsByProject.get(prjKey)!.push({ rowData: t, originalCsvIndex: rowIndex });
+    }
+  });
+
+  return {
+    rawParsedRowsByProject,
+    headers,
+    dataRows,
+    validation,
+    errorReportCSV,
+    allKnownProjects
   };
 }
 

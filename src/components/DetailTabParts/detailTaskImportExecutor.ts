@@ -4,11 +4,9 @@ import { executeMassBatchOperations, MassWriteOp } from '../../lib/massBatchWrit
 import { undoManager } from '../../lib/undoManager';
 import { formatToDatetimeLocal, getDefaultDatetimeLocal } from '../../lib/utils';
 import { getTasksForProject, calculateProjectComputedDates, matchProjectCode } from '../../lib/projectDatesService';
-import { 
-  calculateDatesFromPredecessorsAndDuration, 
-  rollupParentTaskDates, 
-  prepareMissingDelegationsForTasks,
-  batchSaveTasksToFirestore 
+import {
+  calculateDatesFromPredecessorsAndDuration, rollupParentTaskDates,
+  prepareMissingDelegationsForTasks, batchSaveTasksToFirestore
 } from '../../lib/taskImportService';
 import { healAllTasksPredecessors } from '../../lib/ganttUtils';
 import { extractSubtaskIndex } from '../../lib/ganttUtilsParts/taskSortingAndCodes';
@@ -197,7 +195,17 @@ export async function executeImportTasks({
       }
 
       if (!existing && hasExplicitSubtaskNumber) {
-        existing = existingTasksByCode.get(codeKey);
+        const candidate = existingTasksByCode.get(codeKey);
+        if (candidate) {
+          const candidateNorm = normalizeTaskNameForComparison(candidate.name);
+          if (!candidateNorm || !normName || candidateNorm === normName) {
+            existing = candidate;
+          } else {
+            nextAutoNumber = Math.max(nextAutoNumber, maxExistingSubtaskNum) + 1;
+            taskCodePhu = `${exactProjectCode}#${nextAutoNumber}`;
+            taskOrderIndex = nextAutoNumber - 1;
+          }
+        }
       }
 
       if (!existing && !hasExplicitSubtaskNumber) {
@@ -421,34 +429,35 @@ export async function executeImportTasks({
   const finalFullTasksList = Array.from(allTasksMap.values());
   const affectedProjects = findAffectedProjects(finalTasksToSave, projects);
   const delegationGroups = useAppStore.getState().delegationGroups;
-  const currentProjects = useAppStore.getState().projects;
+  const currentProjects = projects && projects.length > 0 ? projects : useAppStore.getState().projects;
   const computedByProjectId = new Map<string, ReturnType<typeof calculateProjectComputedDates>>();
   const touchedProjectsForPersistence: Project[] = [];
 
-  const updatedProjects = currentProjects.map(proj => {
+  currentProjects.forEach(proj => {
     const isAffected = affectedProjects.some(ap => ap.id === proj.id);
-    if (!isAffected) return proj;
+    if (!isAffected) return;
     const pTasks = getTasksForProject(proj, finalFullTasksList, { realTasksOnly: true });
     const computed = calculateProjectComputedDates(proj, pTasks, delegationGroups);
     computedByProjectId.set(proj.id, computed);
-    const nextProj = { ...proj, ...computed, updatedAt: commitNowIso };
-    touchedProjectsForPersistence.push(nextProj);
-    return nextProj;
+    touchedProjectsForPersistence.push({ ...proj, ...computed, updatedAt: commitNowIso });
   });
-  useAppStore.getState().setProjects(updatedProjects);
+
+  const storeProjects = useAppStore.getState().projects || [];
+  const mergedProjectsMap = new Map<string, Project>(storeProjects.map(p => [p.id, p]));
+  touchedProjectsForPersistence.forEach(p => mergedProjectsMap.set(p.id, p));
+  useAppStore.getState().setProjects(Array.from(mergedProjectsMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0)));
+
+  // Auto-expand affected projects in UI so user immediately sees imported tasks
+  const curExpanded = useAppStore.getState().expandedProjectIds || [];
+  const affKeys = affectedProjects.flatMap(p => [p.id, p.code].filter(Boolean) as string[]);
+  useAppStore.getState().setExpandedProjectIds(Array.from(new Set([...curExpanded, ...affKeys])));
 
   // Persist affected projects to LocalDB (Dexie) in background and mark tasks_proj as loaded
   if (touchedProjectsForPersistence.length > 0) {
-    import('../../lib/localDb')
-      .then(({ bulkPersistProjects }) => bulkPersistProjects(touchedProjectsForPersistence))
-      .catch(() => {});
-    import('../../lib/loadedMarkers')
-      .then(({ markLoaded }) => {
-        touchedProjectsForPersistence.forEach(proj => {
-          if (proj.id) markLoaded('tasks_proj', proj.id).catch(() => {});
-        });
-      })
-      .catch(() => {});
+    import('../../lib/localDb').then(({ bulkPersistProjects }) => bulkPersistProjects(touchedProjectsForPersistence)).catch(() => {});
+    import('../../lib/loadedMarkers').then(({ markLoaded }) => {
+      touchedProjectsForPersistence.forEach(proj => { if (proj.id) markLoaded('tasks_proj', proj.id).catch(() => {}); });
+    }).catch(() => {});
   }
 
   // Build authoritative project summary ops and commit tasks + delegations + project summaries
@@ -471,20 +480,10 @@ export async function executeImportTasks({
       revert: async () => {
         const revertOps: MassWriteOp[] = [];
         previousStates.forEach((oldData, id) => {
-          revertOps.push({
-            collectionName: 'taka_tasks',
-            docId: id,
-            action: 'set',
-            data: oldData,
-            merge: false,
-          });
+          revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'set', data: oldData, merge: false });
         });
         newIds.forEach((id) => {
-          revertOps.push({
-            collectionName: 'taka_tasks',
-            docId: id,
-            action: 'delete',
-          });
+          revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'delete' });
         });
         await executeMassBatchOperations(revertOps);
       },

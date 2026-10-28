@@ -173,9 +173,21 @@ export async function ensureProjectTasksLoaded(
         queries.push(getDocs(query(colRef, where('projectId', '==', ctxProjectId))));
       }
       if (cleanCode) {
+        const dashHyphen = cleanCode.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+        const dashEn = cleanCode.replace(/-/g, '–');
         const codeVariants = Array.from(
-          new Set([cleanCode, cleanCode.toUpperCase(), cleanCode.toLowerCase()])
-        );
+          new Set([
+            cleanCode,
+            cleanCode.toUpperCase(),
+            cleanCode.toLowerCase(),
+            dashHyphen,
+            dashHyphen.toUpperCase(),
+            dashHyphen.toLowerCase(),
+            dashEn,
+            dashEn.toUpperCase(),
+            dashEn.toLowerCase(),
+          ])
+        ).slice(0, 10);
         queries.push(
           getDocs(
             codeVariants.length > 1

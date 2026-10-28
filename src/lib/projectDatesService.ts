@@ -3,7 +3,7 @@ import { db, APP_ID } from "./firebase";
 import { doc, collection, getDocs } from 'firebase/firestore';
 import { Project, Task, DelegationGroup } from "../types";
 import { useAppStore } from "../store/useAppStore";
-import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries, getStatus, resolveActualStatus, isTaskBelongsToProject, isProjectTasksHydrated } from "./utils";
+import { getTaskStatus, computeActProgressPercent, computePlanProgressPercent, computePlanProgressFromSummaries, computeActProgressFromSummaries, getStatus, resolveActualStatus, isTaskBelongsToProject, isProjectTasksHydrated, normalizeDashes } from "./utils";
 import { sortGroupTasks } from "./ganttUtils";
 import { isTaskDeletedInTracker } from "./taskDeletedTracker";
 import { buildTaskByIdMap, isForeignSummaryEntry } from './summaryGhostFilter';
@@ -20,12 +20,12 @@ export interface ComputedProjectDates {
 
 /**
  * So sánh 2 mã dự án: hỗ trợ chuỗi đơn, chuỗi nhiều mã phân tách bởi dấu phẩy/chấm phẩy,
- * không phân biệt chữ hoa/thường và khoảng trắng thừa.
+ * không phân biệt chữ hoa/thường, khoảng trắng thừa và chuẩn hóa mọi loại dấu gạch ngang (hyphen, en-dash, em-dash).
  */
 export function matchProjectCode(codeA?: string, codeB?: string): boolean {
   if (!codeA || !codeB) return false;
-  const a = String(codeA).trim().toLowerCase();
-  const b = String(codeB).trim().toLowerCase();
+  const a = normalizeDashes(String(codeA)).trim().toLowerCase();
+  const b = normalizeDashes(String(codeB)).trim().toLowerCase();
   if (a === b) return true;
   const partsA = a.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
   const partsB = b.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
