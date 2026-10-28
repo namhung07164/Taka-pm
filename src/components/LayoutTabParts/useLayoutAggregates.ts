@@ -5,6 +5,7 @@ import { useSummaryData } from '../PictureMapping/lib/summaryData';
 import { useDataStore } from '../PictureMapping/DataContext';
 import { useDynamicUnitSummary } from '../PictureMapping/lib/dynamicSummaryEngine';
 import { buildAggregatedUnitData } from './layoutDataAggregator';
+import { computeActiveGroupsAndColorMaps } from './layoutActiveGroupsHelper';
 import { extractAllProjectCodes, extractProjectMetadata, getUserAllowedStores, projectMatchesScope, projectMatchesUnitCode } from '../../lib/utils';
 import { getSavedPaintGroupMappings, resolveGroupPaintCategory, subscribePaintCategoriesConfig } from './layoutPaintCategoriesService';
 
@@ -185,63 +186,13 @@ export function useLayoutAggregates({
 
   // Evaluate rules on the fly: STRICTLY depends ONLY on Task Summaries & Projects in active Year, Store, Location!
   const { unitColorMap, unitGroupMap, unitOpacityMap, unitHatchMap, unitSymbolMap, activeGroups } = useMemo(() => {
-    const colorMap: Record<string, string> = {};
-    const groupMap: Record<string, string> = {};
-    const opacityMap: Record<string, number> = {};
-    const hatchMap: Record<string, string> = {};
-    const symbolMap: Record<string, string> = {};
-    const groupsInUseMap = new Map<string, any>();
-    
-    const activeVersionGroups = filteredVersionForPaint?.groups;
-    if (!filteredVersionForPaint || !activeVersionGroups) return { unitColorMap: colorMap, unitGroupMap: groupMap, unitOpacityMap: opacityMap, unitHatchMap: hatchMap, unitSymbolMap: symbolMap, activeGroups: [] };
-
-    units.forEach((u: any) => {
-      const uName = String(u.name || '').toLowerCase().trim();
-      if (restrictedProjectCodes.has(uName) || aggregatedData[uName]?.isRestricted) return;
-
-      const dynamicItem = dynamicSummaryMap.get(u.id) || (uName ? dynamicSummaryMap.get(uName) : null);
-      if (!dynamicItem?.hasAppProject) {
-        return;
-      }
-
-      if (dynamicItem.matchedGroupId && dynamicItem.color) {
-        colorMap[u.id] = dynamicItem.color;
-        groupMap[u.id] = dynamicItem.matchedGroupId;
-        opacityMap[u.id] = dynamicItem.opacity ?? 0.85;
-        const matchedG = activeVersionGroups.find((g: any) => g.id === dynamicItem.matchedGroupId);
-        hatchMap[u.id] = matchedG?.hatchPattern || dynamicItem.hatchPattern || 'none';
-        symbolMap[u.id] = matchedG?.symbol || dynamicItem.symbol || '';
-      }
+    return computeActiveGroupsAndColorMaps({
+      units,
+      filteredVersionForPaint,
+      dynamicSummaryMap,
+      aggregatedData,
+      restrictedProjectCodes,
     });
-
-    const matchedUnitsByGroup = new Map<string, any[]>();
-    units.forEach((u: any) => {
-      const gid = groupMap[u.id];
-      if (gid) {
-        let list = matchedUnitsByGroup.get(gid);
-        if (!list) {
-          list = [];
-          matchedUnitsByGroup.set(gid, list);
-        }
-        list.push({ id: u.id, name: u.name });
-      }
-    });
-
-    activeVersionGroups.forEach((group: any) => {
-      const matchedUnits = matchedUnitsByGroup.get(group.id) || [];
-      if (matchedUnits.length > 0) {
-        groupsInUseMap.set(group.id, { ...group, matchCount: matchedUnits.length, matchedUnits });
-      }
-    });
-
-    return { 
-      unitColorMap: colorMap, 
-      unitGroupMap: groupMap, 
-      unitOpacityMap: opacityMap, 
-      unitHatchMap: hatchMap, 
-      unitSymbolMap: symbolMap, 
-      activeGroups: Array.from(groupsInUseMap.values()) 
-    };
   }, [filteredVersionForPaint, units, aggregatedData, dynamicSummaryMap, restrictedProjectCodes]);
 
   // Total count of units with alerts on this floor

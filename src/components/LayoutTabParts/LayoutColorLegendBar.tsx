@@ -137,7 +137,7 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
         className={cn(
           "absolute z-30 pointer-events-auto hide-on-actual-print print:hidden transition-shadow select-none",
           dockClasses,
-          isCollapsed ? "max-w-xs" : "w-[300px] sm:w-[340px]"
+          isCollapsed ? "max-w-xs" : "w-[330px] sm:w-[390px] max-w-[calc(100vw-1.5rem)]"
         )}
       >
         <div className="bg-white/95 dark:bg-[#1a1a1c]/95 backdrop-blur-xl rounded-2xl border border-slate-200/90 dark:border-[#333336] shadow-2xl p-2 sm:p-2.5 transition-all text-slate-800 dark:text-slate-100">
@@ -389,7 +389,7 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
                               ? "bg-purple-100 dark:bg-purple-950/80 border-purple-500 text-purple-950 dark:text-purple-100 ring-2 ring-purple-400/50 font-bold"
                               : "bg-slate-50/90 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 border-slate-200/80 dark:border-slate-700 text-slate-800 dark:text-slate-200"
                           )}
-                          title={`Click to ${isSelected ? 'clear highlight' : 'highlight on canvas'} group ${g.name}`}
+                          title={`Click to ${isSelected ? 'clear highlight' : 'highlight on canvas'} group ${g.name} (${g.matchCount} ${g.matchCount === 1 ? 'unit' : 'units'}${g.totalArea > 0 ? ` • ${Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²` : ''}${g.areaPercent ? ` • ${Number(g.areaPercent).toFixed(1)}%` : ''})`}
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span
@@ -405,13 +405,32 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
                                 </span>
                               )}
                             </span>
-                            <span className="truncate text-[11px] font-semibold flex items-center gap-1">
+                            <span className="truncate text-[11px] font-semibold flex items-center gap-1" title={g.name}>
                               {g.symbol && <span className="text-amber-500 dark:text-amber-400 font-mono text-[10px] font-bold">[{g.symbol}]</span>}
-                              <span>{g.name}</span>
+                              <span className="truncate">{g.name}</span>
                             </span>
                           </div>
-                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 shrink-0">
-                            {g.matchCount} {g.matchCount === 1 ? 'unit' : 'units'}
+                          <span
+                            className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 shrink-0 whitespace-nowrap flex items-center gap-1 shadow-2xs"
+                            title={`Units: ${g.matchCount}${g.totalArea > 0 ? ` • Area: ${Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²` : ''}${g.areaPercent ? ` • ${Number(g.areaPercent).toFixed(1)}% of categorized area` : ''}`}
+                          >
+                            <span>{g.matchCount} {g.matchCount === 1 ? 'unit' : 'units'}</span>
+                            {g.totalArea > 0 && (
+                              <>
+                                <span className="text-slate-300 dark:text-slate-600 font-normal">•</span>
+                                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                                  {Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²
+                                </span>
+                              </>
+                            )}
+                            {g.areaPercent !== undefined && g.areaPercent > 0 && (
+                              <>
+                                <span className="text-slate-300 dark:text-slate-600 font-normal">•</span>
+                                <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                                  {Number(g.areaPercent).toFixed(1)}%
+                                </span>
+                              </>
+                            )}
                           </span>
                         </button>
                       );

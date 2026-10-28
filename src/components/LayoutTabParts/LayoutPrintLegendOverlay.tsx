@@ -30,7 +30,9 @@ export const LayoutPrintLegendOverlay: React.FC<LayoutPrintLegendOverlayProps> =
               <span className="w-3.5 h-3.5 rounded-xs border border-slate-400 shrink-0" style={{ backgroundColor: g.color }} />
               <span className="font-bold">{g.name}</span>
               {g.matchCount !== undefined && (
-                <span className="text-[10px] text-slate-500 font-mono">({g.matchCount})</span>
+                <span className="text-[10px] text-slate-500 font-mono">
+                  ({g.matchCount} {g.matchCount === 1 ? 'unit' : 'units'}{g.totalArea > 0 ? ` • ${Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²` : ''}{g.areaPercent ? ` • ${Number(g.areaPercent).toFixed(1)}%` : ''})
+                </span>
               )}
             </div>
           ))

@@ -115,8 +115,24 @@ export const LayoutColorLegendModal: React.FC<LayoutColorLegendModalProps> = ({
                               <Check className="w-3 h-3" /> Filtered
                             </span>
                           )}
-                          <span className="text-[11px] font-mono font-bold bg-white dark:bg-slate-700 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300">
-                            {g.matchCount} {g.matchCount === 1 ? 'unit' : 'units'}
+                          <span className="text-[11px] font-mono font-bold bg-white dark:bg-slate-700 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                            <span>{g.matchCount} {g.matchCount === 1 ? 'unit' : 'units'}</span>
+                            {g.totalArea > 0 && (
+                              <>
+                                <span className="text-slate-300 dark:text-slate-500 font-normal">•</span>
+                                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                                  {Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²
+                                </span>
+                              </>
+                            )}
+                            {g.areaPercent !== undefined && g.areaPercent > 0 && (
+                              <>
+                                <span className="text-slate-300 dark:text-slate-500 font-normal">•</span>
+                                <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                                  {Number(g.areaPercent).toFixed(1)}%
+                                </span>
+                              </>
+                            )}
                           </span>
                         </div>
                       </div>
