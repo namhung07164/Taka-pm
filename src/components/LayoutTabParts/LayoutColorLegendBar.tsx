@@ -296,22 +296,34 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
               {activeGroups.length === 0 ? (
                 /* Default Project Status Legend */
                 <div className="grid grid-cols-2 gap-1.5 py-0.5 text-xs">
-                  <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 text-slate-800 dark:text-slate-200 shadow-2xs">
-                    <span className="w-3 h-3 rounded-full bg-emerald-500 shrink-0 shadow-xs ring-1 ring-white/50 dark:ring-black/30" />
-                    <span className="text-[11px] font-semibold whitespace-nowrap">Completed</span>
-                  </div>
-                  <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 text-slate-800 dark:text-slate-200 shadow-2xs">
-                    <span className="w-3 h-3 rounded-full bg-blue-500 shrink-0 shadow-xs ring-1 ring-white/50 dark:ring-black/30" />
-                    <span className="text-[11px] font-semibold whitespace-nowrap">On Process</span>
-                  </div>
-                  <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 text-slate-800 dark:text-slate-200 shadow-2xs">
-                    <span className="w-3 h-3 rounded-full bg-amber-500 shrink-0 shadow-xs ring-1 ring-white/50 dark:ring-black/30" />
-                    <span className="text-[11px] font-semibold whitespace-nowrap">Upcoming</span>
-                  </div>
-                  <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700 text-slate-800 dark:text-slate-200 shadow-2xs">
-                    <span className="w-3 h-3 rounded-full bg-rose-500 shrink-0 shadow-xs ring-1 ring-white/50 dark:ring-black/30" />
-                    <span className="text-[11px] font-semibold whitespace-nowrap">Delay</span>
-                  </div>
+                  {[
+                    { id: 'Completed', label: 'Completed', color: '#10b981' },
+                    { id: 'On process', label: 'On Process', color: '#3b82f6' },
+                    { id: 'Upcoming', label: 'Upcoming', color: '#f59e0b' },
+                    { id: 'Delay', label: 'Delay', color: '#ef4444' },
+                  ].map(s => {
+                    const isSelected = selectedLegendGroupId === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setSelectedLegendGroupId(isSelected ? null : s.id)}
+                        className={cn(
+                          "flex items-center gap-2 px-2.5 py-1.5 rounded-xl border transition-all cursor-pointer active:scale-95 touch-manipulation shadow-2xs text-left",
+                          isSelected
+                            ? "bg-purple-100 dark:bg-purple-950/80 border-purple-500 text-purple-950 dark:text-purple-100 ring-2 ring-purple-400/50 font-bold"
+                            : "bg-slate-50 dark:bg-slate-800/80 border-slate-200/80 dark:border-slate-700 text-slate-800 dark:text-slate-200"
+                        )}
+                        title={`Click to ${isSelected ? 'clear filter' : 'filter on canvas'} ${s.label}`}
+                      >
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0 shadow-xs ring-1 ring-white/50 dark:ring-black/30"
+                          style={{ backgroundColor: s.color }}
+                        />
+                        <span className="text-[11px] font-semibold whitespace-nowrap">{s.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : (
                 /* Custom Classification Groups */

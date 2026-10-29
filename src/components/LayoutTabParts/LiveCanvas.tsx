@@ -473,6 +473,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
         layoutTooltipVisibility={layoutTooltipVisibility}
         focusedUnitId={stageInteractions.focusedUnitId}
         selectedLegendGroupId={selectedLegendGroupId}
+        activeGroups={activeGroups}
         getContrastStyle={getContrastStyle}
         aggregatedData={aggregatedData}
         focusedUnit={focusedUnit}

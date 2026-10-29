@@ -170766,3 +170766,1697 @@ async function startServer() {
 
 startServer();
 
+
+// === FILE: src/components/LayoutTabParts/LiveCanvas.tsx ===
+import React, { Suspense, memo, useDeferredValue, useEffect, useRef, useState } from 'react';
+import { useAppStore } from '../../store/useAppStore';
+import { AlertTriangle, ShieldAlert, Layers } from 'lucide-react';
+import { LayoutUnitTooltip } from './LayoutUnitTooltip';
+import { LayoutPrintLegendOverlay } from './LayoutPrintLegendOverlay';
+import { LayoutFocusBanner } from './LayoutFocusBanner';
+import { LayoutFloorVersionSelector } from './LayoutFloorVersionSelector';
+import { LayoutZoomControls } from './LayoutZoomControls';
+import { LayoutColorLegendBar } from './LayoutColorLegendBar';
+import { LayoutColorLegendModal } from './LayoutColorLegendModal';
+import { LayoutEditModeModal } from './LayoutEditModeModal';
+import { LayoutCanvasViewport } from './LayoutCanvasViewport';
+import { useLayoutFloorData } from './useLayoutFloorData';
+import { useLayoutAggregates } from './useLayoutAggregates';
+import { useLayoutStageInteractions } from './useLayoutStageInteractions';
+import { getContrastStyle } from './layoutViewerTypes';
+import { Project } from '../../types';
+import { lazyWithRetry } from '../../lib/lazyWithRetry';
+import { executeTriggerExportProcess } from '../PictureMapping/lib/dynamicExportService';
+
+const LayoutMiniGanttModal = lazyWithRetry(
+  () => import('./LayoutMiniGanttModal').then(m => ({ default: m.LayoutMiniGanttModal })),
+  'LayoutMiniGanttModal'
+);
+
+interface LiveCanvasProps {
+  config: any;
+  storeFilter: string;
+  locationFilter: string;
+  yearFilter?: string;
+  targetUnitSearch?: string | null;
+  onUnitSelected?: (unit: any) => void;
+  onClearFocus?: () => void;
+  onRefreshConfig?: () => Promise<void> | void;
+  onOpenR2Config: () => void;
+  canWrite: boolean;
+}
+
+export const LiveCanvas = React.memo(function LiveCanvas({
+  config,
+  storeFilter,
+  locationFilter,
+  yearFilter,
+  targetUnitSearch,
+  onUnitSelected,
+  onClearFocus,
+  onRefreshConfig,
+  onOpenR2Config,
+  canWrite,
+}: LiveCanvasProps) {
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const layoutTooltipVisibility = useAppStore(state => state.layoutTooltipVisibility);
+  const setLayoutTooltipVisibility = useAppStore(state => state.setLayoutTooltipVisibility);
+  const resetLayoutTooltipVisibility = useAppStore(state => state.resetLayoutTooltipVisibility);
+  const setEditingProject = useAppStore(state => state.setEditingProject);
+  const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
+  const setIsReadOnlyModal = useAppStore(state => state.setIsReadOnlyModal);
+  const isProjectModalOpen = useAppStore(state => state.isProjectModalOpen);
+  const quickNavTarget = useAppStore(state => state.quickNavTarget);
+  const setModalInitialTab = useAppStore(state => state.setModalInitialTab);
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const setIsPrintPreview = useAppStore(state => state.setIsPrintPreview);
+
+  const [filterOnlyAlerts, setFilterOnlyAlerts] = useState<boolean>(false);
+  const [isSmartAlertCollapsed, setIsSmartAlertCollapsed] = useState<boolean>(false);
+  const [miniGanttProject, setMiniGanttProject] = useState<Project | null>(null);
+  const isAnyModalActive = Boolean(quickNavTarget) || isProjectModalOpen || Boolean(miniGanttProject);
+
+  const savedTooltipStateRef = React.useRef<{
+    hoverInfo: any;
+    isPinned: boolean;
+  } | null>(null);
+  const prevIsAnyModalActiveRef = React.useRef(isAnyModalActive);
+
+  const [showMenu, setShowMenu] = useState(false);
+  const [showLegendModal, setShowLegendModal] = useState(false);
+  const [isLegendStripCollapsed, setIsLegendStripCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('taka_layout_legend_collapsed');
+      if (saved !== null) return saved === 'true';
+    } catch {
+      // Ignore
+    }
+    return false;
+  });
+  const [selectedLegendGroupId, setSelectedLegendGroupId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState('');
+
+  // 1. Floor data & versions resolution hook
+  const {
+    version,
+    units,
+    locationVersions,
+    availableStoreVersions,
+    bgImage,
+    unitImagesRev,
+    hasStoredUnitImages,
+    selectedVersionId,
+    setSelectedVersionId,
+    targetLoc,
+    effectiveLayoutYear,
+  } = useLayoutFloorData({
+    config,
+    storeFilter,
+    locationFilter,
+    yearFilter,
+  });
+
+  // 2. Stage interactions, zoom & pan engine
+  const stageInteractions = useLayoutStageInteractions({
+    bgImage,
+    version,
+    units,
+    targetUnitSearch,
+    onUnitSelected,
+    onClearFocus,
+    availableStoreVersions,
+    selectedVersionId,
+    setSelectedVersionId,
+    storeFilter,
+    targetLoc,
+    isProjectModalOpen,
+    miniGanttProject,
+  });
+
+  // 3. Financial, project, and thematic aggregates hook
+  const {
+    aggregatedData,
+    activeGroups,
+    totalFloorAlerts,
+    focusedUnit,
+    visibleUnits,
+    hasUserAccessInStoreYear,
+    restrictedProjectCodes,
+  } = useLayoutAggregates({
+    units,
+    version,
+    storeFilter,
+    locationFilter,
+    targetLoc,
+    effectiveLayoutYear,
+    hasStoredUnitImages,
+    unitImagesRev,
+    focusedUnitId: stageInteractions.focusedUnitId,
+    filterOnlyAlerts,
+    deferredSearchQuery,
+    stageScale: stageInteractions.stageScale,
+    stagePos: stageInteractions.stagePos,
+    dimensions: stageInteractions.dimensions,
+  });
+
+  // Synchronize latest aggregated data with stage interaction callbacks
+  stageInteractions.updateAggregatedData(aggregatedData, restrictedProjectCodes);
+
+  // Auto-hide Tooltip when QuickNav / MiniGantt / ProjectModal is active, and Auto-restore when closed
+  useEffect(() => {
+    if (!prevIsAnyModalActiveRef.current && isAnyModalActive) {
+      if (stageInteractions.hoverInfo && stageInteractions.hoverInfo.visible) {
+        savedTooltipStateRef.current = {
+          hoverInfo: stageInteractions.hoverInfo,
+          isPinned: stageInteractions.isPinnedRef.current,
+        };
+      }
+    } else if (prevIsAnyModalActiveRef.current && !isAnyModalActive) {
+      if (savedTooltipStateRef.current) {
+        const saved = savedTooltipStateRef.current;
+        savedTooltipStateRef.current = null;
+        stageInteractions.isPinnedRef.current = saved.isPinned;
+        stageInteractions.setHoverInfo(saved.hoverInfo);
+        if (saved.hoverInfo?.clientX != null && saved.hoverInfo?.clientY != null) {
+          setTimeout(() => {
+            stageInteractions.updateTooltipPos(saved.hoverInfo.clientX, saved.hoverInfo.clientY);
+          }, 30);
+        }
+      }
+    }
+    prevIsAnyModalActiveRef.current = isAnyModalActive;
+  }, [isAnyModalActive, stageInteractions]);
+
+  // Reset focus, tooltips, alert filters, legend filters, mini gantt, and fit screen whenever store, location, or year changes
+  const prevFilterScopeRef = React.useRef<string>('');
+  useEffect(() => {
+    const currentScope = `${storeFilter}_${targetLoc}_${effectiveLayoutYear}`;
+    if (prevFilterScopeRef.current && prevFilterScopeRef.current !== currentScope) {
+      stageInteractions.setFocusedUnitId(null);
+      stageInteractions.setHoverInfo(null);
+      stageInteractions.isPinnedRef.current = false;
+      savedTooltipStateRef.current = null;
+      setFilterOnlyAlerts(false);
+      setSelectedLegendGroupId(null);
+      setMiniGanttProject(null);
+      setShowLegendModal(false);
+      if (stageInteractions.focusedTimerRef.current) clearTimeout(stageInteractions.focusedTimerRef.current);
+      onClearFocus?.();
+      stageInteractions.fitToScreen(true);
+    }
+    prevFilterScopeRef.current = currentScope;
+  }, [storeFilter, targetLoc, effectiveLayoutYear, onClearFocus, stageInteractions]);
+
+  // Listen for Edit Mode trigger from hamburger menu
+  useEffect(() => {
+    const handleOpenEditMode = () => {
+      setShowMenu(true);
+    };
+    window.addEventListener("open-layout-edit-mode", handleOpenEditMode);
+    return () => {
+      window.removeEventListener("open-layout-edit-mode", handleOpenEditMode);
+    };
+  }, []);
+
+  const handleTriggerExport = async () => {
+    if (!canWrite) {
+      alert('⚠️ You do not have Write permission to trigger export.');
+      return;
+    }
+    if (isExporting) return;
+    try {
+      setIsExporting(true);
+      setExportStatus('Step 1/4: Loading data from Cloudflare R2...');
+      const targetStore = (storeFilter === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+      const res = await executeTriggerExportProcess(targetStore, (status) => {
+        setExportStatus(status);
+      });
+      setIsExporting(false);
+      setExportStatus('');
+      alert(`✅ ${res.message}`);
+      if (onRefreshConfig) {
+        await onRefreshConfig();
+      }
+    } catch (err: any) {
+      console.error("Lỗi khi Trigger Export:", err);
+      setIsExporting(false);
+      setExportStatus('');
+      alert(`⚠️ Lỗi khi Trigger Export:\n${err?.message || err}`);
+    }
+  };
+
+  const isIOS = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1));
+  const pixelRatio = typeof window !== 'undefined' ? (isIOS ? 1 : Math.min(window.devicePixelRatio || 1, 1.25)) : 1;
+
+  if (!hasUserAccessInStoreYear) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900/50 text-slate-400 p-6 text-center select-none">
+        <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 flex items-center justify-center mb-3 shadow-inner">
+          <ShieldAlert className="w-8 h-8 text-amber-600 dark:text-amber-400 opacity-80" />
+        </div>
+        <p className="text-base font-bold text-slate-700 dark:text-slate-200">
+          No authorized projects or tasks found ({globalYearFilter || 'Selected Year'})
+        </p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md leading-relaxed">
+          Floor layout and live metrics are restricted and hidden for accounts without active assignments in this timeframe.
+        </p>
+      </div>
+    );
+  }
+
+  if (!version || !version.id) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900/50 text-slate-400 p-6 text-center select-none">
+        <div className="w-16 h-16 rounded-2xl bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/40 flex items-center justify-center mb-3 shadow-inner">
+          <Layers className="w-8 h-8 text-purple-600 dark:text-purple-400 opacity-80" />
+        </div>
+        <p className="text-base font-bold text-slate-700 dark:text-slate-200">
+          Chưa có dữ liệu Layout cho {storeFilter} • {targetLoc} ({globalYearFilter || 'Tất cả năm'})
+        </p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md leading-relaxed">
+          Bộ lọc và dữ liệu mặt bằng đồng bộ trực tiếp theo các phiên bản tại tab Review. Hãy tạo hoặc gán phiên bản tại tab Picture Mapping để hiển thị tại đây.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full h-full flex flex-col bg-slate-100 dark:bg-slate-950 overflow-hidden relative select-none [background-image:linear-gradient(to_right,#e5e7eb_1px,transparent_1px),linear-gradient(to_bottom,#e5e7eb_1px,transparent_1px)] dark:[background-image:linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] [background-size:20px_20px] print:bg-white print:bg-none print:p-0 print:m-0 print:border-none">
+      
+      {/* Clean High-Contrast Print Legend Overlay - Renders only on print & print preview */}
+      <LayoutPrintLegendOverlay
+        storeFilter={storeFilter}
+        targetLoc={targetLoc}
+        version={version}
+        activeGroups={activeGroups}
+      />
+      
+      {/* Floating Focus Unit Banner with Cancel / Exit Button */}
+      <LayoutFocusBanner
+        focusedUnitId={stageInteractions.focusedUnitId}
+        units={units}
+        onClearFocus={() => {
+          stageInteractions.setFocusedUnitId(null);
+          stageInteractions.setHoverInfo(null);
+          if (stageInteractions.focusedTimerRef.current) clearTimeout(stageInteractions.focusedTimerRef.current);
+          stageInteractions.fitToScreen(true);
+          onClearFocus?.();
+        }}
+      />
+
+      {/* Floating Top-Left Controls: Location & Layout Version Switcher */}
+      <LayoutFloorVersionSelector
+        storeFilter={storeFilter}
+        targetLoc={targetLoc}
+        locationVersions={locationVersions}
+        version={version}
+        setSelectedVersionId={setSelectedVersionId}
+      />
+
+      {/* Floating Top-Right Controls */}
+      <LayoutZoomControls
+        totalFloorAlerts={totalFloorAlerts}
+        filterOnlyAlerts={filterOnlyAlerts}
+        setFilterOnlyAlerts={setFilterOnlyAlerts}
+        stageScale={stageInteractions.stageScale}
+        onZoomIn={stageInteractions.handleZoomIn}
+        onZoomOut={stageInteractions.handleZoomOut}
+        onFitToScreen={() => stageInteractions.fitToScreen(true)}
+      />
+
+      {/* Active Alert Filter Banner */}
+      {filterOnlyAlerts && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-red-600 text-white px-3.5 py-1.5 rounded-full text-xs font-semibold shadow-lg backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150 hide-on-actual-print print:hidden">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-white animate-pulse" />
+          <span>Showing {totalFloorAlerts} unit{totalFloorAlerts > 1 ? 's' : ''} with active alerts</span>
+          <button
+            type="button"
+            onClick={() => setFilterOnlyAlerts(false)}
+            className="ml-1 bg-white/20 hover:bg-white/30 text-white text-[10px] font-bold px-2 py-0.5 rounded-full active:scale-95 transition-all cursor-pointer"
+          >
+            Show All
+          </button>
+        </div>
+      )}
+
+      {/* Compact Color Legend Bar with Export Integration */}
+      <LayoutColorLegendBar
+        layoutTooltipVisibility={layoutTooltipVisibility}
+        activeGroups={activeGroups}
+        selectedLegendGroupId={selectedLegendGroupId}
+        setSelectedLegendGroupId={setSelectedLegendGroupId}
+        setShowLegendModal={setShowLegendModal}
+        isLegendStripCollapsed={isLegendStripCollapsed}
+        setIsLegendStripCollapsed={setIsLegendStripCollapsed}
+        canWrite={canWrite}
+        handleTriggerExport={handleTriggerExport}
+        isExporting={isExporting}
+        exportStatus={exportStatus}
+        handleExport={stageInteractions.handleExport}
+        setIsPrintPreview={setIsPrintPreview}
+      />
+
+      {/* Full Color Legend Modal / Drawer (iOS friendly) */}
+      <LayoutColorLegendModal
+        showLegendModal={showLegendModal}
+        onClose={() => setShowLegendModal(false)}
+        activeGroups={activeGroups}
+        selectedLegendGroupId={selectedLegendGroupId}
+        setSelectedLegendGroupId={setSelectedLegendGroupId}
+      />
+
+      {/* Floating Edit Mode Drawer / Modal */}
+      <LayoutEditModeModal
+        showMenu={showMenu}
+        onClose={() => setShowMenu(false)}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        isSmartAlertCollapsed={isSmartAlertCollapsed}
+        setIsSmartAlertCollapsed={setIsSmartAlertCollapsed}
+        layoutTooltipVisibility={layoutTooltipVisibility}
+        setLayoutTooltipVisibility={setLayoutTooltipVisibility}
+        resetLayoutTooltipVisibility={resetLayoutTooltipVisibility}
+        canWrite={canWrite}
+        handleTriggerExport={handleTriggerExport}
+        isExporting={isExporting}
+        exportStatus={exportStatus}
+        setIsPrintPreview={setIsPrintPreview}
+        isPrintPreview={isPrintPreview}
+        handleExport={stageInteractions.handleExport}
+        onOpenR2Config={onOpenR2Config}
+        version={version}
+        storeFilter={storeFilter}
+      />
+
+      {/* Tooltip (Auto-hidden when any Modal or QuickNav is active) */}
+      {!isAnyModalActive && stageInteractions.hoverInfo && stageInteractions.hoverInfo.visible && (
+        <div className="hide-on-actual-print print:hidden">
+          <LayoutUnitTooltip
+            hoverInfo={stageInteractions.hoverInfo}
+            tooltipRef={stageInteractions.tooltipRef}
+            containerRef={stageInteractions.containerRef}
+            onClose={() => {
+              savedTooltipStateRef.current = null;
+              stageInteractions.isPinnedRef.current = false;
+              stageInteractions.setHoverInfo(null);
+              if (stageInteractions.focusedUnitId) {
+                stageInteractions.setFocusedUnitId(null);
+                if (stageInteractions.focusedTimerRef.current) clearTimeout(stageInteractions.focusedTimerRef.current);
+                stageInteractions.fitToScreen(true);
+                onClearFocus?.();
+              }
+            }}
+            onOpenMiniGantt={(project) => {
+              if (stageInteractions.hoverInfo && stageInteractions.hoverInfo.visible) {
+                savedTooltipStateRef.current = {
+                  hoverInfo: stageInteractions.hoverInfo,
+                  isPinned: stageInteractions.isPinnedRef.current,
+                };
+              }
+              setMiniGanttProject(project);
+            }}
+            onEditProject={(project, isReadOnly, tab) => {
+              if (stageInteractions.hoverInfo && stageInteractions.hoverInfo.visible) {
+                savedTooltipStateRef.current = {
+                  hoverInfo: stageInteractions.hoverInfo,
+                  isPinned: stageInteractions.isPinnedRef.current,
+                };
+              }
+              setEditingProject(project);
+              setIsReadOnlyModal(Boolean(isReadOnly ?? !canWrite));
+              setModalInitialTab(tab || 'details');
+              setIsProjectModalOpen(true);
+            }}
+            canWrite={canWrite}
+            storeFilter={storeFilter}
+            onFocusUnit={(unitTarget) => {
+              stageInteractions.zoomAndPanToUnit(unitTarget);
+            }}
+          />
+        </div>
+      )}
+
+      {/* JIT Mounted Draggable Mini Gantt Modal */}
+      {miniGanttProject && (
+        <React.Suspense fallback={null}>
+          <LayoutMiniGanttModal
+            project={miniGanttProject}
+            isOpen={Boolean(miniGanttProject)}
+            onClose={() => setMiniGanttProject(null)}
+          />
+        </React.Suspense>
+      )}
+
+      {/* Canvas Viewport */}
+      <LayoutCanvasViewport
+        containerRef={stageInteractions.containerRef}
+        stageRef={stageInteractions.stageRef}
+        dimensions={stageInteractions.dimensions}
+        stageScale={stageInteractions.stageScale}
+        setStageScale={stageInteractions.setStageScale}
+        stagePos={stageInteractions.stagePos}
+        setStagePos={stageInteractions.setStagePos}
+        pixelRatio={pixelRatio}
+        isProjectModalOpen={isProjectModalOpen}
+        miniGanttProject={miniGanttProject}
+        handleDragStart={stageInteractions.handleDragStart}
+        handleDragMove={stageInteractions.handleDragMove}
+        handleDragEnd={stageInteractions.handleDragEnd}
+        stopInertia={stageInteractions.stopInertia}
+        isPinnedRef={stageInteractions.isPinnedRef}
+        setHoverInfo={stageInteractions.setHoverInfo}
+        touchStateRef={stageInteractions.touchStateRef}
+        pendingTouchRef={stageInteractions.pendingTouchRef}
+        rafTouchIdRef={stageInteractions.rafTouchIdRef}
+        isInteractingRef={stageInteractions.isInteractingRef}
+        fitToScreen={stageInteractions.fitToScreen}
+        lastWheelPointerRef={stageInteractions.lastWheelPointerRef}
+        pendingWheelDeltaRef={stageInteractions.pendingWheelDeltaRef}
+        rafWheelIdRef={stageInteractions.rafWheelIdRef}
+        wheelTimeoutRef={stageInteractions.wheelTimeoutRef}
+        bgImage={bgImage}
+        version={version}
+        visibleUnits={visibleUnits}
+        layoutTooltipVisibility={layoutTooltipVisibility}
+        focusedUnitId={stageInteractions.focusedUnitId}
+        selectedLegendGroupId={selectedLegendGroupId}
+        activeGroups={activeGroups}
+        getContrastStyle={getContrastStyle}
+        aggregatedData={aggregatedData}
+        focusedUnit={focusedUnit}
+        handleMouseEnterUnit={stageInteractions.handleMouseEnterUnit}
+        handleMouseMoveUnit={stageInteractions.handleMouseMoveUnit}
+        handleMouseLeaveUnit={stageInteractions.handleMouseLeaveUnit}
+        handleClickUnit={stageInteractions.handleClickUnit}
+        handleTapUnit={stageInteractions.handleTapUnit}
+        hasStoredUnitImages={hasStoredUnitImages}
+        storeFilter={storeFilter}
+      />
+    </div>
+  );
+});
+
+
+// === FILE: src/components/LayoutTabParts/LayoutCanvasViewport.tsx ===
+import React, { FC, memo } from 'react';
+import { Stage } from 'react-konva';
+import { LayoutKonvaLayers } from './LayoutKonvaLayers';
+import { ContrastStyle } from './layoutViewerTypes';
+
+interface LayoutCanvasViewportProps {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  stageRef: React.RefObject<any>;
+  dimensions: { width: number; height: number };
+  stageScale: number;
+  setStageScale: (s: number) => void;
+  stagePos: { x: number; y: number };
+  setStagePos: (pos: { x: number; y: number }) => void;
+  pixelRatio: number;
+  isProjectModalOpen: boolean;
+  miniGanttProject: any;
+  handleDragStart: () => void;
+  handleDragMove: () => void;
+  handleDragEnd: () => void;
+  stopInertia: () => void;
+  isPinnedRef: React.MutableRefObject<boolean>;
+  setHoverInfo: (info: any) => void;
+  touchStateRef: React.MutableRefObject<any>;
+  pendingTouchRef: React.MutableRefObject<any>;
+  rafTouchIdRef: React.MutableRefObject<number | null>;
+  isInteractingRef: React.MutableRefObject<boolean>;
+  fitToScreen: (animated?: boolean) => void;
+  lastWheelPointerRef: React.MutableRefObject<any>;
+  pendingWheelDeltaRef: React.MutableRefObject<number>;
+  rafWheelIdRef: React.MutableRefObject<number | null>;
+  wheelTimeoutRef: React.MutableRefObject<NodeJS.Timeout | null>;
+  bgImage: any;
+  version: any;
+  visibleUnits: any[];
+  layoutTooltipVisibility: any;
+  focusedUnitId: string | null;
+  selectedLegendGroupId: string | null;
+  activeGroups?: any[];
+  getContrastStyle: (color: string) => ContrastStyle;
+  aggregatedData: Record<string, any>;
+  focusedUnit: any;
+  handleMouseEnterUnit: (unit: any, e: any) => void;
+  handleMouseMoveUnit: (unit: any, e: any) => void;
+  handleMouseLeaveUnit: (unit: any, e: any) => void;
+  handleClickUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
+  handleTapUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
+  hasStoredUnitImages: (key: string | undefined | null, store?: string) => boolean;
+  storeFilter?: string;
+}
+
+export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.memo(({
+  containerRef,
+  stageRef,
+  dimensions,
+  stageScale,
+  setStageScale,
+  stagePos,
+  setStagePos,
+  pixelRatio,
+  isProjectModalOpen,
+  miniGanttProject,
+  handleDragStart,
+  handleDragMove,
+  handleDragEnd,
+  stopInertia,
+  isPinnedRef,
+  setHoverInfo,
+  touchStateRef,
+  pendingTouchRef,
+  rafTouchIdRef,
+  isInteractingRef,
+  fitToScreen,
+  lastWheelPointerRef,
+  pendingWheelDeltaRef,
+  rafWheelIdRef,
+  wheelTimeoutRef,
+  bgImage,
+  version,
+  visibleUnits,
+  layoutTooltipVisibility,
+  focusedUnitId,
+  selectedLegendGroupId,
+  activeGroups,
+  getContrastStyle,
+  aggregatedData,
+  focusedUnit,
+  handleMouseEnterUnit,
+  handleMouseMoveUnit,
+  handleMouseLeaveUnit,
+  handleClickUnit,
+  handleTapUnit,
+  hasStoredUnitImages,
+  storeFilter,
+}) => {
+  return (
+    <div 
+      id="live-layout-canvas-container"
+      ref={containerRef} 
+      className="flex-1 min-h-0 w-full h-full relative overflow-hidden cursor-grab active:cursor-grabbing"
+      style={{ touchAction: 'none' }}
+    >
+      <Stage 
+        ref={stageRef} 
+        width={dimensions.width} 
+        height={dimensions.height}
+        scaleX={stageScale}
+        scaleY={stageScale}
+        x={stagePos.x}
+        y={stagePos.y}
+        pixelRatio={pixelRatio}
+        draggable={!isProjectModalOpen && !miniGanttProject}
+        style={{ touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
+        onDragStart={handleDragStart}
+        onDragMove={handleDragMove}
+        onDragEnd={handleDragEnd}
+        onClick={(e) => {
+          if (document.body.classList.contains('lightbox-open')) return;
+          if (isProjectModalOpen || Boolean(miniGanttProject)) return;
+          stopInertia();
+          if (e.target === stageRef.current) {
+            isPinnedRef.current = false;
+            setHoverInfo(null);
+          }
+        }}
+        onTap={(e) => {
+          if (document.body.classList.contains('lightbox-open')) return;
+          if (isProjectModalOpen || Boolean(miniGanttProject)) return;
+          stopInertia();
+          if (e.target === stageRef.current) {
+            isPinnedRef.current = false;
+            setHoverInfo(null);
+          }
+        }}
+        onDblClick={() => {
+          if (isProjectModalOpen || Boolean(miniGanttProject)) return;
+          stopInertia();
+          const stage = stageRef.current;
+          if (!stage) return;
+          const pointer = stage.getPointerPosition();
+          if (!pointer) return;
+          const oldScale = stage.scaleX();
+          const newScale = oldScale > 2.5 ? Math.max(0.1, oldScale / 2.2) : Math.min(20, oldScale * 2.2);
+          const mousePointTo = {
+            x: (pointer.x - stage.x()) / oldScale,
+            y: (pointer.y - stage.y()) / oldScale,
+          };
+          const newPos = {
+            x: pointer.x - mousePointTo.x * newScale,
+            y: pointer.y - mousePointTo.y * newScale,
+          };
+          stage.to({
+            scaleX: newScale,
+            scaleY: newScale,
+            x: newPos.x,
+            y: newPos.y,
+            duration: 0.22,
+            easing: (window as any).Konva?.Easings?.EaseOut,
+            onFinish: () => {
+              setStageScale(newScale);
+              setStagePos(newPos);
+            }
+          });
+        }}
+        onTouchStart={(e) => {
+          if (document.body.classList.contains('lightbox-open')) return;
+          if (isProjectModalOpen || Boolean(miniGanttProject)) return;
+          stopInertia();
+          if (e.evt.touches.length === 2) {
+            const touch1 = e.evt.touches[0];
+            const touch2 = e.evt.touches[1];
+            const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+            const center = {
+              x: (touch1.clientX + touch2.clientX) / 2,
+              y: (touch1.clientY + touch2.clientY) / 2,
+            };
+            touchStateRef.current = { lastDist: dist, lastCenter: center, lastTap: 0 };
+            const stage = stageRef.current;
+            if (stage) stage.draggable(false);
+            isInteractingRef.current = true;
+            setHoverInfo(null);
+          } else if (e.evt.touches.length === 1) {
+            const now = Date.now();
+            if (now - touchStateRef.current.lastTap < 300) {
+              fitToScreen(true);
+              touchStateRef.current.lastTap = 0;
+            } else {
+              touchStateRef.current.lastTap = now;
+            }
+          }
+        }}
+        onTouchMove={(e) => {
+          if (document.body.classList.contains('lightbox-open')) return;
+          if (e.evt.touches.length === 2) {
+            e.evt.preventDefault();
+            const touch1 = e.evt.touches[0];
+            const touch2 = e.evt.touches[1];
+            const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
+            const center = {
+              x: (touch1.clientX + touch2.clientX) / 2,
+              y: (touch1.clientY + touch2.clientY) / 2,
+            };
+            pendingTouchRef.current = { dist, center };
+
+            if (rafTouchIdRef.current === null) {
+              rafTouchIdRef.current = requestAnimationFrame(() => {
+                rafTouchIdRef.current = null;
+                if (!pendingTouchRef.current) return;
+                const { dist: curDist, center: curCenter } = pendingTouchRef.current;
+                const { lastDist, lastCenter } = touchStateRef.current;
+                const stage = stageRef.current;
+                if (stage && lastDist > 0 && lastCenter) {
+                  const oldScale = stage.scaleX();
+                  const scaleDelta = curDist / lastDist;
+                  const newScale = Math.max(0.04, Math.min(oldScale * scaleDelta, 20));
+                  
+                  const stageBox = stage.container().getBoundingClientRect();
+                  const lastPointerX = lastCenter.x - stageBox.left;
+                  const lastPointerY = lastCenter.y - stageBox.top;
+                  const currentPointerX = curCenter.x - stageBox.left;
+                  const currentPointerY = curCenter.y - stageBox.top;
+
+                  const worldPointX = (lastPointerX - stage.x()) / oldScale;
+                  const worldPointY = (lastPointerY - stage.y()) / oldScale;
+
+                  const newPos = {
+                    x: currentPointerX - worldPointX * newScale,
+                    y: currentPointerY - worldPointY * newScale,
+                  };
+
+                  stage.scale({ x: newScale, y: newScale });
+                  stage.position(newPos);
+                  stage.batchDraw();
+
+                  touchStateRef.current.lastDist = curDist;
+                  touchStateRef.current.lastCenter = curCenter;
+                }
+              });
+            }
+          }
+        }}
+        onTouchEnd={() => {
+          if (document.body.classList.contains('lightbox-open')) return;
+          if (rafTouchIdRef.current !== null) {
+            cancelAnimationFrame(rafTouchIdRef.current);
+            rafTouchIdRef.current = null;
+          }
+          pendingTouchRef.current = null;
+          touchStateRef.current.lastDist = 0;
+          touchStateRef.current.lastCenter = null;
+          const stage = stageRef.current;
+          if (stage) {
+            stage.draggable(true);
+            setStageScale(stage.scaleX());
+            setStagePos({ x: stage.x(), y: stage.y() });
+          }
+          isInteractingRef.current = false;
+        }}
+        onWheel={(e) => {
+          if (document.body.classList.contains('lightbox-open')) return;
+          if (isProjectModalOpen || Boolean(miniGanttProject)) return;
+          e.evt.preventDefault();
+          stopInertia();
+          const stage = stageRef.current;
+          if (!stage) return;
+          
+          isInteractingRef.current = true;
+          setHoverInfo(null);
+
+          const pointer = stage.getPointerPosition();
+          if (!pointer) return;
+
+          lastWheelPointerRef.current = pointer;
+          pendingWheelDeltaRef.current += e.evt.deltaY;
+
+          if (rafWheelIdRef.current === null) {
+            rafWheelIdRef.current = requestAnimationFrame(() => {
+              rafWheelIdRef.current = null;
+              const currentStage = stageRef.current;
+              const ptr = lastWheelPointerRef.current;
+              if (!currentStage || !ptr) return;
+
+              const deltaY = pendingWheelDeltaRef.current;
+              pendingWheelDeltaRef.current = 0;
+
+              const oldScale = currentStage.scaleX();
+              const zoomFactor = Math.exp(-deltaY * 0.0008);
+              const newScale = Math.max(0.04, Math.min(oldScale * zoomFactor, 20));
+
+              const mousePointTo = {
+                x: (ptr.x - currentStage.x()) / oldScale,
+                y: (ptr.y - currentStage.y()) / oldScale,
+              };
+
+              const newPos = {
+                x: ptr.x - mousePointTo.x * newScale,
+                y: ptr.y - mousePointTo.y * newScale,
+              };
+
+              currentStage.scale({ x: newScale, y: newScale });
+              currentStage.position(newPos);
+              currentStage.batchDraw();
+
+              if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
+              wheelTimeoutRef.current = setTimeout(() => {
+                setStageScale(currentStage.scaleX());
+                setStagePos({ x: currentStage.x(), y: currentStage.y() });
+                isInteractingRef.current = false;
+              }, 120);
+            });
+          }
+        }}
+      >
+        <LayoutKonvaLayers
+          bgImage={bgImage}
+          version={version}
+          visibleUnits={visibleUnits}
+          layoutTooltipVisibility={layoutTooltipVisibility}
+          focusedUnitId={focusedUnitId}
+          selectedLegendGroupId={selectedLegendGroupId}
+          activeGroups={activeGroups}
+          getContrastStyle={getContrastStyle}
+          stageScale={stageScale}
+          aggregatedData={aggregatedData}
+          focusedUnit={focusedUnit}
+          onMouseEnterUnit={handleMouseEnterUnit}
+          onMouseMoveUnit={handleMouseMoveUnit}
+          onMouseLeaveUnit={handleMouseLeaveUnit}
+          onClickUnit={handleClickUnit}
+          onTapUnit={handleTapUnit}
+          hasStoredUnitImages={hasStoredUnitImages}
+          storeFilter={storeFilter}
+        />
+      </Stage>
+    </div>
+  );
+});
+
+
+// === FILE: src/components/LayoutTabParts/LayoutKonvaLayers.tsx ===
+import React, { FC, Fragment, memo } from 'react';
+import { FastLayer, Layer, Image as KonvaImage, Rect, Circle, Path, Line, Text, Group } from 'react-konva';
+import { getHatchPatternCanvas } from './layoutPatternUtils';
+
+export interface LayoutKonvaLayersProps {
+  bgImage: HTMLImageElement | null;
+  version: any;
+  visibleUnits: any[];
+  layoutTooltipVisibility: any;
+  focusedUnitId: string | null;
+  selectedLegendGroupId: string | null;
+  activeGroups?: any[];
+  getContrastStyle: (fillColor: string) => { text: string; shapeStroke: string };
+  stageScale: number;
+  aggregatedData: Record<string, any>;
+  focusedUnit: any;
+  onMouseEnterUnit: (unit: any, e: any) => void;
+  onMouseMoveUnit: (unit: any, e: any) => void;
+  onMouseLeaveUnit: (unit: any, e: any) => void;
+  onClickUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
+  onTapUnit: (unit: any, e: any, quickImageMode?: boolean) => void;
+  hasStoredUnitImages: (codeOrName: string | undefined | null, store?: string) => boolean;
+  storeFilter?: string;
+}
+
+export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
+  bgImage,
+  version,
+  visibleUnits,
+  layoutTooltipVisibility,
+  focusedUnitId,
+  selectedLegendGroupId,
+  activeGroups,
+  getContrastStyle,
+  stageScale,
+  aggregatedData,
+  focusedUnit,
+  onMouseEnterUnit,
+  onMouseMoveUnit,
+  onMouseLeaveUnit,
+  onClickUnit,
+  onTapUnit,
+  hasStoredUnitImages,
+  storeFilter,
+}) => {
+  const isDarkMode = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+  const isLegendColorOn = layoutTooltipVisibility?.legendColor !== false;
+  const currentZoom = stageScale || 1;
+
+  return (
+    <>
+      {/* Layer 1: Static FastLayer for background CAD layout image to bypass hit-graph calculations */}
+      <FastLayer listening={false}>
+        {bgImage && (
+          <KonvaImage
+            image={bgImage}
+            listening={false}
+            perfectDrawEnabled={false}
+            x={version.imagePos?.x || 0}
+            y={version.imagePos?.y || 0}
+            scaleX={version.imageScale || 1}
+            scaleY={version.imageScale || 1}
+            rotation={version.backgroundRotation || 0}
+          />
+        )}
+      </FastLayer>
+
+      {/* Layer 2: Interactive unit shapes, text, and alert badges */}
+      <Layer id="units-interactive-layer">
+        {(() => {
+          const renderedImgBadgePositions: { x: number; y: number; normCode: string }[] = [];
+          return visibleUnits.map((unit: any) => {
+            const hasColor = Boolean(unit.targetColor);
+            const fillColor = isLegendColorOn && hasColor ? unit.targetColor : "rgba(0, 0, 0, 0.001)";
+            const isFocused = focusedUnitId === unit.id;
+
+            const uCode = String(unit.name || unit.id || unit.code || '').toLowerCase().trim();
+            const uName = String(unit.name || '').toLowerCase().trim();
+            const uId = String(unit.id || '').toLowerCase().trim();
+            const unitData = (uName && aggregatedData[uName]) || (uId && aggregatedData[uId]) || (uCode && aggregatedData[uCode]) || null;
+
+            const selectedGroup = activeGroups?.find(
+              (g: any) => g.id === selectedLegendGroupId || String(g.name).toLowerCase() === String(selectedLegendGroupId).toLowerCase()
+            );
+
+            const isLegendFiltered = selectedLegendGroupId !== null;
+            const isGroupMatched = isLegendFiltered && (
+              (unit.targetGroupId && unit.targetGroupId === selectedLegendGroupId) ||
+              (unit.targetGroupId && String(unit.targetGroupId).toLowerCase() === String(selectedLegendGroupId).toLowerCase()) ||
+              (selectedGroup && unit.targetGroupId === selectedGroup.id) ||
+              (selectedGroup && unit.targetColor && selectedGroup.color && unit.targetColor.toLowerCase() === selectedGroup.color.toLowerCase()) ||
+              (unitData?.projectStatus && String(unitData.projectStatus).toLowerCase() === String(selectedLegendGroupId).toLowerCase()) ||
+              (unitData?.status && String(unitData.status).toLowerCase() === String(selectedLegendGroupId).toLowerCase()) ||
+              (unitData?.appProjectStatus && String(unitData.appProjectStatus).toLowerCase() === String(selectedLegendGroupId).toLowerCase())
+            );
+            const isDimmed = isLegendColorOn && hasColor && isLegendFiltered && !isGroupMatched;
+
+            const contrast = isLegendColorOn && hasColor 
+              ? getContrastStyle(fillColor) 
+              : { text: isDarkMode ? '#94a3b8' : '#64748b', shapeStroke: isDarkMode ? 'rgba(100, 116, 139, 0.35)' : 'rgba(148, 163, 184, 0.45)' };
+
+            // Determine if unit or project has area
+            const areaVal = 
+              Number(unitData?.matchedProject?.sizeM2 ?? 0) ||
+              Number(unitData?.appProjectSizeM2 ?? 0) ||
+              Number(unitData?.sizeM2 ?? 0) ||
+              Number(unitData?.size ?? 0) ||
+              Number(unit?.sizeM2 ?? 0) ||
+              Number(unit?.size ?? 0) ||
+              0;
+            const hasArea = areaVal > 0;
+
+            const statusColor = selectedGroup?.color || unit.targetColor || fillColor;
+
+            let unitStroke: string | undefined = undefined;
+            let unitStrokeWidth = 0;
+            let unitShadowColor: string | undefined = undefined;
+            let unitShadowBlur = 0;
+            let unitShadowOpacity = 0;
+
+            if (isFocused) {
+              unitStroke = '#f59e0b';
+              unitStrokeWidth = 3;
+            } else if (isLegendFiltered) {
+              if (isGroupMatched) {
+                if (hasArea) {
+                  // User rule: "nếu unit/ project nào có diện tích thì thêm viền màu chính status đó bao xung quanh"
+                  unitStroke = statusColor;
+                  unitStrokeWidth = 3.5;
+                  unitShadowColor = statusColor;
+                  unitShadowBlur = 5;
+                  unitShadowOpacity = 0.75;
+                } else {
+                  // User rule: "ko thì ko có"
+                  unitStroke = undefined;
+                  unitStrokeWidth = 0;
+                }
+              } else {
+                unitStroke = isDarkMode ? 'rgba(100, 116, 139, 0.15)' : 'rgba(148, 163, 184, 0.2)';
+                unitStrokeWidth = 0.5;
+              }
+            } else {
+              unitStroke = isDimmed ? '#94a3b8' : contrast.shapeStroke;
+              unitStrokeWidth = hasColor ? 1.5 : 1;
+            }
+
+            const displayOpacity = !isLegendColorOn || !hasColor
+              ? (isFocused ? 1.0 : 0.5)
+              : (isFocused 
+                  ? 1.0 
+                  : isLegendFiltered
+                  ? (isGroupMatched ? (hasArea ? 1.0 : 0.75) : 0.18)
+                  : Math.max(0.82, unit.targetOpacity ?? 0.85));
+
+            const patternCanvas = (isLegendColorOn && hasColor && unit.targetHatchPattern && unit.targetHatchPattern !== 'none')
+              ? getHatchPatternCanvas(fillColor, unit.targetHatchPattern)
+              : null;
+
+            const commonProps = {
+              id: unit.id,
+              fill: patternCanvas ? undefined : fillColor,
+              fillPatternImage: (patternCanvas as any) || undefined,
+              fillPatternRepeat: patternCanvas ? 'repeat' : undefined,
+              fillPriority: patternCanvas ? 'pattern' : 'color',
+              opacity: displayOpacity,
+              stroke: unitStrokeWidth > 0 ? unitStroke : undefined,
+              strokeWidth: unitStrokeWidth,
+              shadowColor: unitShadowBlur > 0 ? unitShadowColor : undefined,
+              shadowBlur: unitShadowBlur,
+              shadowOpacity: unitShadowOpacity,
+              strokeScaleEnabled: false,
+              perfectDrawEnabled: false,
+              x: unit.x || 0,
+              y: unit.y || 0,
+              rotation: unit.rotation || 0,
+              onMouseEnter: (e: any) => onMouseEnterUnit(unit, e),
+              onMouseMove: (e: any) => onMouseMoveUnit(unit, e),
+              onMouseLeave: (e: any) => onMouseLeaveUnit(unit, e),
+              onClick: (e: any) => onClickUnit(unit, e, false),
+              onTap: (e: any) => onTapUnit(unit, e, false),
+            };
+
+            // Calculated font size for optimal legibility
+            const unitW = unit.textWidth || 100;
+            const unitH = unit.textHeight || 30;
+            const baseFont = Math.max(10, Math.min(18, Math.round(Math.min(unitW, unitH * 2.2) / 5.5)));
+            const dynamicFontSize = Math.max(9, Math.min(22, baseFont / Math.max(0.65, Math.min(currentZoom, 1.8))));
+
+            const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+            const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+
+            // Distinct, easily recognizable Interactive Image Button dimensions
+            const imgBtnH = Math.max(11.5, Math.min(20, 14.5 / Math.sqrt(Math.max(0.45, stageScale || 1))));
+            const imgBtnW = imgBtnH * 1.26;
+            const imgIconScale = (imgBtnH * 0.78) / 24;
+
+            // Badge placement coordinates
+            let badgeX = (unit.textX || unit.x || 0) + (unit.textWidth || unit.width || 100) - 8;
+            let badgeY = (unit.textY || unit.y || 0) + 8;
+            let imgBadgeX = (unit.textX || unit.x || 0) + Math.max(9, imgBtnW * 0.5 + 1.5);
+            let imgBadgeY = (unit.textY || unit.y || 0) + Math.max(8, imgBtnH * 0.5 + 1.5);
+            if (unit.type === 'circle') {
+              const r = unit.radius || 20;
+              badgeX = (unit.x || 0) + r * 0.6;
+              badgeY = (unit.y || 0) - r * 0.6;
+              imgBadgeX = (unit.x || 0) - r * 0.65;
+              imgBadgeY = (unit.y || 0) - r * 0.65;
+            }
+            const hasAlert = Boolean(unitData?.alerts?.hasAlert);
+          const hasImage = Boolean(
+            unitData?.hasImage || 
+            unit.imageUrl || 
+            unit.thumbnail || 
+            unit.image || 
+            hasStoredUnitImages(unit.name, storeFilter) ||
+            hasStoredUnitImages(unit.id, storeFilter) ||
+            hasStoredUnitImages(unit.code, storeFilter)
+          );
+
+          // Dynamic Level of Detail (LOD) threshold:
+          // Only rasterize expensive text & alert badges when zoom level is legible (scale >= 0.22) or if focused
+          const showTextAndBadge = isFocused || (stageScale || 1) >= 0.22;
+
+          const normUnitCode = String(unit.name || unit.id || unit.code || '')
+            .toLowerCase()
+            .replace(/^(l\d+|b\d+|md-[lb]\d+)[-_]/i, '')
+            .trim();
+
+          const isDuplicateImgBtn = Boolean(
+            hasImage && renderedImgBadgePositions.some(
+              pos => (pos.normCode && normUnitCode && pos.normCode === normUnitCode) ||
+                     Math.hypot(pos.x - imgBadgeX, pos.y - imgBadgeY) < 32
+            )
+          );
+
+          if (hasImage && !isDuplicateImgBtn && showTextAndBadge) {
+            renderedImgBadgePositions.push({ x: imgBadgeX, y: imgBadgeY, normCode: normUnitCode });
+          }
+
+          return (
+            <React.Fragment key={unit.id}>
+              {unit.type === 'rect' && (
+                <Rect {...commonProps} width={unit.width} height={unit.height} cornerRadius={4} />
+              )}
+              {unit.type === 'circle' && (
+                <Circle {...commonProps} radius={unit.radius} />
+              )}
+              {unit.type === 'polygon' && (
+                unit.svgPath ? (
+                  <Path {...commonProps} data={unit.svgPath} />
+                ) : (
+                  <Line {...commonProps} points={unit.points} closed={true} />
+                )
+              )}
+
+              {hasColor && unit.name && showTextAndBadge && (
+                <Text 
+                  text={unit.targetSymbol ? `${unit.targetSymbol} ${unit.name}` : unit.name}
+                  x={unit.textX}
+                  y={unit.textY}
+                  width={unit.textWidth}
+                  height={unit.textHeight}
+                  rotation={unit.rotation || 0}
+                  align="center"
+                  verticalAlign="middle"
+                  fontSize={dynamicFontSize}
+                  fontStyle="bold"
+                  fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                  fill={contrast.text}
+                  strokeScaleEnabled={false}
+                  perfectDrawEnabled={false}
+                  wrap="none"
+                  ellipsis={true}
+                  listening={false}
+                />
+              )}
+
+              {/* Group Symbol Marker Badge */}
+              {hasColor && unit.targetSymbol && showTextAndBadge && (
+                <Group 
+                  x={unit.type === 'circle' ? (unit.x || 0) - (unit.radius || 20) * 0.55 : (unit.textX || unit.x || 0) + 7} 
+                  y={unit.type === 'circle' ? (unit.y || 0) + (unit.radius || 20) * 0.55 : (unit.textY || unit.y || 0) + (unit.textHeight || unit.height || 30) - 7} 
+                  listening={false}
+                >
+                  <Circle
+                    radius={badgeRadius}
+                    fill={contrast.shapeStroke || "#1e293b"}
+                    stroke="#ffffff"
+                    strokeWidth={Math.max(1, 1.2 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    listening={false}
+                  />
+                  <Text
+                    text={unit.targetSymbol}
+                    x={-badgeRadius}
+                    y={-badgeRadius + 0.5}
+                    width={badgeRadius * 2}
+                    height={badgeRadius * 2}
+                    align="center"
+                    verticalAlign="middle"
+                    fontSize={badgeFontSize * 0.95}
+                    fontStyle="bold"
+                    fill="#ffffff"
+                    fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    listening={false}
+                  />
+                </Group>
+              )}
+
+              {/* Smart Alert Badge (Rendered ONLY when unit is colored, has real alerts, and LOD permits) */}
+              {hasColor && hasAlert && unitData?.alerts && showTextAndBadge && (
+                <Group x={badgeX} y={badgeY} listening={false}>
+                  <Circle
+                    radius={badgeRadius}
+                    fill={unitData.alerts.level === 'critical' ? '#ef4444' : '#f59e0b'}
+                    stroke="#ffffff"
+                    strokeWidth={Math.max(1, 1.5 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    listening={false}
+                  />
+                  <Text
+                    text={unitData.alerts.count > 1 ? String(unitData.alerts.count) : '!'}
+                    x={-badgeRadius}
+                    y={-badgeRadius + 0.5}
+                    width={badgeRadius * 2}
+                    height={badgeRadius * 2}
+                    align="center"
+                    verticalAlign="middle"
+                    fontSize={badgeFontSize}
+                    fontStyle="bold"
+                    fill="#ffffff"
+                    fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    listening={false}
+                  />
+                </Group>
+              )}
+
+              {/* Interactive Quick-Image Button Badge (Click/Tap opens Quick Image Tooltip directly) */}
+              {hasImage && !isDuplicateImgBtn && showTextAndBadge && (
+                <Group x={imgBadgeX} y={imgBadgeY}>
+                  <Rect
+                    x={-imgBtnW / 2}
+                    y={-imgBtnH / 2}
+                    width={imgBtnW}
+                    height={imgBtnH}
+                    cornerRadius={imgBtnH * 0.28}
+                    fill="#2563eb"
+                    stroke="#ffffff"
+                    strokeWidth={Math.max(1.2, 1.6 / Math.sqrt(Math.max(0.4, stageScale || 1)))}
+                    hitStrokeWidth={10}
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    onMouseEnter={(e: any) => {
+                      e.cancelBubble = true;
+                      const container = e.target.getStage()?.container();
+                      if (container) container.style.cursor = 'pointer';
+                    }}
+                    onMouseMove={(e: any) => {
+                      e.cancelBubble = true;
+                    }}
+                    onMouseLeave={(e: any) => {
+                      e.cancelBubble = true;
+                    }}
+                    onClick={(e: any) => {
+                      e.cancelBubble = true;
+                      onClickUnit(unit, e, true);
+                    }}
+                    onTap={(e: any) => {
+                      e.cancelBubble = true;
+                      onTapUnit(unit, e, true);
+                    }}
+                  />
+                  {/* Golden Sun inside Photo Button */}
+                  <Circle
+                    x={-imgBtnW * 0.18}
+                    y={-imgBtnH * 0.15}
+                    radius={imgBtnH * 0.12}
+                    fill="#fde047"
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    listening={false}
+                  />
+                  {/* Crisp White Mountain Landscape inside Photo Button */}
+                  <Path
+                    data="M4 18l4-5 3 3.5L15 11l5 7H4z"
+                    fill="#ffffff"
+                    scaleX={imgIconScale}
+                    scaleY={imgIconScale}
+                    x={-12 * imgIconScale}
+                    y={-11.5 * imgIconScale}
+                    strokeScaleEnabled={false}
+                    perfectDrawEnabled={false}
+                    listening={false}
+                  />
+                </Group>
+              )}
+            </React.Fragment>
+          );
+        });
+      })()}
+      </Layer>
+
+      {/* Layer 3: Dynamic Isolated Overlay Layer for Focused Unit Golden Ring */}
+      <Layer id="overlay-highlight-layer" listening={false}>
+        {focusedUnit && (
+          <Group listening={false}>
+            <Rect
+              x={(focusedUnit.textX || focusedUnit.x || 0) - 4}
+              y={(focusedUnit.textY || focusedUnit.y || 0) - 4}
+              width={(focusedUnit.textWidth || focusedUnit.width || 100) + 8}
+              height={(focusedUnit.textHeight || focusedUnit.height || 40) + 8}
+              stroke="#f59e0b"
+              strokeWidth={2.5}
+              strokeScaleEnabled={false}
+              dash={[6, 4]}
+              cornerRadius={6}
+              shadowColor="#f59e0b"
+              shadowBlur={10}
+              shadowOpacity={0.8}
+              listening={false}
+              perfectDrawEnabled={false}
+            />
+          </Group>
+        )}
+      </Layer>
+    </>
+  );
+});
+
+
+// === FILE: src/components/LayoutTabParts/LayoutColorLegendBar.tsx ===
+import React, { Dispatch, FC, SetStateAction, memo, useEffect, useMemo, useRef, useState } from 'react';
+import Draggable from 'react-draggable';
+import {
+  Palette,
+  ChevronUp,
+  ChevronDown,
+  Download,
+  RefreshCw,
+  GripHorizontal,
+  Compass,
+  Search,
+  X,
+  Layers
+} from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { getHatchCssStyle } from './layoutPatternUtils';
+import { LayoutLegendExportMenu } from './LayoutLegendExportMenu';
+
+export type LegendDockPosition = 'top-right' | 'bottom-right' | 'bottom-left';
+
+export interface LayoutColorLegendBarProps {
+  layoutTooltipVisibility: any;
+  activeGroups: any[];
+  selectedLegendGroupId: string | null;
+  setSelectedLegendGroupId: (id: string | null) => void;
+  setShowLegendModal?: (show: boolean) => void;
+  isLegendStripCollapsed?: boolean;
+  setIsLegendStripCollapsed?: React.Dispatch<React.SetStateAction<boolean>>;
+  canWrite?: boolean;
+  handleTriggerExport?: () => void | Promise<void>;
+  isExporting?: boolean;
+  exportStatus?: string;
+  handleExport?: (type: 'jpeg' | 'pdf') => void;
+  setIsPrintPreview?: (show: boolean) => void;
+}
+
+const DEFAULT_DOCK_STORAGE_KEY = 'taka_layout_legend_dock_pos';
+
+export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.memo(({
+  layoutTooltipVisibility,
+  activeGroups,
+  selectedLegendGroupId,
+  setSelectedLegendGroupId,
+  setShowLegendModal,
+  isLegendStripCollapsed: propIsCollapsed,
+  setIsLegendStripCollapsed: propSetIsCollapsed,
+  canWrite = false,
+  handleTriggerExport,
+  isExporting = false,
+  exportStatus = '',
+  handleExport,
+  setIsPrintPreview,
+}) => {
+  const [internalCollapsed, setInternalCollapsed] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [groupSearch, setGroupSearch] = useState('');
+  const [dockPosition, setDockPosition] = useState<LegendDockPosition>(() => {
+    try {
+      const saved = localStorage.getItem(DEFAULT_DOCK_STORAGE_KEY);
+      if (saved === 'top-right' || saved === 'bottom-right' || saved === 'bottom-left') {
+        return saved;
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    return 'top-right';
+  });
+
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  const isCollapsed = propIsCollapsed !== undefined ? propIsCollapsed : internalCollapsed;
+  const toggleCollapsed = () => {
+    if (propSetIsCollapsed) {
+      propSetIsCollapsed(!isCollapsed);
+    } else {
+      setInternalCollapsed(prev => !prev);
+    }
+  };
+
+  const cycleDockPosition = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDockPosition(prev => {
+      let next: LegendDockPosition = 'top-right';
+      if (prev === 'top-right') next = 'bottom-right';
+      else if (prev === 'bottom-right') next = 'bottom-left';
+      else next = 'top-right';
+      try {
+        localStorage.setItem(DEFAULT_DOCK_STORAGE_KEY, next);
+      } catch {
+        // Ignore
+      }
+      return next;
+    });
+  };
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExportMenu]);
+
+  // Filter active groups based on groupSearch
+  const filteredGroups = useMemo(() => {
+    if (!groupSearch.trim()) return activeGroups;
+    const q = groupSearch.toLowerCase().trim();
+    return activeGroups.filter(g => g.name?.toLowerCase().includes(q));
+  }, [activeGroups, groupSearch]);
+
+  const { totalUnitsAllGroups, totalAreaAllGroups } = useMemo(() => {
+    let unitsCount = 0;
+    let areaSum = 0;
+    activeGroups.forEach((g: any) => {
+      unitsCount += Number(g.matchCount || 0);
+      areaSum += Number(g.totalArea || 0);
+    });
+    return {
+      totalUnitsAllGroups: unitsCount,
+      totalAreaAllGroups: areaSum,
+    };
+  }, [activeGroups]);
+
+  if (layoutTooltipVisibility?.legendColor === false) return null;
+
+  // Dock positioning classes
+  const dockClasses = {
+    'top-right': 'top-14 sm:top-16 right-2.5 sm:right-4',
+    'bottom-right': 'bottom-3 sm:bottom-4 right-2.5 sm:right-4',
+    'bottom-left': 'bottom-3 sm:bottom-4 left-2.5 sm:left-4',
+  }[dockPosition];
+
+  return (
+    <Draggable
+      handle=".legend-drag-handle"
+      cancel="button, input, select, textarea, .no-drag"
+      nodeRef={nodeRef}
+      bounds="parent"
+    >
+      <div
+        ref={nodeRef}
+        className={cn(
+          "absolute z-30 pointer-events-auto hide-on-actual-print print:hidden transition-shadow select-none",
+          dockClasses,
+          isCollapsed ? "max-w-xs" : "w-[330px] sm:w-[390px] max-w-[calc(100vw-1.5rem)]"
+        )}
+      >
+        <div className="bg-white/95 dark:bg-[#1a1a1c]/95 backdrop-blur-xl rounded-2xl border border-slate-200/90 dark:border-[#333336] shadow-2xl p-2 sm:p-2.5 transition-all text-slate-800 dark:text-slate-100">
+          {/* Header Bar */}
+          <div className="flex items-center justify-between gap-1.5">
+            {/* Grip Handle + Palette Icon + Title */}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span
+                className="legend-drag-handle p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-grab active:cursor-grabbing rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0"
+                title="Drag to reposition anywhere on canvas"
+              >
+                <GripHorizontal className="w-4 h-4" />
+              </span>
+
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className="flex items-center gap-1.5 p-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors text-left cursor-pointer active:scale-95 touch-manipulation min-w-0"
+                title={isCollapsed ? "Expand Color Legend" : "Collapse Color Legend"}
+              >
+                <span className="p-1 rounded-lg bg-purple-100 dark:bg-purple-950/70 text-purple-600 dark:text-purple-300 shrink-0 shadow-2xs">
+                  <Palette className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                </span>
+                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 tracking-tight whitespace-nowrap">
+                  Color Legend
+                </span>
+                {activeGroups.length > 0 && (
+                  <span className="text-[10px] font-extrabold font-mono px-1.5 py-0.5 rounded-full bg-purple-100/90 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 shrink-0">
+                    {activeGroups.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Header Action Tools */}
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Clear Filter Button */}
+              {selectedLegendGroupId && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedLegendGroupId(null)}
+                  className="text-[10px] font-bold text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-950 px-1.5 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/60 border border-purple-200 dark:border-purple-800 cursor-pointer active:scale-95 transition-all whitespace-nowrap"
+                  title="Clear active group filter"
+                >
+                  Clear Filter
+                </button>
+              )}
+
+              {/* Dock Position Switcher */}
+              <button
+                type="button"
+                onClick={cycleDockPosition}
+                className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0 active:scale-95"
+                title={`Dock Position: ${dockPosition} (Click to switch Top-Right / Bottom-Right / Bottom-Left)`}
+              >
+                <Compass className="w-3.5 h-3.5" />
+              </button>
+
+              {/* View All Groups Details Modal */}
+              {setShowLegendModal && activeGroups.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowLegendModal(true)}
+                  className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0 active:scale-95"
+                  title="Open full groups modal"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              {/* Export Menu Dropdown */}
+              <div className="relative" ref={exportMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowExportMenu(prev => !prev)}
+                  disabled={isExporting}
+                  className={cn(
+                    "p-1 rounded-lg transition-all border active:scale-95 cursor-pointer touch-manipulation shrink-0",
+                    isExporting
+                      ? "bg-amber-500 text-white border-amber-600 animate-pulse"
+                      : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700"
+                  )}
+                  title="Export floor plan or sync"
+                >
+                  {isExporting ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                </button>
+
+                {/* Export Dropdown Popover */}
+                {showExportMenu && (
+                  <LayoutLegendExportMenu
+                    canWrite={canWrite}
+                    handleTriggerExport={handleTriggerExport}
+                    handleExport={handleExport}
+                    setIsPrintPreview={setIsPrintPreview}
+                    onClose={() => setShowExportMenu(false)}
+                  />
+                )}
+              </div>
+
+              {/* Collapse / Expand Toggle Button */}
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0 active:scale-95"
+                title={isCollapsed ? "Expand legend list" : "Collapse legend list"}
+              >
+                {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Body List (Visible when Expanded) */}
+          {!isCollapsed && (
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 mt-1.5 space-y-2 animate-in fade-in duration-150">
+              {/* Optional Search if more than 5 groups */}
+              {activeGroups.length > 5 && (
+                <div className="relative">
+                  <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={groupSearch}
+                    onChange={(e) => setGroupSearch(e.target.value)}
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg pl-7 pr-6 py-1 text-[16px] sm:text-[11px] placeholder-slate-400 outline-none focus:ring-1 focus:ring-purple-500 transition-colors duration-150 [overflow-anchor:none]"
+                  />
+                  {groupSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setGroupSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Group Swatches */}
+              {activeGroups.length === 0 ? (
+                /* Default Project Status Legend */
+                <div className="grid grid-cols-2 gap-1.5 py-0.5 text-xs">
+                  {[
+                    { id: 'Completed', label: 'Completed', color: '#10b981' },
+                    { id: 'On process', label: 'On Process', color: '#3b82f6' },
+                    { id: 'Upcoming', label: 'Upcoming', color: '#f59e0b' },
+                    { id: 'Delay', label: 'Delay', color: '#ef4444' },
+                  ].map(s => {
+                    const isSelected = selectedLegendGroupId === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setSelectedLegendGroupId(isSelected ? null : s.id)}
+                        className={cn(
+                          "flex items-center gap-2 px-2.5 py-1.5 rounded-xl border transition-all cursor-pointer active:scale-95 touch-manipulation shadow-2xs text-left",
+                          isSelected
+                            ? "bg-purple-100 dark:bg-purple-950/80 border-purple-500 text-purple-950 dark:text-purple-100 ring-2 ring-purple-400/50 font-bold"
+                            : "bg-slate-50 dark:bg-slate-800/80 border-slate-200/80 dark:border-slate-700 text-slate-800 dark:text-slate-200"
+                        )}
+                        title={`Click to ${isSelected ? 'clear filter' : 'filter on canvas'} ${s.label}`}
+                      >
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0 shadow-xs ring-1 ring-white/50 dark:ring-black/30"
+                          style={{ backgroundColor: s.color }}
+                        />
+                        <span className="text-[11px] font-semibold whitespace-nowrap">{s.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Custom Classification Groups */
+                <div className="flex flex-col gap-1 max-h-[220px] sm:max-h-[260px] overflow-y-auto pr-0.5 touch-pan-y overscroll-contain">
+                  {filteredGroups.length === 0 ? (
+                    <div className="text-[11px] text-slate-400 text-center py-3 italic">
+                      No matching groups found
+                    </div>
+                  ) : (
+                    filteredGroups.map((g: any) => {
+                      const isSelected = selectedLegendGroupId === g.id;
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => setSelectedLegendGroupId(isSelected ? null : g.id)}
+                          className={cn(
+                            "flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer active:scale-95 touch-manipulation shadow-2xs text-left",
+                            isSelected
+                              ? "bg-purple-100 dark:bg-purple-950/80 border-purple-500 text-purple-950 dark:text-purple-100 ring-2 ring-purple-400/50 font-bold"
+                              : "bg-slate-50/90 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 border-slate-200/80 dark:border-slate-700 text-slate-800 dark:text-slate-200"
+                          )}
+                          title={`Click to ${isSelected ? 'clear highlight' : 'highlight on canvas'} group ${g.name} (${g.matchCount} ${g.matchCount === 1 ? 'unit' : 'units'}${g.totalArea > 0 ? ` • ${Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²` : ''}${g.areaPercent ? ` • ${Number(g.areaPercent).toFixed(1)}%` : ''})`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="w-4 h-4 rounded shrink-0 shadow-2xs border border-black/25 ring-1 ring-white/50 relative overflow-hidden flex items-center justify-center"
+                              style={{
+                                backgroundColor: g.color,
+                                ...getHatchCssStyle(g.color, g.hatchPattern),
+                              }}
+                            >
+                              {g.symbol && (
+                                <span className="text-[10px] font-black text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)] leading-none select-none">
+                                  {g.symbol}
+                                </span>
+                              )}
+                            </span>
+                            <span className="truncate text-[11px] font-semibold flex items-center gap-1" title={g.name}>
+                              {g.symbol && <span className="text-amber-500 dark:text-amber-400 font-mono text-[10px] font-bold">[{g.symbol}]</span>}
+                              <span className="truncate">{g.name}</span>
+                            </span>
+                          </div>
+                          <span
+                            className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 shrink-0 whitespace-nowrap flex items-center gap-1 shadow-2xs"
+                            title={`Units: ${g.matchCount}${g.totalArea > 0 ? ` • Area: ${Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²` : ''}${g.areaPercent ? ` • ${Number(g.areaPercent).toFixed(1)}% of categorized area` : ''}`}
+                          >
+                            <span>{g.matchCount} {g.matchCount === 1 ? 'unit' : 'units'}</span>
+                            {g.totalArea > 0 && (
+                              <>
+                                <span className="text-slate-300 dark:text-slate-600 font-normal">•</span>
+                                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                                  {Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²
+                                </span>
+                              </>
+                            )}
+                            {g.areaPercent !== undefined && g.areaPercent > 0 && (
+                              <>
+                                <span className="text-slate-300 dark:text-slate-600 font-normal">•</span>
+                                <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                                  {Number(g.areaPercent).toFixed(1)}%
+                                </span>
+                              </>
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              {/* Total Summary Footer */}
+              {filteredGroups.length >= 2 && totalUnitsAllGroups > 0 && (
+                <div className="flex items-center justify-between px-2.5 py-1 text-[10px] font-mono font-bold border-t border-slate-200/80 dark:border-slate-800 pt-1 mt-0.5 bg-slate-50/50 dark:bg-slate-900/30 rounded-lg">
+                  <span className="uppercase text-[9px] tracking-wider text-slate-500 dark:text-slate-400">Total</span>
+                  <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
+                    <span>{totalUnitsAllGroups} {totalUnitsAllGroups === 1 ? 'unit' : 'units'}</span>
+                    {totalAreaAllGroups > 0 && (
+                      <>
+                        <span className="text-slate-300 dark:text-slate-600">•</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">{Number(totalAreaAllGroups).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²</span>
+                        <span className="text-slate-300 dark:text-slate-600">•</span>
+                        <span className="text-indigo-600 dark:text-indigo-400">100%</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </Draggable>
+  );
+});
+

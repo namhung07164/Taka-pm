@@ -9,6 +9,7 @@ export interface LayoutKonvaLayersProps {
   layoutTooltipVisibility: any;
   focusedUnitId: string | null;
   selectedLegendGroupId: string | null;
+  activeGroups?: any[];
   getContrastStyle: (fillColor: string) => { text: string; shapeStroke: string };
   stageScale: number;
   aggregatedData: Record<string, any>;
@@ -29,6 +30,7 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
   layoutTooltipVisibility,
   focusedUnitId,
   selectedLegendGroupId,
+  activeGroups,
   getContrastStyle,
   stageScale,
   aggregatedData,
@@ -70,74 +72,141 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
           return visibleUnits.map((unit: any) => {
             const hasColor = Boolean(unit.targetColor);
             const fillColor = isLegendColorOn && hasColor ? unit.targetColor : "rgba(0, 0, 0, 0.001)";
-          const isFocused = focusedUnitId === unit.id;
-          const isDimmed = isLegendColorOn && hasColor && selectedLegendGroupId !== null && unit.targetGroupId !== selectedLegendGroupId;
-          const contrast = isLegendColorOn && hasColor 
-            ? getContrastStyle(fillColor) 
-            : { text: isDarkMode ? '#94a3b8' : '#64748b', shapeStroke: isDarkMode ? 'rgba(100, 116, 139, 0.35)' : 'rgba(148, 163, 184, 0.45)' };
-          
-          const displayOpacity = !isLegendColorOn || !hasColor
-            ? (isFocused ? 1.0 : 0.5)
-            : (isFocused 
-                ? 1.0 
-                : isDimmed 
-                ? 0.2 
-                : Math.max(0.82, unit.targetOpacity ?? 0.85));
-          
-          const patternCanvas = (isLegendColorOn && hasColor && unit.targetHatchPattern && unit.targetHatchPattern !== 'none')
-            ? getHatchPatternCanvas(fillColor, unit.targetHatchPattern)
-            : null;
-          
-          const commonProps = {
-            id: unit.id,
-            fill: patternCanvas ? undefined : fillColor,
-            fillPatternImage: (patternCanvas as any) || undefined,
-            fillPatternRepeat: patternCanvas ? 'repeat' : undefined,
-            fillPriority: patternCanvas ? 'pattern' : 'color',
-            opacity: displayOpacity,
-            stroke: isFocused ? '#f59e0b' : (isDimmed ? '#94a3b8' : contrast.shapeStroke),
-            strokeWidth: isFocused ? 3 : (hasColor ? 1.5 : 1),
-            strokeScaleEnabled: false,
-            perfectDrawEnabled: false,
-            x: unit.x || 0,
-            y: unit.y || 0,
-            rotation: unit.rotation || 0,
-            onMouseEnter: (e: any) => onMouseEnterUnit(unit, e),
-            onMouseMove: (e: any) => onMouseMoveUnit(unit, e),
-            onMouseLeave: (e: any) => onMouseLeaveUnit(unit, e),
-            onClick: (e: any) => onClickUnit(unit, e, false),
-            onTap: (e: any) => onTapUnit(unit, e, false),
-          };
+            const isFocused = focusedUnitId === unit.id;
 
-          // Calculated font size for optimal legibility
-          const unitW = unit.textWidth || 100;
-          const unitH = unit.textHeight || 30;
-          const baseFont = Math.max(10, Math.min(18, Math.round(Math.min(unitW, unitH * 2.2) / 5.5)));
-          const dynamicFontSize = Math.max(9, Math.min(22, baseFont / Math.max(0.65, Math.min(currentZoom, 1.8))));
+            const uCode = String(unit.name || unit.id || unit.code || '').toLowerCase().trim();
+            const uName = String(unit.name || '').toLowerCase().trim();
+            const uId = String(unit.id || '').toLowerCase().trim();
+            const unitData = (uName && aggregatedData[uName]) || (uId && aggregatedData[uId]) || (uCode && aggregatedData[uCode]) || null;
 
-          const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
-          const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+            const selectedGroup = activeGroups?.find(
+              (g: any) => g.id === selectedLegendGroupId || String(g.name).toLowerCase() === String(selectedLegendGroupId).toLowerCase()
+            );
 
-          // Distinct, easily recognizable Interactive Image Button dimensions
-          const imgBtnH = Math.max(11.5, Math.min(20, 14.5 / Math.sqrt(Math.max(0.45, stageScale || 1))));
-          const imgBtnW = imgBtnH * 1.26;
-          const imgIconScale = (imgBtnH * 0.78) / 24;
+            const isLegendFiltered = selectedLegendGroupId !== null;
+            const isGroupMatched = isLegendFiltered && (
+              (unit.targetGroupId && unit.targetGroupId === selectedLegendGroupId) ||
+              (unit.targetGroupId && String(unit.targetGroupId).toLowerCase() === String(selectedLegendGroupId).toLowerCase()) ||
+              (selectedGroup && unit.targetGroupId === selectedGroup.id) ||
+              (selectedGroup && unit.targetColor && selectedGroup.color && unit.targetColor.toLowerCase() === selectedGroup.color.toLowerCase()) ||
+              (unitData?.projectStatus && String(unitData.projectStatus).toLowerCase() === String(selectedLegendGroupId).toLowerCase()) ||
+              (unitData?.status && String(unitData.status).toLowerCase() === String(selectedLegendGroupId).toLowerCase()) ||
+              (unitData?.appProjectStatus && String(unitData.appProjectStatus).toLowerCase() === String(selectedLegendGroupId).toLowerCase())
+            );
+            const isDimmed = isLegendColorOn && hasColor && isLegendFiltered && !isGroupMatched;
 
-          // Badge placement coordinates
-          let badgeX = (unit.textX || unit.x || 0) + (unit.textWidth || unit.width || 100) - 8;
-          let badgeY = (unit.textY || unit.y || 0) + 8;
-          let imgBadgeX = (unit.textX || unit.x || 0) + Math.max(9, imgBtnW * 0.5 + 1.5);
-          let imgBadgeY = (unit.textY || unit.y || 0) + Math.max(8, imgBtnH * 0.5 + 1.5);
-          if (unit.type === 'circle') {
-            const r = unit.radius || 20;
-            badgeX = (unit.x || 0) + r * 0.6;
-            badgeY = (unit.y || 0) - r * 0.6;
-            imgBadgeX = (unit.x || 0) - r * 0.65;
-            imgBadgeY = (unit.y || 0) - r * 0.65;
-          }
-          const uCode = String(unit.name || unit.id || unit.code || '').toLowerCase();
-          const unitData = (uCode && aggregatedData[uCode]) ? aggregatedData[uCode] : null;
-          const hasAlert = Boolean(unitData?.alerts?.hasAlert);
+            const contrast = isLegendColorOn && hasColor 
+              ? getContrastStyle(fillColor) 
+              : { text: isDarkMode ? '#94a3b8' : '#64748b', shapeStroke: isDarkMode ? 'rgba(100, 116, 139, 0.35)' : 'rgba(148, 163, 184, 0.45)' };
+
+            // Determine if unit or project has area
+            const areaVal = 
+              Number(unitData?.matchedProject?.sizeM2 ?? 0) ||
+              Number(unitData?.appProjectSizeM2 ?? 0) ||
+              Number(unitData?.sizeM2 ?? 0) ||
+              Number(unitData?.size ?? 0) ||
+              Number(unit?.sizeM2 ?? 0) ||
+              Number(unit?.size ?? 0) ||
+              0;
+            const hasArea = areaVal > 0;
+
+            const statusColor = selectedGroup?.color || unit.targetColor || fillColor;
+
+            let unitStroke: string | undefined = undefined;
+            let unitStrokeWidth = 0;
+            let unitShadowColor: string | undefined = undefined;
+            let unitShadowBlur = 0;
+            let unitShadowOpacity = 0;
+
+            if (isFocused) {
+              unitStroke = '#f59e0b';
+              unitStrokeWidth = 3;
+            } else if (isLegendFiltered) {
+              if (isGroupMatched) {
+                if (hasArea) {
+                  // User rule: "nếu unit/ project nào có diện tích thì thêm viền màu chính status đó bao xung quanh"
+                  unitStroke = statusColor;
+                  unitStrokeWidth = 3.5;
+                  unitShadowColor = statusColor;
+                  unitShadowBlur = 5;
+                  unitShadowOpacity = 0.75;
+                } else {
+                  // User rule: "ko thì ko có"
+                  unitStroke = undefined;
+                  unitStrokeWidth = 0;
+                }
+              } else {
+                unitStroke = isDarkMode ? 'rgba(100, 116, 139, 0.15)' : 'rgba(148, 163, 184, 0.2)';
+                unitStrokeWidth = 0.5;
+              }
+            } else {
+              unitStroke = isDimmed ? '#94a3b8' : contrast.shapeStroke;
+              unitStrokeWidth = hasColor ? 1.5 : 1;
+            }
+
+            const displayOpacity = !isLegendColorOn || !hasColor
+              ? (isFocused ? 1.0 : 0.5)
+              : (isFocused 
+                  ? 1.0 
+                  : isLegendFiltered
+                  ? (isGroupMatched ? (hasArea ? 1.0 : 0.75) : 0.18)
+                  : Math.max(0.82, unit.targetOpacity ?? 0.85));
+
+            const patternCanvas = (isLegendColorOn && hasColor && unit.targetHatchPattern && unit.targetHatchPattern !== 'none')
+              ? getHatchPatternCanvas(fillColor, unit.targetHatchPattern)
+              : null;
+
+            const commonProps = {
+              id: unit.id,
+              fill: patternCanvas ? undefined : fillColor,
+              fillPatternImage: (patternCanvas as any) || undefined,
+              fillPatternRepeat: patternCanvas ? 'repeat' : undefined,
+              fillPriority: patternCanvas ? 'pattern' : 'color',
+              opacity: displayOpacity,
+              stroke: unitStrokeWidth > 0 ? unitStroke : undefined,
+              strokeWidth: unitStrokeWidth,
+              shadowColor: unitShadowBlur > 0 ? unitShadowColor : undefined,
+              shadowBlur: unitShadowBlur,
+              shadowOpacity: unitShadowOpacity,
+              strokeScaleEnabled: false,
+              perfectDrawEnabled: false,
+              x: unit.x || 0,
+              y: unit.y || 0,
+              rotation: unit.rotation || 0,
+              onMouseEnter: (e: any) => onMouseEnterUnit(unit, e),
+              onMouseMove: (e: any) => onMouseMoveUnit(unit, e),
+              onMouseLeave: (e: any) => onMouseLeaveUnit(unit, e),
+              onClick: (e: any) => onClickUnit(unit, e, false),
+              onTap: (e: any) => onTapUnit(unit, e, false),
+            };
+
+            // Calculated font size for optimal legibility
+            const unitW = unit.textWidth || 100;
+            const unitH = unit.textHeight || 30;
+            const baseFont = Math.max(10, Math.min(18, Math.round(Math.min(unitW, unitH * 2.2) / 5.5)));
+            const dynamicFontSize = Math.max(9, Math.min(22, baseFont / Math.max(0.65, Math.min(currentZoom, 1.8))));
+
+            const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+            const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+
+            // Distinct, easily recognizable Interactive Image Button dimensions
+            const imgBtnH = Math.max(11.5, Math.min(20, 14.5 / Math.sqrt(Math.max(0.45, stageScale || 1))));
+            const imgBtnW = imgBtnH * 1.26;
+            const imgIconScale = (imgBtnH * 0.78) / 24;
+
+            // Badge placement coordinates
+            let badgeX = (unit.textX || unit.x || 0) + (unit.textWidth || unit.width || 100) - 8;
+            let badgeY = (unit.textY || unit.y || 0) + 8;
+            let imgBadgeX = (unit.textX || unit.x || 0) + Math.max(9, imgBtnW * 0.5 + 1.5);
+            let imgBadgeY = (unit.textY || unit.y || 0) + Math.max(8, imgBtnH * 0.5 + 1.5);
+            if (unit.type === 'circle') {
+              const r = unit.radius || 20;
+              badgeX = (unit.x || 0) + r * 0.6;
+              badgeY = (unit.y || 0) - r * 0.6;
+              imgBadgeX = (unit.x || 0) - r * 0.65;
+              imgBadgeY = (unit.y || 0) - r * 0.65;
+            }
+            const hasAlert = Boolean(unitData?.alerts?.hasAlert);
           const hasImage = Boolean(
             unitData?.hasImage || 
             unit.imageUrl || 

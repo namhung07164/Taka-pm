@@ -35,6 +35,7 @@ interface LayoutCanvasViewportProps {
   layoutTooltipVisibility: any;
   focusedUnitId: string | null;
   selectedLegendGroupId: string | null;
+  activeGroups?: any[];
   getContrastStyle: (color: string) => ContrastStyle;
   aggregatedData: Record<string, any>;
   focusedUnit: any;
@@ -79,6 +80,7 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
   layoutTooltipVisibility,
   focusedUnitId,
   selectedLegendGroupId,
+  activeGroups,
   getContrastStyle,
   aggregatedData,
   focusedUnit,
@@ -315,6 +317,7 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
           layoutTooltipVisibility={layoutTooltipVisibility}
           focusedUnitId={focusedUnitId}
           selectedLegendGroupId={selectedLegendGroupId}
+          activeGroups={activeGroups}
           getContrastStyle={getContrastStyle}
           stageScale={stageScale}
           aggregatedData={aggregatedData}
