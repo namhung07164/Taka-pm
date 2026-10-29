@@ -12,6 +12,7 @@ import { Pin, Trash2 } from 'lucide-react';
 interface ProjectDelegationSubTaskItemProps {
   st: DelegationSubTask;
   linkedGroup: DelegationGroup & {
+    _parentTask?: Task | null;
     _taskCode?: string;
     _taskName?: string;
     _isChildTask?: boolean;
@@ -95,6 +96,7 @@ export const ProjectDelegationSubTaskItem: React.FC<ProjectDelegationSubTaskItem
             }}
             onBlur={async (e) => {
               const val = e.target.value.trim();
+              if (val === (st.party || '').trim()) return;
               const allowed = new Set([...picOptions, ""]);
               if (val !== "" && !allowed.has(val)) {
                 useAppStore.getState().setToast({ title: "Notice", message: "Invalid PIC. Please select from the dropdown options." });
@@ -102,11 +104,16 @@ export const ProjectDelegationSubTaskItem: React.FC<ProjectDelegationSubTaskItem
                 return;
               }
               const updatedSubTasks = linkedGroup.subTasks.map(sub => sub.id === st.id ? { ...sub, party: val } : sub);
+              const cleanGroup: any = { ...linkedGroup, subTasks: updatedSubTasks };
+              delete cleanGroup._parentTask;
+              delete cleanGroup._taskCode;
+              delete cleanGroup._taskName;
+              delete cleanGroup._isChildTask;
+              delete cleanGroup._parentTaskName;
+              const storeState = useAppStore.getState();
+              storeState.setDelegationGroups(storeState.delegationGroups.map(g => g.id === linkedGroup.id ? cleanGroup : g));
               try {
-                setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', linkedGroup.id), {
-                  ...linkedGroup,
-                  subTasks: updatedSubTasks,
-                }, { merge: true });
+                setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', linkedGroup.id), cleanGroup, { merge: true });
               } catch (err) {
                 console.error(err);
               }
@@ -188,71 +195,83 @@ export const ProjectDelegationSubTaskItem: React.FC<ProjectDelegationSubTaskItem
               }
 
               const updatedSubTasks = linkedGroup.subTasks.map(sub => sub.id === st.id ? { ...sub, ...payload } : sub);
-              const parentTask = tasks.find(t => t.id === linkedGroup.parentTaskId);
+              const cleanGroup: any = { ...linkedGroup, subTasks: updatedSubTasks };
+              delete cleanGroup._parentTask;
+              delete cleanGroup._taskCode;
+              delete cleanGroup._taskName;
+              delete cleanGroup._isChildTask;
+              delete cleanGroup._parentTaskName;
+
+              // 0ms Optimistic UI update
+              const storeState = useAppStore.getState();
+              storeState.setDelegationGroups(storeState.delegationGroups.map(g => g.id === linkedGroup.id ? cleanGroup : g));
+
+              const parentTask = linkedGroup._parentTask !== undefined ? linkedGroup._parentTask : tasks.find(t => t.id === linkedGroup.parentTaskId);
               const isRealtime = parentTask?.realtimeUpdate || project?.realtimeUpdate;
 
-              let newT: Task | null = null;
-              let cascadeUpdates: Task[] = [];
+              setTimeout(() => {
+                let newT: Task | null = null;
+                let cascadeUpdates: Task[] = [];
 
-              if (parentTask && isRealtime) {
-                const computedPlStatus = getTaskStatus(parentTask.start, parentTask.finish);
-                const oldActStatusLabel = resolveActualStatus(computedPlStatus, linkedGroup.subTasks).label;
-                const newActStatusLabel = resolveActualStatus(computedPlStatus, updatedSubTasks).label;
+                if (parentTask && isRealtime) {
+                  const computedPlStatus = getTaskStatus(parentTask.start, parentTask.finish);
+                  const oldActStatusLabel = resolveActualStatus(computedPlStatus, linkedGroup.subTasks).label;
+                  const newActStatusLabel = resolveActualStatus(computedPlStatus, updatedSubTasks).label;
+                  const globalTasks = useAppStore.getState().tasks || tasks;
 
-                if (newActStatusLabel === 'Completed' && oldActStatusLabel !== 'Completed') {
-                  const nowStr = parentTask.approval === 'Approved' && parentTask.approvedAt ? getSuggestedCompletionTime(parentTask.approvedAt) : getSuggestedCompletionTime();
-                  const taskUpdates: Partial<Task> = { finish: nowStr, durationManual: true };
+                  if (newActStatusLabel === 'Completed' && oldActStatusLabel !== 'Completed') {
+                    const nowStr = parentTask.approval === 'Approved' && parentTask.approvedAt ? getSuggestedCompletionTime(parentTask.approvedAt) : getSuggestedCompletionTime();
+                    const taskUpdates: Partial<Task> = { finish: nowStr, durationManual: true };
 
-                  if (parentTask.start) {
-                    const finishDate = parseDateTime(nowStr);
-                    const startDate = parseDateTime(parentTask.start);
-                    if (finishDate && startDate) {
-                      const diffTime = finishDate.getTime() - startDate.getTime();
-                      const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
-                      taskUpdates.duration = String(diffDays);
-                    }
-                  }
-
-                  newT = { ...parentTask, ...taskUpdates };
-                  cascadeUpdates = scheduleDependentTasks(newT, tasks, projects);
-                } else if (newActStatusLabel === 'On Process' && oldActStatusLabel !== 'On Process' && oldActStatusLabel !== 'Completed') {
-                  const nowStr = getSuggestedCompletionTime();
-                  const taskUpdates: Partial<Task> = { start: nowStr };
-
-                  if (parentTask.duration && !parentTask.finishManual) {
-                    const dur = parseInt(parentTask.duration);
-                    if (!isNaN(dur) && dur > 0) {
-                      const sd = parseDateTime(nowStr);
-                      if (sd) {
-                        const ed = new Date(sd);
-                        ed.setDate(ed.getDate() + dur - 1);
-                        taskUpdates.finish = getSuggestedCompletionTime(ed.toISOString());
+                    if (parentTask.start) {
+                      const finishDate = parseDateTime(nowStr);
+                      const startDate = parseDateTime(parentTask.start);
+                      if (finishDate && startDate) {
+                        const diffTime = finishDate.getTime() - startDate.getTime();
+                        const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+                        taskUpdates.duration = String(diffDays);
                       }
                     }
+
+                    newT = { ...parentTask, ...taskUpdates };
+                    cascadeUpdates = scheduleDependentTasks(newT, globalTasks, projects);
+                  } else if (newActStatusLabel === 'On Process' && oldActStatusLabel !== 'On Process' && oldActStatusLabel !== 'Completed') {
+                    const nowStr = getSuggestedCompletionTime();
+                    const taskUpdates: Partial<Task> = { start: nowStr };
+
+                    if (parentTask.duration && !parentTask.finishManual) {
+                      const dur = parseInt(parentTask.duration);
+                      if (!isNaN(dur) && dur > 0) {
+                        const sd = parseDateTime(nowStr);
+                        if (sd) {
+                          const ed = new Date(sd);
+                          ed.setDate(ed.getDate() + dur - 1);
+                          taskUpdates.finish = getSuggestedCompletionTime(ed.toISOString());
+                        }
+                      }
+                    }
+                    newT = { ...parentTask, ...taskUpdates };
+                    cascadeUpdates = scheduleDependentTasks(newT, globalTasks, projects);
                   }
-                  newT = { ...parentTask, ...taskUpdates };
-                  cascadeUpdates = scheduleDependentTasks(newT, tasks, projects);
-                }
-              }
-
-              try {
-                const batch = writeBatch(db);
-                batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', linkedGroup.id), {
-                  ...linkedGroup,
-                  subTasks: updatedSubTasks,
-                }, { merge: true });
-
-                if (newT) {
-                  const allUpdates = [newT, ...cascadeUpdates];
-                  allUpdates.forEach(t => {
-                    batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t, { merge: true });
-                  });
                 }
 
-                batch.commit().catch(e => console.error("Batch commit failed", e));
-              } catch (err) {
-                console.error(err);
-              }
+                try {
+                  const batch = writeBatch(db);
+                  batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', linkedGroup.id), cleanGroup, { merge: true });
+
+                  if (newT) {
+                    const allUpdates = [newT, ...cascadeUpdates];
+                    useAppStore.getState().optimisticUpdateTasks(allUpdates);
+                    allUpdates.forEach(t => {
+                      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t, { merge: true });
+                    });
+                  }
+
+                  batch.commit().catch(err => console.error("Batch commit failed", err));
+                } catch (err) {
+                  console.error(err);
+                }
+              }, 0);
             }}
             disabled={!isCreator && !isPIC}
             className={cn(
@@ -273,11 +292,16 @@ export const ProjectDelegationSubTaskItem: React.FC<ProjectDelegationSubTaskItem
             onChange={async (e) => {
               const val = e.target.value;
               const updatedSubTasks = linkedGroup.subTasks.map(sub => sub.id === st.id ? { ...sub, priority: val } : sub);
+              const cleanGroup: any = { ...linkedGroup, subTasks: updatedSubTasks };
+              delete cleanGroup._parentTask;
+              delete cleanGroup._taskCode;
+              delete cleanGroup._taskName;
+              delete cleanGroup._isChildTask;
+              delete cleanGroup._parentTaskName;
+              const storeState = useAppStore.getState();
+              storeState.setDelegationGroups(storeState.delegationGroups.map(g => g.id === linkedGroup.id ? cleanGroup : g));
               try {
-                setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', linkedGroup.id), {
-                  ...linkedGroup,
-                  subTasks: updatedSubTasks,
-                }, { merge: true });
+                setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', linkedGroup.id), cleanGroup, { merge: true });
               } catch (err) {
                 console.error(err);
               }

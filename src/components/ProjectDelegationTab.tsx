@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useLanguage } from "../lib/LanguageContext";
 import { Project, Task, AppUser, DelegationGroup } from '../types';
 import { computeTaskCode } from '../lib/ganttUtils';
@@ -6,7 +6,8 @@ import { isTaskBelongsToProject, isDelegationGroupBelongsToProject } from '../li
 import { doc } from 'firebase/firestore';
 import { deleteDoc, setDoc } from '../lib/firestoreWrites';
 import { db, APP_ID } from "../lib/firebase";
-import { Search } from 'lucide-react';
+import { useAppStore } from "../store/useAppStore";
+import { Search, ChevronDown } from 'lucide-react';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { ProjectDelegationGroupCard } from './ProjectModalParts/ProjectDelegationGroupCard';
 
@@ -21,6 +22,9 @@ interface ProjectDelegationTabProps {
   setConfirmModal?: (modal: {isOpen: boolean, title: string, message: string, onConfirm: () => void}) => void;
 }
 
+const INITIAL_VISIBLE_GROUPS = 20;
+const LOAD_MORE_STEP = 25;
+
 export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
   project,
   tasks,
@@ -33,14 +37,59 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
 }: ProjectDelegationTabProps) {
   const { t } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_GROUPS);
 
-  const handleDeleteGroup = async (group: DelegationGroup) => {
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_GROUPS);
+  }, [project?.id, project?.code, searchQuery]);
+
+  // Pre-index tasks belonging strictly to this project in O(1) Maps
+  const { projectTasks, projectTaskIds, projectTaskCodePhuSet, taskByIdMap, taskByCodePhuMap } = useMemo(() => {
+    const pTasks: Task[] = [];
+    const pTaskIds = new Set<string>();
+    const pTaskCodePhuSet = new Set<string>();
+    const byId = new Map<string, Task>();
+    const byCodePhu = new Map<string, Task>();
+
+    if (project) {
+      for (let i = 0; i < tasks.length; i++) {
+        const tsk = tasks[i];
+        if (!tsk || tsk.isDeleted) continue;
+        if (!isTaskBelongsToProject(tsk, project)) continue;
+        pTasks.push(tsk);
+        if (tsk.id) {
+          pTaskIds.add(tsk.id);
+          byId.set(tsk.id, tsk);
+        }
+        if (tsk.taskCodePhu) {
+          const lower = String(tsk.taskCodePhu).trim().toLowerCase();
+          pTaskCodePhuSet.add(lower);
+          byCodePhu.set(lower, tsk);
+        }
+      }
+    }
+
+    return {
+      projectTasks: pTasks,
+      projectTaskIds: pTaskIds,
+      projectTaskCodePhuSet: pTaskCodePhuSet,
+      taskByIdMap: byId,
+      taskByCodePhuMap: byCodePhu
+    };
+  }, [tasks, project]);
+
+  const handleDeleteGroup = useCallback(async (group: DelegationGroup) => {
     const doDelete = async () => {
+      // 0ms Optimistic UI update
+      const state = useAppStore.getState();
+      state.setDelegationGroups(state.delegationGroups.filter(g => g.id !== group.id));
       deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', group.id));
       if (group.parentTaskId) {
-        const parentTask = tasks.find(t => t.id === group.parentTaskId);
+        const parentTask = taskByIdMap.get(group.parentTaskId) || tasks.find(t => t.id === group.parentTaskId);
         if (parentTask) {
-          setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', parentTask.id), { ...parentTask, delegation: false, updatedAt: new Date().toISOString() }, { merge: true });
+          const updatedTask = { ...parentTask, delegation: false, updatedAt: new Date().toISOString() };
+          state.optimisticUpdateTasks([updatedTask]);
+          setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', parentTask.id), updatedTask, { merge: true });
         }
       }
     };
@@ -53,21 +102,23 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
         onConfirm: doDelete
       });
     } else {
-      if (window.confirm('Delete this delegation group?')) {
-        doDelete();
-      }
+      doDelete();
     }
-  };
+  }, [setConfirmModal, taskByIdMap, tasks]);
 
-  const handleDeleteSubTask = async (group: DelegationGroup, subTaskId: string) => {
+  const handleDeleteSubTask = useCallback(async (group: DelegationGroup, subTaskId: string) => {
     const doDelete = async () => {
+      const state = useAppStore.getState();
       const updatedSubTasks = (group.subTasks || []).filter(st => st.id !== subTaskId);
       if (updatedSubTasks.length === 0) {
+        state.setDelegationGroups(state.delegationGroups.filter(g => g.id !== group.id));
         deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', group.id));
         if (group.parentTaskId) {
-          const parentTask = tasks.find(t => t.id === group.parentTaskId);
+          const parentTask = taskByIdMap.get(group.parentTaskId) || tasks.find(t => t.id === group.parentTaskId);
           if (parentTask) {
-            setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', parentTask.id), { ...parentTask, delegation: false, updatedAt: new Date().toISOString() }, { merge: true });
+            const updatedTask = { ...parentTask, delegation: false, updatedAt: new Date().toISOString() };
+            state.optimisticUpdateTasks([updatedTask]);
+            setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', parentTask.id), updatedTask, { merge: true });
           }
         }
       } else {
@@ -80,6 +131,7 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
           subTasks: updatedSubTasks,
           updatedAt: new Date().toISOString()
         }));
+        state.setDelegationGroups(state.delegationGroups.map(g => g.id === group.id ? updatedGroup : g));
         setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', group.id), updatedGroup, { merge: true });
       }
     };
@@ -92,26 +144,23 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
         onConfirm: doDelete
       });
     } else {
-      if (window.confirm('Delete this delegation sub-task?')) {
-        doDelete();
-      }
+      doDelete();
     }
-  };
+  }, [setConfirmModal, taskByIdMap, tasks, project?.year]);
 
   const projectGroups = useMemo(() => {
     if (!project) return [];
 
-    // Collect all tasks, task IDs, and taskCodePhu belonging strictly to this project (matching year, store, projectId, and projectCode)
-    const projectTasks: Task[] = [];
-    const projectTaskIds = new Set<string>();
-    const projectTaskCodePhuSet = new Set<string>();
-
-    tasks.forEach(t => {
-      if (!isTaskBelongsToProject(t, project)) return;
-      projectTasks.push(t);
-      if (t.id) projectTaskIds.add(t.id);
-      if (t.taskCodePhu) projectTaskCodePhuSet.add(String(t.taskCodePhu).trim().toLowerCase());
-    });
+    const scopedProjects = [project];
+    const codeCache = new Map<string, string>();
+    const getCachedTaskCode = (t: Task): string => {
+      if (t.taskCodePhu) return t.taskCodePhu;
+      const cached = codeCache.get(t.id);
+      if (cached !== undefined) return cached;
+      const computed = computeTaskCode(scopedProjects, projectTasks, t);
+      codeCache.set(t.id, computed);
+      return computed;
+    };
 
     return (delegationGroups || []).filter(g => {
       if (!g || g.isDeleted) return false;
@@ -119,7 +168,7 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
       const gParentTaskId = String(g.parentTaskId || '').trim();
       const gParentTaskIdLower = gParentTaskId.toLowerCase();
 
-      // 1. Direct match with project's own tasks
+      // 1. Direct O(1) match with project's own tasks
       if (gParentTaskId && projectTaskIds.has(gParentTaskId)) {
         return true;
       }
@@ -138,23 +187,26 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
 
       return false;
     }).map(g => {
-      const gParentTaskIdLower = String(g.parentTaskId || '').trim().toLowerCase();
+      const gParentTaskId = String(g.parentTaskId || '').trim();
+      const gParentTaskIdLower = gParentTaskId.toLowerCase();
       const parentTask =
-        projectTasks.find(t => t.id === g.parentTaskId || (t.taskCodePhu && String(t.taskCodePhu).toLowerCase() === gParentTaskIdLower)) ||
-        tasks.find(t => t && t.id === g.parentTaskId);
+        taskByIdMap.get(gParentTaskId) ||
+        taskByCodePhuMap.get(gParentTaskIdLower) ||
+        null;
       const isChildTask = parentTask ? Boolean(parentTask.parentTaskId) : false;
-      const rootParentTask = isChildTask
-        ? (projectTasks.find(t => t.id === parentTask?.parentTaskId) || tasks.find(t => t.id === parentTask?.parentTaskId))
+      const rootParentTask = (isChildTask && parentTask?.parentTaskId)
+        ? (taskByIdMap.get(parentTask.parentTaskId) || null)
         : null;
       return {
         ...g,
-        _taskCode: parentTask ? computeTaskCode(projects, tasks, parentTask) : (g.projectCode || ''),
+        _parentTask: parentTask,
+        _taskCode: parentTask ? getCachedTaskCode(parentTask) : (g.projectCode || ''),
         _taskName: parentTask?.name || g.name || 'Delegated Sub-tasks',
         _isChildTask: isChildTask,
         _parentTaskName: rootParentTask?.name || null
       };
     }).sort((a, b) => (a._taskCode || '').localeCompare(b._taskCode || '', undefined, { numeric: true, sensitivity: 'base' }));
-  }, [delegationGroups, tasks, project, projects]);
+  }, [delegationGroups, project, projectTasks, projectTaskIds, projectTaskCodePhuSet, taskByIdMap, taskByCodePhuMap]);
 
   const picOptions = useMemo(() => {
     const list = new Set<string>();
@@ -179,8 +231,24 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
     );
   }, [projectGroups, searchQuery]);
 
+  const visibleGroups = useMemo(
+    () => filteredGroups.slice(0, visibleCount),
+    [filteredGroups, visibleCount]
+  );
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (visibleCount >= filteredGroups.length) return;
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 280) {
+      setVisibleCount(prev => Math.min(filteredGroups.length, prev + LOAD_MORE_STEP));
+    }
+  }, [visibleCount, filteredGroups.length]);
+
   return (
-    <div className="flex flex-col flex-1 min-h-0 bg-slate-50 dark:bg-[#1e1e20]/50 relative overflow-y-auto p-4 md:p-6 pb-20 sm:pb-24 overscroll-contain">
+    <div
+      onScroll={handleScroll}
+      className="flex flex-col flex-1 min-h-0 bg-slate-50 dark:bg-[#1e1e20]/50 relative overflow-y-auto p-4 md:p-6 pb-20 sm:pb-24 overscroll-contain"
+    >
       <div className="relative w-full mb-4 flex-shrink-0">
         <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-500">
           <Search className="w-4 h-4" />
@@ -197,15 +265,15 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
       </datalist>
 
       {filteredGroups.length === 0 ? (
-        <div className="text-center text-slate-500 py-10">No delegated tasks for this project yet.</div>
+        <div className="text-center text-slate-500 py-10">{t("No delegated tasks for this project yet.") || "No delegated tasks for this project yet."}</div>
       ) : (
-        <div className="flex flex-col gap-6">
-          {filteredGroups.map(linkedGroup => (
+        <div className="flex flex-col gap-5">
+          {visibleGroups.map(linkedGroup => (
             <ProjectDelegationGroupCard
               key={linkedGroup.id}
               linkedGroup={linkedGroup}
               project={project}
-              tasks={tasks}
+              tasks={projectTasks}
               projects={projects}
               currentUser={currentUser}
               appUsers={appUsers}
@@ -215,6 +283,16 @@ export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
               handleDeleteSubTask={handleDeleteSubTask}
             />
           ))}
+          {visibleCount < filteredGroups.length && (
+            <button
+              type="button"
+              onClick={() => setVisibleCount(prev => Math.min(filteredGroups.length, prev + LOAD_MORE_STEP))}
+              className="mx-auto my-2 flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/50 active:scale-95 touch-manipulation transition-all"
+            >
+              <ChevronDown className="w-4 h-4" />
+              Show More ({filteredGroups.length - visibleCount} remaining)
+            </button>
+          )}
         </div>
       )}
     </div>

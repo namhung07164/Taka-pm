@@ -5,6 +5,7 @@ import { FileText, ExternalLink, Trash2 } from 'lucide-react';
 import { ProjectDelegationSubTaskItem } from './ProjectDelegationSubTaskItem';
 
 interface LinkedDelegationGroup extends DelegationGroup {
+  _parentTask?: Task | null;
   _taskCode?: string;
   _taskName?: string;
   _isChildTask?: boolean;
@@ -39,7 +40,7 @@ export const ProjectDelegationGroupCard: React.FC<ProjectDelegationGroupCardProp
   const firstSt = linkedGroup.subTasks[0];
   const flowTxtGroup = firstSt ? (firstSt.delegationStatus || firstSt.status || 'Assigned') : 'Assigned';
   
-  const parentTask = tasks.find(t => t.id === linkedGroup.parentTaskId);
+  const parentTask = linkedGroup._parentTask !== undefined ? linkedGroup._parentTask : tasks.find(t => t.id === linkedGroup.parentTaskId);
   const planStatus = parentTask ? getTaskStatus(parentTask.start, parentTask.finish) : 'Upcoming';
   const isRunning = planStatus === 'On process';
   

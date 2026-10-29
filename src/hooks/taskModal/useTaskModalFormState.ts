@@ -101,10 +101,17 @@ export function useTaskModalFormState({
     ) || projects.find(p => p.code === (formData.projectCode || task?.projectCode));
   }, [projects, formData.projectCode, formData.projectStore, formData.projectYear, task?.projectCode]);
 
+  const taskNoMap = useMemo(() => {
+    try {
+      return buildTaskNoMap(projects || [], tasks || []);
+    } catch {
+      return new Map<string, Task>();
+    }
+  }, [projects, tasks]);
+
   const resolvedPredecessors = useMemo(() => {
     if (!formData.predecessor?.trim()) return [];
     try {
-      const taskNoMap = buildTaskNoMap(projects || [], tasks || []);
       const dummyTask: Task = {
         id: task?.id || 'temp',
         projectId: formData.projectId || task?.projectId || currentProject?.id,
@@ -123,7 +130,7 @@ export function useTaskModalFormState({
     } catch {
       return [];
     }
-  }, [formData.predecessor, formData.projectId, formData.projectCode, formData.projectYear, formData.projectStore, formData.location, currentProject, projects, tasks, task?.id, task?.projectId, task?.projectCode, task?.projectYear, task?.projectStore, task?.location]);
+  }, [formData.predecessor, formData.projectId, formData.projectCode, formData.projectYear, formData.projectStore, formData.location, currentProject, taskNoMap, task?.id, task?.projectId, task?.projectCode, task?.projectYear, task?.projectStore, task?.location]);
 
   const handlePredecessorChange = (val: string) => {
     const isFilled = Boolean(val.trim());

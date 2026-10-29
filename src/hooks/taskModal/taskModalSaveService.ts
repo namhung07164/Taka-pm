@@ -274,103 +274,111 @@ export async function executeTaskSave({
       }
     });
 
-    const hasPredecessors = Boolean(
-      (dataToSave.predecessor && dataToSave.predecessor.trim()) ||
-      (task?.predecessor && task.predecessor.trim()) ||
-      (task && task.taskCodePhu !== dataToSave.taskCodePhu)
-    );
-
-    let depUpdates: Task[] = [];
-    let predecessorUpdates: any[] = [];
-    const predecessorUpdatesMap = new Map<string, any>();
-    const mappedDepUpdates = new Set<string>();
-
-    if (hasPredecessors) {
-      const oldTaskNoMap = buildTaskNoMap(projects, tasks);
-      const newTasksForMap = task 
-         ? tasks.map(t => t.id === id ? dataToSave as Task : t) 
-         : [...tasks, dataToSave as Task];
-      const newTaskNoMap = buildTaskNoMap(projects, newTasksForMap);
-      const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, newTasksForMap);
-
-      if (task) {
-        const oldCode = (task.taskCodePhu || computeTaskCode(projects, tasks, task)).trim();
-        const newCode = (dataToSave.taskCodePhu || computeTaskCode(projects, newTasksForMap, dataToSave as Task)).trim();
-        if (oldCode && newCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
-          oldCodeToNewCode.set(oldCode.toLowerCase(), newCode);
-        }
-      }
-
-      const predecessorUpdatesOrig = updatePredecessorsStrings(oldCodeToNewCode, tasks, projects, oldTaskNoMap);
-      predecessorUpdates = predecessorUpdatesOrig.filter(pu => pu.id !== id);
-      predecessorUpdates.forEach(pu => predecessorUpdatesMap.set(pu.id, pu));
-
-      const updatesToDependents = scheduleDependentTasks(dataToSave as Task, tasks, projects);
-      const scheduledUpdatedTask = updatesToDependents.find(d => d.id === dataToSave.id);
-      if (scheduledUpdatedTask) {
-        dataToSave = { ...(scheduledUpdatedTask as any) };
-        delete dataToSave._isVirtualSummary;
-      }
-      depUpdates = updatesToDependents.filter(d => d.id !== id);
-    }
-
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave, { merge: true });
-    const { newDelegations } = dataToSave.delegation
-      ? prepareMissingDelegationsForTasks([dataToSave as Task], currentUser)
-      : { newDelegations: [] };
-    newDelegations.forEach((delGroup) => {
-      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', delGroup.id), delGroup, { merge: true });
-    });
-
-    depUpdates.forEach(depTask => {
-      const depProj = projects.find(p => p.code === depTask.projectCode);
-      const depYear = (depTask.projectYear !== undefined && depTask.projectYear !== null && !isNaN(Number(depTask.projectYear)))
-        ? Number(depTask.projectYear)
-        : (depProj?.year && !isNaN(Number(depProj.year)) ? Number(depProj.year) : new Date().getFullYear());
-      const pu = predecessorUpdatesMap.get(depTask.id);
-      const data: any = pu 
-        ? { ...depTask, projectYear: depYear, predecessor: pu.predecessor, updatedAt: new Date().toISOString() } 
-        : { ...depTask, projectYear: depYear, updatedAt: new Date().toISOString() };
-      delete data._isVirtualSummary;
-      Object.keys(data).forEach(key => {
-        if ((data as any)[key] === undefined) {
-          delete (data as any)[key];
-        }
-      });
-      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), data, { merge: true });
-      mappedDepUpdates.add(depTask.id);
-    });
-
-    predecessorUpdates.forEach(pu => {
-      if (!mappedDepUpdates.has(pu.id)) {
-         batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), { predecessor: pu.predecessor, updatedAt: pu.updatedAt }, { merge: true });
-      }
-    });
-
-    const optimisticList: any[] = [dataToSave];
-    depUpdates.forEach(depTask => {
-      const pu = predecessorUpdatesMap.get(depTask.id);
-      const cleanDep: any = pu ? { ...depTask, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : { ...depTask };
-      delete cleanDep._isVirtualSummary;
-      optimisticList.push(cleanDep);
-    });
-    predecessorUpdates.forEach(pu => {
-      if (!mappedDepUpdates.has(pu.id)) {
-        optimisticList.push({ id: pu.id, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
-      }
-    });
-
-    // 1. Optimistic in-memory update into Zustand Store (0ms instant UI reaction)
-    useAppStore.getState().optimisticUpdateTasks(optimisticList);
-
-    // 2. Close modal INSTANTLY (0ms UI lag)
+    // 1. Close modal INSTANTLY (0ms UI lag) & update primary task in Zustand immediately
     onClose();
     setIsSubmitting(false);
+    useAppStore.getState().optimisticUpdateTasks([dataToSave]);
 
-    // 3. Offload network commit, delta emission, Dexie persistence, and project date rollups in parallel
+    // 2. Offload heavy dependent cascades, predecessor string re-indexing, Dexie persistence, and Firestore batch commit to background microtask
     setTimeout(async () => {
+      let depUpdates: Task[] = [];
+      let predecessorUpdates: any[] = [];
+      const predecessorUpdatesMap = new Map<string, any>();
+      const mappedDepUpdates = new Set<string>();
+      let optimisticList: any[] = [dataToSave];
+
       try {
+        const didCodeOrOrderChange = Boolean(
+          task &&
+          (String(task.taskCodePhu || '').trim() !== String(dataToSave.taskCodePhu || '').trim() ||
+            task.orderIndex !== dataToSave.orderIndex ||
+            task.projectCode !== dataToSave.projectCode ||
+            task.parentTaskId !== dataToSave.parentTaskId)
+        );
+
+        const didScheduleChange = Boolean(
+          !task ||
+          task.start !== dataToSave.start ||
+          task.finish !== dataToSave.finish ||
+          String(task.duration || '') !== String(dataToSave.duration || '') ||
+          String(task.predecessor || '').trim() !== String(dataToSave.predecessor || '').trim() ||
+          Boolean(task.realtimeUpdate) !== Boolean(dataToSave.realtimeUpdate)
+        );
+
+        if (didCodeOrOrderChange) {
+          const oldTaskNoMap = buildTaskNoMap(projects, tasks);
+          const newTasksForMap = task
+            ? tasks.map(t => (t.id === id ? (dataToSave as Task) : t))
+            : [...tasks, dataToSave as Task];
+          const newTaskNoMap = buildTaskNoMap(projects, newTasksForMap);
+          const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, newTasksForMap);
+
+          if (task) {
+            const oldCode = (task.taskCodePhu || computeTaskCode([currentProject], tasks, task)).trim();
+            const newCode = (dataToSave.taskCodePhu || computeTaskCode([currentProject], newTasksForMap, dataToSave as Task)).trim();
+            if (oldCode && newCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
+              oldCodeToNewCode.set(oldCode.toLowerCase(), newCode);
+            }
+          }
+
+          if (oldCodeToNewCode.size > 0) {
+            const predecessorUpdatesOrig = updatePredecessorsStrings(oldCodeToNewCode, tasks, projects, oldTaskNoMap);
+            predecessorUpdates = predecessorUpdatesOrig.filter(pu => pu.id !== id);
+            predecessorUpdates.forEach(pu => predecessorUpdatesMap.set(pu.id, pu));
+          }
+        }
+
+        if (didScheduleChange || didCodeOrOrderChange) {
+          const updatesToDependents = scheduleDependentTasks(dataToSave as Task, tasks, projects);
+          const scheduledUpdatedTask = updatesToDependents.find(d => d.id === dataToSave.id);
+          if (scheduledUpdatedTask) {
+            dataToSave = { ...(scheduledUpdatedTask as any) };
+            delete dataToSave._isVirtualSummary;
+            optimisticList[0] = dataToSave;
+          }
+          depUpdates = updatesToDependents.filter(d => d.id !== id);
+        }
+
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave, { merge: true });
+        const { newDelegations } = dataToSave.delegation
+          ? prepareMissingDelegationsForTasks([dataToSave as Task], currentUser)
+          : { newDelegations: [] };
+        newDelegations.forEach((delGroup) => {
+          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', delGroup.id), delGroup, { merge: true });
+        });
+
+        depUpdates.forEach(depTask => {
+          const depProj = projects.find(p => p.code === depTask.projectCode);
+          const depYear = (depTask.projectYear !== undefined && depTask.projectYear !== null && !isNaN(Number(depTask.projectYear)))
+            ? Number(depTask.projectYear)
+            : (depProj?.year && !isNaN(Number(depProj.year)) ? Number(depProj.year) : new Date().getFullYear());
+          const pu = predecessorUpdatesMap.get(depTask.id);
+          const data: any = pu
+            ? { ...depTask, projectYear: depYear, predecessor: pu.predecessor, updatedAt: new Date().toISOString() }
+            : { ...depTask, projectYear: depYear, updatedAt: new Date().toISOString() };
+          delete data._isVirtualSummary;
+          Object.keys(data).forEach(key => {
+            if ((data as any)[key] === undefined) {
+              delete (data as any)[key];
+            }
+          });
+          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), data, { merge: true });
+          mappedDepUpdates.add(depTask.id);
+          optimisticList.push(data);
+        });
+
+        predecessorUpdates.forEach(pu => {
+          if (!mappedDepUpdates.has(pu.id)) {
+            batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), { predecessor: pu.predecessor, updatedAt: pu.updatedAt }, { merge: true });
+            optimisticList.push({ id: pu.id, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+          }
+        });
+
+        if (optimisticList.length > 1) {
+          useAppStore.getState().optimisticUpdateTasks(optimisticList);
+        }
+
         if (newDelegations.length > 0) {
           import('../../lib/localDb').then(({ bulkPersistDelegations }) => bulkPersistDelegations(newDelegations)).catch(() => {});
         }
@@ -418,6 +426,33 @@ export async function executeTaskSave({
           const oldProjId = task.projectId ? String(task.projectId) : undefined;
           syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent, oldProjId);
         }
+
+        undoManager.push({
+          description: task ? `Update Task: ${formData.name}` : `Create Task: ${formData.name}`,
+          revert: async () => {
+            const revertBatch = writeBatch(db);
+            if (task) {
+              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), { ...task, updatedAt: new Date().toISOString() });
+            } else {
+              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), { isDeleted: true, updatedAt: new Date().toISOString() }, { merge: true });
+            }
+            depUpdates.forEach(depTask => {
+              const originalDep = tasks.find(tsk => tsk.id === depTask.id);
+              if (originalDep) {
+                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), originalDep);
+              }
+            });
+            predecessorUpdates.forEach(pu => {
+              if (!mappedDepUpdates.has(pu.id)) {
+                const originalTask = tasks.find(tk => tk.id === pu.id);
+                if (originalTask) {
+                  revertBatch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', originalTask.id), { predecessor: originalTask.predecessor || '' });
+                }
+              }
+            });
+            revertBatch.commit().catch(console.error);
+          }
+        });
       } catch (error: any) {
         console.error("Background task save failed:", error);
         optimisticList.forEach(item => {
@@ -431,33 +466,6 @@ export async function executeTaskSave({
         useAppStore.getState().setToast({ title: "Offline Saved", message: "Saved to offline queue. Will sync when connection is restored.", type: "warning" });
       }
     }, 0);
-
-    undoManager.push({
-      description: task ? `Update Task: ${formData.name}` : `Create Task: ${formData.name}`,
-      revert: async () => {
-        const revertBatch = writeBatch(db);
-        if (task) {
-          revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), { ...task, updatedAt: new Date().toISOString() });
-        } else {
-          revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), { isDeleted: true, updatedAt: new Date().toISOString() }, { merge: true });
-        }
-        depUpdates.forEach(depTask => {
-          const originalDep = tasks.find(tsk => tsk.id === depTask.id);
-          if (originalDep) {
-            revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), originalDep);
-          }
-        });
-        predecessorUpdates.forEach(pu => {
-          if (!mappedDepUpdates.has(pu.id)) {
-             const originalTask = tasks.find(tk => tk.id === pu.id);
-             if (originalTask) {
-               revertBatch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', originalTask.id), { predecessor: originalTask.predecessor || '' });
-             }
-          }
-        });
-        revertBatch.commit().catch(console.error);
-      }
-    });
 
     return true;
   } catch (e: any) { 

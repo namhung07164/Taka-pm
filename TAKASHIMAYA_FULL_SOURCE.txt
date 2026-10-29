@@ -167366,3 +167366,3403 @@ export function computeActiveGroupsAndColorMaps({
   };
 }
 
+
+// === FILE: src/hooks/taskModal/useTaskModalFormState.ts ===
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Project, Task } from '../../types';
+import { getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime } from '../../lib/utils';
+import { calculateTaskDatesFromPredecessors, parsePredecessors, buildTaskNoMap, splitPredecessors } from '../../lib/ganttUtils';
+import { useAppStore } from '../../store/useAppStore';
+
+export interface UseTaskModalFormStateProps {
+  task: Task | null;
+  isOpen: boolean;
+  prefillProjectCode: string | null;
+  prefillProjectYear?: string | number | null;
+  prefillProjectStore?: string | null;
+  prefillProjectId?: string | null;
+  projects: Project[];
+  tasks: Task[];
+  t: (key: string) => string;
+}
+
+export function useTaskModalFormState({
+  task,
+  isOpen,
+  prefillProjectCode,
+  prefillProjectYear,
+  prefillProjectStore,
+  prefillProjectId,
+  projects,
+  tasks,
+  t
+}: UseTaskModalFormStateProps) {
+  const [dateErrors, setDateErrors] = useState<any>({});
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  const [formData, setFormData] = useState<Partial<Task>>(() => {
+    if (task) return task;
+    const defaultDate = getDefaultDatetimeLocal();
+    const targetProj = projects?.find(p => 
+      p.code === prefillProjectCode &&
+      (prefillProjectStore ? p.store === prefillProjectStore : true) &&
+      (prefillProjectYear ? String(p.year) === String(prefillProjectYear) : true)
+    ) || projects?.find(p => p.code === prefillProjectCode) || (projects && projects.length > 0 ? projects[0] : null);
+
+    return {
+      projectId: prefillProjectId || targetProj?.id || undefined,
+      projectCode: prefillProjectCode || targetProj?.code || '',
+      projectYear: prefillProjectYear || targetProj?.year || undefined,
+      projectStore: prefillProjectStore || targetProj?.store || undefined,
+      location: targetProj?.location || undefined,
+      name: '',
+      start: defaultDate,
+      finish: defaultDate,
+      baselineStart: defaultDate,
+      baselineFinish: defaultDate,
+      duration: '0',
+      durationManual: true,
+      finishManual: false,
+      party: targetProj?.party || 'Takashimaya',
+      predecessors: task?.predecessors || []
+    };
+  });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (task) {
+      setFormData({
+        ...task,
+        predecessor: task.predecessor || ''
+      });
+    } else {
+      const defaultDate = getDefaultDatetimeLocal();
+      const targetProj = projects?.find(p => 
+        p.code === prefillProjectCode &&
+        (prefillProjectStore ? p.store === prefillProjectStore : true) &&
+        (prefillProjectYear ? String(p.year) === String(prefillProjectYear) : true)
+      ) || projects?.find(p => p.code === prefillProjectCode) || (projects && projects.length > 0 ? projects[0] : null);
+
+      setFormData({
+        projectId: prefillProjectId || targetProj?.id || undefined,
+        projectCode: prefillProjectCode || targetProj?.code || '',
+        projectYear: prefillProjectYear || targetProj?.year || undefined,
+        projectStore: prefillProjectStore || targetProj?.store || undefined,
+        location: targetProj?.location || undefined,
+        name: '',
+        start: defaultDate,
+        finish: defaultDate,
+        baselineStart: defaultDate,
+        baselineFinish: defaultDate,
+        duration: '0',
+        durationManual: true,
+        finishManual: false,
+        party: targetProj?.party || 'Takashimaya',
+        predecessors: []
+      });
+    }
+  }, [task?.id, isOpen, prefillProjectCode, prefillProjectYear, prefillProjectStore]);
+
+  const currentProject = useMemo(() => {
+    return projects.find(p => 
+      p.code === (formData.projectCode || task?.projectCode) &&
+      (formData.projectStore ? p.store === formData.projectStore : true) &&
+      (formData.projectYear ? String(p.year) === String(formData.projectYear) : true)
+    ) || projects.find(p => p.code === (formData.projectCode || task?.projectCode));
+  }, [projects, formData.projectCode, formData.projectStore, formData.projectYear, task?.projectCode]);
+
+  const taskNoMap = useMemo(() => {
+    try {
+      return buildTaskNoMap(projects || [], tasks || []);
+    } catch {
+      return new Map<string, Task>();
+    }
+  }, [projects, tasks]);
+
+  const resolvedPredecessors = useMemo(() => {
+    if (!formData.predecessor?.trim()) return [];
+    try {
+      const dummyTask: Task = {
+        id: task?.id || 'temp',
+        projectId: formData.projectId || task?.projectId || currentProject?.id,
+        projectCode: formData.projectCode || task?.projectCode || currentProject?.code || '',
+        projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
+        projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
+        location: formData.location || task?.location || currentProject?.location,
+        name: formData.name || '',
+        start: formData.start,
+        finish: formData.finish,
+        duration: formData.duration,
+        durationManual: true,
+        finishManual: false
+      };
+      return parsePredecessors(formData.predecessor, taskNoMap, dummyTask);
+    } catch {
+      return [];
+    }
+  }, [formData.predecessor, formData.projectId, formData.projectCode, formData.projectYear, formData.projectStore, formData.location, currentProject, taskNoMap, task?.id, task?.projectId, task?.projectCode, task?.projectYear, task?.projectStore, task?.location]);
+
+  const handlePredecessorChange = (val: string) => {
+    const isFilled = Boolean(val.trim());
+    const parts = val.split(',').map(s => s.trim()).filter(Boolean);
+    const updated = { 
+      ...formData, 
+      predecessor: val, 
+      realtimeUpdate: isFilled,
+      ...(parts.length >= 2 ? { durationManual: false } : {})
+    };
+
+    if (isFilled) {
+      try {
+        let currentTasks = useAppStore.getState().tasks || tasks || [];
+        let taskNoMap = buildTaskNoMap(projects || [], currentTasks);
+        const dummyTask: Task = {
+          id: task?.id || 'temp',
+          projectId: updated.projectId || task?.projectId || currentProject?.id,
+          projectCode: updated.projectCode || currentProject?.code || '',
+          projectYear: updated.projectYear || currentProject?.year,
+          projectStore: updated.projectStore || currentProject?.store,
+          location: updated.location || task?.location || currentProject?.location,
+          name: updated.name || '',
+          start: updated.start,
+          finish: updated.finish,
+          duration: updated.duration,
+          durationManual: updated.durationManual ?? (parts.length >= 2 ? false : true),
+          finishManual: updated.finishManual ?? false,
+          predecessorTaskIds: updated.predecessorTaskIds || formData.predecessorTaskIds || task?.predecessorTaskIds
+        };
+        let parsed = parsePredecessors(val, taskNoMap, dummyTask);
+
+        if (isFilled && (!parsed.length || parsed.some(p => !p.task))) {
+          const predParts = splitPredecessors(val, Array.from(taskNoMap.keys()));
+          import('../../lib/utils').then(({ normalizeDashes }) => {
+            import('../../lib/taskStateService').then(({ ensureProjectTasksLoaded }) => {
+              for (const token of predParts) {
+                const cleanToken = normalizeDashes(token).replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+                const cleanTokenLower = cleanToken.toLowerCase();
+                const matchedProj = (projects || []).find(
+                  (p) =>
+                    p.code &&
+                    cleanTokenLower.startsWith(normalizeDashes(p.code).toLowerCase())
+                );
+                if (matchedProj && (matchedProj.id !== dummyTask.projectId || matchedProj.code !== dummyTask.projectCode)) {
+                  ensureProjectTasksLoaded(matchedProj.code, {
+                    projectId: matchedProj.id,
+                    store: matchedProj.store,
+                    year: matchedProj.year,
+                  }).then((loaded) => {
+                    if (loaded.length > 0) {
+                      const refreshedTasks = useAppStore.getState().tasks || currentTasks;
+                      const refreshedMap = buildTaskNoMap(projects || [], refreshedTasks);
+                      const refreshedParsed = parsePredecessors(val, refreshedMap, dummyTask);
+                      const calcResult = calculateTaskDatesFromPredecessors(dummyTask, refreshedParsed);
+                      if (calcResult) {
+                        setFormData((prev: any) => ({
+                          ...prev,
+                          start: calcResult.start,
+                          finish: calcResult.finish,
+                          duration: calcResult.duration,
+                          durationManual: calcResult.durationManual,
+                        }));
+                      }
+                    }
+                  });
+                }
+              }
+            });
+          });
+        }
+
+        if (parsed.length > 0) {
+          const calcResult = calculateTaskDatesFromPredecessors(dummyTask, parsed);
+          if (calcResult) {
+            updated.start = calcResult.start;
+            updated.finish = calcResult.finish;
+            updated.duration = calcResult.duration;
+            updated.durationManual = calcResult.durationManual;
+
+            if (!task?.baselineStart && !formData.baselineStart) {
+              updated.baselineStart = calcResult.start;
+            }
+            if (!task?.baselineFinish && !formData.baselineFinish) {
+              updated.baselineFinish = calcResult.finish;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Predecessor auto-calc err:", err);
+      }
+    }
+
+    setFormData(updated);
+  };
+
+  const handleApplyPredecessorDates = () => {
+    if (formData.predecessor) {
+      if (resolvedPredecessors.length > 0) {
+        const dummyTask: Task = {
+          id: task?.id || 'temp',
+          projectCode: formData.projectCode || '',
+          projectYear: formData.projectYear,
+          projectStore: formData.projectStore,
+          name: formData.name || '',
+          start: formData.start,
+          finish: formData.finish,
+          duration: formData.duration,
+          durationManual: formData.durationManual ?? true,
+          finishManual: formData.finishManual ?? false
+        };
+        const calcResult = calculateTaskDatesFromPredecessors(dummyTask, resolvedPredecessors);
+        if (calcResult) {
+          setFormData(prev => ({
+            ...prev,
+            start: calcResult.start,
+            finish: calcResult.finish,
+            duration: calcResult.duration,
+            durationManual: calcResult.durationManual,
+            ...(!task?.baselineStart && !prev.baselineStart ? { baselineStart: calcResult.start } : {}),
+            ...(!task?.baselineFinish && !prev.baselineFinish ? { baselineFinish: calcResult.finish } : {})
+          }));
+          useAppStore.getState().setToast({
+            title: t("Dates Synced") || "Dates Synced",
+            message: t("Task dates and duration synced with predecessors.") || "Task dates and duration synced with predecessors."
+          });
+          return;
+        }
+      }
+      handlePredecessorChange(formData.predecessor);
+      useAppStore.getState().setToast({
+        title: t("Dates Synced") || "Dates Synced",
+        message: t("Task dates and duration synced with predecessors.") || "Task dates and duration synced with predecessors."
+      });
+    }
+  };
+
+  const handleDateChange = (field: 'start' | 'finish', value: string) => {
+    const nextData = { ...formData, [field]: value };
+    
+    if (field === 'start') {
+      if (nextData.durationManual) {
+        if (nextData.start && nextData.duration !== undefined && nextData.duration !== '') {
+          const s = parseDateTime(nextData.start);
+          if (s && !isNaN(s.getTime())) {
+            const days = parseFloat(String(nextData.duration));
+            if (!isNaN(days)) {
+              const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+              nextData.finish = formatToDatetimeLocal(f);
+            }
+          }
+        }
+      } else {
+        if (nextData.start && nextData.finish) {
+          const s = parseDateTime(nextData.start);
+          const f = parseDateTime(nextData.finish);
+          if (s && f && !isNaN(s.getTime()) && !isNaN(f.getTime())) {
+            const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+            nextData.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+          }
+        }
+      }
+    } else {
+      if (nextData.start && nextData.finish) {
+        const s = parseDateTime(nextData.start);
+        const f = parseDateTime(nextData.finish);
+        if (s && f && !isNaN(s.getTime()) && !isNaN(f.getTime())) {
+          const diffDays = (f.getTime() - s.getTime()) / (1000 * 60 * 60 * 24);
+          nextData.duration = String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+        }
+      }
+    }
+
+    if (!task?.baselineStart && !formData.baselineStart && nextData.start) {
+      nextData.baselineStart = nextData.start;
+    }
+    if (!task?.baselineFinish && !formData.baselineFinish && nextData.finish) {
+      nextData.baselineFinish = nextData.finish;
+    }
+
+    setFormData(nextData);
+  };
+
+  const handleDurationChange = (value: string) => {
+    const sanitizedValue = value.replace(',', '.');
+    const nextData = { ...formData, duration: sanitizedValue };
+    
+    if (nextData.start) {
+      const s = parseDateTime(nextData.start);
+      if (s && !isNaN(s.getTime())) {
+        const days = parseFloat(sanitizedValue);
+        if (!isNaN(days) && days >= 0) {
+          const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
+          nextData.finish = formatToDatetimeLocal(f);
+
+          if (!task?.baselineFinish && !formData.baselineFinish && nextData.finish) {
+            nextData.baselineFinish = nextData.finish;
+          }
+        }
+      }
+    }
+    setFormData(nextData);
+  };
+
+  const toggleDurationManual = () => {
+    setFormData(prev => ({ ...prev, durationManual: !prev.durationManual }));
+  };
+
+  return {
+    formData,
+    setFormData,
+    dateErrors,
+    setDateErrors,
+    nameRef,
+    currentProject,
+    resolvedPredecessors,
+    handlePredecessorChange,
+    handleApplyPredecessorDates,
+    handleDateChange,
+    handleDurationChange,
+    toggleDurationManual
+  };
+}
+
+
+// === FILE: src/hooks/taskModal/taskModalSaveService.ts ===
+import { doc, deleteField } from 'firebase/firestore';
+import { db, APP_ID, writeBatch } from '../../lib/firebase';
+import { addPendingUpdate } from '../../lib/syncQueue';
+import { undoManager } from '../../lib/undoManager';
+import { getPredecessorCodeUpdates, updatePredecessorsStrings, parsePredecessors, computeTaskCode, buildTaskNoMap, scheduleDependentTasks, splitPredecessors, calculateTaskDatesFromPredecessors } from '../../lib/ganttUtils';
+import { resolvePredecessorString, PredecessorContext } from '../../lib/predecessorMatchUtils';
+import { generateId, getDefaultDatetimeLocal, formatToDatetimeLocal, parseDateTime, isTaskBelongsToProject, normalizeDashes } from '../../lib/utils';
+import { syncProjectDatesByCode } from '../../lib/projectDatesService';
+import { saveTaskStateUnified } from '../../lib/taskStateService';
+import { useAppStore } from '../../store/useAppStore';
+import { Project, Task, AppUser } from '../../types';
+import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
+import { recordBatchDeltas } from '../../lib/deltaSyncService';
+import { createPatchDeltaItem } from '../../lib/deltaPatchService';
+import { isTaskBelongToSameParentScope } from '../../lib/parentHierarchyUtils';
+import { prepareMissingDelegationsForTasks } from '../../lib/taskImportService';
+
+export interface TaskSaveParams {
+  formData: Partial<Task>;
+  task: Task | null;
+  projects: Project[];
+  tasks: Task[];
+  cloudStatus: string;
+  currentUser: AppUser;
+  t: (key: string) => string;
+  setToast: (toast: any) => void;
+  onClose: () => void;
+  setIsSubmitting: (submitting: boolean) => void;
+}
+
+export async function executeTaskSave({
+  formData, task, projects, tasks, cloudStatus, currentUser, setToast, onClose, setIsSubmitting
+}: TaskSaveParams): Promise<boolean> {
+  const currentProject = projects.find(p => 
+    p.code === formData.projectCode &&
+    (String(p.year || '') === String(formData.projectYear || '') || (!p.year && !formData.projectYear)) &&
+    (String(p.store || '') === String(formData.projectStore || '') || (!p.store && !formData.projectStore))
+  );
+
+  if (!currentProject) {
+    useAppStore.getState().setToast({ title: "Notice", message: "Please select a valid project." });
+    setIsSubmitting(false);
+    return false;
+  }
+
+  const currentYear = (!isNaN(Number(currentProject?.year)) && currentProject?.year !== null && currentProject?.year !== '') 
+    ? Number(currentProject.year) 
+    : (formData.projectYear && !isNaN(Number(formData.projectYear)) ? Number(formData.projectYear) : new Date().getFullYear());
+
+  const targetPrjKey = buildCanonicalProjectKey(currentProject.code || formData.projectCode, currentProject.year || formData.projectYear, currentProject.store || formData.projectStore, projects);
+  const normFormName = normalizeTaskNameForComparison(formData.name, formData.projectCode || currentProject?.code);
+  const formTaskCode = formData.taskCodePhu ? String(formData.taskCodePhu).trim().toLowerCase() : '';
+
+  const isDuplicate = tasks.some(t => {
+    if (t.id === task?.id || t.isDeleted) return false;
+    if (!isTaskBelongsToProject(t, currentProject, projects)) return false;
+    if (t.name && String(t.name).trim().toLowerCase() === String(formData.name || '').trim().toLowerCase()) return true;
+    const tNorm = normalizeTaskNameForComparison(t.name);
+    if (normFormName && tNorm && normFormName === tNorm) return true;
+    if (formTaskCode && t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === formTaskCode) return true;
+    return false;
+  });
+
+  if (isDuplicate) {
+    setToast({ title: "Duplicate Task", message: `Task "${formData.name}" already exists in this project. Duplicate sub-tasks are not allowed.` });
+    setIsSubmitting(false);
+    return false;
+  }
+
+  let id = task ? task.id : `t_${Date.now()}_${generateId().substring(0, 8)}`;
+  if (id && id.startsWith('ts_')) {
+    let realTask = tasks.find(t => 
+      !t.id.startsWith('ts_') &&
+      t.projectCode === currentProject.code &&
+      (String(t.projectStore || '') === String(currentProject.store || '')) &&
+      (String(t.projectYear || '') === String(currentProject.year || '')) &&
+      ((task?.taskCodePhu && t.taskCodePhu === task.taskCodePhu) ||
+       (task?.name && t.name && t.name.trim().toLowerCase() === task.name.trim().toLowerCase()))
+    );
+    if (!realTask && currentProject?.code) {
+      try {
+        const { ensureProjectTasksLoaded } = await import('../../lib/taskStateService');
+        const sameIdentity = (x: Task) =>
+          String(x.projectStore || '').trim().toLowerCase() === String(currentProject.store || '').trim().toLowerCase() &&
+          String(x.projectYear ?? '').trim() === String(currentProject.year ?? '').trim();
+        const loaded: Task[] = await ensureProjectTasksLoaded(currentProject.code, {
+          projectId: currentProject.id,
+          store: currentProject.store,
+          year: currentProject.year,
+        });
+        const loadedSame = loaded.filter(sameIdentity);
+        if (loadedSame.length > 0) {
+          realTask = loadedSame.find(t =>
+            (task?.taskCodePhu && t.taskCodePhu === task.taskCodePhu) ||
+            (task?.name && t.name && t.name.trim().toLowerCase() === task.name.trim().toLowerCase())
+          );
+        }
+      } catch (err) {
+        console.warn("Failed to find real task for ts_ in local/cache:", err);
+      }
+    }
+    if (realTask) {
+      id = realTask.id;
+    } else {
+      id = `t_${Date.now()}_${generateId().substring(0, 8)}`;
+    }
+  }
+  let newOrderIndex = task?.orderIndex;
+  
+  if (!task) {
+    const existingProjectTasks = tasks.filter(t => 
+      t.projectCode === currentProject.code && 
+      (String(t.projectYear || '') === String(currentProject.year || '') || (!t.projectYear && !currentProject.year)) &&
+      (String(t.projectStore || '') === String(currentProject.store || '') || (!t.projectStore && !currentProject.store))
+    );
+    let maxOrder = 0;
+    existingProjectTasks.forEach(t => {
+      const order = t.orderIndex !== undefined ? t.orderIndex : 0;
+      if (order > maxOrder) maxOrder = order;
+    });
+    newOrderIndex = maxOrder + 1;
+  }
+
+  if (formData.predecessor !== undefined && (!task || formData.predecessor !== task.predecessor)) {
+    if (formData.predecessor) {
+      const normPred = normalizeDashes(formData.predecessor);
+      const predContext: PredecessorContext = {
+        projectId: formData.projectId || task?.projectId || currentProject?.id,
+        projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
+        projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
+        projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
+        projectLocation: formData.location || task?.location || currentProject?.location
+      };
+      formData.predecessor = resolvePredecessorString(normPred, tasks, projects, formData.projectCode, predContext, formData.predecessorTaskIds);
+      let taskNoMap = buildTaskNoMap(projects, tasks);
+      let parts = splitPredecessors(formData.predecessor, taskNoMap);
+      if (parts.length >= 2) {
+        if (!/FF|SF/i.test(parts[1])) {
+          if (!/SS|FS/i.test(parts[1])) parts[1] += "FF";
+          else parts[1] = parts[1].replace(/SS|FS/ig, "FF");
+        }
+        formData.predecessor = parts.join(", ");
+      }
+
+      const dummyTask: any = {
+        projectId: formData.projectId || task?.projectId || currentProject?.id,
+        projectCode: formData.projectCode || task?.projectCode || currentProject?.code,
+        projectYear: formData.projectYear || task?.projectYear || currentProject?.year,
+        projectStore: formData.projectStore || task?.projectStore || currentProject?.store,
+        location: formData.location || task?.location || currentProject?.location
+      };
+      let parsed = parsePredecessors(formData.predecessor, taskNoMap, dummyTask);
+
+      if (formData.predecessor.trim() && (!parsed.length || parsed.some((p: any) => !p.task))) {
+        for (const token of parts) {
+          const cleanToken = normalizeDashes(token).replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
+          const cleanTokenLower = cleanToken.toLowerCase();
+          const matchedProj = projects.find(
+            (p) =>
+              p.code &&
+              cleanTokenLower.startsWith(normalizeDashes(p.code).toLowerCase())
+          );
+          if (matchedProj && (matchedProj.id !== dummyTask.projectId || matchedProj.code !== dummyTask.projectCode)) {
+            const { ensureProjectTasksLoaded } = await import('../../lib/taskStateService');
+            const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
+              projectId: matchedProj.id,
+              store: matchedProj.store,
+              year: matchedProj.year,
+            });
+            if (loaded.length > 0) {
+              tasks = useAppStore.getState().tasks || tasks;
+              taskNoMap = buildTaskNoMap(projects, tasks);
+              parsed = parsePredecessors(formData.predecessor, taskNoMap, dummyTask);
+            }
+          }
+        }
+      }
+
+      if (parsed.length >= 2) formData.durationManual = false;
+      const calcResult = calculateTaskDatesFromPredecessors(formData, parsed);
+      if (calcResult) {
+        formData.start = calcResult.start;
+        formData.finish = calcResult.finish;
+        formData.duration = calcResult.duration;
+        formData.durationManual = calcResult.durationManual;
+      }
+    }
+  }
+
+  try {
+    const todayDate = getDefaultDatetimeLocal();
+    let finalFormData = { ...formData };
+    finalFormData.start = finalFormData.start || todayDate;
+    finalFormData.finish = finalFormData.finish || finalFormData.start || todayDate;
+    finalFormData.baselineStart = finalFormData.baselineStart || finalFormData.start || todayDate;
+    finalFormData.baselineFinish = finalFormData.baselineFinish || finalFormData.finish || todayDate;
+    finalFormData.duration = (finalFormData.duration === undefined || finalFormData.duration === null || String(finalFormData.duration).trim() === '') ? "0" : String(finalFormData.duration);
+    if (parseFloat(finalFormData.duration) < 0) {
+      finalFormData.duration = "0";
+      finalFormData.finish = finalFormData.start;
+    }
+    if (finalFormData.durationManual ?? true) {
+      finalFormData.durationManual = true;
+      if (finalFormData.start && finalFormData.duration !== '') {
+        const s = parseDateTime(finalFormData.start);
+        const days = parseFloat(finalFormData.duration);
+        if (s && !isNaN(s.getTime()) && !isNaN(days)) {
+          finalFormData.finish = formatToDatetimeLocal(new Date(s.getTime() + days * 86400000));
+        }
+      }
+    }
+    if (!finalFormData.party) finalFormData.party = currentProject?.party || 'Takashimaya';
+
+    if (cloudStatus === 'offline') {
+      let payload: any = {
+        ...finalFormData,
+        id,
+        projectId: finalFormData.projectId || task?.projectId || currentProject.id,
+        projectCode: finalFormData.projectCode || currentProject.code,
+        projectStore: finalFormData.projectStore || currentProject.store,
+        projectYear: Number(currentYear) || new Date().getFullYear(),
+        comments: task?.comments || finalFormData.comments || [],
+        updatedAt: new Date().toISOString(),
+        orderIndex: newOrderIndex
+      };
+      delete payload._isVirtualSummary;
+      addPendingUpdate({ collectionPath: `artifacts/${APP_ID}/public/data/taka_tasks`, action: 'set', docId: id, data: payload } as any);
+      setToast({ title: 'Draft Saved', message: 'Task saved offline. Will sync when connection returns.' });
+      onClose();
+      setIsSubmitting(false);
+      return true;
+    }
+    
+    let dataToSave: any = {
+      ...finalFormData,
+      id,
+      projectId: finalFormData.projectId || task?.projectId || currentProject.id,
+      projectCode: finalFormData.projectCode || currentProject.code,
+      projectStore: finalFormData.projectStore || currentProject.store,
+      projectYear: Number(currentYear) || new Date().getFullYear(),
+      comments: task?.comments || finalFormData.comments || [],
+      updatedAt: new Date().toISOString(),
+      orderIndex: newOrderIndex
+    };
+    delete dataToSave._isVirtualSummary;
+
+    dataToSave.realtimeUpdate = Boolean(dataToSave.predecessor && dataToSave.predecessor.trim());
+
+    // Explicitly delete fields from Firestore if unlinked or cleared
+    if (task?.parentTaskId && !finalFormData.parentTaskId) {
+      dataToSave.parentTaskId = deleteField();
+      dataToSave.parentId = null;
+    } else if (finalFormData.parentTaskId) {
+      const parentTask = tasks.find(t => String(t.id) === String(finalFormData.parentTaskId) || (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === String(finalFormData.parentTaskId).trim().toLowerCase()));
+      if (parentTask && isTaskBelongToSameParentScope(dataToSave, parentTask)) {
+        dataToSave.parentTaskId = String(parentTask.id);
+        dataToSave.parentId = String(parentTask.id);
+        dataToSave.projectId = dataToSave.projectId || parentTask.projectId;
+        dataToSave.projectStore = dataToSave.projectStore || parentTask.projectStore;
+        dataToSave.projectYear = dataToSave.projectYear !== undefined ? dataToSave.projectYear : parentTask.projectYear;
+        dataToSave.projectCode = dataToSave.projectCode || parentTask.projectCode;
+      } else if (parentTask && !isTaskBelongToSameParentScope(dataToSave, parentTask)) {
+        delete dataToSave.parentTaskId;
+        delete dataToSave.parentId;
+      }
+    }
+    if (task?.taskCodePhu && (!finalFormData.taskCodePhu || !finalFormData.taskCodePhu.trim())) {
+      dataToSave.taskCodePhu = deleteField();
+    }
+
+    Object.keys(dataToSave).forEach(key => {
+      if ((dataToSave as any)[key] === undefined) {
+        delete (dataToSave as any)[key];
+      }
+    });
+
+    // 1. Close modal INSTANTLY (0ms UI lag) & update primary task in Zustand immediately
+    onClose();
+    setIsSubmitting(false);
+    useAppStore.getState().optimisticUpdateTasks([dataToSave]);
+
+    // 2. Offload heavy dependent cascades, predecessor string re-indexing, Dexie persistence, and Firestore batch commit to background microtask
+    setTimeout(async () => {
+      let depUpdates: Task[] = [];
+      let predecessorUpdates: any[] = [];
+      const predecessorUpdatesMap = new Map<string, any>();
+      const mappedDepUpdates = new Set<string>();
+      let optimisticList: any[] = [dataToSave];
+
+      try {
+        const didCodeOrOrderChange = Boolean(
+          task &&
+          (String(task.taskCodePhu || '').trim() !== String(dataToSave.taskCodePhu || '').trim() ||
+            task.orderIndex !== dataToSave.orderIndex ||
+            task.projectCode !== dataToSave.projectCode ||
+            task.parentTaskId !== dataToSave.parentTaskId)
+        );
+
+        const didScheduleChange = Boolean(
+          !task ||
+          task.start !== dataToSave.start ||
+          task.finish !== dataToSave.finish ||
+          String(task.duration || '') !== String(dataToSave.duration || '') ||
+          String(task.predecessor || '').trim() !== String(dataToSave.predecessor || '').trim() ||
+          Boolean(task.realtimeUpdate) !== Boolean(dataToSave.realtimeUpdate)
+        );
+
+        if (didCodeOrOrderChange) {
+          const oldTaskNoMap = buildTaskNoMap(projects, tasks);
+          const newTasksForMap = task
+            ? tasks.map(t => (t.id === id ? (dataToSave as Task) : t))
+            : [...tasks, dataToSave as Task];
+          const newTaskNoMap = buildTaskNoMap(projects, newTasksForMap);
+          const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, projects, newTasksForMap);
+
+          if (task) {
+            const oldCode = (task.taskCodePhu || computeTaskCode([currentProject], tasks, task)).trim();
+            const newCode = (dataToSave.taskCodePhu || computeTaskCode([currentProject], newTasksForMap, dataToSave as Task)).trim();
+            if (oldCode && newCode && oldCode.toLowerCase() !== newCode.toLowerCase()) {
+              oldCodeToNewCode.set(oldCode.toLowerCase(), newCode);
+            }
+          }
+
+          if (oldCodeToNewCode.size > 0) {
+            const predecessorUpdatesOrig = updatePredecessorsStrings(oldCodeToNewCode, tasks, projects, oldTaskNoMap);
+            predecessorUpdates = predecessorUpdatesOrig.filter(pu => pu.id !== id);
+            predecessorUpdates.forEach(pu => predecessorUpdatesMap.set(pu.id, pu));
+          }
+        }
+
+        if (didScheduleChange || didCodeOrOrderChange) {
+          const updatesToDependents = scheduleDependentTasks(dataToSave as Task, tasks, projects);
+          const scheduledUpdatedTask = updatesToDependents.find(d => d.id === dataToSave.id);
+          if (scheduledUpdatedTask) {
+            dataToSave = { ...(scheduledUpdatedTask as any) };
+            delete dataToSave._isVirtualSummary;
+            optimisticList[0] = dataToSave;
+          }
+          depUpdates = updatesToDependents.filter(d => d.id !== id);
+        }
+
+        const batch = writeBatch(db);
+        batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), dataToSave, { merge: true });
+        const { newDelegations } = dataToSave.delegation
+          ? prepareMissingDelegationsForTasks([dataToSave as Task], currentUser)
+          : { newDelegations: [] };
+        newDelegations.forEach((delGroup) => {
+          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', delGroup.id), delGroup, { merge: true });
+        });
+
+        depUpdates.forEach(depTask => {
+          const depProj = projects.find(p => p.code === depTask.projectCode);
+          const depYear = (depTask.projectYear !== undefined && depTask.projectYear !== null && !isNaN(Number(depTask.projectYear)))
+            ? Number(depTask.projectYear)
+            : (depProj?.year && !isNaN(Number(depProj.year)) ? Number(depProj.year) : new Date().getFullYear());
+          const pu = predecessorUpdatesMap.get(depTask.id);
+          const data: any = pu
+            ? { ...depTask, projectYear: depYear, predecessor: pu.predecessor, updatedAt: new Date().toISOString() }
+            : { ...depTask, projectYear: depYear, updatedAt: new Date().toISOString() };
+          delete data._isVirtualSummary;
+          Object.keys(data).forEach(key => {
+            if ((data as any)[key] === undefined) {
+              delete (data as any)[key];
+            }
+          });
+          batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), data, { merge: true });
+          mappedDepUpdates.add(depTask.id);
+          optimisticList.push(data);
+        });
+
+        predecessorUpdates.forEach(pu => {
+          if (!mappedDepUpdates.has(pu.id)) {
+            batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), { predecessor: pu.predecessor, updatedAt: pu.updatedAt }, { merge: true });
+            optimisticList.push({ id: pu.id, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+          }
+        });
+
+        if (optimisticList.length > 1) {
+          useAppStore.getState().optimisticUpdateTasks(optimisticList);
+        }
+
+        if (newDelegations.length > 0) {
+          import('../../lib/localDb').then(({ bulkPersistDelegations }) => bulkPersistDelegations(newDelegations)).catch(() => {});
+        }
+        const deltaItems = optimisticList.map(item => {
+          const prev = tasks.find(t => t.id === item.id);
+          return createPatchDeltaItem({
+            docId: item.id,
+            collectionName: 'taka_tasks',
+            previous: prev,
+            updated: item,
+            action: prev ? 'update' : 'create',
+            year: item.projectYear ? String(item.projectYear) : (task?.projectYear ? String(task.projectYear) : undefined),
+          });
+        });
+        newDelegations.forEach((delGroup) => {
+          deltaItems.push({
+            docId: delGroup.id,
+            collectionName: 'taka_delegations',
+            action: 'create',
+            isPatch: false,
+            data: delGroup,
+            year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
+            projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
+            projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
+            projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
+          });
+        });
+        const { markExplicitDelta } = await import('../../lib/autoDeltaQueue');
+        markExplicitDelta(deltaItems);
+        await Promise.all([
+          batch.commit(),
+          saveTaskStateUnified(optimisticList, { syncProjects: true }).catch(() => {}),
+        ]);
+        recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
+
+        // If task moved from an older project/store/year, also resync the previous project's taskSummaries
+        if (
+          task &&
+          (task.projectId !== dataToSave.projectId ||
+            task.projectCode !== dataToSave.projectCode ||
+            task.projectStore !== dataToSave.projectStore ||
+            task.projectYear !== dataToSave.projectYear)
+        ) {
+          const allTasksCurrent = useAppStore.getState().tasks;
+          const oldProjId = task.projectId ? String(task.projectId) : undefined;
+          syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent, oldProjId);
+        }
+
+        undoManager.push({
+          description: task ? `Update Task: ${formData.name}` : `Create Task: ${formData.name}`,
+          revert: async () => {
+            const revertBatch = writeBatch(db);
+            if (task) {
+              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), { ...task, updatedAt: new Date().toISOString() });
+            } else {
+              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), { isDeleted: true, updatedAt: new Date().toISOString() }, { merge: true });
+            }
+            depUpdates.forEach(depTask => {
+              const originalDep = tasks.find(tsk => tsk.id === depTask.id);
+              if (originalDep) {
+                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), originalDep);
+              }
+            });
+            predecessorUpdates.forEach(pu => {
+              if (!mappedDepUpdates.has(pu.id)) {
+                const originalTask = tasks.find(tk => tk.id === pu.id);
+                if (originalTask) {
+                  revertBatch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', originalTask.id), { predecessor: originalTask.predecessor || '' });
+                }
+              }
+            });
+            revertBatch.commit().catch(console.error);
+          }
+        });
+      } catch (error: any) {
+        console.error("Background task save failed:", error);
+        optimisticList.forEach(item => {
+          addPendingUpdate({
+            collectionPath: `artifacts/${APP_ID}/public/data/taka_tasks`,
+            action: 'set',
+            docId: item.id,
+            data: item
+          } as any);
+        });
+        useAppStore.getState().setToast({ title: "Offline Saved", message: "Saved to offline queue. Will sync when connection is restored.", type: "warning" });
+      }
+    }, 0);
+
+    return true;
+  } catch (e: any) { 
+    console.error(e); 
+    useAppStore.getState().setToast({ title: "Notice", message: String(e.message || "An error occurred while saving the task.") });
+    setIsSubmitting(false);
+    return false;
+  }
+}
+
+
+// === FILE: src/components/ProjectModalParts/useProjectModalData.ts ===
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Project } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { useEnrichedData } from '../../hooks/useEnrichedData';
+import { enrichProjects } from '../../lib/utils';
+import { doc } from 'firebase/firestore';
+import { setDoc } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import { bumpConfigVersion } from '../../lib/configCacheService';
+import { getLinkCodesValidationError } from './projectModalTypes';
+import { useProjectModalMutations } from './useProjectModalMutations';
+import { hydrateDelegationsForProjects, hydrateDelegationsFromLocal, hydrateTasksForProjects } from '../../lib/backgroundSyncWorker';
+import { ensureProjectTasksLoaded } from '../../lib/taskStateService';
+import { resolveMatchedUnitSizeM2 } from '../../lib/unitSizeResolver';
+import { useDataStore } from '../PictureMapping/DataContext';
+
+interface UseProjectModalDataParams {
+  isOpen: boolean;
+  onClose: () => void;
+  project: Project | null;
+  isReadOnly?: boolean;
+  initialTab?: 'details' | 'chat' | 'delegation';
+}
+
+export function useProjectModalData({
+  isOpen,
+  onClose,
+  project,
+  isReadOnly = false,
+  initialTab = 'details'
+}: UseProjectModalDataParams) {
+  const { enrichedProjects: projects, filteredTasks: tasks, visibleDelegationGroups: delegationGroups } = useEnrichedData();
+  const currentUser = useAppStore(state => state.currentUser)!;
+  const locations = useAppStore(state => state.locations);
+  const parties = useAppStore(state => state.parties);
+  const appUsers = useAppStore(state => state.appUsers);
+  const subAppUsers = useAppStore(state => state.subAppUsers);
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const mapUnits = useDataStore(state => state.mapUnits);
+  const mapVersions = useDataStore(state => state.mapVersions);
+  const storeLocationData = useDataStore(state => state.storeLocationData);
+
+  const [activeTab, setActiveTab] = useState<'details' | 'chat' | 'delegation'>(initialTab);
+  const [isAddingLocation, setIsAddingLocation] = useState(false);
+  const [newLocation, setNewLocation] = useState("");
+  const yearRef = useRef<HTMLInputElement>(null);
+  const lastAutoUnitSizeRef = useRef<number | undefined>(undefined);
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  // JIT Targeted Local-First Task & Delegation Hydration for Project (0ms, 0 Read - Rule 8)
+  useEffect(() => {
+    if (isOpen && project) {
+      const keys = [project.id, project.code].filter(Boolean) as string[];
+      if (keys.length > 0) {
+        hydrateTasksForProjects(keys, project.year, project.store).catch(() => {});
+        hydrateDelegationsForProjects(keys, project.year, project.store).catch(() => {});
+      }
+    }
+  }, [isOpen, project?.id, project?.code, project?.year, project?.store]);
+
+  // Tri-Gate Lazy Loading: Activate delegation pipeline if user selects delegation tab
+  useEffect(() => {
+    if (isOpen && activeTab === 'delegation') {
+      const { isDelegationsRequested, setIsDelegationsRequested, delegationGroups: currentGroups } = useAppStore.getState();
+      if (!isDelegationsRequested) {
+        setIsDelegationsRequested(true);
+      }
+      if (!currentGroups || currentGroups.length === 0) {
+        hydrateDelegationsFromLocal().catch(() => {});
+      }
+    }
+  }, [isOpen, activeTab]);
+
+  const [formData, setFormData] = useState<Partial<Project>>({
+    store: 'HCM',
+    location: '',
+    year: new Date().getFullYear(),
+    code: '',
+    name: '',
+    shopType: '',
+    party: '',
+    detail: '',
+    startMode: 'auto',
+    handoverMode: 'auto',
+    openingMode: 'auto'
+  });
+
+  const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
+  const canWrite = !isReadOnly && (currentUser?.role === 'admin' || currentUser?.canWrite) && !isArchiveYear;
+
+  const enrichedProject = useMemo(
+    () => (project ? enrichProjects([project], tasks)[0] : null),
+    [project, tasks]
+  );
+
+  const linkCodesError = useMemo(() => {
+    const rawLink = formData.linkCodes !== undefined ? String(formData.linkCodes) : String(formData.code || '');
+    return getLinkCodesValidationError(rawLink, String(formData.code || ''), project?.id, projects, formData.year, formData.store);
+  }, [formData.linkCodes, formData.code, formData.year, formData.store, project?.id, projects]);
+
+  const matchedUnitSizeInfo = useMemo(() => {
+    return resolveMatchedUnitSizeM2({
+      code: formData.code,
+      linkCodes: formData.linkCodes,
+      store: formData.store,
+      location: formData.location,
+      year: formData.year,
+    });
+  }, [formData.code, formData.linkCodes, formData.store, formData.location, formData.year, mapUnits, mapVersions, storeLocationData]);
+
+  const { isSubmitting, handleSubmit, handleDelete } = useProjectModalMutations({
+    project,
+    formData,
+    canWrite,
+    projects,
+    tasks,
+    linkCodesError,
+    enrichedProject,
+    onClose,
+    setConfirmModal
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (confirmModal.isOpen) return;
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, confirmModal.isOpen]);
+
+  useEffect(() => {
+    if (project) {
+      const autoMatched = resolveMatchedUnitSizeM2({
+        code: project.code,
+        linkCodes: project.linkCodes ?? project.code,
+        store: project.store,
+        location: project.location,
+        year: project.year,
+      });
+      const initialSize =
+        project.sizeM2 !== undefined && project.sizeM2 !== null && project.sizeM2 > 0
+          ? project.sizeM2
+          : autoMatched.sizeM2;
+      lastAutoUnitSizeRef.current = autoMatched.sizeM2;
+      setFormData({
+        ...project,
+        linkCodes: project.linkCodes ?? project.code ?? '',
+        ...(initialSize !== undefined ? { sizeM2: initialSize } : {}),
+      });
+    } else {
+      lastAutoUnitSizeRef.current = undefined;
+      let defaultStore = 'HCM';
+      if (currentUser?.role !== 'admin') {
+        const allowedStores: string[] = [];
+        if (currentUser?.storePermissions?.hcm) allowedStores.push('HCM');
+        if (currentUser?.storePermissions?.hn) allowedStores.push('HN');
+        if (allowedStores.length === 1) {
+          defaultStore = allowedStores[0];
+        } else {
+          defaultStore = '';
+        }
+      }
+
+      let defaultLocation = '';
+      if (currentUser?.role !== 'admin' && currentUser?.locationPermissions) {
+        if (currentUser.locationPermissions['all']) {
+          defaultLocation = '';
+        } else {
+          const allowedLocs = Object.entries(currentUser.locationPermissions)
+            .filter(([_, allowed]) => allowed)
+            .map(([loc]) => loc);
+
+          if (allowedLocs.length === 1) {
+            const matched = locations.find(l => l.toLowerCase() === allowedLocs[0]);
+            defaultLocation = matched || allowedLocs[0];
+          } else {
+            defaultLocation = '';
+          }
+        }
+      }
+
+      setFormData({
+        store: defaultStore,
+        location: defaultLocation,
+        year: new Date().getFullYear(),
+        code: '',
+        linkCodes: '',
+        name: '',
+        shopType: '',
+        party: '',
+        detail: '',
+        startMode: 'auto',
+        handoverMode: 'auto',
+        openingMode: 'auto'
+      });
+    }
+  }, [project, isOpen, currentUser, locations]);
+
+  // Auto-sync Size (m²) from matched Picture Mapping unit(s) for the selected version/year
+  useEffect(() => {
+    if (!isOpen) return;
+    const nextAutoSize = matchedUnitSizeInfo.sizeM2;
+    if (nextAutoSize !== undefined && nextAutoSize > 0) {
+      setFormData(prev => {
+        const cur = prev.sizeM2;
+        if (cur === undefined || cur === null || cur === 0 || cur === lastAutoUnitSizeRef.current) {
+          lastAutoUnitSizeRef.current = nextAutoSize;
+          if (cur === nextAutoSize) return prev;
+          return { ...prev, sizeM2: nextAutoSize };
+        }
+        return prev;
+      });
+    }
+  }, [isOpen, matchedUnitSizeInfo.sizeM2]);
+
+  const handleAddNewLocation = async () => {
+    if (!newLocation.trim()) {
+      setIsAddingLocation(false);
+      return;
+    }
+    const locName = newLocation.trim();
+    if (!locations.includes(locName)) {
+      const newLocs = [...locations, locName];
+      useAppStore.getState().setLocations(newLocs);
+      try {
+        setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "locations"), { list: newLocs }, { merge: true });
+        bumpConfigVersion('locations');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    setFormData(prev => ({ ...prev, location: locName }));
+    setIsAddingLocation(false);
+    setNewLocation('');
+  };
+
+  return {
+    projects,
+    tasks,
+    delegationGroups,
+    currentUser,
+    locations,
+    parties,
+    appUsers,
+    subAppUsers,
+    activeTab,
+    setActiveTab,
+    isSubmitting,
+    isAddingLocation,
+    setIsAddingLocation,
+    newLocation,
+    setNewLocation,
+    formData,
+    setFormData,
+    canWrite,
+    enrichedProject,
+    linkCodesError,
+    confirmModal,
+    setConfirmModal,
+    yearRef,
+    matchedUnitSizeInfo,
+    handleAddNewLocation,
+    handleSubmit,
+    handleDelete
+  };
+}
+
+
+// === FILE: src/components/ProjectDelegationTab.tsx ===
+import React, { useState, useMemo, useCallback, useEffect } from "react";
+import { useLanguage } from "../lib/LanguageContext";
+import { Project, Task, AppUser, DelegationGroup } from '../types';
+import { computeTaskCode } from '../lib/ganttUtils';
+import { isTaskBelongsToProject, isDelegationGroupBelongsToProject } from '../lib/utils';
+import { doc } from 'firebase/firestore';
+import { deleteDoc, setDoc } from '../lib/firestoreWrites';
+import { db, APP_ID } from "../lib/firebase";
+import { useAppStore } from "../store/useAppStore";
+import { Search, ChevronDown } from 'lucide-react';
+import { DebouncedSearchInput } from './DebouncedSearchInput';
+import { ProjectDelegationGroupCard } from './ProjectModalParts/ProjectDelegationGroupCard';
+
+interface ProjectDelegationTabProps {
+  tasks: Task[];
+  projects: Project[];
+  delegationGroups: DelegationGroup[];
+  currentUser: AppUser;
+  appUsers: AppUser[];
+  project: Project;
+  onInsertTaskTag?: (tagName: string) => void;
+  setConfirmModal?: (modal: {isOpen: boolean, title: string, message: string, onConfirm: () => void}) => void;
+}
+
+const INITIAL_VISIBLE_GROUPS = 20;
+const LOAD_MORE_STEP = 25;
+
+export const ProjectDelegationTab = React.memo(function ProjectDelegationTab({
+  project,
+  tasks,
+  projects,
+  delegationGroups,
+  currentUser,
+  appUsers,
+  onInsertTaskTag,
+  setConfirmModal
+}: ProjectDelegationTabProps) {
+  const { t } = useLanguage();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_GROUPS);
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_GROUPS);
+  }, [project?.id, project?.code, searchQuery]);
+
+  // Pre-index tasks belonging strictly to this project in O(1) Maps
+  const { projectTasks, projectTaskIds, projectTaskCodePhuSet, taskByIdMap, taskByCodePhuMap } = useMemo(() => {
+    const pTasks: Task[] = [];
+    const pTaskIds = new Set<string>();
+    const pTaskCodePhuSet = new Set<string>();
+    const byId = new Map<string, Task>();
+    const byCodePhu = new Map<string, Task>();
+
+    if (project) {
+      for (let i = 0; i < tasks.length; i++) {
+        const tsk = tasks[i];
+        if (!tsk || tsk.isDeleted) continue;
+        if (!isTaskBelongsToProject(tsk, project)) continue;
+        pTasks.push(tsk);
+        if (tsk.id) {
+          pTaskIds.add(tsk.id);
+          byId.set(tsk.id, tsk);
+        }
+        if (tsk.taskCodePhu) {
+          const lower = String(tsk.taskCodePhu).trim().toLowerCase();
+          pTaskCodePhuSet.add(lower);
+          byCodePhu.set(lower, tsk);
+        }
+      }
+    }
+
+    return {
+      projectTasks: pTasks,
+      projectTaskIds: pTaskIds,
+      projectTaskCodePhuSet: pTaskCodePhuSet,
+      taskByIdMap: byId,
+      taskByCodePhuMap: byCodePhu
+    };
+  }, [tasks, project]);
+
+  const handleDeleteGroup = useCallback(async (group: DelegationGroup) => {
+    const doDelete = async () => {
+      // 0ms Optimistic UI update
+      const state = useAppStore.getState();
+      state.setDelegationGroups(state.delegationGroups.filter(g => g.id !== group.id));
+      deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', group.id));
+      if (group.parentTaskId) {
+        const parentTask = taskByIdMap.get(group.parentTaskId) || tasks.find(t => t.id === group.parentTaskId);
+        if (parentTask) {
+          const updatedTask = { ...parentTask, delegation: false, updatedAt: new Date().toISOString() };
+          state.optimisticUpdateTasks([updatedTask]);
+          setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', parentTask.id), updatedTask, { merge: true });
+        }
+      }
+    };
+
+    if (setConfirmModal) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'Delete Delegation Group',
+        message: 'Delete this delegation group?',
+        onConfirm: doDelete
+      });
+    } else {
+      doDelete();
+    }
+  }, [setConfirmModal, taskByIdMap, tasks]);
+
+  const handleDeleteSubTask = useCallback(async (group: DelegationGroup, subTaskId: string) => {
+    const doDelete = async () => {
+      const state = useAppStore.getState();
+      const updatedSubTasks = (group.subTasks || []).filter(st => st.id !== subTaskId);
+      if (updatedSubTasks.length === 0) {
+        state.setDelegationGroups(state.delegationGroups.filter(g => g.id !== group.id));
+        deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', group.id));
+        if (group.parentTaskId) {
+          const parentTask = taskByIdMap.get(group.parentTaskId) || tasks.find(t => t.id === group.parentTaskId);
+          if (parentTask) {
+            const updatedTask = { ...parentTask, delegation: false, updatedAt: new Date().toISOString() };
+            state.optimisticUpdateTasks([updatedTask]);
+            setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', parentTask.id), updatedTask, { merge: true });
+          }
+        }
+      } else {
+        const fallbackYear = (group.projectYear !== undefined && group.projectYear !== null && !isNaN(Number(group.projectYear)))
+          ? Number(group.projectYear)
+          : (project?.year && !isNaN(Number(project.year)) ? Number(project.year) : new Date().getFullYear());
+        const updatedGroup = JSON.parse(JSON.stringify({
+          ...group,
+          projectYear: fallbackYear,
+          subTasks: updatedSubTasks,
+          updatedAt: new Date().toISOString()
+        }));
+        state.setDelegationGroups(state.delegationGroups.map(g => g.id === group.id ? updatedGroup : g));
+        setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', group.id), updatedGroup, { merge: true });
+      }
+    };
+
+    if (setConfirmModal) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'Delete Delegation Task',
+        message: 'Delete this delegation sub-task?',
+        onConfirm: doDelete
+      });
+    } else {
+      doDelete();
+    }
+  }, [setConfirmModal, taskByIdMap, tasks, project?.year]);
+
+  const projectGroups = useMemo(() => {
+    if (!project) return [];
+
+    const scopedProjects = [project];
+    const codeCache = new Map<string, string>();
+    const getCachedTaskCode = (t: Task): string => {
+      if (t.taskCodePhu) return t.taskCodePhu;
+      const cached = codeCache.get(t.id);
+      if (cached !== undefined) return cached;
+      const computed = computeTaskCode(scopedProjects, projectTasks, t);
+      codeCache.set(t.id, computed);
+      return computed;
+    };
+
+    return (delegationGroups || []).filter(g => {
+      if (!g || g.isDeleted) return false;
+
+      const gParentTaskId = String(g.parentTaskId || '').trim();
+      const gParentTaskIdLower = gParentTaskId.toLowerCase();
+
+      // 1. Direct O(1) match with project's own tasks
+      if (gParentTaskId && projectTaskIds.has(gParentTaskId)) {
+        return true;
+      }
+
+      // 2. Match by taskCodePhu only if group does not belong to a conflicting year/store/projectId
+      if (gParentTaskIdLower && projectTaskCodePhuSet.has(gParentTaskIdLower)) {
+        if (isDelegationGroupBelongsToProject({ ...g, projectCode: g.projectCode || project.code }, project)) {
+          return true;
+        }
+      }
+
+      // 3. Direct match with project (verifying store, year, projectId, and projectCode)
+      if (isDelegationGroupBelongsToProject(g, project, projectTaskIds)) {
+        return true;
+      }
+
+      return false;
+    }).map(g => {
+      const gParentTaskId = String(g.parentTaskId || '').trim();
+      const gParentTaskIdLower = gParentTaskId.toLowerCase();
+      const parentTask =
+        taskByIdMap.get(gParentTaskId) ||
+        taskByCodePhuMap.get(gParentTaskIdLower) ||
+        null;
+      const isChildTask = parentTask ? Boolean(parentTask.parentTaskId) : false;
+      const rootParentTask = (isChildTask && parentTask?.parentTaskId)
+        ? (taskByIdMap.get(parentTask.parentTaskId) || null)
+        : null;
+      return {
+        ...g,
+        _parentTask: parentTask,
+        _taskCode: parentTask ? getCachedTaskCode(parentTask) : (g.projectCode || ''),
+        _taskName: parentTask?.name || g.name || 'Delegated Sub-tasks',
+        _isChildTask: isChildTask,
+        _parentTaskName: rootParentTask?.name || null
+      };
+    }).sort((a, b) => (a._taskCode || '').localeCompare(b._taskCode || '', undefined, { numeric: true, sensitivity: 'base' }));
+  }, [delegationGroups, project, projectTasks, projectTaskIds, projectTaskCodePhuSet, taskByIdMap, taskByCodePhuMap]);
+
+  const picOptions = useMemo(() => {
+    const list = new Set<string>();
+    (appUsers || []).forEach(u => u && u.username && list.add(u.username));
+    projectGroups.forEach(g => {
+       (g.subTasks || []).forEach(st => {
+         if (st && st.party) {
+           const parts = String(st.party).split(',').map(s => s.trim()).filter(Boolean);
+           parts.forEach(p => list.add(p));
+         }
+       });
+    });
+    return Array.from(list).sort((a,b) => a.localeCompare(b));
+  }, [appUsers, projectGroups]);
+
+  const filteredGroups = useMemo(() => {
+    if (!searchQuery.trim()) return projectGroups;
+    const lowerQuery = searchQuery.toLowerCase();
+    return projectGroups.filter(g => 
+      (g._taskName && g._taskName.toLowerCase().includes(lowerQuery)) ||
+      (g._taskCode && g._taskCode.toLowerCase().includes(lowerQuery))
+    );
+  }, [projectGroups, searchQuery]);
+
+  const visibleGroups = useMemo(
+    () => filteredGroups.slice(0, visibleCount),
+    [filteredGroups, visibleCount]
+  );
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    if (visibleCount >= filteredGroups.length) return;
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 280) {
+      setVisibleCount(prev => Math.min(filteredGroups.length, prev + LOAD_MORE_STEP));
+    }
+  }, [visibleCount, filteredGroups.length]);
+
+  return (
+    <div
+      onScroll={handleScroll}
+      className="flex flex-col flex-1 min-h-0 bg-slate-50 dark:bg-[#1e1e20]/50 relative overflow-y-auto p-4 md:p-6 pb-20 sm:pb-24 overscroll-contain"
+    >
+      <div className="relative w-full mb-4 flex-shrink-0">
+        <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-blue-500">
+          <Search className="w-4 h-4" />
+        </div>
+        <DebouncedSearchInput
+          placeholder="Search task name or code..."
+          value={searchQuery}
+          onChange={(val) => setSearchQuery(val)}
+          className="bg-blue-50 dark:bg-[#1e1e20] border border-blue-200 dark:border-blue-800/50 text-blue-900 dark:text-blue-100 text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block w-full pl-9 pr-10 p-2 outline-none shadow-sm placeholder:text-blue-400"
+        />
+      </div>
+      <datalist id="pic-list-modal-project">
+        {picOptions.map((u, i) => <option key={i} value={u} />)}
+      </datalist>
+
+      {filteredGroups.length === 0 ? (
+        <div className="text-center text-slate-500 py-10">{t("No delegated tasks for this project yet.") || "No delegated tasks for this project yet."}</div>
+      ) : (
+        <div className="flex flex-col gap-5">
+          {visibleGroups.map(linkedGroup => (
+            <ProjectDelegationGroupCard
+              key={linkedGroup.id}
+              linkedGroup={linkedGroup}
+              project={project}
+              tasks={projectTasks}
+              projects={projects}
+              currentUser={currentUser}
+              appUsers={appUsers}
+              picOptions={picOptions}
+              onInsertTaskTag={onInsertTaskTag}
+              handleDeleteGroup={handleDeleteGroup}
+              handleDeleteSubTask={handleDeleteSubTask}
+            />
+          ))}
+          {visibleCount < filteredGroups.length && (
+            <button
+              type="button"
+              onClick={() => setVisibleCount(prev => Math.min(filteredGroups.length, prev + LOAD_MORE_STEP))}
+              className="mx-auto my-2 flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/50 active:scale-95 touch-manipulation transition-all"
+            >
+              <ChevronDown className="w-4 h-4" />
+              Show More ({filteredGroups.length - visibleCount} remaining)
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+
+// === FILE: src/components/ProjectModalParts/ProjectDelegationGroupCard.tsx ===
+import React, { FC, memo } from 'react';
+import { Project, Task, AppUser, DelegationGroup } from '../../types';
+import { getTaskStatus, resolveActualStatus, cn, computeDelegationGroupProgressPercent } from '../../lib/utils';
+import { FileText, ExternalLink, Trash2 } from 'lucide-react';
+import { ProjectDelegationSubTaskItem } from './ProjectDelegationSubTaskItem';
+
+interface LinkedDelegationGroup extends DelegationGroup {
+  _parentTask?: Task | null;
+  _taskCode?: string;
+  _taskName?: string;
+  _isChildTask?: boolean;
+  _parentTaskName?: string | null;
+}
+
+interface ProjectDelegationGroupCardProps {
+  linkedGroup: LinkedDelegationGroup;
+  project: Project;
+  tasks: Task[];
+  projects: Project[];
+  currentUser: AppUser;
+  appUsers: AppUser[];
+  picOptions: string[];
+  onInsertTaskTag?: (tagName: string) => void;
+  handleDeleteGroup: (group: DelegationGroup) => Promise<void>;
+  handleDeleteSubTask: (group: DelegationGroup, subTaskId: string) => Promise<void>;
+}
+
+export const ProjectDelegationGroupCard: React.FC<ProjectDelegationGroupCardProps> = React.memo(({
+  linkedGroup,
+  project,
+  tasks,
+  projects,
+  currentUser,
+  appUsers,
+  picOptions,
+  onInsertTaskTag,
+  handleDeleteGroup,
+  handleDeleteSubTask,
+}) => {
+  const firstSt = linkedGroup.subTasks[0];
+  const flowTxtGroup = firstSt ? (firstSt.delegationStatus || firstSt.status || 'Assigned') : 'Assigned';
+  
+  const parentTask = linkedGroup._parentTask !== undefined ? linkedGroup._parentTask : tasks.find(t => t.id === linkedGroup.parentTaskId);
+  const planStatus = parentTask ? getTaskStatus(parentTask.start, parentTask.finish) : 'Upcoming';
+  const isRunning = planStatus === 'On process';
+  
+  let groupBgColor = 'bg-slate-50 dark:bg-slate-900/10 border-slate-200 dark:border-slate-800/50';
+  let groupHeaderBorder = 'border-slate-200 dark:border-slate-800/50';
+  let groupTitleColor = 'text-slate-900 dark:text-slate-100';
+  let groupIconColor = 'text-slate-600 dark:text-slate-400';
+  let groupSubTitleColor = 'text-slate-600 dark:text-slate-400';
+  let groupTrackerBtn = 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200';
+
+  if (flowTxtGroup === 'Completed') {
+    groupBgColor = 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/30';
+    groupHeaderBorder = 'border-green-200 dark:border-green-900/50';
+    groupTitleColor = 'text-green-900 dark:text-green-100';
+    groupIconColor = 'text-green-600 dark:text-green-400';
+    groupSubTitleColor = 'text-green-700 dark:text-green-300';
+    groupTrackerBtn = 'bg-green-100 dark:bg-green-800/50 hover:bg-green-200 dark:hover:bg-green-700 text-green-700 dark:text-green-200';
+  } else if (flowTxtGroup === 'On process' || flowTxtGroup === 'Accepted') {
+    groupBgColor = 'bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-900/30';
+    groupHeaderBorder = 'border-blue-200 dark:border-blue-900/50';
+    groupTitleColor = 'text-blue-900 dark:text-blue-100';
+    groupIconColor = 'text-blue-600 dark:text-blue-400';
+    groupSubTitleColor = 'text-blue-700 dark:text-blue-300';
+    groupTrackerBtn = 'bg-blue-100 dark:bg-blue-800/50 hover:bg-blue-200 dark:hover:bg-blue-700 text-blue-700 dark:text-blue-200';
+  } else if (flowTxtGroup === 'Pending completed' || flowTxtGroup === 'Pending Completed' || flowTxtGroup === 'Delayed' || ['requested', 'hold', 'waiting for approval'].includes(flowTxtGroup.toLowerCase())) {
+    groupBgColor = 'bg-orange-50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-900/30';
+    groupHeaderBorder = 'border-orange-200 dark:border-orange-900/50';
+    groupTitleColor = 'text-orange-900 dark:text-orange-100';
+    groupIconColor = 'text-orange-600 dark:text-orange-400';
+    groupSubTitleColor = 'text-orange-700 dark:text-orange-300';
+    groupTrackerBtn = 'bg-orange-100 dark:bg-orange-800/50 hover:bg-orange-200 dark:hover:bg-orange-700 text-orange-700 dark:text-orange-200';
+  } else if (flowTxtGroup === 'Approved' || flowTxtGroup === 'Rejected' || flowTxtGroup === 'Request Delay' || flowTxtGroup === 'Needs Rework') {
+    groupBgColor = 'bg-purple-50 dark:bg-purple-900/10 border-purple-200 dark:border-purple-900/30';
+    groupHeaderBorder = 'border-purple-200 dark:border-purple-900/50';
+    groupTitleColor = 'text-purple-900 dark:text-purple-100';
+    groupIconColor = 'text-purple-600 dark:text-purple-400';
+    groupSubTitleColor = 'text-purple-700 dark:text-purple-300';
+    groupTrackerBtn = 'bg-purple-100 dark:bg-purple-800/50 hover:bg-purple-200 dark:hover:bg-purple-700 text-purple-700 dark:text-purple-200';
+  } else if (flowTxtGroup === 'Assigned') {
+    groupBgColor = 'bg-orange-50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-900/30';
+    groupHeaderBorder = 'border-orange-200 dark:border-orange-900/50';
+    groupTitleColor = 'text-orange-900 dark:text-orange-100';
+    groupIconColor = 'text-orange-600 dark:text-orange-400';
+    groupSubTitleColor = 'text-orange-700 dark:text-orange-300';
+    groupTrackerBtn = 'bg-orange-100 dark:bg-orange-800/50 hover:bg-orange-200 dark:hover:bg-orange-700 text-orange-700 dark:text-orange-200';
+  }
+
+  const proStatus = planStatus || 'On process';
+  let proStatusColorClass = 'bg-amber-500 text-white dark:bg-amber-500 dark:text-white border-amber-400 font-extrabold';
+  if (proStatus === 'Completed') {
+    proStatusColorClass = 'bg-emerald-600 text-white dark:bg-emerald-600 dark:text-white border-emerald-500 font-extrabold';
+  } else if (proStatus === 'Upcoming') {
+    proStatusColorClass = 'bg-slate-500 text-white dark:bg-slate-600 dark:text-white border-slate-400 font-extrabold';
+  } else if (proStatus === 'Delay') {
+    proStatusColorClass = 'bg-rose-600 text-white dark:bg-rose-600 dark:text-white border-rose-500 font-extrabold';
+  }
+  const actualStatus = resolveActualStatus(planStatus, linkedGroup.subTasks);
+
+  return (
+    <div className={cn("p-4 border rounded-xl shadow-sm transition-all duration-500", groupBgColor, isRunning ? "ring-2 ring-blue-500 dark:ring-blue-400 shadow-md" : "")}>
+      <div className={cn("flex items-center justify-between mb-3 border-b pb-2", groupHeaderBorder)}>
+        <div className="flex flex-col">
+          <h4 className={cn("text-sm font-bold flex items-center gap-2", groupTitleColor)}>
+            <FileText className={cn("w-4 h-4", groupIconColor)} />
+            <span>{linkedGroup._taskName || linkedGroup.name || 'Delegated Sub-tasks'}</span>
+            {linkedGroup._isChildTask && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-700 font-mono">
+                ↳ SUB {linkedGroup._parentTaskName ? `(Cha: ${linkedGroup._parentTaskName})` : ''}
+              </span>
+            )}
+          </h4>
+          <span className={cn("text-[10px] font-mono mt-1", groupSubTitleColor)}>Task Code: {linkedGroup._taskCode}</span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border font-bold whitespace-nowrap shadow-2xs ${proStatusColorClass}`}>
+              Pro: {proStatus}
+            </span>
+            <span className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-bold border whitespace-nowrap shadow-2xs ${actualStatus.color}`}>
+              Act: {actualStatus.label} ({computeDelegationGroupProgressPercent(linkedGroup)}%)
+            </span>
+          </div>
+          <a
+            href={`https://tracker.taka-pm.org/?search=${encodeURIComponent((linkedGroup.projectCode ? linkedGroup.projectCode + ' ' : '') + linkedGroup.name)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className={cn("flex items-center gap-1.5 text-xs px-2 py-1 rounded-full font-bold transition-colors shrink-0", groupTrackerBtn)}
+            title="Open Tracker & Search"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            Tracker
+          </a>
+          {(currentUser.role === 'admin' || linkedGroup.createdBy === currentUser.id) && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleDeleteGroup(linkedGroup); }}
+              className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-full font-bold transition-colors shrink-0 bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
+              title="Delete Delegation Group"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-2 mt-3">
+        {linkedGroup.subTasks.map((st) => (
+          <ProjectDelegationSubTaskItem
+            key={st.id}
+            st={st}
+            linkedGroup={linkedGroup}
+            currentUser={currentUser}
+            appUsers={appUsers}
+            project={project}
+            tasks={tasks}
+            projects={projects}
+            picOptions={picOptions}
+            onInsertTaskTag={onInsertTaskTag}
+            handleDeleteSubTask={handleDeleteSubTask}
+          />
+        ))}
+      </div>
+    </div>
+  );
+});
+ProjectDelegationGroupCard.displayName = 'ProjectDelegationGroupCard';
+
+
+// === FILE: src/components/ProjectModalParts/ProjectDelegationSubTaskItem.tsx ===
+import React, { FC, memo } from 'react';
+import { Project, Task, AppUser, DelegationGroup, DelegationSubTask } from '../../types';
+import { getTaskStatus, resolveActualStatus, parseDateTime, getSuggestedCompletionTime, cn } from '../../lib/utils';
+import { scheduleDependentTasks } from '../../lib/ganttUtils';
+import { doc } from 'firebase/firestore';
+import { writeBatch, setDoc } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import { useAppStore } from '../../store/useAppStore';
+import { useLanguage } from '../../lib/LanguageContext';
+import { Pin, Trash2 } from 'lucide-react';
+
+interface ProjectDelegationSubTaskItemProps {
+  st: DelegationSubTask;
+  linkedGroup: DelegationGroup & {
+    _parentTask?: Task | null;
+    _taskCode?: string;
+    _taskName?: string;
+    _isChildTask?: boolean;
+    _parentTaskName?: string | null;
+  };
+  currentUser: AppUser;
+  appUsers: AppUser[];
+  project: Project;
+  tasks: Task[];
+  projects: Project[];
+  picOptions: string[];
+  onInsertTaskTag?: (tagName: string) => void;
+  handleDeleteSubTask: (group: DelegationGroup, subTaskId: string) => Promise<void>;
+}
+
+export const ProjectDelegationSubTaskItem: React.FC<ProjectDelegationSubTaskItemProps> = React.memo(({
+  st,
+  linkedGroup,
+  currentUser,
+  appUsers,
+  project,
+  tasks,
+  projects,
+  picOptions,
+  onInsertTaskTag,
+  handleDeleteSubTask,
+}) => {
+  const { t } = useLanguage();
+  const isCreator = (linkedGroup.createdBy === currentUser.id) || (currentUser.role === 'admin');
+  const pPartyList = String(st.party || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+  const userParties = currentUser.partyPermissions ? Object.keys(currentUser.partyPermissions).filter(k => currentUser.partyPermissions![k]).map(k => k.toLowerCase().trim()) : [];
+  const isPIC = userParties.includes('all') || pPartyList.some(p => userParties.includes(p)) || pPartyList.includes(String(currentUser.username || '').toLowerCase().trim()) || (st.involvedUsers && st.involvedUsers.includes(currentUser.id));
+
+  let selectValue = 'None';
+  const stStatus = String(st.delegationStatus || st.status || '').toLowerCase();
+  const stApproval = String(st.approvalStatus || '').toLowerCase();
+  if (stStatus === 'completed') selectValue = 'Approved';
+  else if (stStatus === 'rejected') selectValue = 'Rejected';
+  else if (stStatus === 'pending completed') selectValue = 'ReqApproval';
+  else if (stStatus === 'needs rework') selectValue = 'ReqReview';
+  else if (stStatus === 'on process' || stStatus === 'accepted') selectValue = 'AcceptTask';
+  else if (['requested', 'hold', 'waiting for approval'].includes(stStatus) || ['requested', 'hold', 'waiting for approval'].includes(stApproval)) selectValue = 'Hold';
+
+  let cardBgColor = 'bg-white dark:bg-[#1e1e20] border-slate-200 dark:border-[#444446]';
+  const flowTxt = st.delegationStatus || st.status || 'Assigned';
+
+  if (flowTxt === 'Completed') {
+    cardBgColor = 'bg-green-50/50 dark:bg-emerald-900/10 border-green-200 dark:border-emerald-900/30';
+  } else if (flowTxt === 'On process' || flowTxt === 'Accepted') {
+    cardBgColor = 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-900/30';
+  } else if (flowTxt === 'Pending completed' || flowTxt === 'Pending Completed') {
+    cardBgColor = 'bg-orange-50/50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-900/30';
+  } else if (flowTxt === 'Approved' || flowTxt === 'Rejected' || flowTxt === 'Request Delay' || flowTxt === 'Needs Rework') {
+    cardBgColor = 'bg-purple-50/50 dark:bg-purple-900/10 border-purple-200 dark:border-purple-900/30';
+  } else if (flowTxt === 'Assigned') {
+    cardBgColor = 'bg-orange-50/50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-900/30';
+  }
+
+  return (
+    <div key={st.id} className={cn("flex flex-col gap-1.5 p-2.5 rounded-lg border text-xs shadow-sm cursor-default", cardBgColor)}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex-1 flex items-center gap-1 min-w-0">
+          <span className="text-slate-500 font-medium whitespace-nowrap">To:</span>
+          <input
+            type="text"
+            list="pic-list-modal-project"
+            defaultValue={st.party || ''}
+            disabled={!(isCreator || currentUser.role === 'admin')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                const val = e.currentTarget.value.trim();
+                if (val) {
+                  const match = picOptions.find(opt => opt.toLowerCase().startsWith(val.toLowerCase()) || opt.toLowerCase().includes(val.toLowerCase()));
+                  if (match) {
+                    e.currentTarget.value = match;
+                  }
+                }
+                e.currentTarget.blur();
+              }
+            }}
+            onBlur={async (e) => {
+              const val = e.target.value.trim();
+              if (val === (st.party || '').trim()) return;
+              const allowed = new Set([...picOptions, ""]);
+              if (val !== "" && !allowed.has(val)) {
+                useAppStore.getState().setToast({ title: "Notice", message: "Invalid PIC. Please select from the dropdown options." });
+                e.target.value = st.party || "";
+                return;
+              }
+              const updatedSubTasks = linkedGroup.subTasks.map(sub => sub.id === st.id ? { ...sub, party: val } : sub);
+              const cleanGroup: any = { ...linkedGroup, subTasks: updatedSubTasks };
+              delete cleanGroup._parentTask;
+              delete cleanGroup._taskCode;
+              delete cleanGroup._taskName;
+              delete cleanGroup._isChildTask;
+              delete cleanGroup._parentTaskName;
+              const storeState = useAppStore.getState();
+              storeState.setDelegationGroups(storeState.delegationGroups.map(g => g.id === linkedGroup.id ? cleanGroup : g));
+              try {
+                setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', linkedGroup.id), cleanGroup, { merge: true });
+              } catch (err) {
+                console.error(err);
+              }
+            }}
+            className="bg-transparent border-b border-transparent hover:border-slate-300 dark:hover:border-[#444446] focus:border-blue-500 outline-none w-[120px] leading-tight truncate px-0 font-medium text-slate-700 dark:text-[#e3e3e3] disabled:text-slate-500 disabled:cursor-not-allowed"
+            placeholder="Assign CP..."
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          {onInsertTaskTag && linkedGroup._taskName && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onInsertTaskTag(linkedGroup._taskName!);
+              }}
+              className="text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 p-1 rounded transition-colors shrink-0"
+              title="Pin this sub-task to comment box"
+            >
+              <Pin className="w-3 h-3" />
+            </button>
+          )}
+          {linkedGroup.createdBy && (
+            <span className="text-[10px] text-slate-400 font-medium whitespace-nowrap">
+              from {appUsers.find(u => u.id === linkedGroup.createdBy || (u.username && u.username.toLowerCase() === String(linkedGroup.createdBy).toLowerCase()))?.username || linkedGroup.createdBy || 'Unknown'}
+            </span>
+          )}
+          {(currentUser.role === 'admin' || linkedGroup.createdBy === currentUser.id) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDeleteSubTask(linkedGroup, st.id);
+              }}
+              className="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 p-1 rounded transition-colors shrink-0 ml-1"
+              title="Delete this sub-task"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-col gap-1 mt-1">
+        <div className="flex items-center gap-2">
+          <select
+            value={selectValue === 'None' ? 'None' : selectValue}
+            onChange={async (e) => {
+              const val = e.target.value;
+              let payload: any = { approvalStatus: val };
+              if (val === 'Approved') {
+                payload.status = 'Approved';
+                payload.delegationStatus = 'Completed';
+                payload.finishAct = new Date().toISOString().substring(0, 10);
+                payload.approvedAt = new Date().toISOString();
+              } else if (val === 'Rejected') {
+                payload.status = 'Rejected';
+                payload.delegationStatus = 'Rejected';
+                payload.approvedAt = null;
+              } else if (val === 'Hold') {
+                payload.approvalStatus = 'Requested';
+                payload.approvedAt = null;
+              } else if (val === 'AcceptTask') {
+                payload.status = 'On process';
+                payload.delegationStatus = 'On process';
+                payload.approvedAt = null;
+              } else if (val === 'ReqApproval') {
+                payload.status = 'Pending completed';
+                payload.delegationStatus = 'Pending completed';
+                payload.approvalStatus = 'Requested';
+                payload.approvedAt = null;
+              } else if (val === 'ReqReview') {
+                payload.status = 'Needs Rework';
+                payload.delegationStatus = 'Needs Rework';
+                payload.approvedAt = null;
+              } else {
+                payload.approvedAt = null;
+              }
+
+              const updatedSubTasks = linkedGroup.subTasks.map(sub => sub.id === st.id ? { ...sub, ...payload } : sub);
+              const cleanGroup: any = { ...linkedGroup, subTasks: updatedSubTasks };
+              delete cleanGroup._parentTask;
+              delete cleanGroup._taskCode;
+              delete cleanGroup._taskName;
+              delete cleanGroup._isChildTask;
+              delete cleanGroup._parentTaskName;
+
+              // 0ms Optimistic UI update
+              const storeState = useAppStore.getState();
+              storeState.setDelegationGroups(storeState.delegationGroups.map(g => g.id === linkedGroup.id ? cleanGroup : g));
+
+              const parentTask = linkedGroup._parentTask !== undefined ? linkedGroup._parentTask : tasks.find(t => t.id === linkedGroup.parentTaskId);
+              const isRealtime = parentTask?.realtimeUpdate || project?.realtimeUpdate;
+
+              setTimeout(() => {
+                let newT: Task | null = null;
+                let cascadeUpdates: Task[] = [];
+
+                if (parentTask && isRealtime) {
+                  const computedPlStatus = getTaskStatus(parentTask.start, parentTask.finish);
+                  const oldActStatusLabel = resolveActualStatus(computedPlStatus, linkedGroup.subTasks).label;
+                  const newActStatusLabel = resolveActualStatus(computedPlStatus, updatedSubTasks).label;
+                  const globalTasks = useAppStore.getState().tasks || tasks;
+
+                  if (newActStatusLabel === 'Completed' && oldActStatusLabel !== 'Completed') {
+                    const nowStr = parentTask.approval === 'Approved' && parentTask.approvedAt ? getSuggestedCompletionTime(parentTask.approvedAt) : getSuggestedCompletionTime();
+                    const taskUpdates: Partial<Task> = { finish: nowStr, durationManual: true };
+
+                    if (parentTask.start) {
+                      const finishDate = parseDateTime(nowStr);
+                      const startDate = parseDateTime(parentTask.start);
+                      if (finishDate && startDate) {
+                        const diffTime = finishDate.getTime() - startDate.getTime();
+                        const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+                        taskUpdates.duration = String(diffDays);
+                      }
+                    }
+
+                    newT = { ...parentTask, ...taskUpdates };
+                    cascadeUpdates = scheduleDependentTasks(newT, globalTasks, projects);
+                  } else if (newActStatusLabel === 'On Process' && oldActStatusLabel !== 'On Process' && oldActStatusLabel !== 'Completed') {
+                    const nowStr = getSuggestedCompletionTime();
+                    const taskUpdates: Partial<Task> = { start: nowStr };
+
+                    if (parentTask.duration && !parentTask.finishManual) {
+                      const dur = parseInt(parentTask.duration);
+                      if (!isNaN(dur) && dur > 0) {
+                        const sd = parseDateTime(nowStr);
+                        if (sd) {
+                          const ed = new Date(sd);
+                          ed.setDate(ed.getDate() + dur - 1);
+                          taskUpdates.finish = getSuggestedCompletionTime(ed.toISOString());
+                        }
+                      }
+                    }
+                    newT = { ...parentTask, ...taskUpdates };
+                    cascadeUpdates = scheduleDependentTasks(newT, globalTasks, projects);
+                  }
+                }
+
+                try {
+                  const batch = writeBatch(db);
+                  batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', linkedGroup.id), cleanGroup, { merge: true });
+
+                  if (newT) {
+                    const allUpdates = [newT, ...cascadeUpdates];
+                    useAppStore.getState().optimisticUpdateTasks(allUpdates);
+                    allUpdates.forEach(t => {
+                      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t, { merge: true });
+                    });
+                  }
+
+                  batch.commit().catch(err => console.error("Batch commit failed", err));
+                } catch (err) {
+                  console.error(err);
+                }
+              }, 0);
+            }}
+            disabled={!isCreator && !isPIC}
+            className={cn(
+              "appearance-none text-[10px] sm:text-[9px] min-h-[22px] font-bold px-2 py-1 flex-1 min-w-[100px] rounded border outline-none cursor-pointer text-left",
+              "bg-white dark:bg-[#1e1e20] text-slate-800 dark:text-[#e3e3e3] border-slate-200 dark:border-[#444446]",
+              (!isCreator && !isPIC) && "opacity-50 cursor-not-allowed"
+            )}
+            style={{ backgroundImage: "url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23334155%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')", backgroundPosition: "calc(100% - 4px) center", backgroundRepeat: 'no-repeat', paddingRight: '12px' }}
+          >
+            <option value="None" disabled hidden>State... ▾</option>
+            {(isPIC || isCreator) && <option value="AcceptTask">Accepted</option>}
+            {(isPIC || isCreator) && <option value="ReqApproval">Requested Approval</option>}
+            {isCreator && <option value="Approved">{t("Approved")}</option>}
+            {isCreator && <option value="Rejected">{t("Rejected")}</option>}
+          </select>
+          <select
+            value={st.priority || 'Mid'}
+            onChange={async (e) => {
+              const val = e.target.value;
+              const updatedSubTasks = linkedGroup.subTasks.map(sub => sub.id === st.id ? { ...sub, priority: val } : sub);
+              const cleanGroup: any = { ...linkedGroup, subTasks: updatedSubTasks };
+              delete cleanGroup._parentTask;
+              delete cleanGroup._taskCode;
+              delete cleanGroup._taskName;
+              delete cleanGroup._isChildTask;
+              delete cleanGroup._parentTaskName;
+              const storeState = useAppStore.getState();
+              storeState.setDelegationGroups(storeState.delegationGroups.map(g => g.id === linkedGroup.id ? cleanGroup : g));
+              try {
+                setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', linkedGroup.id), cleanGroup, { merge: true });
+              } catch (err) {
+                console.error(err);
+              }
+            }}
+            disabled={!isCreator && !isPIC}
+            className={cn(
+              "appearance-none text-[10px] sm:text-[9px] min-h-[22px] font-bold px-2 py-1 flex-1 min-w-[60px] max-w-[80px] rounded border outline-none cursor-pointer text-left shrink-0",
+              st.priority === 'High' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+              st.priority === 'Mid-high' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+              st.priority === 'Low' ? 'bg-slate-50 dark:bg-[#1e1e20]/50 text-slate-500 dark:text-[#a3a3a3] border-slate-200 dark:border-[#444446]' :
+              'bg-blue-50 dark:bg-[#28282a] text-blue-700 dark:text-[#8ab4f8] border-blue-200',
+              (!isCreator && !isPIC) && "opacity-50 cursor-not-allowed"
+            )}
+            style={{ backgroundImage: "url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23334155%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')", backgroundPosition: "calc(100% - 4px) center", backgroundRepeat: 'no-repeat', paddingRight: '12px' }}
+          >
+            <option value="High">High</option>
+            <option value="Mid-high">Mid-high</option>
+            <option value="Mid">Mid</option>
+            <option value="Low">Low</option>
+          </select>
+        </div>
+        {st.approvedAt && selectValue === 'Approved' && (
+          <div className="text-[9px] text-slate-500 dark:text-[#838383] whitespace-nowrap pl-0.5 mt-0.5">
+            Approved: {new Date(st.approvedAt).toLocaleString()}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+ProjectDelegationSubTaskItem.displayName = 'ProjectDelegationSubTaskItem';
+
+
+// === FILE: src/components/FaqBot/faqKnowledgeEngine.ts ===
+export interface FaqKnowledgeEntry {
+  id: string;
+  category: 'Overview & Scope' | 'Budget & Cost' | 'Task & Gantt' | 'Delegation & Tracker' | 'Layout & Floor Plan' | 'RBAC & Sync';
+  titleVi: string;
+  titleEn: string;
+  keywords: string[];
+  answerVi: string;
+  answerEn: string;
+  relatedIds?: string[];
+}
+
+export const FAQ_CATEGORIES: Array<{
+  id: 'All' | FaqKnowledgeEntry['category'];
+  labelVi: string;
+  labelEn: string;
+}> = [
+  { id: 'All', labelVi: 'Tất cả chủ đề', labelEn: 'All Topics' },
+  { id: 'Overview & Scope', labelVi: 'Chi nhánh & Năm TC', labelEn: 'Store & Fiscal Year' },
+  { id: 'Budget & Cost', labelVi: 'Ngân sách & Chi phí', labelEn: 'Budget & Cost' },
+  { id: 'Task & Gantt', labelVi: 'Task WBS & Gantt', labelEn: 'Task WBS & Gantt' },
+  { id: 'Delegation & Tracker', labelVi: 'Giao việc & Tracker', labelEn: 'Delegation & Tracker' },
+  { id: 'Layout & Floor Plan', labelVi: 'Mặt bằng & Diện tích', labelEn: 'Layout & Area' },
+  { id: 'RBAC & Sync', labelVi: 'Phân quyền & Đồng bộ', labelEn: 'RBAC & Sync' },
+];
+
+export const FAQ_KNOWLEDGE_BASE: FaqKnowledgeEntry[] = [
+  {
+    id: 'store-year-isolation',
+    category: 'Overview & Scope',
+    titleVi: '1. Cô lập 4 khóa định danh (Chi nhánh Store & Năm tài chính)',
+    titleEn: '1. 4-Key Isolation (Store & Fiscal Year Scope)',
+    keywords: [
+      'store', 'hcm', 'hn', 'year', 'năm', 'chi nhánh', 'cô lập', 'isolation',
+      'projectcode', 'projectid', 'archive', 'read-only', 'khóa sổ', 'bắt đầu', 'người mới', 'new user'
+    ],
+    answerVi:
+      '• **Cô lập tuyệt đối 4 khóa (`projectId` + `projectCode` + `year` + `store`)**: Một mã dự án (VD: `A01` hoặc `L1-105`) có thể tồn tại ở cả **HCM** và **HN** hoặc ở các năm tài chính khác nhau (`2025`, `2026`, `2027`). Hệ thống tách biệt hoàn toàn dữ liệu theo 4 khóa này.\n' +
+      '• **Khóa sổ năm cũ (Archive Read-Only Lock)**: Khi chọn năm tài chính nhỏ hơn năm hiện tại (`year < CurrentYear`), hệ thống tự động bật chế độ **Read-Only** để bảo vệ số liệu lịch sử kiểm toán.\n' +
+      '• **Safe Boot**: Khi mở ứng dụng, hệ thống nạp tức thì từ bộ nhớ đệm Local-First (Dexie IndexedDB) trong <10ms tại tab **General**.',
+    answerEn:
+      '• **Strict 4-Key Isolation (`projectId` + `projectCode` + `year` + `store`)**: A project code (e.g. `A01` or `L1-105`) can exist independently across **HCM** and **HN** or different fiscal years (`2025`, `2026`, `2027`). All Tasks, Costs, and Delegations are strictly isolated by these 4 keys.\n' +
+      '• **Archive Read-Only Lock**: Selecting a past fiscal year (`year < CurrentYear`) automatically activates **Read-Only Mode** to protect historical audit data.\n' +
+      '• **Safe Boot**: The app boots at the **General** tab in <10ms using Local-First Dexie IndexedDB cache.',
+    relatedIds: ['project-status-lifecycle', 'rbac-permissions']
+  },
+  {
+    id: 'budget-hierarchy-formula',
+    category: 'Budget & Cost',
+    titleVi: '2. Cấu trúc Ngân sách 3 cấp & Công thức tính Remaining Budget',
+    titleEn: '2. 3-Tier Budget Hierarchy & Remaining Budget Formulas',
+    keywords: [
+      'budget', 'ngân sách', 'remaining', 'còn lại', 'approved', 'ratio', 'tỷ trọng',
+      'category', 'sub-category', 'detail', 'utilization', 'vượt ngân sách', 'over budget', 'addendum', 'phụ lục'
+    ],
+    answerVi:
+      '• **Cấu trúc 3 cấp (3-Tier Budget)**:\n' +
+      '  1. **Category (Hạng mục lớn)**: Tổng ngân sách năm được phân bổ.\n' +
+      '  2. **Sub-Category (Hạng mục con)**: Tự động quy đổi `Approved Budget = Category Budget × (Ratio% / 100)`.\n' +
+      '  3. **Detail Row (Dòng chi tiết dự án)**: Liên kết trực tiếp với `projectCode` để gom chi phí thực tế.\n' +
+      '• **Công thức cốt lõi**:\n' +
+      '  - `Spent (Đã chi)` = Tổng `amount` (**Chưa VAT / Excl. VAT**) của các khoản chi phí hợp lệ gắn với dòng ngân sách.\n' +
+      '  - `Remaining Budget (Còn lại)` = `Approved Budget - Spent (Excl. VAT)`.\n' +
+      '  - `Utilization (%)` = `(Spent / Approved Budget) × 100`.\n' +
+      '• **Ngưỡng cảnh báo màu**: Xanh lục (`< 80%`), Vàng cam (`80% – 100%`), Đỏ (`> 100%` - Vượt ngân sách).\n' +
+      '• **Phụ lục hợp đồng (Addendum)**: Khi có phụ lục, ngân sách gốc tự động khóa (`isOriginalLocked = true`) để bảo toàn dấu vết kiểm toán.',
+    answerEn:
+      '• **3-Tier Budget Structure**:\n' +
+      '  1. **Category**: Top-level annual budget allocation.\n' +
+      '  2. **Sub-Category**: Auto-calculates `Approved Budget = Category Budget × (Ratio% / 100)`.\n' +
+      '  3. **Detail Row**: Links via `projectCode` to aggregate actual project expenditures.\n' +
+      '• **Core Formulas**:\n' +
+      '  - `Spent` = Sum of `amount` (**Excl. VAT**) of linked valid Cost items.\n' +
+      '  - `Remaining Budget` = `Approved Budget - Spent (Excl. VAT)`.\n' +
+      '  - `Utilization (%)` = `(Spent / Approved Budget) × 100`.\n' +
+      '• **Visual Thresholds**: Emerald (`< 80%`), Amber (`80% – 100%`), Rose Red (`> 100%` Over-budget).\n' +
+      '• **Contract Addendum**: Adding an addendum locks the original budget (`isOriginalLocked = true`) for financial audit compliance.',
+    relatedIds: ['cost-installments-vat', 'rbac-permissions']
+  },
+  {
+    id: 'cost-installments-vat',
+    category: 'Budget & Cost',
+    titleVi: '3. Quản lý Chi phí (Cost), VAT & Quy tắc Thanh toán 3 đợt',
+    titleEn: '3. Cost Management, VAT & 3-Installment Payment Rules',
+    keywords: [
+      'cost', 'chi phí', 'vat', 'thuế', 'installment', 'thanh toán', '3 đợt', 'p1', 'p2', 'p3',
+      'variation order', 'vo', 'phát sinh', 'other expenses', 'final warning', '14 ngày', 'difference'
+    ],
+    answerVi:
+      '• **Phân loại Chi phí**:\n' +
+      '  1. `Cost Summary`: Chi phí hợp đồng chính.\n' +
+      '  2. `Variation Order (VO)`: Chi phí phát sinh (tự động cộng dồn vào thực chi của hạng mục).\n' +
+      '  3. `Other Expenses`: Chi phí lẻ / vận hành khác.\n' +
+      '• **Công thức VAT & Chênh lệch**:\n' +
+      '  - `Contract Amount (Sau VAT)` = `Amount (Chưa VAT) × (1 + VAT% / 100)`.\n' +
+      '  - `Difference (Chênh lệch)` = `Approved Budget - Total Excl. VAT` (Dương = Tiết kiệm, Âm = Vượt trần).\n' +
+      '• **Quy tắc 3 đợt thanh toán (`P1`, `P2`, `P3`)**:\n' +
+      '  - Khi nhập `P1` (Tạm ứng) và `P2` (Thanh toán tiến độ), đợt quyết toán cuối `P3` tự động tính: `P3 = Contract Amount (Sau VAT) - P1 - P2`.\n' +
+      '  - Tổng `%P1 + %P2 + %P3` luôn đối soát bằng **100%**.\n' +
+      '• **Cảnh báo quyết toán (Final Warning)**: Cảnh báo vàng/đỏ khi hạn thanh toán đợt cuối còn `≤ 14 ngày` mà chưa tích chọn `Final Payment Done`.',
+    answerEn:
+      '• **Cost Categories**:\n' +
+      '  1. `Cost Summary`: Main contract costs.\n' +
+      '  2. `Variation Order (VO)`: Change orders (automatically rolled into category spend).\n' +
+      '  3. `Other Expenses`: Miscellaneous operational expenses.\n' +
+      '• **VAT & Difference Formulas**:\n' +
+      '  - `Contract Amount (Incl. VAT)` = `Amount (Excl. VAT) × (1 + VAT% / 100)`.\n' +
+      '  - `Difference` = `Approved Budget - Total Excl. VAT` (Positive = Savings, Negative = Overrun).\n' +
+      '• **3-Installment Rule (`P1`, `P2`, `P3`)**:\n' +
+      '  - Entering `P1` and `P2` auto-computes the final settlement: `P3 = Contract Amount (Incl. VAT) - P1 - P2` (`100%` total).\n' +
+      '• **Final Settlement Alert**: Highlights a warning when the final payment due date is within `≤ 14 days` and `Final Payment Done` is not checked.',
+    relatedIds: ['budget-hierarchy-formula']
+  },
+  {
+    id: 'task-wbs-gantt-predecessors',
+    category: 'Task & Gantt',
+    titleVi: '4. Cây công việc (WBS), Mã Task, Predecessor & Tự động Lập lịch Gantt',
+    titleEn: '4. Task WBS Hierarchy, Task Codes, Predecessors & Auto-Scheduling',
+    keywords: [
+      'task', 'gantt', 'wbs', 'predecessor', 'tiền nhiệm', 'fs', 'ss', 'ff', 'sf',
+      'duration', 'rollup', 'task con', 'task mẹ', 'sub-task', 'parent', 'lập lịch', 'save task'
+    ],
+    answerVi:
+      '• **Đánh mã WBS tự động**:\n' +
+      '  - Task gốc (Root Task): `<ProjectCode>-<Index>` (VD: `A01-1`, `A01-2`).\n' +
+      '  - Task con (Sub-task): `<ParentCode>.<SubIndex>` (VD: `A01-1.1`, `A01-1.2`).\n' +
+      '• **In-Memory Rollup (Task mẹ)**: Ngày `Start` = Min(Start các con), `Finish` = Max(Finish các con), `% Tiến độ` = Trung bình cộng tiến độ các task con.\n' +
+      '• **Quan hệ Tiền nhiệm (Predecessor)**:\n' +
+      '  - Hỗ trợ 4 loại liên kết chuẩn MS Project: **FS** (Finish-to-Start, mặc định), **SS** (Start-to-Start), **FF** (Finish-to-Finish), **SF** (Start-to-Finish) kèm độ trễ `+/- N ngày` (VD: `A01-1FS+2`, `A01-1SS`).\n' +
+      '  - Hỗ trợ liên kết chéo giữa các dự án khác nhau (Cross-Project Predecessors).\n' +
+      '  - Khi Task tiền nhiệm đổi ngày, toàn bộ chuỗi Task phụ thuộc có bật `Realtime Update` sẽ tự động trượt lịch (Cascade Scheduling) và chống lặp vô tận (`Circular Guard`).',
+    answerEn:
+      '• **Automatic WBS Coding**:\n' +
+      '  - Root Task: `<ProjectCode>-<Index>` (e.g. `A01-1`, `A01-2`).\n' +
+      '  - Sub-task: `<ParentCode>.<SubIndex>` (e.g. `A01-1.1`, `A01-1.2`).\n' +
+      '• **In-Memory Parent Rollup**: Parent `Start` = Min(children Start), `Finish` = Max(children Finish), and `Progress %` = Average of child tasks.\n' +
+      '• **Predecessor Engine**:\n' +
+      '  - Supports **FS** (default), **SS**, **FF**, **SF** with lag days `+/- N` (e.g. `A01-1FS+2`).\n' +
+      '  - Supports cross-project predecessors and automatic topological cascade scheduling with a Circular Dependency Guard.',
+    relatedIds: ['delegation-tracker-workflow', 'project-status-lifecycle']
+  },
+  {
+    id: 'delegation-tracker-workflow',
+    category: 'Delegation & Tracker',
+    titleVi: '5. Quy trình Giao việc (Delegation) & Bảng Tracker phê duyệt',
+    titleEn: '5. Delegation Workflow & Tracker Approval State Machine',
+    keywords: [
+      'delegation', 'tracker', 'giao việc', 'pic', 'approval', 'phê duyệt', 'accepted',
+      'pending completed', 'approved', 'rejected', 'needs rework', 'tiến độ thực tế', 'act status', 'pro status'
+    ],
+    answerVi:
+      '• **Luồng trạng thái Giao việc (State Machine)**:\n' +
+      '  1. `Assigned` (0%): Người tạo giao việc cho PIC / Nhà thầu (`Party`).\n' +
+      '  2. `Accepted / On process` (50%): PIC bấm nhận việc và bắt đầu triển khai.\n' +
+      '  3. `Pending completed` (85%): PIC báo cáo hoàn thành và gửi yêu cầu nghiệm thu (`Requested Approval`).\n' +
+      '  4. `Approved / Completed` (100%): Người giao việc hoặc Admin nghiệm thu đạt.\n' +
+      '  5. `Rejected / Needs Rework` (25%): Yêu cầu làm lại.\n' +
+      '• **Đồng bộ Ngày thực tế (Realtime Update)**:\n' +
+      '  - Khi sub-task đầu tiên chuyển sang `On process`, nếu Task bật `Realtime Update`, ngày `Start` thực tế của Task tự động cập nhật.\n' +
+      '  - Khi **100%** sub-task trong nhóm đạt `Approved / Completed`, Task cha tự động chốt ngày `Finish` thực tế và đẩy lịch các Task kế tiếp.',
+    answerEn:
+      '• **Delegation State Machine & Weighted Progress**:\n' +
+      '  1. `Assigned` (0%): Task creator assigns sub-tasks to PICs/Parties.\n' +
+      '  2. `Accepted / On process` (50%): PIC accepts and starts execution.\n' +
+      '  3. `Pending completed` (85%): PIC requests completion approval.\n' +
+      '  4. `Approved / Completed` (100%): Creator or Admin approves completion.\n' +
+      '  5. `Rejected / Needs Rework` (25%): Returned for rework.\n' +
+      '• **Auto-Sync with Gantt Schedule**:\n' +
+      '  - When `Realtime Update` is enabled on the parent task, reaching 100% `Completed` across all delegated sub-tasks automatically stamps the actual finish date and cascades dependent tasks.',
+    relatedIds: ['task-wbs-gantt-predecessors']
+  },
+  {
+    id: 'project-status-lifecycle',
+    category: 'Overview & Scope',
+    titleVi: '6. Vòng đời Dự án (Project Status) & Các mốc Ngày Tự động / Thủ công',
+    titleEn: '6. Project Status Lifecycle & Auto vs. Manual Milestone Dates',
+    keywords: [
+      'project', 'dự án', 'status', 'trạng thái', 'upcoming', 'in progress', 'completed', 'delayed',
+      'handover', 'opening', 'bàn giao', 'khai trương', 'auto', 'manual'
+    ],
+    answerVi:
+      '• **3 Mốc ngày trọng yếu của Dự án (`Start`, `Handover`, `Opening`)**:\n' +
+      '  - Chế độ **Auto**: Tự động trích xuất từ các Task trong dự án (`Start` = ngày bắt đầu sớm nhất; `Handover` = ngày kết thúc của Task có chữ *"Handover"* / *"Bàn giao"*; `Opening` = ngày kết thúc của Task có chữ *"Opening"* / *"Khai trương"*).\n' +
+      '  - Chế độ **Manual**: Cho phép khoá cứng ngày cố định trên hợp đồng thuê.\n' +
+      '• **Cách tính Trạng thái Dự án**:\n' +
+      '  - `Completed`: Tất cả các Task của dự án đã hoàn thành 100%.\n' +
+      '  - `Delayed`: Có Task bị trễ hạn so với kế hoạch/thực tế.\n' +
+      '  - `In Progress`: Đang trong thời gian thi công hoặc có Task đang chạy (`On process`).\n' +
+      '  - `Upcoming`: Ngày bắt đầu lớn hơn ngày hiện tại và chưa có Task nào khởi chạy.',
+    answerEn:
+      '• **3 Key Project Milestones (`Start`, `Handover`, `Opening`)**:\n' +
+      '  - **Auto Mode**: Derived automatically from project tasks (`Start` = earliest task start; `Handover` = finish date of task matching *"Handover"*; `Opening` = finish date of task matching *"Opening"*).\n' +
+      '  - **Manual Mode**: Locks custom contractual dates.\n' +
+      '• **Computed Project Status**:\n' +
+      '  - `Completed`: 100% of project tasks are completed.\n' +
+      '  - `Delayed`: One or more tasks are behind schedule.\n' +
+      '  - `In Progress`: Currently active or has tasks in progress.\n' +
+      '  - `Upcoming`: Start date is in the future with no started tasks.',
+    relatedIds: ['layout-floorplan-area']
+  },
+  {
+    id: 'layout-floorplan-area',
+    category: 'Layout & Floor Plan',
+    titleVi: '7. Mặt bằng tương tác (Layout Tab), Tính diện tích (m²) & Mã QR',
+    titleEn: '7. Interactive Floor Plan (Layout Tab), Area (m²) Calculation & QR Code',
+    keywords: [
+      'layout', 'mặt bằng', 'floor plan', 'diện tích', 'area', 'm2', 'sizeM2',
+      'color legend', 'unit', 'linkcodes', 'qr', 'qr code', 'zoom', 'polygon'
+    ],
+    answerVi:
+      '• **Liên kết Ô mặt bằng (`linkCodes`)**: Một dự án có thể gộp nhiều ô mặt bằng (VD: `L1-101, L1-102`). Bản đồ tự động tô màu và gộp thông tin theo mã liên kết.\n' +
+      '• **Quy chuẩn tính Diện tích (`sizeM2`) trong bảng Color Legend**:\n' +
+      '  - Diện tích của từng nhóm trạng thái (`Upcoming`, `In Progress`, `Completed`, `Shop Type`, `Party`, `Lease Status`) được tính bằng **tổng diện tích (`sizeM2`) của các Project duy nhất (unique projects)** thuộc nhóm đó (chống nhân đôi khi 1 project nối nhiều polygon).\n' +
+      '  - Chỉ khi ô mặt bằng chưa gắn Project nào hoặc Project chưa có `sizeM2` thì mới fallback về diện tích hình học của ô (`unit.sizeM2`).\n' +
+      '• **Quét QR Code từ Project Modal**: Khi quét mã QR bằng điện thoại, ứng dụng tự động chuyển sang đúng `Store`, `Year`, `Floor`, mở tab **Layout** và **Auto-Zoom** thẳng vào vị trí gian hàng.',
+    answerEn:
+      '• **Multi-Unit Link Codes (`linkCodes`)**: A single project can link to multiple floor plan units (e.g., `L1-101, L1-102`).\n' +
+      '• **Color Legend Area (`m²`) Formula**:\n' +
+      '  - Group areas (`Upcoming`, `In Progress`, `Completed`, `Shop Type`, `Party`, `Lease Status`) are computed as the **sum of `sizeM2` of unique matched projects** in that group (preventing double-counting across multi-polygon units).\n' +
+      '  - Falls back to polygon `unit.sizeM2` only for unlinked units.\n' +
+      '• **Mobile QR Code Auto-Zoom**: Scanning a project QR code automatically switches to the target `Store`, `Year`, and `Floor`, opens the **Layout** tab, and zooms directly into the unit.',
+    relatedIds: ['project-status-lifecycle']
+  },
+  {
+    id: 'rbac-permissions',
+    category: 'RBAC & Sync',
+    titleVi: '8. Phân quyền Người dùng (RBAC) & Bảo mật dữ liệu Tài chính',
+    titleEn: '8. Role-Based Access Control (RBAC) & Financial Data Masking',
+    keywords: [
+      'rbac', 'permission', 'phân quyền', 'admin', 'user', 'canwrite', 'read only',
+      'ẩn chi phí', 'masking', 'storepermission', 'locationpermission', 'partypermission', 'tab'
+    ],
+    answerVi:
+      '• **2 Vai trò chính**:\n' +
+      '  - `Admin`: Toàn quyền cấu hình hệ thống, quản lý User, phê duyệt ngân sách, xuất/nhập dữ liệu và cấu hình Auto-Backup R2.\n' +
+      '  - `Standard User`: Được cấp quyền chi tiết theo 5 lớp:\n' +
+      '    1. `canWrite`: Quyền Thêm/Sửa/Xóa (nếu tắt sẽ ở chế độ Chỉ xem).\n' +
+      '    2. `storePermissions`: Quyền truy cập chi nhánh `HCM` và/hoặc `HN`.\n' +
+      '    3. `locationPermissions`: Giới hạn theo tầng (`B2`, `B1`, `L1`... hoặc `All`).\n' +
+      '    4. `partyPermissions`: Giới hạn theo bộ phận/nhà thầu phụ trách.\n' +
+      '    5. `tabPermissions`: Ẩn/hiện từng Tab (`General`, `Gantt`, `Budget`, `Cost`, `Layout`, `Calendar`, `Log`).\n' +
+      '• **Bảo mật Chi phí (Cost Masking)**: Người dùng không có quyền xem tài chính sẽ thấy số tiền hiển thị dạng `***`.',
+    answerEn:
+      '• **Two Core Roles**:\n' +
+      '  - `Admin`: Full access to system settings, user permissions, budgets, and R2 backups.\n' +
+      '  - `Standard User`: Governed by 5 granular permission layers (`canWrite`, `storePermissions`, `locationPermissions`, `partyPermissions`, `tabPermissions`).\n' +
+      '• **Financial Masking**: Users without financial visibility have sensitive budget/cost figures masked as `***`.',
+    relatedIds: ['store-year-isolation', 'sync-offline-r2-backup']
+  },
+  {
+    id: 'sync-offline-r2-backup',
+    category: 'RBAC & Sync',
+    titleVi: '9. Đồng bộ Đa thiết bị Tức thì (Delta Sync), Offline Queue & R2 Auto-Backup',
+    titleEn: '9. Instant Multi-Device Delta Sync, Offline Queue & R2 Auto-Backup',
+    keywords: [
+      'sync', 'đồng bộ', 'delta', 'offline', 'mất mạng', 'r2', 'cloudflare', 'backup',
+      'sao lưu', 'zombie', 'task ma', 'qua đêm', 'sleep', 'ipad', 'dexie', 'cache'
+    ],
+    answerVi:
+      '• **0ms Optimistic UI & Offline Queue**: Mọi thao tác Lưu/Sửa/Xóa cập nhật ngay vào giao diện trong 0ms. Nếu rớt mạng, dữ liệu được giữ an toàn trong `syncQueue` và tự động đẩy lên Cloud khi có mạng lại.\n' +
+      '• **Real-time Delta Sync & Tự làm sạch Task Ma (Zero-Zombie)**:\n' +
+      '  - Các máy tính và iPad đồng bộ tức thì qua kênh `taka_deltas`.\n' +
+      '  - Khi máy mở lại sau giấc ngủ qua đêm (Overnight Wake-up), hệ thống tự động kéo bù Delta và quét đối chiếu 2 chiều để dọn sạch các Task đã xóa từ máy khác mà không cần bấm xóa cache.\n' +
+      '• **Cloudflare R2 Auto-Backup Cron**: Tự động nén GZIP toàn bộ dữ liệu dự án, công việc, ngân sách, chi phí và lưu trữ định kỳ lên Cloudflare R2 (cấu hình trong `Settings -> R2 Auto-Backup`).',
+    answerEn:
+      '• **0ms Optimistic UI & Offline Queue**: Edits apply in 0ms locally and queue safely in `syncQueue` if offline.\n' +
+      '• **Real-time Delta Sync & Bi-directional Reconciliation**:\n' +
+      '  - Changes broadcast across devices via `taka_deltas`.\n' +
+      '  - Overnight Wake-up Heartbeat automatically pulls missed deltas and removes stale "zombie" tasks without manual cache clearing.\n' +
+      '• **Cloudflare R2 Auto-Backup**: Periodically compresses (GZIP) and uploads full system snapshots to Cloudflare R2 (`Settings -> R2 Auto-Backup`).',
+    relatedIds: ['store-year-isolation', 'rbac-permissions']
+  },
+  {
+    id: 'shortcuts-tips-new-user',
+    category: 'Overview & Scope',
+    titleVi: '10. Phím tắt & Mẹo thao tác nhanh cho Người dùng mới',
+    titleEn: '10. Keyboard Shortcuts & Quick Tips for New Users',
+    keywords: [
+      'shortcut', 'phím tắt', 'mẹo', 'tips', 'hướng dẫn', 'command palette', 'ctrl+k',
+      'undo', 'hoàn tác', 'kéo thả', 'draggable', 'excel', 'export', 'import', 'help'
+    ],
+    answerVi:
+      '• **`Ctrl + K` (hoặc `Cmd + K`)**: Mở bảng **Command Palette** để nhảy nhanh tới bất kỳ Dự án, Tab hoặc chức năng nào.\n' +
+      '• **`Ctrl + Z` / `Cmd + Z`**: Hoàn tác (Undo) thao tác sửa/xóa Task vừa thực hiện.\n' +
+      '• **Kéo thả mọi cửa sổ (Draggable Modals)**: Mọi bảng chi tiết (Project, Task, Cost, QuickNav, FAQ Bot) đều có thanh nắm ở tiêu đề trên cùng để kéo sang vị trí bất kỳ, giúp vừa xem bảng vừa đối chiếu dữ liệu bên dưới.\n' +
+      '• **Double-Click vào Dự án / Task / Ô mặt bằng**: Mở ngay cửa sổ chỉnh sửa chi tiết hoặc phóng to (Zoom) vào gian hàng.',
+    answerEn:
+      '• **`Ctrl + K` (or `Cmd + K`)**: Opens the **Command Palette** for instant navigation and actions.\n' +
+      '• **`Ctrl + Z` / `Cmd + Z`**: Undoes the most recent task edit or deletion.\n' +
+      '• **Draggable Modals**: Drag any modal by its top header bar to inspect underlying tables or floor plans simultaneously.\n' +
+      '• **Double-Click**: Double-click any Project, Task, or Floor Plan unit to open its detail modal or zoom in.',
+    relatedIds: ['store-year-isolation', 'task-wbs-gantt-predecessors']
+  }
+];
+
+function normalizeText(str: string): string {
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9\s+%]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function searchFaqKnowledge(
+  rawQuery: string,
+  lang: 'vi' | 'en' = 'vi'
+): {
+  bestMatches: FaqKnowledgeEntry[];
+  formattedAnswer: string;
+} {
+  const cleanQuery = rawQuery.trim();
+  const normQuery = normalizeText(cleanQuery);
+
+  if (!normQuery) {
+    const starter = FAQ_KNOWLEDGE_BASE.slice(0, 3);
+    return {
+      bestMatches: starter,
+      formattedAnswer:
+        lang === 'vi'
+          ? 'Xin chào! Tôi là Trợ lý Nghiệp vụ **Takashimaya PM** (dựa trên `BUSINESS_LOGIC.md`). Bạn có thể chọn một chủ đề bên dưới hoặc đặt câu hỏi về Ngân sách, Chi phí 3 đợt, Task/Gantt, Giao việc Tracker, Mặt bằng m² hay Phân quyền.'
+          : 'Hello! I am the **Takashimaya PM Business Logic Assistant** (grounded on `BUSINESS_LOGIC.md`). Pick a topic below or ask any question about Budgets, 3-Installment Costs, Task/Gantt WBS, Delegation Tracker, Floor Plan Area (m²), or RBAC.'
+    };
+  }
+
+  const tokens = normQuery.split(' ').filter(t => t.length >= 2);
+
+  const scored = FAQ_KNOWLEDGE_BASE.map(entry => {
+    let score = 0;
+    const normTitle = normalizeText(entry.titleVi + ' ' + entry.titleEn);
+    const normBody = normalizeText(entry.answerVi + ' ' + entry.answerEn);
+    const normKeywords = entry.keywords.map(k => normalizeText(k));
+
+    if (normTitle.includes(normQuery)) score += 25;
+    if (normBody.includes(normQuery)) score += 12;
+
+    for (const kw of normKeywords) {
+      if (normQuery.includes(kw)) {
+        score += 18;
+      } else if (tokens.some(tk => kw.includes(tk) || tk.includes(kw))) {
+        score += 8;
+      }
+    }
+
+    for (const tk of tokens) {
+      if (normTitle.includes(tk)) score += 6;
+      if (normBody.includes(tk)) score += 3;
+    }
+
+    return { entry, score };
+  }).sort((a, b) => b.score - a.score);
+
+  const topMatches = scored.filter(s => s.score > 0).slice(0, 2).map(s => s.entry);
+
+  if (topMatches.length === 0) {
+    const fallback = FAQ_KNOWLEDGE_BASE.slice(0, 2);
+    return {
+      bestMatches: fallback,
+      formattedAnswer:
+        lang === 'vi'
+          ? `Tôi chưa tìm thấy từ khóa khớp chính xác hoàn toàn với **"${cleanQuery}"**, nhưng dưới đây là các quy tắc nghiệp vụ cốt lõi trong \`BUSINESS_LOGIC.md\` có thể giúp bạn:\n\n` +
+            fallback.map(item => `### ${item.titleVi}\n${item.answerVi}`).join('\n\n')
+          : `I could not find an exact match for **"${cleanQuery}"**, but here are the core rules from \`BUSINESS_LOGIC.md\` to guide you:\n\n` +
+            fallback.map(item => `### ${item.titleEn}\n${item.answerEn}`).join('\n\n')
+    };
+  }
+
+  const formattedAnswer = topMatches
+    .map(item => {
+      const title = lang === 'vi' ? item.titleVi : item.titleEn;
+      const body = lang === 'vi' ? item.answerVi : item.answerEn;
+      return `### ${title}\n${body}`;
+    })
+    .join('\n\n---\n\n');
+
+  return {
+    bestMatches: topMatches,
+    formattedAnswer
+  };
+}
+
+
+// === FILE: src/components/FaqBot/FaqChatbotModal.tsx ===
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import Draggable from 'react-draggable';
+import {
+  Bot,
+  X,
+  Send,
+  Sparkles,
+  BookOpen,
+  GripHorizontal,
+  RotateCcw,
+  HelpCircle,
+  ChevronRight,
+  Globe
+} from 'lucide-react';
+import {
+  FAQ_CATEGORIES,
+  FAQ_KNOWLEDGE_BASE,
+  FaqKnowledgeEntry,
+  searchFaqKnowledge
+} from './faqKnowledgeEngine';
+
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  relatedEntries?: FaqKnowledgeEntry[];
+  timestamp: string;
+}
+
+export const FaqChatbotModal: React.FC = React.memo(() => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [lang, setLang] = useState<'vi' | 'en'>('vi');
+  const [selectedCategory, setSelectedCategory] = useState<'All' | FaqKnowledgeEntry['category']>('All');
+  const [inputQuery, setInputQuery] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const initialGreeting = useMemo<ChatMessage>(
+    () => ({
+      id: 'welcome',
+      role: 'assistant',
+      text:
+        lang === 'vi'
+          ? 'Xin chào! Tôi là **Trợ lý Nghiệp vụ Takashimaya PM** (dữ liệu chuẩn từ `BUSINESS_LOGIC.md`).\n\nBạn là người dùng mới hay cần tra cứu nhanh công thức **Ngân sách 3 cấp**, **Chi phí 3 đợt & VAT**, **Gantt & Predecessor**, **Giao việc Tracker**, hay **Cách tính diện tích m² trên Layout**? Hãy chọn câu hỏi gợi ý hoặc nhập câu hỏi bên dưới!'
+          : 'Welcome! I am the **Takashimaya PM Business Logic Assistant** (grounded on `BUSINESS_LOGIC.md`).\n\nWhether you are a new user or looking up **3-Tier Budget formulas**, **3-Installment Costs & VAT**, **Gantt Predecessors**, **Delegation Tracker**, or **Floor Plan Area (m²)** rules, pick a topic below or ask a question!',
+      relatedEntries: FAQ_KNOWLEDGE_BASE.slice(0, 4),
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }),
+    [lang]
+  );
+
+  const [messages, setMessages] = useState<ChatMessage[]>([initialGreeting]);
+
+  useEffect(() => {
+    setMessages(prev => (prev.length <= 1 ? [initialGreeting] : prev));
+  }, [initialGreeting]);
+
+  useEffect(() => {
+    const handleOpenEvent = () => setIsOpen(true);
+    window.addEventListener('taka:open-faq-bot', handleOpenEvent);
+    return () => window.removeEventListener('taka:open-faq-bot', handleOpenEvent);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isOpen]);
+
+  const categoryEntries = useMemo(() => {
+    if (selectedCategory === 'All') return FAQ_KNOWLEDGE_BASE;
+    return FAQ_KNOWLEDGE_BASE.filter(item => item.category === selectedCategory);
+  }, [selectedCategory]);
+
+  const handleSelectEntry = useCallback(
+    (entry: FaqKnowledgeEntry) => {
+      const userQuestion = lang === 'vi' ? entry.titleVi : entry.titleEn;
+      const answerBody = lang === 'vi' ? entry.answerVi : entry.answerEn;
+      const related = (entry.relatedIds || [])
+        .map(id => FAQ_KNOWLEDGE_BASE.find(x => x.id === id))
+        .filter(Boolean) as FaqKnowledgeEntry[];
+
+      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `u_${Date.now()}`,
+          role: 'user',
+          text: userQuestion,
+          timestamp: now
+        },
+        {
+          id: `a_${Date.now() + 1}`,
+          role: 'assistant',
+          text: `### ${userQuestion}\n${answerBody}`,
+          relatedEntries: related,
+          timestamp: now
+        }
+      ]);
+    },
+    [lang]
+  );
+
+  const handleSendQuestion = useCallback(
+    async (e?: React.FormEvent) => {
+      if (e) e.preventDefault();
+      const q = inputQuery.trim();
+      if (!q || isTyping) return;
+
+      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const userMsg: ChatMessage = {
+        id: `u_${Date.now()}`,
+        role: 'user',
+        text: q,
+        timestamp: now
+      };
+
+      setMessages(prev => [...prev, userMsg]);
+      setInputQuery('');
+      setIsTyping(true);
+
+      // Instant local BUSINESS_LOGIC.md match
+      const localResult = searchFaqKnowledge(q, lang);
+
+      try {
+        const res = await fetch('/api/faq-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: q,
+            lang,
+            localContext: localResult.formattedAnswer
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.answer) {
+            setMessages(prev => [
+              ...prev,
+              {
+                id: `a_${Date.now()}`,
+                role: 'assistant',
+                text: data.answer,
+                relatedEntries: localResult.bestMatches,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              }
+            ]);
+            setIsTyping(false);
+            return;
+          }
+        }
+      } catch {
+        // Fallback smoothly to deterministic BUSINESS_LOGIC.md engine
+      }
+
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `a_${Date.now()}`,
+          role: 'assistant',
+          text: localResult.formattedAnswer,
+          relatedEntries: localResult.bestMatches,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
+      ]);
+      setIsTyping(false);
+    },
+    [inputQuery, isTyping, lang]
+  );
+
+  const renderFormattedText = (raw: string) => {
+    const lines = raw.split('\n');
+    return lines.map((line, idx) => {
+      const trimmed = line.trim();
+      if (!trimmed) return <div key={idx} className="h-1.5" />;
+      if (trimmed === '---') {
+        return <hr key={idx} className="my-2 border-slate-200 dark:border-slate-700" />;
+      }
+      if (trimmed.startsWith('### ')) {
+        return (
+          <div key={idx} className="font-bold text-blue-700 dark:text-blue-300 text-xs sm:text-sm mb-1 mt-1">
+            {trimmed.replace('### ', '')}
+          </div>
+        );
+      }
+      // Format bold **text** and inline code `code`
+      const parts = line.split(/(\*\*.*?\*\*|`.*?`)/g);
+      return (
+        <div key={idx} className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
+          {parts.map((part, pIdx) => {
+            if (part.startsWith('**') && part.endsWith('**')) {
+              return (
+                <strong key={pIdx} className="font-bold text-slate-900 dark:text-white">
+                  {part.slice(2, -2)}
+                </strong>
+              );
+            }
+            if (part.startsWith('`') && part.endsWith('`')) {
+              return (
+                <code
+                  key={pIdx}
+                  className="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-mono text-[11px]"
+                >
+                  {part.slice(1, -1)}
+                </code>
+              );
+            }
+            return <span key={pIdx}>{part}</span>;
+          })}
+        </div>
+      );
+    });
+  };
+
+  return (
+    <>
+      {/* Floating FAQ Trigger Button */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(prev => !prev)}
+        title="Business Logic & FAQ Guide"
+        className="fixed bottom-6 right-4 z-[9000] flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-600/30 border border-white/20 active:scale-95 touch-manipulation transition-all print:hidden"
+      >
+        <Bot className="w-4 h-4" />
+        <span className="text-xs font-bold tracking-tight hidden sm:inline">FAQ Guide</span>
+      </button>
+
+      {isOpen && (
+        <div className="fixed inset-0 z-[9998] pointer-events-none flex items-end sm:items-center justify-end sm:justify-center p-2 sm:p-4 print:hidden">
+          <Draggable nodeRef={nodeRef} handle=".modal-handle" bounds="parent">
+            <div
+              ref={nodeRef}
+              className="pointer-events-auto w-full sm:w-[540px] max-w-[96vw] h-[82vh] sm:h-[640px] max-h-[90vh] bg-white dark:bg-[#18181b] border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+            >
+              {/* Draggable Header */}
+              <div className="modal-handle cursor-grab active:cursor-grabbing bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white px-4 py-3 flex items-center justify-between select-none shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-400/30 flex items-center justify-center shrink-0">
+                    <Sparkles className="w-4 h-4 text-blue-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="text-xs sm:text-sm font-bold tracking-tight truncate">
+                        Takashimaya Business Logic & FAQ Bot
+                      </h3>
+                      <GripHorizontal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    </div>
+                    <p className="text-[10px] text-blue-200/80 truncate">
+                      Interactive Onboarding & Rules Reference (BUSINESS_LOGIC.md)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setLang(prev => (prev === 'vi' ? 'en' : 'vi'))}
+                    className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-[10px] font-bold uppercase tracking-wider transition-colors"
+                    title="Switch Language (VN / EN)"
+                  >
+                    <Globe className="w-3 h-3" />
+                    {lang.toUpperCase()}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMessages([initialGreeting])}
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-slate-200 transition-colors"
+                    title="Reset Conversation"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsOpen(false)}
+                    className="p-1.5 rounded-md bg-white/10 hover:bg-rose-500/80 text-slate-200 hover:text-white transition-colors"
+                    title="Close (Esc)"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Category Filter Bar */}
+              <div className="px-3 py-2 bg-slate-50 dark:bg-[#202024] border-b border-slate-200 dark:border-slate-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+                {FAQ_CATEGORIES.map(cat => {
+                  const active = selectedCategory === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setSelectedCategory(cat.id)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-all active:scale-95 ${
+                        active
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-white dark:bg-[#27272a] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {lang === 'vi' ? cat.labelVi : cat.labelEn}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Quick Topic Pills from Selected Category */}
+              <div className="px-3 py-2 bg-blue-50/50 dark:bg-blue-950/15 border-b border-slate-200 dark:border-slate-800 max-h-24 overflow-y-auto shrink-0">
+                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1.5">
+                  <BookOpen className="w-3 h-3 text-blue-500" />
+                  <span>
+                    {lang === 'vi'
+                      ? 'Chủ đề nghiệp vụ (Nhấn để xem ngay):'
+                      : 'Business Logic Topics (Click for instant guide):'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {categoryEntries.map(entry => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      onClick={() => handleSelectEntry(entry)}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-white dark:bg-[#27272a] text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:scale-95 transition-all text-left"
+                    >
+                      <HelpCircle className="w-3 h-3 shrink-0 text-blue-500" />
+                      <span className="truncate max-w-[230px]">
+                        {lang === 'vi' ? entry.titleVi : entry.titleEn}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Chat Messages Area */}
+              <div className="flex-1 overflow-y-auto p-3.5 space-y-3 bg-slate-50/40 dark:bg-[#141417]">
+                {messages.map(msg => (
+                  <div
+                    key={msg.id}
+                    className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                  >
+                    <div
+                      className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 shadow-xs ${
+                        msg.role === 'user'
+                          ? 'bg-blue-600 text-white rounded-br-xs'
+                          : 'bg-white dark:bg-[#202024] border border-slate-200/90 dark:border-slate-700/80 rounded-bl-xs'
+                      }`}
+                    >
+                      {msg.role === 'user' ? (
+                        <div className="text-xs font-medium leading-relaxed">{msg.text}</div>
+                      ) : (
+                        <div className="space-y-0.5">{renderFormattedText(msg.text)}</div>
+                      )}
+
+                      {msg.role === 'assistant' && msg.relatedEntries && msg.relatedEntries.length > 0 && (
+                        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-700/70">
+                          <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1">
+                            {lang === 'vi' ? 'Câu hỏi liên quan:' : 'Related Topics:'}
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {msg.relatedEntries.map(rel => (
+                              <button
+                                key={rel.id}
+                                type="button"
+                                onClick={() => handleSelectEntry(rel)}
+                                className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-900/40 text-[10px] font-semibold text-blue-600 dark:text-blue-300 transition-colors"
+                              >
+                                <span>{lang === 'vi' ? rel.titleVi : rel.titleEn}</span>
+                                <ChevronRight className="w-2.5 h-2.5" />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-[9px] text-slate-400 mt-0.5 px-1">{msg.timestamp}</span>
+                  </div>
+                ))}
+
+                {isTyping && (
+                  <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 px-2">
+                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
+                    <span>
+                      {lang === 'vi'
+                        ? 'Đang tra cứu BUSINESS_LOGIC.md...'
+                        : 'Consulting BUSINESS_LOGIC.md...'}
+                    </span>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input Form */}
+              <form
+                onSubmit={handleSendQuestion}
+                className="p-3 bg-white dark:bg-[#1c1c20] border-t border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0"
+              >
+                <input
+                  type="text"
+                  value={inputQuery}
+                  onChange={e => setInputQuery(e.target.value)}
+                  placeholder={
+                    lang === 'vi'
+                      ? 'Hỏi về Budget, Cost 3 đợt, Gantt, Tracker, Layout m²...'
+                      : 'Ask about Budget, 3-Installment Cost, Gantt, Tracker, Layout m²...'
+                  }
+                  className="flex-1 bg-slate-100 dark:bg-[#27272a] border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={!inputQuery.trim() || isTyping}
+                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-1.5 active:scale-95 touch-manipulation transition-all shrink-0"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{lang === 'vi' ? 'Gửi' : 'Ask'}</span>
+                </button>
+              </form>
+            </div>
+          </Draggable>
+        </div>
+      )}
+    </>
+  );
+});
+
+FaqChatbotModal.displayName = 'FaqChatbotModal';
+
+
+// === FILE: src/components/AppParts/AppGlobalOverlays.tsx ===
+import React, { Suspense, memo } from "react";
+import { lazyWithRetry } from "../../lib/lazyWithRetry";
+import { Toast } from "../Toast";
+
+const AppTour = lazyWithRetry(
+  () => import("../AppTour").then((m) => ({ default: m.AppTour })),
+  "AppTour"
+);
+const CommandPaletteModal = lazyWithRetry(
+  () =>
+    import("../CommandPaletteModal").then((m) => ({
+      default: m.CommandPaletteModal,
+    })),
+  "CommandPaletteModal"
+);
+const ProjectQuickNavModal = lazyWithRetry(
+  () =>
+    import("../ProjectQuickNavModal").then((m) => ({
+      default: m.ProjectQuickNavModal,
+    })),
+  "ProjectQuickNavModal"
+);
+const FaqChatbotModal = lazyWithRetry(
+  () =>
+    import("../FaqBot/FaqChatbotModal").then((m) => ({
+      default: m.FaqChatbotModal,
+    })),
+  "FaqChatbotModal"
+);
+
+interface AppGlobalOverlaysProps {
+  quickNavTarget: any;
+  setQuickNavTarget: (target: any) => void;
+  handleQuickNavigate: (tab: string, target: any) => void;
+  isCommandPaletteOpen: boolean;
+  setIsCommandPaletteOpen: (open: boolean) => void;
+  handleTabChange: (tab: string) => void;
+  toggleTheme: () => void;
+  isFocusMode: boolean;
+  setIsFocusMode: (focus: boolean) => void;
+  isPrintPreview: boolean;
+  setIsPrintPreview: (preview: boolean) => void;
+  toast: { title: string; message: string; type?: "info" | "success" | "warning" | "error" } | null;
+  setToast: (toast: any) => void;
+  showTour: boolean;
+  handleCloseTour: () => void;
+  isExportingPDF: boolean;
+}
+
+export const AppGlobalOverlays: React.FC<AppGlobalOverlaysProps> = memo(
+  ({
+    quickNavTarget,
+    setQuickNavTarget,
+    handleQuickNavigate,
+    isCommandPaletteOpen,
+    setIsCommandPaletteOpen,
+    handleTabChange,
+    toggleTheme,
+    isFocusMode,
+    setIsFocusMode,
+    isPrintPreview,
+    setIsPrintPreview,
+    toast,
+    setToast,
+    showTour,
+    handleCloseTour,
+    isExportingPDF,
+  }) => {
+    return (
+      <>
+        {quickNavTarget && (
+          <Suspense fallback={null}>
+            <ProjectQuickNavModal
+              target={quickNavTarget}
+              isOpen={!!quickNavTarget}
+              onClose={() => setQuickNavTarget(null)}
+              onNavigate={handleQuickNavigate}
+            />
+          </Suspense>
+        )}
+
+        {isCommandPaletteOpen && (
+          <Suspense fallback={null}>
+            <CommandPaletteModal
+              isOpen={isCommandPaletteOpen}
+              onClose={() => setIsCommandPaletteOpen(false)}
+              onTabChange={handleTabChange}
+              onToggleTheme={toggleTheme}
+              onToggleFocusMode={() => setIsFocusMode(!isFocusMode)}
+              onPrintPreviewToggle={() => setIsPrintPreview(!isPrintPreview)}
+            />
+          </Suspense>
+        )}
+
+        {toast && (
+          <Toast
+            title={toast.title}
+            message={toast.message}
+            type={toast.type}
+            onClose={() => setToast(null)}
+          />
+        )}
+
+        <Suspense fallback={null}>
+          <FaqChatbotModal />
+        </Suspense>
+
+        <div className="fixed bottom-1 right-3 text-[10px] text-slate-400 z-50 pointer-events-none">
+          copyright by Nam Hung CP
+        </div>
+
+        {showTour && (
+          <Suspense fallback={null}>
+            <AppTour onClose={handleCloseTour} />
+          </Suspense>
+        )}
+
+        {isExportingPDF && (
+          <div className="fixed inset-0 z-[99999] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-white print:hidden hide-on-actual-print">
+            <svg
+              className="w-12 h-12 animate-spin text-blue-500 mb-4"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              ></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            <h2 className="text-xl font-bold tracking-tight">
+              Generating High Quality Document...
+            </h2>
+            <p className="text-slate-300 mt-2 text-sm text-center max-w-sm">
+              Please wait while we render your chart. This may take a moment depending on the
+              project size.
+            </p>
+          </div>
+        )}
+      </>
+    );
+  }
+);
+
+AppGlobalOverlays.displayName = "AppGlobalOverlays";
+
+
+// === FILE: server.ts ===
+import express from 'express';
+import fs from 'fs';
+import path from 'path';
+import { createServer as createViteServer } from 'vite';
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  // Cấu hình tăng giới hạn payload cho ảnh
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.raw({ type: '*/*', limit: '50mb' }));
+
+  // Cấu hình CORS cho API
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, x-r2-account-id, x-r2-access-key-id, x-r2-secret-access-key, x-r2-bucket-name, x-r2-file-name, Authorization');
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+    next();
+  });
+
+  // API Proxy cho R2 Upload
+  app.post('/api/r2-upload', async (req, res) => {
+    try {
+      const accountId = req.headers['x-r2-account-id'] as string;
+      const accessKeyId = req.headers['x-r2-access-key-id'] as string;
+      const secretAccessKey = req.headers['x-r2-secret-access-key'] as string;
+      const bucketName = req.headers['x-r2-bucket-name'] as string;
+      const fileName = decodeURIComponent(req.headers['x-r2-file-name'] as string);
+      const contentType = req.headers['content-type'] as string;
+
+      if (!accountId || !accessKeyId || !secretAccessKey || !bucketName || !fileName) {
+        return res.status(400).json({ success: false, error: 'Thiếu thông tin cấu hình R2' });
+      }
+
+      // Xây dựng signature AWS V4 chuẩn
+      const crypto = await import('crypto');
+
+      const region = 'auto';
+      const service = 's3';
+      const host = `${accountId}.r2.cloudflarestorage.com`;
+      const endpoint = `https://${host}`;
+      const url = `${endpoint}/${bucketName}/${encodeURIComponent(fileName)}`;
+
+      // Tạo S3 Client từ AWS SDK (sử dụng Node.js)
+      const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+
+      const s3 = new S3Client({
+        region,
+        endpoint,
+        credentials: {
+          accessKeyId,
+          secretAccessKey,
+        }
+      });
+
+      const command = new PutObjectCommand({
+        Bucket: bucketName,
+        Key: fileName,
+        ContentType: contentType,
+      });
+
+      const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+
+      // Gọi Cloudflare R2
+      const r2Res = await fetch(signedUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': contentType,
+        },
+        body: req.body,
+      });
+
+      if (!r2Res.ok) {
+        const errText = await r2Res.text();
+        console.error('R2 Proxy Upload Error:', errText);
+        return res.status(r2Res.status).json({ success: false, error: errText });
+      }
+
+      res.status(200).json({ success: true });
+    } catch (error: any) {
+      console.error('R2 Proxy Exception:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // API Proxy xóa Cache
+  app.post('/api/purge-cache', async (req, res) => {
+    try {
+      const { zoneId, apiToken } = req.body;
+      
+      if (!zoneId || !apiToken) {
+        return res.status(400).json({ success: false, error: 'Thiếu cấu hình xóa cache' });
+      }
+      
+      const cfRes = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneId}/purge_cache`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ purge_everything: true })
+      });
+      
+      if (!cfRes.ok) {
+         const errText = await cfRes.text();
+         return res.status(cfRes.status).json({ success: false, error: errText });
+      }
+      
+      res.status(200).json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // API FAQ Chatbot đọc trực tiếp từ BUSINESS_LOGIC.md
+  let cachedBusinessLogicMd = '';
+  try {
+    const blPath = path.join(process.cwd(), 'BUSINESS_LOGIC.md');
+    if (fs.existsSync(blPath)) {
+      cachedBusinessLogicMd = fs.readFileSync(blPath, 'utf-8');
+    }
+  } catch {
+    cachedBusinessLogicMd = '';
+  }
+
+  app.post('/api/faq-chat', async (req, res) => {
+    try {
+      const { question, lang = 'vi', localContext = '' } = req.body || {};
+      if (!question || typeof question !== 'string') {
+        return res.status(400).json({ error: 'Missing question' });
+      }
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(200).json({ answer: localContext || null, source: 'local_knowledge' });
+      }
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+      const systemInstruction =
+        `You are the official Takashimaya Project Management FAQ Assistant for new and existing users.\n` +
+        `Answer strictly based on the following BUSINESS_LOGIC.md specification and local context.\n` +
+        `Respond concisely and clearly in ${lang === 'vi' ? 'Vietnamese' : 'English'} using bullet points and **bold** key terms.\n\n` +
+        `--- BUSINESS_LOGIC.md ---\n${cachedBusinessLogicMd.slice(0, 18000)}\n` +
+        `--- MATCHED CONTEXT ---\n${localContext}`;
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: question,
+        config: {
+          systemInstruction,
+          temperature: 0.2,
+        },
+      });
+      return res.status(200).json({
+        answer: response.text || localContext || null,
+        source: 'gemini_business_logic',
+      });
+    } catch {
+      return res.status(200).json({
+        answer: req.body?.localContext || null,
+        source: 'local_fallback',
+      });
+    }
+  });
+
+  // In-memory LRU Cache cho binary PDF và Thumbnail để phản hồi 0ms cho các lần mở tiếp theo
+  const mediaMemoryCache = new Map<string, { buffer: Buffer; contentType: string; ts: number }>();
+  const MAX_MEDIA_CACHE_ITEMS = 40;
+  const setMediaCache = (key: string, buffer: Buffer, contentType: string) => {
+    if (buffer.byteLength > 25 * 1024 * 1024) return; // Không cache file > 25MB trong RAM
+    if (mediaMemoryCache.size >= MAX_MEDIA_CACHE_ITEMS) {
+      const oldestKey = mediaMemoryCache.keys().next().value;
+      if (oldestKey) mediaMemoryCache.delete(oldestKey);
+    }
+    mediaMemoryCache.set(key, { buffer, contentType, ts: Date.now() });
+  };
+
+  // Helper phục vụ file nhị phân kèm Range Request (HTTP 206 Partial Content) cho PDF viewer & iframe
+  const sendBinaryWithRange = (
+    req: express.Request,
+    res: express.Response,
+    buffer: Buffer,
+    contentType: string,
+    isPdf: boolean = false
+  ) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+    if (isPdf) {
+      res.setHeader('Content-Disposition', 'inline; filename="document.pdf"');
+    }
+
+    const total = buffer.length;
+    const range = req.headers.range;
+
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+
+      if (!isNaN(start) && start < total && end < total && start <= end) {
+        const chunk = buffer.subarray(start, end + 1);
+        res.status(206);
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+        res.setHeader('Content-Length', String(chunk.length));
+        res.setHeader('Content-Type', contentType);
+        return res.end(chunk);
+      }
+    }
+
+    res.setHeader('Content-Length', String(total));
+    res.setHeader('Content-Type', contentType);
+    return res.send(buffer);
+  };
+
+  // API Proxy tải binary PDF từ Google Drive để đồng bộ hiển thị Native Canvas như R2
+  app.get('/api/drive-pdf', async (req, res) => {
+    try {
+      const fileId = req.query.id as string;
+      if (!fileId || typeof fileId !== 'string') {
+        return res.status(400).json({ success: false, error: 'Thiếu file ID' });
+      }
+
+      const cleanId = fileId.trim();
+      const cacheKey = `drive-pdf:${cleanId}`;
+      const cached = mediaMemoryCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 3600_000) {
+        return sendBinaryWithRange(req, res, cached.buffer, cached.contentType || 'application/pdf', true);
+      }
+
+      const directDownloadUrl = `https://drive.usercontent.google.com/download?id=${cleanId}&export=download&authuser=0`;
+
+      let response = await fetch(directDownloadUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/pdf,application/octet-stream,*/*',
+        },
+        redirect: 'follow',
+      });
+
+      const contentType = response.headers.get('content-type') || '';
+
+      // Xử lý trang xác nhận virus scan nếu file dung lượng lớn
+      if (response.ok && contentType.includes('text/html')) {
+        const text = await response.text();
+        const confirmMatch = text.match(/confirm=([a-zA-Z0-9_-]+)/);
+        if (confirmMatch?.[1]) {
+          const confirmUrl = `https://drive.usercontent.google.com/download?id=${cleanId}&export=download&confirm=${confirmMatch[1]}`;
+          response = await fetch(confirmUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+            redirect: 'follow',
+          });
+        } else {
+          const ucUrl = `https://drive.google.com/uc?export=download&id=${cleanId}`;
+          const ucRes = await fetch(ucUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            },
+            redirect: 'follow',
+          });
+          if (ucRes.ok && !ucRes.headers.get('content-type')?.includes('text/html')) {
+            response = ucRes;
+          }
+        }
+      }
+
+      const finalContentType = response.headers.get('content-type') || '';
+      if (!response.ok || finalContentType.includes('text/html')) {
+        return res.status(404).json({
+          success: false,
+          error: 'Tài liệu Google Drive không cho phép tải trực tiếp dạng binary (yêu cầu quyền xem hoặc mở trong iframe)'
+        });
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const resolvedMime = finalContentType.includes('image/') ? finalContentType : 'application/pdf';
+      setMediaCache(cacheKey, buffer, resolvedMime);
+
+      return sendBinaryWithRange(req, res, buffer, resolvedMime, true);
+    } catch (error: any) {
+      console.error('Drive PDF Proxy Exception:', error);
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // API Proxy tải nhanh Thumbnail từ Google Drive (chống lỗi chặn ITP/CORS trên iOS Safari)
+  app.get('/api/drive-thumb', async (req, res) => {
+    try {
+      const fileId = String(req.query.id || '').trim();
+      const sz = String(req.query.sz || 'w600').trim();
+      if (!fileId) return res.status(400).end();
+
+      const cacheKey = `drive-thumb:${fileId}:${sz}`;
+      const cached = mediaMemoryCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 3600_000) {
+        res.setHeader('Content-Type', cached.contentType);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+        return res.send(cached.buffer);
+      }
+
+      const thumbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=${sz}`;
+      let response = await fetch(thumbUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        },
+        redirect: 'follow',
+      });
+
+      if (!response.ok || (response.headers.get('content-type') || '').includes('text/html')) {
+        const fallbackLh3 = `https://lh3.googleusercontent.com/d/${fileId}=${sz}`;
+        response = await fetch(fallbackLh3, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'image/*,*/*;q=0.8',
+          },
+          redirect: 'follow',
+        });
+      }
+
+      const ct = response.headers.get('content-type') || 'image/jpeg';
+      if (!response.ok || ct.includes('text/html')) {
+        return res.status(404).end();
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      setMediaCache(cacheKey, buffer, ct);
+
+      res.setHeader('Content-Type', ct);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+      return res.send(buffer);
+    } catch {
+      return res.status(500).end();
+    }
+  });
+
+  // API Proxy đa năng cho mọi nguồn PDF/Image (R2, Firebase, HTTP) khi trình duyệt gặp rào cản CORS
+  app.get('/api/pdf-proxy', async (req, res) => {
+    try {
+      const targetUrl = String(req.query.url || '').trim();
+      if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
+        return res.status(400).json({ success: false, error: 'URL không hợp lệ' });
+      }
+
+      const cacheKey = `pdf-proxy:${targetUrl}`;
+      const cached = mediaMemoryCache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < 3600_000) {
+        const isPdf = cached.contentType.includes('pdf') || /\.pdf($|\?)/i.test(targetUrl);
+        return sendBinaryWithRange(req, res, cached.buffer, cached.contentType, isPdf);
+      }
+
+      const response = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/pdf,image/*,application/octet-stream,*/*',
+        },
+        redirect: 'follow',
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).end();
+      }
+
+      const ct = response.headers.get('content-type') || 'application/pdf';
+      const buffer = Buffer.from(await response.arrayBuffer());
+      setMediaCache(cacheKey, buffer, ct);
+
+      const isPdf = ct.includes('pdf') || /\.pdf($|\?)/i.test(targetUrl);
+      return sendBinaryWithRange(req, res, buffer, ct, isPdf);
+    } catch (error: any) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Phục vụ trực tiếp pdf.worker.min.mjs, cmaps & standard_fonts từ node_modules/pdfjs-dist
+  // (không cần lưu 186 file nhị phân nặng vào thư mục public/ của Git repo, chống lỗi timeout khi Clone repo trên Cloudflare)
+  const pdfjsBasePath = path.join(process.cwd(), 'node_modules', 'pdfjs-dist');
+  app.get('/pdf.worker.min.mjs', (_req, res) => {
+    const legacyWorker = path.join(pdfjsBasePath, 'legacy', 'build', 'pdf.worker.min.mjs');
+    const stdWorker = path.join(pdfjsBasePath, 'build', 'pdf.worker.min.mjs');
+    const workerFile = fs.existsSync(legacyWorker) ? legacyWorker : stdWorker;
+    res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.sendFile(workerFile, (err) => {
+      if (err && !res.headersSent) {
+        res.status(404).end();
+      }
+    });
+  });
+
+  app.use('/cmaps', express.static(path.join(pdfjsBasePath, 'cmaps'), {
+    fallthrough: false,
+    setHeaders: (res) => {
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }));
+
+  app.use('/standard_fonts', express.static(path.join(pdfjsBasePath, 'standard_fonts'), {
+    fallthrough: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.ttf')) {
+        res.setHeader('Content-Type', 'font/ttf');
+      } else {
+        res.setHeader('Content-Type', 'application/octet-stream');
+      }
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    },
+  }));
+
+  // Chặn trả file index.html cho các đuôi mở rộng nhị phân font/cmap nếu không tồn tại
+  app.use((req, res, next) => {
+    if (/\.(bcmap|pfb|ttf|otf|wasm)$/i.test(req.path)) {
+      return res.status(404).end();
+    }
+    next();
+  });
+
+  // Tích hợp Vite Middleware cho môi trường Dev
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true, hmr: false },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    // Phục vụ file tĩnh khi chạy Build (Production)
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath, {
+      maxAge: '1y',
+      immutable: true,
+      setHeaders: (res, filePath) => {
+        // HTML files: NO-CACHE để luôn nhận phiên bản mới nhất, không bị kẹt bundle cũ
+        if (filePath.endsWith('.html')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+        } else if (filePath.endsWith('.json') || filePath.includes('sw.js')) {
+          // Manifest và Service Worker: Revalidate nhanh
+          res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+        } else if (filePath.match(/\.(js|mjs|css|woff2?|png|jpg|jpeg|gif|ico|svg)$/)) {
+          // File tĩnh (Vite hashed bundles, font, icon): Cache vĩnh viễn 1 năm
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      }
+    }));
+    app.get('*all', (req, res) => {
+      if (/\.(bcmap|pfb|ttf|otf|wasm|mjs|map)$/i.test(req.path)) {
+        return res.status(404).end();
+      }
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server chạy tại cổng ${PORT}`);
+  });
+}
+
+startServer();
+

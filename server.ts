@@ -117,6 +117,55 @@ async function startServer() {
     }
   });
 
+  // API FAQ Chatbot đọc trực tiếp từ BUSINESS_LOGIC.md
+  let cachedBusinessLogicMd = '';
+  try {
+    const blPath = path.join(process.cwd(), 'BUSINESS_LOGIC.md');
+    if (fs.existsSync(blPath)) {
+      cachedBusinessLogicMd = fs.readFileSync(blPath, 'utf-8');
+    }
+  } catch {
+    cachedBusinessLogicMd = '';
+  }
+
+  app.post('/api/faq-chat', async (req, res) => {
+    try {
+      const { question, lang = 'vi', localContext = '' } = req.body || {};
+      if (!question || typeof question !== 'string') {
+        return res.status(400).json({ error: 'Missing question' });
+      }
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(200).json({ answer: localContext || null, source: 'local_knowledge' });
+      }
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey });
+      const systemInstruction =
+        `You are the official Takashimaya Project Management FAQ Assistant for new and existing users.\n` +
+        `Answer strictly based on the following BUSINESS_LOGIC.md specification and local context.\n` +
+        `Respond concisely and clearly in ${lang === 'vi' ? 'Vietnamese' : 'English'} using bullet points and **bold** key terms.\n\n` +
+        `--- BUSINESS_LOGIC.md ---\n${cachedBusinessLogicMd.slice(0, 18000)}\n` +
+        `--- MATCHED CONTEXT ---\n${localContext}`;
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: question,
+        config: {
+          systemInstruction,
+          temperature: 0.2,
+        },
+      });
+      return res.status(200).json({
+        answer: response.text || localContext || null,
+        source: 'gemini_business_logic',
+      });
+    } catch {
+      return res.status(200).json({
+        answer: req.body?.localContext || null,
+        source: 'local_fallback',
+      });
+    }
+  });
+
   // In-memory LRU Cache cho binary PDF và Thumbnail để phản hồi 0ms cho các lần mở tiếp theo
   const mediaMemoryCache = new Map<string, { buffer: Buffer; contentType: string; ts: number }>();
   const MAX_MEDIA_CACHE_ITEMS = 40;

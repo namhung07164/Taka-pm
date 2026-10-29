@@ -20,6 +20,13 @@ const ProjectQuickNavModal = lazyWithRetry(
     })),
   "ProjectQuickNavModal"
 );
+const FaqChatbotModal = lazyWithRetry(
+  () =>
+    import("../FaqBot/FaqChatbotModal").then((m) => ({
+      default: m.FaqChatbotModal,
+    })),
+  "FaqChatbotModal"
+);
 
 interface AppGlobalOverlaysProps {
   quickNavTarget: any;
@@ -93,6 +100,10 @@ export const AppGlobalOverlays: React.FC<AppGlobalOverlaysProps> = memo(
             onClose={() => setToast(null)}
           />
         )}
+
+        <Suspense fallback={null}>
+          <FaqChatbotModal />
+        </Suspense>
 
         <div className="fixed bottom-1 right-3 text-[10px] text-slate-400 z-50 pointer-events-none">
           copyright by Nam Hung CP
