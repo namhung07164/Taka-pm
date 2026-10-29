@@ -81,7 +81,7 @@ export const FAQ_TAB_QUICK_CHIPS: FaqQuickChip[] = [
   },
   {
     id: 'chip-calendar-ios-qr',
-    tabIds: ['calendar', 'delCalendar', 'all'],
+    tabIds: ['calendar', 'taskDelegationCalendar', 'all'],
     labelVi: 'Đồng bộ lịch iOS qua QR',
     labelEn: 'Sync iOS Calendar via QR',
     targetTab: 'calendar',
@@ -148,7 +148,7 @@ export const FAQ_TAB_QUICK_CHIPS: FaqQuickChip[] = [
   },
   {
     id: 'chip-budget-cost-3paid',
-    tabIds: ['budget', 'cost', 'summary', 'executive', 'all'],
+    tabIds: ['budget', 'cost', 'summary', 'all'],
     labelVi: 'Ngân sách & Thanh toán 3 đợt',
     labelEn: 'Budget & 3-Stage Payments',
     targetTab: 'cost',
@@ -195,7 +195,7 @@ export const FAQ_TAB_QUICK_CHIPS: FaqQuickChip[] = [
   },
   {
     id: 'chip-ios-40mb-dexie',
-    tabIds: ['setting', 'general', 'auditLog'],
+    tabIds: ['setting', 'general', 'audit'],
     labelVi: 'Bộ nhớ Local Dexie & Trần 40MB iOS',
     labelEn: 'Dexie Local-First & iOS 40MB Cap',
     targetTab: 'setting',
@@ -214,7 +214,7 @@ export const FAQ_TAB_QUICK_CHIPS: FaqQuickChip[] = [
   },
   {
     id: 'chip-delegation-tracker',
-    tabIds: ['taskDelegation', 'projectDelegation', 'notification'],
+    tabIds: ['taskDelegation', 'notification'],
     labelVi: 'Quy trình 5 bước duyệt Tracker',
     labelEn: '5-Step Tracker Approval',
     targetTab: 'taskDelegation',

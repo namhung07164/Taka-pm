@@ -31489,7 +31489,6 @@ GanttSumBadge.displayName = 'GanttSumBadge';
 
 ================================================================================
 FILE: src/components/Gantt/GanttTableView.tsx
-================================================================================
 import React, { Dispatch, SetStateAction, useMemo } from 'react';
 import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { Project, Task, AppUser } from '../../types';
@@ -31520,51 +31519,30 @@ interface GanttTableViewProps {
   handleTopScroll: (e: React.UIEvent<HTMLDivElement>) => void;
   flatGanttRows?: GanttRowType[];
   visibleGanttRows: GanttRowType[];
-  paddingTop: number;
-  paddingBottom: number;
-  totalDays: number;
-  dayWidth: number;
-  sideWidth: number;
+  paddingTop: number; paddingBottom: number; totalDays: number; dayWidth: number; sideWidth: number;
   setSideWidth: React.Dispatch<React.SetStateAction<number>>;
   startResizingSide: (e: React.MouseEvent) => void;
   colWidths?: GanttColumnWidths;
   startResizingColumn?: (colKey: keyof GanttColumnWidths, e: React.MouseEvent) => void;
-  timeUnits: TimeUnit[];
-  startDate: Date;
-  customToday: Date;
-  setCustomToday: (d: Date) => void;
-  isDraggingToday: boolean;
-  setIsDraggingToday: (v: boolean) => void;
+  timeUnits: TimeUnit[]; startDate: Date; customToday: Date; setCustomToday: (d: Date) => void;
+  isDraggingToday: boolean; setIsDraggingToday: (v: boolean) => void;
   getDateFromOffsetPx: (offsetPx: number) => Date;
-  activeTooltip: string | null;
-  setActiveTooltip: (id: string | null) => void;
+  activeTooltip: string | null; setActiveTooltip: (id: string | null) => void;
   getBarColor: (status: string, duration?: string | number) => string;
-  visibleColumns: string[];
-  handleToggleColumn?: (colId: string) => void;
-  projects: Project[];
-  tasks: Task[];
-  delegationGroups: any[];
-  currentUser: AppUser | null;
-  canWrite: boolean;
-  isEditMode: boolean;
-  isHideMode: boolean;
+  visibleColumns: string[]; handleToggleColumn?: (colId: string) => void;
+  projects: Project[]; tasks: Task[]; delegationGroups: any[]; currentUser: AppUser | null;
+  canWrite: boolean; isEditMode: boolean; isHideMode: boolean;
   toggleHideRow: (id: string, e: React.MouseEvent) => void;
   getRowVisibilityClass: (id: string) => string;
-  selectedTaskSet: Set<string>;
-  selectedTaskIds: string[];
-  setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
-  selectedProjectSet: Set<string>;
-  selectedProjectIds?: string[]; setSelectedProjectIds?: (ids: string[]) => void;
+  selectedTaskSet: Set<string>; selectedTaskIds: string[]; setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
+  selectedProjectSet: Set<string>; selectedProjectIds?: string[]; setSelectedProjectIds?: (ids: string[]) => void;
   handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement> | React.MouseEvent, id: string, isShift?: boolean, orderedTaskIds?: string[]) => void;
-  handleToggleSelectAll: () => void;
-  isAllSelected: boolean;
-  toggleProjectExpansion: (id: string) => void;
-  toggleModularParent: (taskId: string | number) => void;
+  handleToggleSelectAll: () => void; isAllSelected: boolean;
+  toggleProjectExpansion: (id: string) => void; toggleModularParent: (taskId: string | number) => void;
   handleGroupModularTasks: (parentTaskId: string, childTaskIds: string[]) => void;
   handleUnlinkModularTasks: (childTaskIds: string[]) => void;
   handleTogglePin: (p: Project) => Promise<void>;
-  initialFocusTaskId?: string | null;
-  ganttTabFocusTaskId?: string | null;
+  initialFocusTaskId?: string | null; ganttTabFocusTaskId?: string | null;
   draggingTaskIds: string[];
   handleTaskDragStart: (e: React.DragEvent, id: string) => void;
   handleTaskDragOver: (e: React.DragEvent, id: string) => void;
@@ -31572,15 +31550,11 @@ interface GanttTableViewProps {
   handleTaskDragLeave: (e: React.DragEvent, id: string) => void;
   handleTaskDrop: (e: React.DragEvent, targetTask: Task, parentProject?: Project) => Promise<void> | void;
   handleTaskDragEnd: () => void;
-  dragOverTaskId: string | null;
-  dropPosition: 'before' | 'after' | null;
-  dependencyLines: DependencyLine[];
-  computedSum: number | null;
-  isExporting: boolean;
+  dragOverTaskId: string | null; dropPosition: 'before' | 'after' | null;
+  dependencyLines: DependencyLine[]; computedSum: number | null; isExporting: boolean;
   onNavigateToTaskDetail?: (taskId: string) => void;
   onNavigateToLayout?: (store: string, location: string, projectCode?: string, sourceTaskId?: string) => void;
-  paginatedProjects?: Project[];
-  expandedModularTasks?: string[];
+  paginatedProjects?: Project[]; expandedModularTasks?: string[];
   setExpandedModularTasks?: React.Dispatch<React.SetStateAction<string[]>>;
   getGroupTasksForProject?: (p: Project) => Task[];
 }
@@ -31778,6 +31752,30 @@ export function GanttTableView({
     [handleTaskCheckboxChange]
   );
 
+  const [stickyOffset, setStickyOffset] = React.useState<number>(() => {
+    return typeof window !== 'undefined' && window.innerWidth < 640 ? 86 : 48;
+  });
+
+  React.useEffect(() => {
+    const updateHeight = () => {
+      const el = document.getElementById('gantt-sticky-search-bar');
+      if (el) {
+        const h = el.offsetHeight;
+        if (h > 0) setStickyOffset(h);
+      }
+    };
+    updateHeight();
+    const el = document.getElementById('gantt-sticky-search-bar');
+    if (!el) return;
+    const ro = new ResizeObserver(updateHeight);
+    ro.observe(el);
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, []);
+
   return (
     <div
       ref={tableContainerRef}
@@ -31787,14 +31785,14 @@ export function GanttTableView({
         isExporting && "overflow-hidden"
       )}
     >
-      {/* Top Synchronized Timeline Header (Sticky Month Row below Sticky Search/Fix Project Code Row) */}
+      {/* Top Synchronized Timeline Header (Sticky Month Row pinned right below the sticky Search & Fix Project Code bar) */}
       <div
         ref={topScrollRef}
         data-print-header="true"
         onScroll={handleTopScroll}
         onPointerDown={handlePointerDown}
-        style={{ position: '-webkit-sticky' as any, top: '48px' }}
-        className="sticky top-[48px] z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-[#18181a]/95 backdrop-blur-md flex shrink-0 shadow-xs"
+        style={{ position: '-webkit-sticky' as any, top: `${stickyOffset}px` }}
+        className="sticky top-[86px] sm:top-[48px] z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-[#18181a]/95 backdrop-blur-md flex shrink-0 shadow-xs"
       >
         <GanttLeftHeader
           sideWidth={sideWidth}
@@ -31986,9 +31984,6 @@ export function GanttTableView({
     </div>
   );
 }
-
-
-================================================================================
 FILE: src/components/Gantt/GanttTaskLeftColumns.tsx
 ================================================================================
 import React, { useRef } from 'react';
@@ -32814,7 +32809,6 @@ GanttTodayLine.displayName = 'GanttTodayLine';
 
 ================================================================================
 FILE: src/components/Gantt/GanttToolbar.tsx
-================================================================================
 import React, { Dispatch, SetStateAction, useMemo } from 'react';
 import { Search, Loader2, Edit2, X, Target } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -33118,38 +33112,52 @@ export function GanttToolbar({
         </div>
       </div>
 
-      {/* Row 2: Sticky Action Toolbar (Date Filter, Today, + Add Column, Fix Project Code, Search) */}
+      {/* Row 2: Non-sticky Date Filter & Column Adder */}
+      <div className="relative z-10 px-2 py-1.5 sm:px-3 sm:py-2 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 shrink-0 print:hidden text-slate-800 dark:text-slate-100">
+        <div className="flex flex-wrap items-center gap-2">
+          <GanttToolbarDateFilter
+            handleTodayClick={handleTodayClick}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            scaleInput={scaleInput}
+            setScaleInput={setScaleInput}
+            dayWidth={dayWidth}
+            setDayWidth={setDayWidth}
+            isWidthChanged={isWidthChanged}
+            setIsWidthChanged={setIsWidthChanged}
+            saveDayWidth={saveDayWidth}
+            tempStartDate={tempStartDate}
+            setTempStartDate={setTempStartDate}
+            tempEndDate={tempEndDate}
+            setTempEndDate={setTempEndDate}
+            setFilterStartDate={setFilterStartDate}
+            setFilterEndDate={setFilterEndDate}
+          />
+
+          <ColumnAdder
+            availableColumns={GANTT_AVAILABLE_COLUMNS}
+            visibleColumns={visibleColumns}
+            onAddColumn={handleToggleColumn}
+          />
+        </div>
+
+        {/* Task loading spinner */}
+        {isTasksLoading && (!tasks || tasks.length === 0) && (
+          <div className="flex items-center gap-1 text-xs text-blue-400 font-semibold animate-pulse ml-auto">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>{t('Syncing...')}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Row 3: Sticky Fix Project Code & Search Bar */}
       <div
+        id="gantt-sticky-search-bar"
         style={{ position: '-webkit-sticky' as any, top: 0 }}
-        className="sticky top-0 z-40 px-2 py-2 sm:px-3 sm:py-2 bg-slate-100/95 dark:bg-[#121214]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col gap-1 shrink-0 print:hidden text-slate-800 dark:text-slate-100"
+        className="sticky top-0 z-40 px-2 py-2 sm:px-3 sm:py-2 bg-slate-100/95 dark:bg-[#121214]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col gap-1.5 shrink-0 print:hidden text-slate-800 dark:text-slate-100 shadow-2xs"
       >
-        <div className="flex flex-wrap items-center gap-2 justify-between w-full">
-          <div className="flex flex-wrap items-center gap-2 flex-grow">
-            <GanttToolbarDateFilter
-              handleTodayClick={handleTodayClick}
-              viewMode={viewMode}
-              setViewMode={setViewMode}
-              scaleInput={scaleInput}
-              setScaleInput={setScaleInput}
-              dayWidth={dayWidth}
-              setDayWidth={setDayWidth}
-              isWidthChanged={isWidthChanged}
-              setIsWidthChanged={setIsWidthChanged}
-              saveDayWidth={saveDayWidth}
-              tempStartDate={tempStartDate}
-              setTempStartDate={setTempStartDate}
-              tempEndDate={tempEndDate}
-              setTempEndDate={setTempEndDate}
-              setFilterStartDate={setFilterStartDate}
-              setFilterEndDate={setFilterEndDate}
-            />
-
-            <ColumnAdder
-              availableColumns={GANTT_AVAILABLE_COLUMNS}
-              visibleColumns={visibleColumns}
-              onAddColumn={handleToggleColumn}
-            />
-
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 sm:gap-2 w-full">
+          <div className="w-full sm:w-auto shrink-0">
             <FixedProjectInput 
               projects={projects} 
               yearFilter={globalYearFilter}
@@ -33157,31 +33165,20 @@ export function GanttToolbar({
               locationFilter={globalLocationFilter}
               statusFilter={filterProjectStatus}
             />
-
-            <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
-              <DebouncedSearchInput
-                value={searchTerm}
-                onChange={setSearchTerm}
-                placeholder="Search (+ AND, , OR)"
-              />
-            </div>
           </div>
 
-          {/* Task loading spinner - Only on cold start when no cached tasks exist */}
-          {isTasksLoading && (!tasks || tasks.length === 0) && (
-            <div className="flex items-center gap-1 text-xs text-blue-400 font-semibold animate-pulse ml-auto">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>{t('Syncing...')}</span>
-            </div>
-          )}
+          <div className="relative flex-1 min-w-0 w-full">
+            <DebouncedSearchInput
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="Search (+ AND, , OR)"
+            />
+          </div>
         </div>
       </div>
     </>
   );
 }
-
-
-================================================================================
 FILE: src/components/Gantt/GanttToolbarActions.tsx
 ================================================================================
 import React, { useEffect, useRef, useState } from 'react';
@@ -179593,7 +179590,6 @@ FaqChatbotModal.displayName = 'FaqChatbotModal';
 
 ================================================================================
 FILE: src/components/FaqBot/faqTabQuickChips.ts
-================================================================================
 import { TabId } from '../../types';
 
 export interface FaqQuickChip {
@@ -179677,7 +179673,7 @@ export const FAQ_TAB_QUICK_CHIPS: FaqQuickChip[] = [
   },
   {
     id: 'chip-calendar-ios-qr',
-    tabIds: ['calendar', 'delCalendar', 'all'],
+    tabIds: ['calendar', 'taskDelegationCalendar', 'all'],
     labelVi: 'Đồng bộ lịch iOS qua QR',
     labelEn: 'Sync iOS Calendar via QR',
     targetTab: 'calendar',
@@ -179744,7 +179740,7 @@ export const FAQ_TAB_QUICK_CHIPS: FaqQuickChip[] = [
   },
   {
     id: 'chip-budget-cost-3paid',
-    tabIds: ['budget', 'cost', 'summary', 'executive', 'all'],
+    tabIds: ['budget', 'cost', 'summary', 'all'],
     labelVi: 'Ngân sách & Thanh toán 3 đợt',
     labelEn: 'Budget & 3-Stage Payments',
     targetTab: 'cost',
@@ -179791,7 +179787,7 @@ export const FAQ_TAB_QUICK_CHIPS: FaqQuickChip[] = [
   },
   {
     id: 'chip-ios-40mb-dexie',
-    tabIds: ['setting', 'general', 'auditLog'],
+    tabIds: ['setting', 'general', 'audit'],
     labelVi: 'Bộ nhớ Local Dexie & Trần 40MB iOS',
     labelEn: 'Dexie Local-First & iOS 40MB Cap',
     targetTab: 'setting',
@@ -179810,7 +179806,7 @@ export const FAQ_TAB_QUICK_CHIPS: FaqQuickChip[] = [
   },
   {
     id: 'chip-delegation-tracker',
-    tabIds: ['taskDelegation', 'projectDelegation', 'notification'],
+    tabIds: ['taskDelegation', 'notification'],
     labelVi: 'Quy trình 5 bước duyệt Tracker',
     labelEn: '5-Step Tracker Approval',
     targetTab: 'taskDelegation',
@@ -179837,10 +179833,7 @@ export function getQuickChipsForTab(activeTab: TabId): FaqQuickChip[] {
   );
   return [...tabSpecific, ...generalFallbacks].slice(0, 6);
 }
-
-================================================================================
 FILE: src/components/FaqBot/faqAiCacheAndQuota.ts
-================================================================================
 import { getLocalSyncMeta, setLocalSyncMeta } from '../../lib/localDb';
 
 export const MAX_DAILY_AI_QUOTA = 20;
@@ -179923,6 +179916,7 @@ export function incrementDailyAiQuota(): {
   limit: number;
   remaining: number;
   isExceeded: boolean;
+  storageKey: string;
 } {
   const current = getDailyAiQuotaStatus();
   const nextUsed = current.used + 1;
@@ -179935,7 +179929,8 @@ export function incrementDailyAiQuota(): {
     used: nextUsed,
     limit: MAX_DAILY_AI_QUOTA,
     remaining: Math.max(0, MAX_DAILY_AI_QUOTA - nextUsed),
-    isExceeded: nextUsed >= MAX_DAILY_AI_QUOTA
+    isExceeded: nextUsed >= MAX_DAILY_AI_QUOTA,
+    storageKey: current.storageKey
   };
 }
 
@@ -180017,8 +180012,6 @@ export function saveSmartCachedAiAnswer(
     }
   }, 0);
 }
-
-================================================================================
 FILE: src/components/FaqBot/faqKnowledgeEngine.ts
 ================================================================================
 import { TabId } from '../../types';

@@ -80,6 +80,7 @@ export function incrementDailyAiQuota(): {
   limit: number;
   remaining: number;
   isExceeded: boolean;
+  storageKey: string;
 } {
   const current = getDailyAiQuotaStatus();
   const nextUsed = current.used + 1;
@@ -92,7 +93,8 @@ export function incrementDailyAiQuota(): {
     used: nextUsed,
     limit: MAX_DAILY_AI_QUOTA,
     remaining: Math.max(0, MAX_DAILY_AI_QUOTA - nextUsed),
-    isExceeded: nextUsed >= MAX_DAILY_AI_QUOTA
+    isExceeded: nextUsed >= MAX_DAILY_AI_QUOTA,
+    storageKey: current.storageKey
   };
 }
 

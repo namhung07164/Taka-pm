@@ -301,38 +301,52 @@ export function GanttToolbar({
         </div>
       </div>
 
-      {/* Row 2: Sticky Action Toolbar (Date Filter, Today, + Add Column, Fix Project Code, Search) */}
+      {/* Row 2: Non-sticky Date Filter & Column Adder */}
+      <div className="relative z-10 px-2 py-1.5 sm:px-3 sm:py-2 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 shrink-0 print:hidden text-slate-800 dark:text-slate-100">
+        <div className="flex flex-wrap items-center gap-2">
+          <GanttToolbarDateFilter
+            handleTodayClick={handleTodayClick}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            scaleInput={scaleInput}
+            setScaleInput={setScaleInput}
+            dayWidth={dayWidth}
+            setDayWidth={setDayWidth}
+            isWidthChanged={isWidthChanged}
+            setIsWidthChanged={setIsWidthChanged}
+            saveDayWidth={saveDayWidth}
+            tempStartDate={tempStartDate}
+            setTempStartDate={setTempStartDate}
+            tempEndDate={tempEndDate}
+            setTempEndDate={setTempEndDate}
+            setFilterStartDate={setFilterStartDate}
+            setFilterEndDate={setFilterEndDate}
+          />
+
+          <ColumnAdder
+            availableColumns={GANTT_AVAILABLE_COLUMNS}
+            visibleColumns={visibleColumns}
+            onAddColumn={handleToggleColumn}
+          />
+        </div>
+
+        {/* Task loading spinner */}
+        {isTasksLoading && (!tasks || tasks.length === 0) && (
+          <div className="flex items-center gap-1 text-xs text-blue-400 font-semibold animate-pulse ml-auto">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>{t('Syncing...')}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Row 3: Sticky Fix Project Code & Search Bar */}
       <div
+        id="gantt-sticky-search-bar"
         style={{ position: '-webkit-sticky' as any, top: 0 }}
-        className="sticky top-0 z-40 px-2 py-2 sm:px-3 sm:py-2 bg-slate-100/95 dark:bg-[#121214]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col gap-1 shrink-0 print:hidden text-slate-800 dark:text-slate-100"
+        className="sticky top-0 z-40 px-2 py-2 sm:px-3 sm:py-2 bg-slate-100/95 dark:bg-[#121214]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col gap-1.5 shrink-0 print:hidden text-slate-800 dark:text-slate-100 shadow-2xs"
       >
-        <div className="flex flex-wrap items-center gap-2 justify-between w-full">
-          <div className="flex flex-wrap items-center gap-2 flex-grow">
-            <GanttToolbarDateFilter
-              handleTodayClick={handleTodayClick}
-              viewMode={viewMode}
-              setViewMode={setViewMode}
-              scaleInput={scaleInput}
-              setScaleInput={setScaleInput}
-              dayWidth={dayWidth}
-              setDayWidth={setDayWidth}
-              isWidthChanged={isWidthChanged}
-              setIsWidthChanged={setIsWidthChanged}
-              saveDayWidth={saveDayWidth}
-              tempStartDate={tempStartDate}
-              setTempStartDate={setTempStartDate}
-              tempEndDate={tempEndDate}
-              setTempEndDate={setTempEndDate}
-              setFilterStartDate={setFilterStartDate}
-              setFilterEndDate={setFilterEndDate}
-            />
-
-            <ColumnAdder
-              availableColumns={GANTT_AVAILABLE_COLUMNS}
-              visibleColumns={visibleColumns}
-              onAddColumn={handleToggleColumn}
-            />
-
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 sm:gap-2 w-full">
+          <div className="w-full sm:w-auto shrink-0">
             <FixedProjectInput 
               projects={projects} 
               yearFilter={globalYearFilter}
@@ -340,23 +354,15 @@ export function GanttToolbar({
               locationFilter={globalLocationFilter}
               statusFilter={filterProjectStatus}
             />
-
-            <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
-              <DebouncedSearchInput
-                value={searchTerm}
-                onChange={setSearchTerm}
-                placeholder="Search (+ AND, , OR)"
-              />
-            </div>
           </div>
 
-          {/* Task loading spinner - Only on cold start when no cached tasks exist */}
-          {isTasksLoading && (!tasks || tasks.length === 0) && (
-            <div className="flex items-center gap-1 text-xs text-blue-400 font-semibold animate-pulse ml-auto">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>{t('Syncing...')}</span>
-            </div>
-          )}
+          <div className="relative flex-1 min-w-0 w-full">
+            <DebouncedSearchInput
+              value={searchTerm}
+              onChange={setSearchTerm}
+              placeholder="Search (+ AND, , OR)"
+            />
+          </div>
         </div>
       </div>
     </>

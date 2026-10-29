@@ -28,51 +28,30 @@ interface GanttTableViewProps {
   handleTopScroll: (e: React.UIEvent<HTMLDivElement>) => void;
   flatGanttRows?: GanttRowType[];
   visibleGanttRows: GanttRowType[];
-  paddingTop: number;
-  paddingBottom: number;
-  totalDays: number;
-  dayWidth: number;
-  sideWidth: number;
+  paddingTop: number; paddingBottom: number; totalDays: number; dayWidth: number; sideWidth: number;
   setSideWidth: React.Dispatch<React.SetStateAction<number>>;
   startResizingSide: (e: React.MouseEvent) => void;
   colWidths?: GanttColumnWidths;
   startResizingColumn?: (colKey: keyof GanttColumnWidths, e: React.MouseEvent) => void;
-  timeUnits: TimeUnit[];
-  startDate: Date;
-  customToday: Date;
-  setCustomToday: (d: Date) => void;
-  isDraggingToday: boolean;
-  setIsDraggingToday: (v: boolean) => void;
+  timeUnits: TimeUnit[]; startDate: Date; customToday: Date; setCustomToday: (d: Date) => void;
+  isDraggingToday: boolean; setIsDraggingToday: (v: boolean) => void;
   getDateFromOffsetPx: (offsetPx: number) => Date;
-  activeTooltip: string | null;
-  setActiveTooltip: (id: string | null) => void;
+  activeTooltip: string | null; setActiveTooltip: (id: string | null) => void;
   getBarColor: (status: string, duration?: string | number) => string;
-  visibleColumns: string[];
-  handleToggleColumn?: (colId: string) => void;
-  projects: Project[];
-  tasks: Task[];
-  delegationGroups: any[];
-  currentUser: AppUser | null;
-  canWrite: boolean;
-  isEditMode: boolean;
-  isHideMode: boolean;
+  visibleColumns: string[]; handleToggleColumn?: (colId: string) => void;
+  projects: Project[]; tasks: Task[]; delegationGroups: any[]; currentUser: AppUser | null;
+  canWrite: boolean; isEditMode: boolean; isHideMode: boolean;
   toggleHideRow: (id: string, e: React.MouseEvent) => void;
   getRowVisibilityClass: (id: string) => string;
-  selectedTaskSet: Set<string>;
-  selectedTaskIds: string[];
-  setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
-  selectedProjectSet: Set<string>;
-  selectedProjectIds?: string[]; setSelectedProjectIds?: (ids: string[]) => void;
+  selectedTaskSet: Set<string>; selectedTaskIds: string[]; setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
+  selectedProjectSet: Set<string>; selectedProjectIds?: string[]; setSelectedProjectIds?: (ids: string[]) => void;
   handleTaskCheckboxChange: (e: React.ChangeEvent<HTMLInputElement> | React.MouseEvent, id: string, isShift?: boolean, orderedTaskIds?: string[]) => void;
-  handleToggleSelectAll: () => void;
-  isAllSelected: boolean;
-  toggleProjectExpansion: (id: string) => void;
-  toggleModularParent: (taskId: string | number) => void;
+  handleToggleSelectAll: () => void; isAllSelected: boolean;
+  toggleProjectExpansion: (id: string) => void; toggleModularParent: (taskId: string | number) => void;
   handleGroupModularTasks: (parentTaskId: string, childTaskIds: string[]) => void;
   handleUnlinkModularTasks: (childTaskIds: string[]) => void;
   handleTogglePin: (p: Project) => Promise<void>;
-  initialFocusTaskId?: string | null;
-  ganttTabFocusTaskId?: string | null;
+  initialFocusTaskId?: string | null; ganttTabFocusTaskId?: string | null;
   draggingTaskIds: string[];
   handleTaskDragStart: (e: React.DragEvent, id: string) => void;
   handleTaskDragOver: (e: React.DragEvent, id: string) => void;
@@ -80,15 +59,11 @@ interface GanttTableViewProps {
   handleTaskDragLeave: (e: React.DragEvent, id: string) => void;
   handleTaskDrop: (e: React.DragEvent, targetTask: Task, parentProject?: Project) => Promise<void> | void;
   handleTaskDragEnd: () => void;
-  dragOverTaskId: string | null;
-  dropPosition: 'before' | 'after' | null;
-  dependencyLines: DependencyLine[];
-  computedSum: number | null;
-  isExporting: boolean;
+  dragOverTaskId: string | null; dropPosition: 'before' | 'after' | null;
+  dependencyLines: DependencyLine[]; computedSum: number | null; isExporting: boolean;
   onNavigateToTaskDetail?: (taskId: string) => void;
   onNavigateToLayout?: (store: string, location: string, projectCode?: string, sourceTaskId?: string) => void;
-  paginatedProjects?: Project[];
-  expandedModularTasks?: string[];
+  paginatedProjects?: Project[]; expandedModularTasks?: string[];
   setExpandedModularTasks?: React.Dispatch<React.SetStateAction<string[]>>;
   getGroupTasksForProject?: (p: Project) => Task[];
 }
@@ -286,6 +261,30 @@ export function GanttTableView({
     [handleTaskCheckboxChange]
   );
 
+  const [stickyOffset, setStickyOffset] = React.useState<number>(() => {
+    return typeof window !== 'undefined' && window.innerWidth < 640 ? 86 : 48;
+  });
+
+  React.useEffect(() => {
+    const updateHeight = () => {
+      const el = document.getElementById('gantt-sticky-search-bar');
+      if (el) {
+        const h = el.offsetHeight;
+        if (h > 0) setStickyOffset(h);
+      }
+    };
+    updateHeight();
+    const el = document.getElementById('gantt-sticky-search-bar');
+    if (!el) return;
+    const ro = new ResizeObserver(updateHeight);
+    ro.observe(el);
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, []);
+
   return (
     <div
       ref={tableContainerRef}
@@ -295,14 +294,14 @@ export function GanttTableView({
         isExporting && "overflow-hidden"
       )}
     >
-      {/* Top Synchronized Timeline Header (Sticky Month Row below Sticky Search/Fix Project Code Row) */}
+      {/* Top Synchronized Timeline Header (Sticky Month Row pinned right below the sticky Search & Fix Project Code bar) */}
       <div
         ref={topScrollRef}
         data-print-header="true"
         onScroll={handleTopScroll}
         onPointerDown={handlePointerDown}
-        style={{ position: '-webkit-sticky' as any, top: '48px' }}
-        className="sticky top-[48px] z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-[#18181a]/95 backdrop-blur-md flex shrink-0 shadow-xs"
+        style={{ position: '-webkit-sticky' as any, top: `${stickyOffset}px` }}
+        className="sticky top-[86px] sm:top-[48px] z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-[#18181a]/95 backdrop-blur-md flex shrink-0 shadow-xs"
       >
         <GanttLeftHeader
           sideWidth={sideWidth}
