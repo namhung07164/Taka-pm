@@ -227,7 +227,7 @@ export function useDetailData({
           [],
           (term) => {
             const summariesMatch = p.taskSummaries?.some(ts =>
-              String(ts.name || "").toLowerCase().includes(term)
+              matchesAdvancedSearch(term, [ts.name, ts.taskCodePhu, ts.party])
             ) || false;
             if (summariesMatch) return true;
             return groupTasks.some((t, idx) => doesTaskMatchSearchTerm(t, idx, p.code, term));

@@ -6,6 +6,7 @@ import {
   formatDisplayDateMain,
   formatDisplayDateTime,
   matchesAdvancedSearch,
+  stripSearchAccents,
 } from '../../lib/utils';
 import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
 import { ProjectInfo } from './useDetailProjectInfo';
@@ -16,38 +17,46 @@ export function doesTaskMatchSearchTerm(
   projectCode: string | undefined,
   termLower: string
 ): boolean {
+  if (!termLower) return true;
   const codeFallback = `${projectCode || ''}#${(t.orderIndex !== undefined ? t.orderIndex : idx) + 1}`;
-  // Fast raw field check first before formatting dates
-  if (
-    (t.taskCodePhu && String(t.taskCodePhu).toLowerCase().includes(termLower)) ||
-    codeFallback.toLowerCase().includes(termLower) ||
-    (t.name && String(t.name).toLowerCase().includes(termLower)) ||
-    (t.duration && String(t.duration).toLowerCase().includes(termLower)) ||
-    (t.start && String(t.start).toLowerCase().includes(termLower)) ||
-    (t.finish && String(t.finish).toLowerCase().includes(termLower)) ||
-    (t.party && String(t.party).toLowerCase().includes(termLower))
-  ) {
-    return true;
+  const rawFields: (string | number | undefined | null)[] = [
+    t.taskCodePhu,
+    codeFallback,
+    t.name,
+    t.duration,
+    t.start,
+    t.finish,
+    t.party,
+    t.runningStatus,
+    t.predecessor,
+  ];
+  if (t.notes && t.notes.length > 0) {
+    for (let i = 0; i < t.notes.length; i++) {
+      rawFields.push(t.notes[i]?.content);
+    }
+  }
+  if (t.comments && t.comments.length > 0) {
+    for (let i = 0; i < t.comments.length; i++) {
+      rawFields.push(t.comments[i]?.text);
+    }
   }
 
-  if (t.notes?.some(n => String(n.content || '').toLowerCase().includes(termLower))) {
+  if (matchesAdvancedSearch(termLower, rawFields)) {
     return true;
   }
 
   // Only format dates if raw string check didn't match
   if (t.start) {
-    if (
-      formatDisplayDateMain(t.start).toLowerCase().includes(termLower) ||
-      formatDisplayDateTime(t.start).toLowerCase().includes(termLower)
-    ) {
+    const startMain = formatDisplayDateMain(t.start);
+    const startFull = formatDisplayDateTime(t.start);
+    if (matchesAdvancedSearch(termLower, [startMain, startFull])) {
       return true;
     }
   }
   if (t.finish) {
-    if (
-      formatDisplayDateMain(t.finish).toLowerCase().includes(termLower) ||
-      formatDisplayDateTime(t.finish).toLowerCase().includes(termLower)
-    ) {
+    const finishMain = formatDisplayDateMain(t.finish);
+    const finishFull = formatDisplayDateTime(t.finish);
+    if (matchesAdvancedSearch(termLower, [finishMain, finishFull])) {
       return true;
     }
   }
@@ -141,7 +150,10 @@ export function useDetailFilterSync({
           [],
           (tLower) => {
             const summariesMatch =
-              p.taskSummaries?.some(ts => String(ts.name || '').toLowerCase().includes(tLower)) || false;
+              p.taskSummaries?.some(ts => {
+                const tsName = String(ts.name || '');
+                return tsName.toLowerCase().includes(tLower) || stripSearchAccents(tsName).includes(tLower);
+              }) || false;
             if (summariesMatch) return true;
             return groupTasks.some((t, idx) => doesTaskMatchSearchTerm(t, idx, p.code, tLower));
           }

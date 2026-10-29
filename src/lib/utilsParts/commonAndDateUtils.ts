@@ -10,69 +10,16 @@ export const PRIMARY_ACTIVE_YEARS = ['2024', '2025', '2026', '2027'];
 export const SECONDARY_ACTIVE_YEARS = ['2028', '2029', '2030'];
 export const ARCHIVED_YEARS = ['2022', '2023'];
 
-export function matchesAdvancedSearch(
-  searchTerm: string,
-  mainFields: (string | number | boolean | undefined | null)[],
-  subFields: (string | number | boolean | undefined | null)[] = [],
-  evaluateSubItems?: (term: string, andTerms: string[]) => boolean,
-): boolean {
-  if (!searchTerm) return true;
-  const normalizedSearch = normalizeDashes(searchTerm);
-  const orGroups = normalizedSearch
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  if (orGroups.length === 0) return true;
-
-  const normalizeStr = (str: string) => str.toLowerCase().replace(/[#_\-\.\/\s]/g, '');
-
-  return orGroups.some((orGroup) => {
-    const andTerms = orGroup
-      .split("+")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (andTerms.length === 0) return false;
-
-    return andTerms.every((term) => {
-      let isExact = false;
-      let actualTerm = term;
-      if (term.startsWith('"') && term.endsWith('"') && term.length >= 2) {
-        isExact = true;
-        actualTerm = term.slice(1, -1);
-      }
-
-      const termLower = actualTerm.toLowerCase();
-      const normTerm = normalizeStr(actualTerm);
-
-      const inMain = mainFields.some((v) => {
-        if (v === undefined || v === null) return false;
-        const val = String(v).toLowerCase();
-        if (isExact) return val === actualTerm;
-        if (val.includes(termLower)) return true;
-        if (normTerm && normalizeStr(val).includes(normTerm)) return true;
-        return false;
-      });
-      if (inMain) return true;
-
-      if (subFields.length > 0) {
-        const inSub = subFields.some((v) => {
-          if (v === undefined || v === null) return false;
-          const val = String(v).toLowerCase();
-          if (isExact) return val === actualTerm;
-          if (val.includes(termLower)) return true;
-          if (normTerm && normalizeStr(val).includes(normTerm)) return true;
-          return false;
-        });
-        if (inSub) return true;
-      }
-
-      if (evaluateSubItems) {
-        return evaluateSubItems(actualTerm, andTerms);
-      }
-      return false;
-    });
-  });
-}
+export {
+  matchesAdvancedSearch,
+  stripSearchAccents,
+  normalizeCompactSearchCode,
+  matchesSingleSearchTokenInValue,
+  getRecentSearches,
+  addRecentSearch,
+  removeRecentSearch,
+  clearRecentSearches,
+} from "./searchEngineUtils";
 
 export function generateId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {

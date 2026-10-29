@@ -40,6 +40,7 @@ export function useDetailFlatRows({
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const isPrintPreview = useAppStore(state => state.isPrintPreview);
   const isExportingPDF = useAppStore(state => state.isExportingPDF);
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
   const flatTableRows = useMemo<DetailTableRow[]>(() => {
     const rows: DetailTableRow[] = [];
     const visibleProjects = (isPrintPreview || isExportingPDF)
@@ -126,13 +127,9 @@ export function useDetailFlatRows({
       if (lowerSearchTerm) {
         validGroupTasks.forEach((t, idx) => {
           const code = taskCodeMap.get(t.id) || '';
-          const commentsMatch = t.comments?.some(c => String(c.text || '').toLowerCase().includes(lowerSearchTerm));
-          const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm));
           if (
             doesTaskMatchSearchTerm(t, idx, p.code, lowerSearchTerm) ||
-            code.toLowerCase().includes(lowerSearchTerm) ||
-            commentsMatch ||
-            notesMatch
+            (code && matchesAdvancedSearch(lowerSearchTerm, [code]))
           ) {
             directMatchedTaskIds.add(String(t.id));
           }
@@ -141,7 +138,7 @@ export function useDetailFlatRows({
 
       const shouldFilterTasks =
         Boolean(lowerSearchTerm) &&
-        (directMatchedTaskIds.size > 0 || !isProjectMatch);
+        (Boolean(fixedProjectCode && fixedProjectCode.trim()) || directMatchedTaskIds.size > 0 || !isProjectMatch);
 
       let tasksToRender = validGroupTasks;
       if (shouldFilterTasks) {

@@ -325,14 +325,11 @@ export function useCostData({
             p.note,
           ],
           [],
-          (term) => {
-            return matchingGroupCosts.some((c) => {
+          (term) =>
+            matchingGroupCosts.some((c) => {
               const cBalance =
-                (c.actual || 0) -
-                (c.firstPaid || 0) -
-                (c.secondPaid || 0) -
-                (c.thirdPaid || 0);
-              const costFields = [
+                (c.actual || 0) - (c.firstPaid || 0) - (c.secondPaid || 0) - (c.thirdPaid || 0);
+              return matchesAdvancedSearch(term, [
                 c.description,
                 c.vendor,
                 c.actual,
@@ -341,12 +338,8 @@ export function useCostData({
                 c.thirdPaid,
                 c.supportingFee,
                 cBalance,
-              ];
-              return costFields.some((val) =>
-                String(val || '').toLowerCase().includes(term)
-              );
-            });
-          }
+              ]);
+            })
         );
         if (!isMatch) return false;
       }

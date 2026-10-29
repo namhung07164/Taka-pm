@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
+import { matchesAdvancedSearch } from '../../lib/utils';
 import { TabId, AppRole } from '../../types';
 import { PaletteItem, CommandCategory, CommandPaletteModalProps } from './commandPaletteTypes';
 
@@ -383,13 +384,9 @@ export function useCommandPaletteItems({
     }
 
     return pool
-      .filter((item) => {
-        const titleMatch = item.title.toLowerCase().includes(q);
-        const subMatch = (item.subtitle || '').toLowerCase().includes(q);
-        const codeMatch = (item.code || '').toLowerCase().includes(q);
-        const badgeMatch = (item.badge || '').toLowerCase().includes(q);
-        return titleMatch || subMatch || codeMatch || badgeMatch;
-      })
+      .filter((item) =>
+        matchesAdvancedSearch(q, [item.title, item.subtitle, item.code, item.badge])
+      )
       .slice(0, 30);
   }, [searchQuery, selectedCategory, actionItems, navItems, floorItems, projectItems, taskItems]);
 

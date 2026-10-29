@@ -120,7 +120,7 @@ export function useCostSearchFilter({
                 (c.firstPaid || 0) -
                 (c.secondPaid || 0) -
                 (c.thirdPaid || 0);
-              const costFields = [
+              return matchesAdvancedSearch(tLower, [
                 c.description,
                 c.vendor,
                 c.actual,
@@ -129,10 +129,7 @@ export function useCostSearchFilter({
                 c.thirdPaid,
                 c.supportingFee,
                 cBalance,
-              ];
-              return costFields.some((val) =>
-                String(val || '').toLowerCase().includes(tLower)
-              );
+              ]);
             });
           }
         );
