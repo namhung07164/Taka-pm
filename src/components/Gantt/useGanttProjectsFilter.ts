@@ -326,12 +326,28 @@ export function useGanttProjectsFilter({
 
   // Pre-indexed Search Pool Cache built lazily only when user actually searches
   const projectSearchIndex = useMemo(() => {
-    const map = new Map<string, { pPool: (string | number | undefined | null)[]; tPools: (string | number | undefined | null)[][] }>();
+    const map = new Map<string, { mainFields: (string | number | undefined | null)[]; subFields: (string | number | undefined | null)[] }>();
     if (!hasActiveSearchTerm) return map;
     projects.forEach(p => {
       const pTasks = getGroupTasksForProject(p);
-      const pPool = [p.code, p.name, p.store, p.location, p.year, p.detail, p.party];
-      const tPools = pTasks.map(t => [
+      const rawLink = Array.isArray(p.linkCodes) ? p.linkCodes : typeof p.linkCodes === 'string' ? [p.linkCodes] : [];
+      const computedTakStart = p.computedTakStart || p.start || "";
+      const status = p.computedStatus || getStatus(computedTakStart, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
+
+      const mainFields = [
+        p.code,
+        p.name,
+        p.store,
+        p.location,
+        p.year,
+        p.detail,
+        p.party,
+        p.shopType,
+        status,
+        ...rawLink
+      ];
+
+      const subFields = pTasks.flatMap(t => [
         t.name,
         t.taskCodePhu,
         t.party,
@@ -339,7 +355,14 @@ export function useGanttProjectsFilter({
         t.predecessor,
         ...(t.notes ? t.notes.map(n => n.content) : [])
       ]);
-      map.set(p.id || p.code, { pPool, tPools });
+
+      if (p.taskSummaries && Array.isArray(p.taskSummaries)) {
+        p.taskSummaries.forEach(ts => {
+          subFields.push(ts.name, ts.taskCodePhu, ts.party, ts.runningStatus);
+        });
+      }
+
+      map.set(String(p.id || p.code), { mainFields, subFields });
     });
     return map;
   }, [hasActiveSearchTerm, projects, getGroupTasksForProject]);
@@ -376,13 +399,13 @@ export function useGanttProjectsFilter({
 
       if (!deferredSearchTerm.trim()) return true;
 
-      const indexed = projectSearchIndex.get(p.id || p.code);
+      const key = String(p.id || p.code);
+      const indexed = projectSearchIndex.get(key);
       if (indexed) {
-        if (matchesAdvancedSearch(deferredSearchTerm, [...indexed.pPool, status])) return true;
-        return indexed.tPools.some(tPool => matchesAdvancedSearch(deferredSearchTerm, tPool));
+        return matchesAdvancedSearch(deferredSearchTerm, indexed.mainFields, indexed.subFields);
       }
 
-      return matchesAdvancedSearch(deferredSearchTerm, [p.code, p.name, p.store, p.location, status]);
+      return matchesAdvancedSearch(deferredSearchTerm, [p.code, p.name, p.store, p.location, p.year, p.detail, p.party, p.shopType, status]);
     });
   }, [
     projects,

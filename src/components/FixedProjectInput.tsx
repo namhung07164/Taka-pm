@@ -6,10 +6,21 @@ import { cn } from '../lib/utils';
 
 interface FixedProjectInputProps {
   projects?: Project[];
+  yearFilter?: string;
+  storeFilter?: string;
+  locationFilter?: string[];
+  statusFilter?: string;
   className?: string;
 }
 
-export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({ projects = [], className = '' }) => {
+export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({
+  projects = [],
+  yearFilter,
+  storeFilter,
+  locationFilter,
+  statusFilter,
+  className = ''
+}) => {
   const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
   const setFixedProjectCode = useAppStore(state => state.setFixedProjectCode);
 
@@ -37,10 +48,48 @@ export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({
   const candidateProjects = useMemo(() => {
     if (!projects || projects.length === 0) return [];
     const term = inputVal.trim().toLowerCase();
+
+    const filtered = projects.filter(p => {
+      if (!p.code) return false;
+
+      if (yearFilter && yearFilter !== 'all') {
+        const pYear = p.year ? String(p.year).trim() : null;
+        if (pYear === null || pYear !== String(yearFilter).trim()) return false;
+      }
+
+      if (storeFilter && storeFilter !== 'all') {
+        if (!p.store || String(p.store).toUpperCase().trim() !== String(storeFilter).toUpperCase().trim()) return false;
+      }
+
+      if (locationFilter && locationFilter.length > 0) {
+        if (!p.location || !locationFilter.includes(p.location)) return false;
+      }
+
+      if (statusFilter && statusFilter !== 'all') {
+        const computedTakStart = p.computedTakStart || p.start || "";
+        const status = p.computedStatus || (p as any).status || "";
+        if (statusFilter === 'has_money') {
+          const hasBud = ((p.financial as any)?.budget || (p.financial as any)?.totalBudget || (p as any).budget || 0) !== 0;
+          const hasAct = ((p.financial as any)?.actual || (p.financial as any)?.totalActual || (p as any).actual || 0) !== 0;
+          if (!hasBud && !hasAct) return false;
+        } else if (statusFilter === 'has_budget') {
+          const hasBud = ((p.financial as any)?.budget || (p.financial as any)?.totalBudget || (p as any).budget || 0) !== 0;
+          if (!hasBud) return false;
+        } else if (statusFilter === 'has_act_forc') {
+          const hasAct = ((p.financial as any)?.actual || (p.financial as any)?.totalActual || (p as any).actual || 0) !== 0;
+          if (!hasAct) return false;
+        } else if (statusFilter !== 'all' && status && status !== statusFilter) {
+          if (statusFilter === 'On process + Upcoming 3 days' && status !== 'On process' && status !== 'Upcoming') {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    });
+
     const uniqueMap = new Map<string, Project>();
-    
-    projects.forEach(p => {
-      if (!p.code) return;
+    filtered.forEach(p => {
       const codeKey = p.code.trim().toUpperCase();
       if (!uniqueMap.has(codeKey)) {
         uniqueMap.set(codeKey, p);
@@ -56,7 +105,7 @@ export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({
       const store = String(p.store || '').toLowerCase();
       return code.includes(term) || name.includes(term) || store.includes(term);
     }).slice(0, 30);
-  }, [projects, inputVal]);
+  }, [projects, inputVal, yearFilter, storeFilter, locationFilter, statusFilter]);
 
   const handleApplyFix = (codeToFix: string) => {
     const cleanCode = codeToFix.trim().toUpperCase();

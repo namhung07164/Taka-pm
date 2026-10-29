@@ -220,7 +220,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
 
         {/* Second Row on Mobile / Center Search & Paint Categories */}
         {!isEditing && (
-          <div className="flex items-center gap-2 w-full md:flex-1 md:max-w-xl lg:max-w-2xl">
+          <div className="flex items-center gap-2 w-full flex-1 min-w-0">
             {/* Search Input Box */}
             <div ref={searchContainerRef} className="relative flex-1 min-w-0">
               <div className="relative flex items-center w-full">

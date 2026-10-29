@@ -467,12 +467,7 @@ export function DetailTab({
         />
       )}
 
-      <DetailFocusControls 
-        initialFocusTaskId={initialFocusTaskId}
-        initialFilterCode={initialFilterCode}
-        onBackToGantt={handleBackToGantt}
-        onClearFocus={onClearFocus ? handleClearFocus : undefined}
-      />
+      <DetailFocusControls />
 
       <DetailFloatingActionBar
         selectedCount={selectedTaskIds.size}

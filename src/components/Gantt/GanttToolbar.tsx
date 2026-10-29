@@ -328,7 +328,13 @@ export function GanttToolbar({
               onAddColumn={handleToggleColumn}
             />
 
-            <FixedProjectInput projects={projects} />
+            <FixedProjectInput 
+              projects={projects} 
+              yearFilter={globalYearFilter}
+              storeFilter={effectiveStore}
+              locationFilter={globalLocationFilter}
+              statusFilter={filterProjectStatus}
+            />
 
             <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
               <DebouncedSearchInput

@@ -17,11 +17,14 @@ export function matchesAdvancedSearch(
   evaluateSubItems?: (term: string, andTerms: string[]) => boolean,
 ): boolean {
   if (!searchTerm) return true;
-  const orGroups = searchTerm
+  const normalizedSearch = normalizeDashes(searchTerm);
+  const orGroups = normalizedSearch
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
   if (orGroups.length === 0) return true;
+
+  const normalizeStr = (str: string) => str.toLowerCase().replace(/[#_\-\.\/\s]/g, '');
 
   return orGroups.some((orGroup) => {
     const andTerms = orGroup
@@ -38,18 +41,31 @@ export function matchesAdvancedSearch(
         actualTerm = term.slice(1, -1);
       }
 
+      const termLower = actualTerm.toLowerCase();
+      const normTerm = normalizeStr(actualTerm);
+
       const inMain = mainFields.some((v) => {
-        const val = String(v || "").toLowerCase();
-        return isExact ? val === actualTerm : val.includes(actualTerm);
+        if (v === undefined || v === null) return false;
+        const val = String(v).toLowerCase();
+        if (isExact) return val === actualTerm;
+        if (val.includes(termLower)) return true;
+        if (normTerm && normalizeStr(val).includes(normTerm)) return true;
+        return false;
       });
       if (inMain) return true;
+
       if (subFields.length > 0) {
         const inSub = subFields.some((v) => {
-          const val = String(v || "").toLowerCase();
-          return isExact ? val === actualTerm : val.includes(actualTerm);
+          if (v === undefined || v === null) return false;
+          const val = String(v).toLowerCase();
+          if (isExact) return val === actualTerm;
+          if (val.includes(termLower)) return true;
+          if (normTerm && normalizeStr(val).includes(normTerm)) return true;
+          return false;
         });
         if (inSub) return true;
       }
+
       if (evaluateSubItems) {
         return evaluateSubItems(actualTerm, andTerms);
       }

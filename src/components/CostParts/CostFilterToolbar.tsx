@@ -108,7 +108,13 @@ export const CostFilterToolbar = React.memo(function CostFilterToolbar({
       {/* Row 2: Fixed Project, Search & Column Adder */}
       <div className="flex flex-wrap items-center justify-between gap-2 w-full">
         <div className="flex flex-wrap items-center gap-2 flex-grow">
-          <FixedProjectInput projects={projects} />
+          <FixedProjectInput 
+            projects={projects} 
+            yearFilter={globalYearFilter}
+            storeFilter={effectiveStore}
+            locationFilter={globalLocationFilter}
+            statusFilter={hasActForcFilter}
+          />
 
           <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
             <DebouncedSearchInput
