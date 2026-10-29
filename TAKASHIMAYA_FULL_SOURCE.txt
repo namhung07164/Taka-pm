@@ -172994,3 +172994,1903 @@ export const CostFilterToolbar = React.memo(function CostFilterToolbar({
   );
 });
 
+
+
+=== FILE: src/types.ts ===
+export interface FinancialMetric {
+  totalBudget: number;
+  totalApproved: number;
+  totalActualPaid: number;     // Lũy kế các đợt có status === 'Actual'
+  totalForecastPaid: number;   // Lũy kế các đợt có status === 'Forecast'
+  totalBalance: number;        // Còn lại = totalApproved - (totalActualPaid + totalForecastPaid)
+}
+
+export interface ProjectFinancialSummary extends FinancialMetric {
+  byStore: {
+    HCM: FinancialMetric;
+    HN: FinancialMetric;
+    [storeKey: string]: FinancialMetric;
+  };
+  byYear: {
+    [year: string]: FinancialMetric;
+  };
+}
+
+export interface TaskSummaryItem {
+  id?: string;
+  name: string;
+  start: string;
+  finish: string;
+  orderIndex?: number;
+  duration?: string | number;
+  parentTaskId?: string;
+  isModularParent?: boolean;
+  taskCodePhu?: string;
+  runningStatus?: 'On process' | 'Delayed' | 'Completed' | 'Upcoming' | string;
+  approval?: 'Approved' | 'Rejected' | 'Pending' | string;
+  party?: string;
+  delegation?: boolean;
+  predecessor?: string;
+  predecessorTaskIds?: string[];
+  baselineStart?: string;
+  baselineFinish?: string;
+  link?: string;
+  imageUrl?: string;
+  thumbnail?: string;
+  attachments?: any[];
+  [key: string]: any;
+}
+
+export interface Project {
+  id?: string;
+  no: number;
+  store: string;
+  year: number | string;
+  code: string;
+  linkCodes?: string;
+  name: string;
+  detail?: string;
+  party?: string;
+  start?: string;
+  baselineStart?: string;
+  baselineFinish?: string;
+  handover?: string;
+  opening?: string;
+  startMode?: 'auto' | 'manual';
+  handoverMode?: 'auto' | 'manual';
+  openingMode?: 'auto' | 'manual';
+  budget?: number;
+  actual?: number;
+  shopType?: ShopType | string;
+  sizeM2?: number;
+  location?: string;
+  type?: string;
+  note?: string;
+  supportingFee?: number;
+  computedTakStart?: string;
+  computedTakCompl?: string;
+  computedOpening?: string;
+  computedStatus?: string;
+  computedPlanProgress?: number;
+  computedActProgress?: number;
+  computedActStatus?: string;
+  taskCount?: number;
+  taskSummaries?: TaskSummaryItem[];
+  realtimeUpdate?: boolean;
+  delegation?: boolean;
+  updatedAt?: string;
+  textColor?: string;
+  bgColor?: string;
+  comments?: TaskComment[];
+  mdStatus?: MdStatusType | string;
+  isPinned?: boolean;
+  pinnedOrder?: number;
+  parentId?: string;
+  financial?: ProjectFinancialSummary;
+  isDeleted?: boolean;
+  imageUrl?: string;
+  thumbnail?: string;
+  imageLinks?: any[];
+}
+
+export const SHOP_TYPE_OPTIONS = [
+  'Open Counter',
+  'Semi-A',
+  'Semi-B',
+  'Semi-C',
+  'Skeleton',
+] as const;
+
+export type ShopType = typeof SHOP_TYPE_OPTIONS[number];
+
+export const MD_STATUS_OPTIONS = [
+  'approached',
+  'negotiation',
+  'Verbally agreed',
+  'MOU signed',
+  'Signed agreement',
+  'Rejected',
+] as const;
+
+export type MdStatusType = typeof MD_STATUS_OPTIONS[number];
+
+export interface TaskNote {
+  id: string;
+  content: string;
+  updatedAt: string;
+}
+
+export interface TaskComment {
+  id: string;
+  text: string;
+  createdAt: string;
+  userId: string;
+  userName?: string;
+  mentions?: string[];
+  attachments?: { name: string; url: string; fullPath: string; type?: string }[];
+}
+
+export interface Task {
+  id: string;
+  projectId?: string;
+  projectCode: string;
+  projectYear?: number | string;
+  projectStore?: string;
+  location?: string;
+  name: string;
+  start: string;
+  baselineStart?: string;
+  baselineFinish?: string;
+  finish: string;
+  duration: string;
+  durationManual: boolean;
+  finishManual: boolean;
+  approval?: 'Approved' | 'Rejected' | 'Pending' | string;
+  approvedAt?: string | null;
+  realtimeUpdate?: boolean;
+  startManual?: boolean;
+  party?: string;
+  delegation?: boolean;
+  predecessor?: string;
+  notes?: TaskNote[];
+  runningStatus?: 'On process' | 'Delayed' | 'Completed' | 'Upcoming';
+  isShared?: boolean;
+  updatedAt?: string;
+  orderIndex?: number;
+  comments?: TaskComment[];
+  textColor?: string;
+  taskCodePhu?: string;
+  parentTaskId?: string;
+  isModularParent?: boolean;
+  isDeleted?: boolean;
+  predecessors?: TaskPredecessor[]; // Lưu trữ danh sách Hard Link dưới dạng mảng Object
+  predecessorTaskIds?: string[]; // IDs of tasks mentioned in the predecessor string
+}
+
+export type PredecessorType = 'FS' | 'SS' | 'FF' | 'SF';
+
+export interface TaskPredecessor {
+  taskId: string;
+  type: PredecessorType;
+  lagDays?: number;
+}
+
+export interface Cost {
+  id: string;
+  projectId?: string;
+  projectCode: string;
+  projectYear?: number | string;
+  projectStore?: string;
+  amount?: number;
+  approvedAmount?: number;
+  actual: number;
+  costType?: 'act' | 'forc';
+  firstPaid?: number;
+  firstPaidAt?: string;
+  firstStatus?: 'Actual' | 'Forecast' | string;
+  secondPaid?: number;
+  secondPaidAt?: string;
+  secondStatus?: 'Actual' | 'Forecast' | string;
+  thirdPaid?: number;
+  thirdPaidAt?: string;
+  thirdStatus?: 'Actual' | 'Forecast' | string;
+  advanceAmount?: number;
+  advancePaid?: number;
+  advanceStatus?: 'Actual' | 'Forecast' | string;
+  interimAmount?: number;
+  interimPaid?: number;
+  interimStatus?: 'Actual' | 'Forecast' | string;
+  balanceAmount?: number;
+  balancePaid?: number;
+  balanceStatus?: 'Actual' | 'Forecast' | string;
+  supportingFee: number;
+  description: string;
+  vendor: string;
+  updatedAt?: string;
+  isDeleted?: boolean;
+}
+
+export type AppRole = 'Manager' | 'Staff' | 'CP' | 'External';
+export type PermissionAction = 'See' | 'Write';
+export type PermissionModule = 'general' | 'detail' | 'calendar' | 'budget' | 'costDetail' | 'report' | 'summary' | 'taskDelegation' | 'layout' | 'pictureMapping' | 'importCsv';
+
+export type PermissionMatrix = Record<AppRole, Record<PermissionAction, Record<PermissionModule, boolean>>>;
+
+export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
+  Manager: {
+    See: { general: false, detail: false, calendar: true, budget: false, costDetail: false, report: true, summary: true, taskDelegation: false, layout: true, pictureMapping: false, importCsv: false },
+    Write: { general: true, detail: true, calendar: false, budget: false, costDetail: false, report: false, summary: false, taskDelegation: false, layout: false, pictureMapping: false, importCsv: false }
+  },
+  Staff: {
+    See: { general: true, detail: true, calendar: false, budget: false, costDetail: false, report: true, summary: true, taskDelegation: false, layout: true, pictureMapping: false, importCsv: false },
+    Write: { general: false, detail: false, calendar: true, budget: false, costDetail: false, report: false, summary: false, taskDelegation: false, layout: false, pictureMapping: false, importCsv: false }
+  },
+  External: {
+    See: { general: false, detail: false, calendar: false, budget: false, costDetail: false, report: false, summary: false, taskDelegation: false, layout: false, pictureMapping: false, importCsv: false },
+    Write: { general: false, detail: false, calendar: false, budget: false, costDetail: false, report: false, summary: false, taskDelegation: false, layout: false, pictureMapping: false, importCsv: false }
+  },
+  CP: {
+    See: { general: false, detail: false, calendar: true, budget: false, costDetail: false, report: true, summary: true, taskDelegation: false, layout: true, pictureMapping: false, importCsv: false },
+    Write: { general: true, detail: true, calendar: false, budget: true, costDetail: true, report: false, summary: false, taskDelegation: false, layout: false, pictureMapping: false, importCsv: false }
+  }
+};
+
+export interface AppUser {
+  id: string;
+  username: string;
+  password?: string;
+  name?: string;
+  email?: string;
+  role: 'Manager' | 'Staff' | 'CP' | 'External' | 'admin' | 'user' | 'guest';
+  canSee: boolean;
+  canWrite: boolean;
+  notification?: boolean;
+  storePermissions?: {
+    hcm?: boolean;
+    hn?: boolean;
+  };
+  locationPermissions?: Record<string, boolean>;
+  byPartyAccess?: boolean;
+  partyPermissions?: Record<string, boolean>;
+  readNotifs?: string[];
+  preferences?: {
+    defaultStore?: string;
+    defaultYear?: string;
+    currency?: 'VND' | 'JPY' | 'USD';
+    language?: string;
+    firstPage?: TabId;
+  };
+}
+
+export interface NotificationRule {
+  id: string;
+  target: 'project' | 'task' | 'task_delegation';
+  field: string;
+  daysBefore: number;
+  hoursBefore: number;
+  customMessage?: string;
+  color?: string;
+  icon?: string;
+}
+
+export type NotificationPriority = 'critical' | 'urgent' | 'action_required' | 'info';
+
+export type NotificationCategory = 'overdue' | 'due_soon' | 'mention' | 'delegation' | 'rollover' | 'milestone';
+
+export interface ActiveNotification {
+  id: string;
+  title: string;
+  subtitle: string;
+  message: string;
+  dateStr: string;
+  diffMs: number;
+  generatedAt: number;
+  targetType: 'project' | 'task' | 'task_delegation';
+  targetId: string | number;
+  count?: number;
+  projectId?: string;
+  projectCode?: string;
+  projectName?: string;
+  taskName?: string;
+  projectStore?: string;
+  projectYear?: string | number;
+  location?: string;
+  category?: NotificationCategory;
+  ruleId?: string;
+  ruleField?: string;
+  action?: 'cross_year_rollover' | 'complete_task' | 'approve_delegation';
+  actionData?: any;
+  priority?: NotificationPriority;
+  isAssignedToMe?: boolean;
+  party?: string;
+  subItems?: ActiveNotification[];
+}
+
+export interface DelegationSubTask {
+  id: string;
+  name?: string;
+  comments: string;
+  status: string;
+  approvalStatus?: string;
+  approvedAt?: string | null;
+  party: string;
+  priority?: 'High' | 'Mid-high' | 'Mid' | 'Low';
+  start?: string;
+  finish?: string;
+  startAct?: string;
+  finishAct?: string;
+  childReport?: string;
+  childFileUrl?: string;
+  childFileName?: string;
+  delegationStatus?: string;
+  report?: string;
+  fileUrl?: string;
+  fileName?: string;
+  updatedAt: string;
+  createdBy?: string;
+  involvedUsers?: string[];
+  attachments?: { type?: string; name?: string; url?: string }[];
+}
+
+export interface DelegationGroup {
+  id: string;
+  projectId?: string;
+  parentTaskId?: string; // ID of the taka_task if linked
+  name: string; // Custom name if not linked, or task name if linked
+  projectCode?: string; // If linked
+  projectStore?: string;
+  projectYear?: number | string;
+  subTasks: DelegationSubTask[];
+  updatedAt: string;
+  createdBy?: string;
+  actStatus?: string;
+  plStatus?: string;
+  isDeleted?: boolean;
+}
+
+export type TabId = 'general' | 'detail' | 'budget' | 'cost' | 'accControl' | 'notification' | 'notificationRule' | 'calendar' | 'gantt' | 'summary' | 'taskDelegation' | 'taskDelegationCalendar' | 'setting' | 'layout' | 'manual' | 'csv_export' | 'picture_mapping' | 'audit';
+
+
+export interface AuditLog {
+  id: string;
+  timestamp: number;
+  userId: string;
+  userEmail: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE';
+  entityType?: string;
+  docPath: string;
+  docId: string;
+  data: any;
+  previousData?: any;
+}
+
+export interface TakaDeltaItem {
+  docId: string;
+  collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
+  action: 'create' | 'update' | 'delete';
+  year?: string;
+  projectId?: string;
+  projectCode?: string;
+  projectStore?: string;
+  data?: Record<string, any>;
+  isPatch?: boolean;
+  /** Signal-only item: receivers re-read this doc from the server (used for writes that carry no patch). */
+  invalidate?: boolean;
+}
+
+export interface TakaDelta {
+  id: string;
+  docId?: string;
+  collectionName?: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations';
+  action: 'create' | 'update' | 'delete' | 'batch_update';
+  year?: string;
+  projectId?: string;
+  projectCode?: string;
+  projectStore?: string;
+  data?: Record<string, any>;
+  isPatch?: boolean;
+  batchItems?: TakaDeltaItem[];
+  updatedBy?: string;
+  sessionId?: string;
+  timestamp: string;
+  numericTime: number;
+  /** Server arrival time (Firestore serverTimestamp). Sync cursor: immune to device clocks and offline delays. */
+  serverTime?: any;
+  /** Firestore TTL policy timestamp: documents expire automatically without client-side reads */
+  expireAt?: any;
+}
+
+
+
+
+=== FILE: src/store/useAppStore.ts ===
+import { create } from "zustand";
+import { AppState } from "./storeTypes";
+import { createUISlice } from "./slices/createUISlice";
+import { createDataSlice } from "./slices/createDataSlice";
+import { createOptimisticSlice } from "./slices/createOptimisticSlice";
+
+export const useAppStore = create<AppState>((...a) => ({
+  ...createUISlice(...a),
+  ...createDataSlice(...a),
+  ...createOptimisticSlice(...a),
+}));
+
+if (typeof window !== 'undefined') {
+  (window as any).__TAKA_APP_STORE__ = useAppStore;
+}
+
+export type { AppState };
+export { useUISlice, useDataSlice, useOptimisticSlice, useStoreShallow } from "./storeSelectors";
+
+
+
+
+=== FILE: src/components/FixedProjectInput.tsx ===
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { Lock, X, Pin, ChevronDown } from 'lucide-react';
+import { useAppStore } from '../store/useAppStore';
+import { Project } from '../types';
+import { cn } from '../lib/utils';
+
+interface FixedProjectInputProps {
+  projects?: Project[];
+  className?: string;
+}
+
+export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({ projects = [], className = '' }) => {
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
+  const setFixedProjectCode = useAppStore(state => state.setFixedProjectCode);
+
+  const [inputVal, setInputVal] = useState(fixedProjectCode || '');
+  const [isOpenDropdown, setIsOpenDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Sync inputVal when fixedProjectCode changes externally
+  useEffect(() => {
+    setInputVal(fixedProjectCode || '');
+  }, [fixedProjectCode]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpenDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter project candidates
+  const candidateProjects = useMemo(() => {
+    if (!projects || projects.length === 0) return [];
+    const term = inputVal.trim().toLowerCase();
+    const uniqueMap = new Map<string, Project>();
+    
+    projects.forEach(p => {
+      if (!p.code) return;
+      const codeKey = p.code.trim().toUpperCase();
+      if (!uniqueMap.has(codeKey)) {
+        uniqueMap.set(codeKey, p);
+      }
+    });
+
+    const uniqueList = Array.from(uniqueMap.values());
+    if (!term) return uniqueList.slice(0, 30);
+
+    return uniqueList.filter(p => {
+      const code = String(p.code || '').toLowerCase();
+      const name = String(p.name || '').toLowerCase();
+      const store = String(p.store || '').toLowerCase();
+      return code.includes(term) || name.includes(term) || store.includes(term);
+    }).slice(0, 30);
+  }, [projects, inputVal]);
+
+  const handleApplyFix = (codeToFix: string) => {
+    const cleanCode = codeToFix.trim().toUpperCase();
+    if (!cleanCode) return;
+    setFixedProjectCode(cleanCode);
+    setInputVal(cleanCode);
+    setIsOpenDropdown(false);
+  };
+
+  const handleClearFix = () => {
+    setFixedProjectCode('');
+    setInputVal('');
+    setIsOpenDropdown(false);
+  };
+
+  const isFixed = Boolean(fixedProjectCode && fixedProjectCode.trim());
+
+  if (isFixed) {
+    return (
+      <div className={cn("inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-100 dark:bg-amber-950/60 border-2 border-amber-500 text-amber-900 dark:text-amber-200 rounded-lg text-xs font-bold shadow-xs shrink-0 select-none animate-in fade-in duration-150", className)}>
+        <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+        <span className="font-extrabold uppercase tracking-wide">Fix: {fixedProjectCode}</span>
+        <button
+          type="button"
+          onClick={handleClearFix}
+          className="ml-0.5 p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 rounded-md text-amber-700 dark:text-amber-300 hover:text-amber-950 dark:hover:text-white transition-colors cursor-pointer active:scale-95 touch-manipulation"
+          title="Clear Fixed Project"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("relative inline-block min-w-[130px] sm:min-w-[150px]", className)} ref={dropdownRef}>
+      <div className="relative flex items-center">
+        <Pin className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 absolute left-2.5 pointer-events-none" />
+        <input
+          type="text"
+          value={inputVal}
+          onChange={(e) => {
+            setInputVal(e.target.value);
+            setIsOpenDropdown(true);
+          }}
+          onFocus={() => setIsOpenDropdown(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && inputVal.trim()) {
+              e.preventDefault();
+              handleApplyFix(inputVal);
+            } else if (e.key === 'Escape') {
+              setIsOpenDropdown(false);
+            }
+          }}
+          placeholder="Fix Project Code..."
+          className="w-full pl-8 pr-7 py-1.5 bg-white dark:bg-[#1e1e20] border border-amber-300 dark:border-amber-700/80 text-slate-900 dark:text-[#e3e3e3] text-xs font-semibold rounded-lg focus:ring-2 focus:ring-amber-500 outline-none shadow-xs placeholder:text-slate-400 dark:placeholder:text-slate-500"
+        />
+        {inputVal.trim() ? (
+          <button
+            type="button"
+            onClick={() => handleApplyFix(inputVal)}
+            className="absolute right-1 p-0.5 px-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded text-[10px] font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
+            title="Fix Project"
+          >
+            Fix
+          </button>
+        ) : (
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+        )}
+      </div>
+
+      {isOpenDropdown && candidateProjects.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-[9999] bg-white dark:bg-[#252528] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl max-h-56 overflow-y-auto p-1 text-xs select-none animate-in fade-in duration-100">
+          <div className="px-2 py-1 text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 border-b border-slate-100 dark:border-[#333336]">
+            Select Project to Fix
+          </div>
+          {candidateProjects.map((p) => (
+            <button
+              key={`${p.code}_${p.id}`}
+              type="button"
+              onClick={() => handleApplyFix(p.code)}
+              className="w-full text-left px-2.5 py-1.5 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg flex items-center justify-between gap-2 cursor-pointer transition-colors active:scale-98"
+            >
+              <span className="font-mono font-bold text-blue-700 dark:text-blue-400 uppercase">{p.code}</span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[100px]">{p.name || p.store}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
+FixedProjectInput.displayName = 'FixedProjectInput';
+
+
+
+=== FILE: src/components/GeneralTabParts/GeneralFilterToolbar.tsx ===
+import React from 'react';
+import { RefreshCw } from 'lucide-react';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
+import { AppUser } from '../../types';
+import { useLanguage } from '../../lib/LanguageContext';
+import { safeSetItemSession } from '../../lib/storage';
+import { cn } from '../../lib/utils';
+
+interface GeneralFilterToolbarProps {
+  currentUser: AppUser;
+  isSyncing: boolean;
+  handleGoogleSync: () => Promise<void>;
+  globalYearFilter: string;
+  setGlobalYearFilter: (val: string) => void;
+  years: string[];
+  effectiveStore: string;
+  setGlobalStoreFilter: (val: string) => void;
+  stores: string[];
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (locs: string[]) => void;
+  locationOptions: string[];
+  statusFilter: string;
+  setStatusFilter: (st: string) => void;
+  lastSelectedStatusFilterRef: React.MutableRefObject<string>;
+  searchTerm: string;
+  setSearchTerm: (term: string) => void;
+}
+
+export function GeneralFilterToolbar({
+  currentUser,
+  isSyncing,
+  handleGoogleSync,
+  globalYearFilter,
+  setGlobalYearFilter,
+  years,
+  effectiveStore,
+  setGlobalStoreFilter,
+  stores,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  locationOptions,
+  statusFilter,
+  setStatusFilter,
+  lastSelectedStatusFilterRef,
+  searchTerm,
+  setSearchTerm
+}: GeneralFilterToolbarProps) {
+  const { t } = useLanguage();
+
+  return (
+    <>
+      {/* Sticky Action Controls (matching DetailTab design) */}
+      {currentUser.role === 'admin' && (
+        <div className="fixed top-[76px] xl:top-[84px] right-4 md:right-8 z-50 flex flex-row gap-2 justify-end items-start print:hidden">
+          <button 
+            onClick={handleGoogleSync}
+            disabled={isSyncing}
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 border rounded-lg font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs ${
+              isSyncing
+                ? "bg-red-50 hover:bg-red-100 border-red-200 text-red-600 dark:text-red-400 disabled:opacity-50"
+                : "bg-slate-900 dark:bg-blue-600 border border-slate-800 dark:border-blue-500 text-white rounded-lg hover:bg-slate-800 dark:hover:bg-blue-500 shadow-md"
+            }`}
+            title="Google Sync"
+          >
+            <RefreshCw className={cn("w-4 h-4 pointer-events-none", isSyncing && "animate-spin")} />
+            <span className="hidden sm:inline pointer-events-none">{isSyncing ? t('Syncing...') : t('Google Sync')}</span>
+          </button>
+        </div>
+      )}
+      
+      <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+        {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+          {/* Col 1: Year */}
+          <select 
+            value={globalYearFilter}
+            onChange={(e) => setGlobalYearFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">{t('All Years')}</option>
+            {years.map(y => <option key={y} value={y}>{t('Year')} {y}</option>)}
+          </select>
+
+          {/* Col 2: Store */}
+          <select 
+            value={effectiveStore}
+            onChange={(e) => setGlobalStoreFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            {stores.length > 1 && <option value="all">{t('All Stores')}</option>}
+            {stores.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+
+          {/* Col 3: Location */}
+          <MultiCheckboxSelect 
+            value={globalLocationFilter}
+            onChange={setGlobalLocationFilter}
+            options={locationOptions}
+            placeholder={t('All Locations')}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs"
+          />
+
+          {/* Col 4: Status */}
+          <select 
+            value={statusFilter}
+            onChange={(e) => {
+              const val = e.target.value;
+              setStatusFilter(val);
+              if (!searchTerm.trim()) {
+                lastSelectedStatusFilterRef.current = val;
+                safeSetItemSession("taka_general_status_filter", val);
+              }
+            }}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">{t('All Statuses')}</option>
+            <option value="On process">{t('On process')}</option>
+            <option value="On process + Upcoming 3 days">{t('On process + Upcoming 3 days')}</option>
+            <option value="Upcoming">{t('Upcoming')}</option>
+            <option value="Completed">{t('Completed')}</option>
+            <option value="Handover">{t('Handover')}</option>
+            <option value="Canceled">{t('Canceled')}</option>
+          </select>
+        </div>
+
+        {/* Row 2: Search */}
+        <div className="flex items-center gap-2 w-full">
+          <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+            <DebouncedSearchInput 
+              value={searchTerm}
+              onChange={(val) => setSearchTerm(val)}
+              placeholder={t('Search anything...')}
+            />
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+
+
+=== FILE: src/components/DetailTabParts/DetailFilterToolbar.tsx ===
+import React, { memo } from 'react';
+import { FixedProjectInput } from '../FixedProjectInput';
+import { Search, Edit3, Plus, Wand2, Hash, X, ArrowUpDown, Unlink } from 'lucide-react';
+import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { ColumnAdder } from '../ColumnAdder';
+import { FullReplaceImport } from '../FullReplaceImport';
+import { Project, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { cn } from '../../lib/utils';
+import { doc } from 'firebase/firestore';
+import { db, APP_ID } from '../../lib/firebase';
+import { generateId } from '../../lib/utils';
+
+interface DetailFilterToolbarProps {
+  globalYearFilter: string;
+  setGlobalYearFilter: (v: string) => void;
+  years: (number | string)[];
+  effectiveStore: string;
+  setGlobalStoreFilter: (v: string) => void;
+  stores: string[];
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (v: string[]) => void;
+  locationFilterOptions: string[];
+  statusFilter: string;
+  onStatusFilterChange: (v: string) => void;
+  searchTerm: string;
+  onSearchTermChange: (v: string) => void;
+  availableColumnsForUser: { id: string; label: string }[];
+  visibleColumns: string[];
+  onToggleColumn: (col: string) => void;
+  hasWritePermission: boolean;
+  isEditMode: boolean;
+  setIsEditMode: (v: boolean) => void;
+  canWrite: boolean;
+  onAddProject: () => void;
+  onAddTask: (p?: Project | null) => void;
+  activeProjectInView?: Project | null;
+  filteredProjects: Project[];
+  projects: Project[];
+  handleSyncAllPredecessors: (v: boolean) => void;
+  isSyncingPredecessors: boolean;
+  handleConvertAllSubtasksToHash?: () => void;
+  isConvertingToHash?: boolean;
+  currentUser: AppUser;
+  handleExportProjects: () => void;
+  handleImportProjects: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleExportTasks: () => void;
+  handleImportTasks: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  parseCSVDate?: (d: any) => string;
+  onSortSubTasks?: () => void;
+  isSortingSubTasks?: boolean;
+  selectedTaskCount?: number;
+  onBulkAction?: (action: any) => void;
+}
+
+export const DetailFilterToolbar = memo(function DetailFilterToolbar({
+  globalYearFilter,
+  setGlobalYearFilter,
+  years,
+  effectiveStore,
+  setGlobalStoreFilter,
+  stores,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  locationFilterOptions,
+  statusFilter,
+  onStatusFilterChange,
+  searchTerm,
+  onSearchTermChange,
+  availableColumnsForUser,
+  visibleColumns,
+  onToggleColumn,
+  hasWritePermission,
+  isEditMode,
+  setIsEditMode,
+  canWrite,
+  onAddProject,
+  onAddTask,
+  activeProjectInView,
+  filteredProjects,
+  projects,
+  handleSyncAllPredecessors,
+  isSyncingPredecessors,
+  handleConvertAllSubtasksToHash,
+  isConvertingToHash,
+  currentUser,
+  handleExportProjects,
+  handleImportProjects,
+  handleExportTasks,
+  handleImportTasks,
+  parseCSVDate,
+  onSortSubTasks,
+  isSortingSubTasks,
+  selectedTaskCount = 0,
+  onBulkAction
+}: DetailFilterToolbarProps) {
+  return (
+    <>
+      <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+        {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+          {/* Col 1: Year */}
+          <select 
+            value={globalYearFilter}
+            onChange={(e) => setGlobalYearFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">All Years</option>
+            {years.map(y => <option key={y} value={y}>Year {y}</option>)}
+          </select>
+
+          {/* Col 2: Store */}
+          <select 
+            value={effectiveStore}
+            onChange={(e) => setGlobalStoreFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            {stores.length > 1 && <option value="all">All Stores</option>}
+            {stores.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+
+          {/* Col 3: Location */}
+          <MultiCheckboxSelect 
+            value={globalLocationFilter}
+            onChange={setGlobalLocationFilter}
+            options={locationFilterOptions}
+            placeholder="All Locations"
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs"
+          />
+
+          {/* Col 4: Status */}
+          <select 
+            value={statusFilter}
+            onChange={(e) => onStatusFilterChange(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">All Status</option>
+            <option value="Upcoming">Upcoming</option>
+            <option value="On process">On process</option>
+            <option value="On process + Upcoming 3 days">On process + Upcoming 3 days</option>
+            <option value="Handover">Handover</option>
+            <option value="Completed">Completed</option>
+            <option value="Canceled">Canceled</option>
+          </select>
+        </div>
+
+        {/* Row 2: Fixed Project, Search & Column Adder */}
+        <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+          <div className="flex flex-wrap items-center gap-2 flex-grow">
+            <FixedProjectInput projects={projects} />
+
+            <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+              <DebouncedSearchInput 
+                value={searchTerm}
+                onChange={onSearchTermChange}
+                placeholder="Search in detail..."
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
+            <ColumnAdder 
+              availableColumns={availableColumnsForUser} 
+              visibleColumns={visibleColumns} 
+              onAddColumn={onToggleColumn} 
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Floating Edit Mode Button - Moved to bottom-16 right-4 to avoid overlapping search bar */}
+      {hasWritePermission && !isEditMode && (
+        <div className="fixed bottom-16 right-4 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
+          <button
+            onClick={() => setIsEditMode(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-blue-600 dark:bg-blue-600 border border-blue-400 text-white hover:bg-blue-700 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-2xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer ring-2 ring-blue-500/30"
+            title="Edit Mode"
+          >
+            <Edit3 className="w-4 h-4 text-white pointer-events-none" />
+            <span className="pointer-events-none">
+              Edit Mode
+            </span>
+          </button>
+        </div>
+      )}
+
+      {hasWritePermission && isEditMode && (
+        <div className="fixed top-[154px] sm:top-[160px] left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden pointer-events-auto">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
+              <Edit3 className="w-3.5 h-3.5 text-blue-500" />
+              <span>Editing Mode</span>
+            </div>
+
+            {canWrite && (
+              <>
+                <button 
+                  onClick={onAddProject}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-slate-900 dark:bg-blue-600 border border-slate-800 dark:border-blue-500 text-white rounded-lg hover:bg-slate-800 dark:hover:bg-blue-500 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs cursor-pointer active:scale-95"
+                  title="Add Project"
+                >
+                  <Plus className="w-4 h-4 pointer-events-none" />
+                  <span className="hidden sm:inline pointer-events-none">
+                    Add Project
+                  </span>
+                </button>
+
+                <button 
+                  onClick={() => {
+                    const targetProj = activeProjectInView || (filteredProjects && filteredProjects.length > 0 ? filteredProjects[0] : (projects && projects.length > 0 ? projects[0] : null));
+                    onAddTask(targetProj);
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 dark:bg-emerald-600 border border-emerald-700 text-white rounded-lg hover:bg-emerald-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 cursor-pointer"
+                  title={activeProjectInView?.code ? `Add Task for ${activeProjectInView.code}` : "Add New Task"}
+                >
+                  <Plus className="w-4 h-4 pointer-events-none" />
+                  <span className="hidden sm:inline pointer-events-none">
+                    {activeProjectInView?.code ? `+ Task (${activeProjectInView.code})` : 'Add New Task'}
+                  </span>
+                </button>
+
+                {onSortSubTasks && (
+                  <button 
+                    onClick={onSortSubTasks}
+                    disabled={isSortingSubTasks}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-600 dark:bg-amber-600 border border-amber-700 text-white rounded-lg hover:bg-amber-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title={activeProjectInView?.code ? `Sort sub-tasks for ${activeProjectInView.code} by Start Date & Dependencies` : "Sort sub-tasks by Start Date & Dependencies"}
+                  >
+                    <ArrowUpDown className={`w-4 h-4 pointer-events-none ${isSortingSubTasks ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline pointer-events-none">
+                      {isSortingSubTasks ? 'Sorting...' : (activeProjectInView?.code ? `Sort (${activeProjectInView.code})` : 'Sort Sub-tasks')}
+                    </span>
+                  </button>
+                )}
+
+                <button 
+                  onClick={() => handleSyncAllPredecessors(true)}
+                  disabled={isSyncingPredecessors}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-600 dark:bg-indigo-600 border border-indigo-700 text-white rounded-lg hover:bg-indigo-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                  title="Fix and synchronize all predecessor references with subtask codes"
+                >
+                  <Wand2 className={`w-4 h-4 pointer-events-none ${isSyncingPredecessors ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline pointer-events-none">
+                    {isSyncingPredecessors ? 'Syncing...' : 'Sync Predecessor'}
+                  </span>
+                </button>
+
+                {handleConvertAllSubtasksToHash && (
+                  <button 
+                    onClick={() => handleConvertAllSubtasksToHash()}
+                    disabled={isConvertingToHash}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-cyan-600 dark:bg-cyan-600 border border-cyan-700 text-white rounded-lg hover:bg-cyan-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title="Scan and convert '-' to '#' for subtask codes and predecessors"
+                  >
+                    <Hash className={`w-4 h-4 pointer-events-none ${isConvertingToHash ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline pointer-events-none">
+                      {isConvertingToHash ? 'Converting...' : "Convert '-' to '#'"}
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => onBulkAction && onBulkAction('unlink')}
+                  disabled={selectedTaskCount < 1}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 cursor-pointer",
+                    selectedTaskCount >= 1
+                      ? "bg-amber-600 dark:bg-amber-600 border border-amber-700 text-white hover:bg-amber-700"
+                      : "opacity-40 cursor-not-allowed bg-slate-200 dark:bg-[#333336] text-slate-400 border border-slate-300 dark:border-slate-700"
+                  )}
+                  title="Unlink selected tasks from parent modular link"
+                >
+                  <Unlink className="w-4 h-4 pointer-events-none" />
+                  <span className="hidden sm:inline pointer-events-none">
+                    Unlink{selectedTaskCount > 0 ? ` (${selectedTaskCount})` : ''}
+                  </span>
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsEditMode(false)}
+              className="flex items-center justify-center p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-[#e3e3e3] rounded-lg hover:bg-slate-100 dark:hover:bg-[#333336] transition-colors shrink-0 ml-1 cursor-pointer"
+              title="Done Editing"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
+        {hasWritePermission && (
+          <>
+            <div className="flex gap-1 items-center">
+              {currentUser.role === 'admin' && (
+                <FullReplaceImport 
+                  collectionName="taka_projects"
+                  onImportSuccess={(count) => useAppStore.getState().setToast({ title: "Success", message: String(`Full replace successful! Imported ${count} projects.`) })}
+                  onParseRow={(row, headers) => {
+                    const p: any = {};
+                    let rowNo: any = null;
+                    headers.forEach((h, i) => {
+                      const fieldMap: any = { 'store': 'store', 'location': 'location', 'year': 'year', 'code': 'code', 'name': 'name', 'no': 'no', 'shoptype': 'shopType', 'shop type': 'shopType', 'shop_type': 'shopType', 'shop': 'shopType', 'sizem2': 'sizeM2', 'size': 'sizeM2', 'area': 'sizeM2' };
+                      const target = fieldMap[h];
+                      if (target) {
+                        let val: any = row[i];
+                        if (target === 'year' || target === 'no' || target === 'sizeM2') val = isNaN(Number(val)) ? val : Number(val);
+                        if (target === 'shopType') val = val !== undefined && val !== null ? String(val).trim() : '';
+                        p[target] = val;
+                        if (target === 'no') rowNo = val;
+                      }
+                    });
+                    if (!p.code) return null;
+                    return p;
+                  }}
+                  id="detail-full-import-projects-btn"
+                  hiddenBtn={true}
+                />
+              )}
+              <button id="detail-export-projects-btn" onClick={handleExportProjects} className="hidden" />
+              <input id="detail-import-projects-input" type="file" accept=".csv" onChange={handleImportProjects} className="hidden" />
+            </div>
+            <div className="flex gap-1 items-center hidden">
+              {currentUser.role === 'admin' && (
+                <FullReplaceImport 
+                  collectionName="taka_tasks"
+                  onImportSuccess={(count) => useAppStore.getState().setToast({ title: "Success", message: String(`Full replace successful! Imported ${count} tasks.`) })}
+                  onParseRow={(row, headers) => {
+                    const t: any = {};
+                    headers.forEach((h, i) => {
+                      let key = h;
+                      if (h === 'task name') key = 'name';
+                      if (h === 'projectcode') key = 'projectCode';
+                      if (h === 'year' || h === 'projectyear') key = 'projectYear';
+                      if (h === 'store' || h === 'projectstore') key = 'projectStore';
+                      if (h === 'sub-task code' || h === 'sub task code' || h === 'subtask code' || h === 'sub_task_code' || h === 'taskcodephu' || h === 'task code phu' || h === 'task_code_phu') key = 'taskCodePhu';
+                      if (h === 'orderindex' || h === 'order_index') key = 'orderIndex';
+                      if (h === 'delegation' || h === 'task delegation' || h === 'task_delegation' || h === 'isdelegation') key = 'delegation';
+                      if (h === 'task flexible' || h === 'task_flexible' || h === 'taskflexible' || h === 'flexible' || h === 'realtimeupdate' || h === 'realtime_update') key = 'realtimeUpdate';
+                      if (['projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'id'].includes(key)) {
+                        let val: any = row[i];
+                        if (key === 'start' || key === 'finish') val = parseCSVDate(val);
+                        else if (key === 'delegation' || key === 'realtimeUpdate') {
+                          const strVal = String(val || '').trim().toLowerCase();
+                          val = (strVal === 'true' || strVal === '1' || strVal === 'yes' || strVal === 'on');
+                        } else if (key === 'projectYear') {
+                          val = isNaN(Number(val)) ? val : Number(val);
+                        }
+                        t[key] = val;
+                      }
+                    });
+                    if (!t.projectCode || !t.name) return null;
+                    return t;
+                  }}
+                  onRecordSave={(record, batch) => {
+                     if (record.delegation) {
+                        const now = new Date().toISOString();
+                        const dateStr = now.substring(0, 10);
+                        const activeUser = useAppStore.getState().currentUser || currentUser;
+                        const activeUserId = activeUser?.id && activeUser.id !== 'guest' ? activeUser.id : (activeUser?.username || 'system');
+                        const rawParty = (record.party && record.party.trim()) ? record.party.trim() : '';
+                        const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
+                        const deterministicGroupId = `del_${record.id}`;
+
+                        if (parsedParty) {
+                          const newGroup = {
+                            id: deterministicGroupId,
+                            parentTaskId: record.id,
+                            name: record.name || 'Delegated Task',
+                            projectCode: record.projectCode,
+                            projectStore: record.projectStore,
+                            projectYear: (record.projectYear !== undefined && record.projectYear !== null && !isNaN(Number(record.projectYear))) ? Number(record.projectYear) : (Number(projects.find(p => p.code === record.projectCode)?.year) || new Date().getFullYear()),
+                            subTasks: [{ 
+                               id: generateId(), 
+                               name: '', 
+                               comments: '', 
+                               status: 'Assigned', 
+                               delegationStatus: 'Assigned', 
+                               priority: 'Mid', 
+                               party: parsedParty, 
+                               startAct: dateStr, 
+                               finishAct: dateStr, 
+                               updatedAt: now 
+                            }],
+                            updatedAt: now,
+                            createdBy: activeUserId
+                          };
+                          const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
+                          batch.set(delRef, newGroup, { merge: true });
+                        }
+                     }
+                  }}
+                  id="detail-full-import-tasks-btn"
+                  hiddenBtn={true}
+                />
+              )}
+              <button id="detail-export-tasks-btn" onClick={handleExportTasks} className="hidden" />
+              <input id="detail-import-tasks-input" type="file" accept=".csv, .xlsx, .xls" onChange={handleImportTasks} className="hidden" />
+            </div>
+          </>
+        )}
+    </>
+  );
+});
+
+
+
+=== FILE: src/components/BudgetParts/BudgetFilterToolbar.tsx ===
+import React, { useRef } from 'react';
+import { Search, Download, Upload, Plus } from 'lucide-react';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
+import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
+import { ColumnAdder } from '../ColumnAdder';
+import { useLanguage } from '../../lib/LanguageContext';
+import { safeSetItemSession } from '../../lib/storage';
+import { useAppStore } from '../../store/useAppStore';
+import { AVAILABLE_COLUMNS } from './budgetTypes';
+
+interface BudgetFilterToolbarProps {
+  canWrite: boolean;
+  globalYearFilter: string;
+  setGlobalYearFilter: (val: string) => void;
+  years: string[];
+  effectiveStore: string;
+  setGlobalStoreFilter: (val: string) => void;
+  stores: string[];
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (locs: string[]) => void;
+  locationOptions: string[];
+  moneyFilter: string;
+  setMoneyFilter: (val: string) => void;
+  lastSelectedMoneyFilterRef: React.MutableRefObject<string>;
+  searchTerm: string;
+  setSearchTerm: (val: string) => void;
+  visibleColumns: string[];
+  handleToggleColumn: (colId: string) => void;
+  handleExportBudget: () => void;
+  handleImportBudget: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onAddBudget?: () => void;
+}
+
+export function BudgetFilterToolbar({
+  canWrite,
+  globalYearFilter,
+  setGlobalYearFilter,
+  years,
+  effectiveStore,
+  setGlobalStoreFilter,
+  stores,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  locationOptions,
+  moneyFilter,
+  setMoneyFilter,
+  lastSelectedMoneyFilterRef,
+  searchTerm,
+  setSearchTerm,
+  visibleColumns,
+  handleToggleColumn,
+  handleExportBudget,
+  handleImportBudget,
+  onAddBudget
+}: BudgetFilterToolbarProps) {
+  const { t } = useLanguage();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const projects = useAppStore(state => state.projects);
+
+  return (
+    <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+      {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+        {/* Col 1: Year */}
+        <select 
+          value={globalYearFilter} 
+          onChange={(e) => setGlobalYearFilter(e.target.value)}
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+        >
+          <option value="all">{t('All Years')}</option>
+          {years.map(y => <option key={y} value={y}>{t('Year')} {y}</option>)}
+        </select>
+
+        {/* Col 2: Store */}
+        <select 
+          value={effectiveStore} 
+          onChange={(e) => setGlobalStoreFilter(e.target.value)}
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+        >
+          {stores.length > 1 && <option value="all">{t('All Stores')}</option>}
+          {stores.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+
+        {/* Col 3: Location */}
+        <MultiCheckboxSelect 
+          value={globalLocationFilter}
+          onChange={setGlobalLocationFilter}
+          options={locationOptions}
+          placeholder={t('All Locations')}
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs"
+        />
+
+        {/* Col 4: Money Filter */}
+        <select
+          value={moneyFilter}
+          onChange={(e) => {
+            const val = e.target.value;
+            setMoneyFilter(val);
+            if (!searchTerm.trim()) {
+              lastSelectedMoneyFilterRef.current = val;
+              safeSetItemSession("taka_budget_money_filter", val);
+            }
+          }}
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+        >
+          <option value="all">{t('All Projects')}</option>
+          <option value="has_money">{t('Has Budget or Actual')}</option>
+          <option value="has_budget">{t('Has Budget Only')}</option>
+          <option value="has_act_forc">{t('Has Actual/Forc Only')}</option>
+        </select>
+      </div>
+
+      {/* Row 2: Fixed Project, Search & Action Buttons */}
+      <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+        <div className="flex flex-wrap items-center gap-2 flex-grow">
+          <FixedProjectInput projects={projects} />
+
+          <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+            <DebouncedSearchInput 
+              value={searchTerm} 
+              onChange={(val) => setSearchTerm(val)}
+              placeholder={t('Search anything...')}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          {canWrite && (
+            <button 
+              type="button"
+              onClick={onAddBudget}
+              className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer"
+              title={t('Add Budget')}
+            >
+              <Plus className="w-4 h-4" />
+              <span>{t('Add Budget')}</span>
+            </button>
+          )}
+
+          <button 
+            type="button"
+            onClick={handleExportBudget} 
+            className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
+            title="Export Filtered CSV"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">{t('Export CSV')}</span>
+          </button>
+          
+          {canWrite && (
+            <>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleImportBudget} 
+                accept=".csv" 
+                className="hidden" 
+              />
+              <button 
+                type="button"
+                onClick={() => fileInputRef.current?.click()} 
+                className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
+                title="Import Budget CSV (Updates matching projects)"
+              >
+                <Upload className="w-4 h-4" />
+                <span className="hidden sm:inline">{t('Import CSV')}</span>
+              </button>
+            </>
+          )}
+
+          <div className="flex items-center gap-2 shrink-0">
+            <ColumnAdder 
+              availableColumns={AVAILABLE_COLUMNS} 
+              visibleColumns={visibleColumns} 
+              onAddColumn={handleToggleColumn} 
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+=== FILE: src/components/CostParts/CostFilterToolbar.tsx ===
+import React, { memo } from 'react';
+import { Search } from 'lucide-react';
+import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
+import { ColumnAdder } from '../ColumnAdder';
+import { FullReplaceImport } from '../FullReplaceImport';
+import { AVAILABLE_COLUMNS } from './costTypes';
+import { useAppStore } from '../../store/useAppStore';
+
+interface CostFilterToolbarProps {
+  globalYearFilter: string;
+  setGlobalYearFilter: (val: string) => void;
+  years: string[];
+  effectiveStore: string;
+  setGlobalStoreFilter: (val: string) => void;
+  stores: string[];
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (val: string[]) => void;
+  locationOptions: string[];
+  hasActForcFilter: string;
+  setHasActForcFilter: (val: string) => void;
+  searchTerm: string;
+  setSearchTerm: (val: string) => void;
+  visibleColumns: string[];
+  handleToggleColumn: (colId: string) => void;
+  canWrite: boolean;
+  isAdmin: boolean;
+  handleExportCosts: () => void;
+  handleImportCosts: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}
+
+export const CostFilterToolbar = React.memo(function CostFilterToolbar({
+  globalYearFilter,
+  setGlobalYearFilter,
+  years,
+  effectiveStore,
+  setGlobalStoreFilter,
+  stores,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  locationOptions,
+  hasActForcFilter,
+  setHasActForcFilter,
+  searchTerm,
+  setSearchTerm,
+  visibleColumns,
+  handleToggleColumn,
+  canWrite,
+  isAdmin,
+  handleExportCosts,
+  handleImportCosts,
+}: CostFilterToolbarProps) {
+  const projects = useAppStore((state) => state.projects);
+
+  return (
+    <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+      {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+        {/* Col 1: Year */}
+        <select
+          value={globalYearFilter}
+          onChange={(e) => setGlobalYearFilter(e.target.value)}
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+        >
+          <option value="all">All Years</option>
+          {years.map((y) => (
+            <option key={y} value={y}>
+              Year {y}
+            </option>
+          ))}
+        </select>
+
+        {/* Col 2: Store */}
+        <select
+          value={effectiveStore}
+          onChange={(e) => setGlobalStoreFilter(e.target.value)}
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+        >
+          {stores.length > 1 && <option value="all">All Stores</option>}
+          {stores.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+
+        {/* Col 3: Location */}
+        <MultiCheckboxSelect
+          value={globalLocationFilter}
+          onChange={setGlobalLocationFilter}
+          options={locationOptions}
+          placeholder="All Locations"
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs"
+        />
+
+        {/* Col 4: Act/Forc Filter */}
+        <select
+          value={hasActForcFilter}
+          onChange={(e) => setHasActForcFilter(e.target.value)}
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+        >
+          <option value="all">All Act/Forc</option>
+          <option value="has_value">Has Act/Forc</option>
+        </select>
+      </div>
+
+      {/* Row 2: Fixed Project, Search & Column Adder */}
+      <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+        <div className="flex flex-wrap items-center gap-2 flex-grow">
+          <FixedProjectInput projects={projects} />
+
+          <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+            <DebouncedSearchInput
+              value={searchTerm}
+              onChange={(val) => setSearchTerm(val)}
+              placeholder="Search in cost details..."
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 justify-end shrink-0">
+          <ColumnAdder
+            availableColumns={AVAILABLE_COLUMNS}
+            visibleColumns={visibleColumns}
+            onAddColumn={handleToggleColumn}
+          />
+
+          {canWrite && (
+            <div className="flex gap-1 items-center">
+              {isAdmin && (
+                <FullReplaceImport
+                  collectionName="taka_costs"
+                  onImportSuccess={(count) =>
+                    useAppStore.getState().setToast({
+                      title: 'Notice',
+                      message: `Full replace successful! Imported ${count} cost entries.`,
+                    })
+                  }
+                  onParseRow={(row, headers) => {
+                    const c: any = {};
+                    const parseCSVNumber = (val: any) => {
+                      if (typeof val === 'string') {
+                        const cleaned = val.replace(/,/g, '').trim();
+                        if (cleaned === '-' || cleaned === '') return 0;
+                        const num = Number(cleaned);
+                        return isNaN(num) ? 0 : num;
+                      }
+                      return Number(val) || 0;
+                    };
+
+                    headers.forEach((h, i) => {
+                      const keyMap: Record<string, string> = {
+                        projectcode: 'projectCode',
+                        projectyear: 'projectYear',
+                        year: 'projectYear',
+                        projectstore: 'projectStore',
+                        store: 'projectStore',
+                        firstpaid: 'firstPaid',
+                        firstpaidat: 'firstPaidAt',
+                        secondpaid: 'secondPaid',
+                        secondpaidat: 'secondPaidAt',
+                        thirdpaid: 'thirdPaid',
+                        thirdpaidat: 'thirdPaidAt',
+                        supportingfee: 'supportingFee',
+                      };
+                      const field = keyMap[h] || h;
+                      let val: any = row[i];
+                      if (
+                        [
+                          'actual',
+                          'firstPaid',
+                          'secondPaid',
+                          'thirdPaid',
+                          'supportingFee',
+                        ].includes(field)
+                      ) {
+                        val = parseCSVNumber(val);
+                      }
+                      if (['projectYear'].includes(field)) {
+                        val = isNaN(Number(val)) ? val : Number(val);
+                      }
+                      c[field] = val;
+                    });
+                    if (!c.projectCode || !c.description) return null;
+                    return c;
+                  }}
+                  id="cost-full-import-btn"
+                  hiddenBtn={true}
+                />
+              )}
+              <button
+                id="cost-export-btn"
+                onClick={handleExportCosts}
+                className="hidden"
+              />
+              <input
+                id="cost-import-input"
+                type="file"
+                accept=".csv"
+                onChange={handleImportCosts}
+                className="hidden"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+
+
+=== FILE: src/components/Gantt/GanttToolbar.tsx ===
+import React, { Dispatch, SetStateAction, useMemo } from 'react';
+import { Search, Loader2, Edit2, X, Target } from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { useLanguage } from '../../lib/LanguageContext';
+import { useAppStore } from '../../store/useAppStore';
+import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
+import { ColumnAdder } from '../ColumnAdder';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
+import { ViewMode } from './ganttTypes';
+import { GanttToolbarActions } from './GanttToolbarActions';
+import { GanttToolbarDateFilter } from './GanttToolbarDateFilter';
+
+const GANTT_AVAILABLE_COLUMNS = [
+  { id: 'start', label: 'Start' },
+  { id: 'finish', label: 'Finish' },
+  { id: 'party', label: 'Party' },
+  { id: 'duration', label: 'Duration' },
+  { id: 'predecessor', label: 'Predecessor' },
+];
+
+export interface GanttToolbarProps {
+  // Year & Store & Location & Status filters
+  globalYearFilter: string;
+  setGlobalYearFilter: (year: string) => void;
+  uniqueYears: string[];
+
+  effectiveStore: string;
+  setGlobalStoreFilter: (store: string) => void;
+  uniqueStores: string[];
+
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (locs: string[]) => void;
+  locationOptions: string[];
+
+  filterProjectStatus: string;
+  onStatusFilterChange: (status: string) => void;
+
+  isTasksLoading: boolean;
+
+  // Delegation Highlight
+  canWrite: boolean;
+  isEditMode: boolean;
+  setIsEditMode: (val: boolean) => void;
+  isHighlightDelegationOn: boolean;
+  setIsHighlightDelegationOn: (val: boolean) => void;
+
+  // Edit Mode actions
+  selectedProjectIds: string[];
+  selectedTaskIds: string[];
+  setSelectedProjectIds: (ids: string[]) => void;
+  setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
+  handleSetTextColor: (color: string | null) => void;
+  handleSetBaselineSelected: () => void;
+  handleToggleRealtimeUpdate: () => void;
+  handleUnlinkModularTasks?: (childTaskIds?: string[]) => void | Promise<void>;
+  isTaskModularModalOpen?: boolean;
+  setIsTaskModularModalOpen: (val: boolean) => void;
+  sumMode: "none" | "duration";
+  setSumMode: (val: "none" | "duration") => void;
+  handleDeleteSelected: () => void;
+  handleDragStart: (e: React.DragEvent) => void;
+  isHideMode: boolean;
+  setIsHideMode: (val: boolean) => void;
+  hiddenRows: string[];
+  setHiddenRows: (rows: string[]) => void;
+  handleExportToPDF: () => void;
+  isExporting: boolean;
+
+  // Date Filter
+  tempStartDate: string;
+  setTempStartDate: (val: string) => void;
+  tempEndDate: string;
+  setTempEndDate: (val: string) => void;
+  setFilterStartDate: (val: string) => void;
+  setFilterEndDate: (val: string) => void;
+
+  // Columns & View Controls
+  visibleColumns: string[];
+  handleToggleColumn: (colId: string) => void;
+  handleTodayClick: () => void;
+
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
+
+  scaleInput: string;
+  setScaleInput: (val: string) => void;
+  dayWidth: number;
+  setDayWidth: (val: number) => void;
+  isWidthChanged: boolean;
+  setIsWidthChanged: (val: boolean) => void;
+  saveDayWidth: () => void;
+
+  // Search
+  searchTerm: string;
+  setSearchTerm: (term: string) => void;
+  initialFocusTaskId?: string;
+  ganttTabFocusTaskId?: string | null;
+  ganttTabFilterProjectId?: string | null;
+  handleClearFocus: () => void;
+}
+
+export function GanttToolbar({
+  globalYearFilter,
+  setGlobalYearFilter,
+  uniqueYears,
+  effectiveStore,
+  setGlobalStoreFilter,
+  uniqueStores,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  locationOptions,
+  filterProjectStatus,
+  onStatusFilterChange,
+  isTasksLoading,
+  canWrite,
+  isEditMode,
+  setIsEditMode,
+  isHighlightDelegationOn,
+  setIsHighlightDelegationOn,
+  selectedProjectIds,
+  selectedTaskIds,
+  setSelectedProjectIds,
+  setSelectedTaskIds,
+  handleSetTextColor,
+  handleSetBaselineSelected,
+  handleUnlinkModularTasks,
+  isTaskModularModalOpen = false,
+  setIsTaskModularModalOpen,
+  sumMode,
+  setSumMode,
+  handleDeleteSelected,
+  isHideMode,
+  setIsHideMode,
+  hiddenRows,
+  setHiddenRows,
+  handleExportToPDF,
+  isExporting,
+  tempStartDate,
+  setTempStartDate,
+  tempEndDate,
+  setTempEndDate,
+  setFilterStartDate,
+  setFilterEndDate,
+  visibleColumns,
+  handleToggleColumn,
+  handleTodayClick,
+  viewMode,
+  setViewMode,
+  scaleInput,
+  setScaleInput,
+  dayWidth,
+  setDayWidth,
+  isWidthChanged,
+  setIsWidthChanged,
+  saveDayWidth,
+  searchTerm,
+  setSearchTerm,
+  initialFocusTaskId,
+  ganttTabFocusTaskId,
+  ganttTabFilterProjectId,
+  handleClearFocus,
+}: GanttToolbarProps) {
+  const { t } = useLanguage();
+  const tasks = useAppStore((state) => state.tasks);
+  const projects = useAppStore((state) => state.projects);
+
+  const activeFocusTaskId = initialFocusTaskId || ganttTabFocusTaskId;
+  const focusedTask = React.useMemo(() => {
+    if (!activeFocusTaskId || !tasks) return null;
+    return tasks.find(t => String(t.id) === String(activeFocusTaskId)) || null;
+  }, [activeFocusTaskId, tasks]);
+
+  return (
+    <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+      {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+      <div className="flex flex-col lg:flex-row gap-2 justify-between items-stretch lg:items-center w-full">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+          {/* Col 1: Year */}
+          <select
+            value={globalYearFilter}
+            onChange={(e) => setGlobalYearFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">{t('All Years')}</option>
+            {uniqueYears.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+
+          {/* Col 2: Store */}
+          <select
+            value={effectiveStore}
+            onChange={(e) => setGlobalStoreFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            {uniqueStores.length > 1 && <option value="all">{t('All Stores')}</option>}
+            {uniqueStores.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+
+          {/* Col 3: Location */}
+          <MultiCheckboxSelect
+            value={globalLocationFilter}
+            onChange={setGlobalLocationFilter}
+            options={locationOptions}
+            placeholder={t('All Locations')}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs"
+          />
+
+          {/* Col 4: Status */}
+          <select
+            value={filterProjectStatus}
+            onChange={(e) => onStatusFilterChange(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">{t('All Statuses')}</option>
+            <option value="On process & Upcoming">{t('On Process & Upcoming')}</option>
+            <option value="On process">{t('On process')}</option>
+            <option value="On process + Upcoming 3 days">{t('On process + Upcoming 3 days')}</option>
+            <option value="Upcoming">{t('Upcoming')}</option>
+            <option value="Completed">{t('Completed')}</option>
+            <option value="Handover">{t('Handover')}</option>
+            <option value="Canceled">{t('Canceled')}</option>
+          </select>
+        </div>
+
+      {/* Floating Sticky Edit Mode Button - Moved to bottom-16 right-4 */}
+      {canWrite && !isEditMode && !isTaskModularModalOpen && (
+        <div className="fixed bottom-16 right-4 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => setIsEditMode(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-blue-600 dark:bg-blue-600 border border-blue-400 text-white hover:bg-blue-700 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-2xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer ring-2 ring-blue-500/30"
+            title="Edit Mode"
+          >
+            <Edit2 className="w-4 h-4 text-white pointer-events-none" />
+            <span className="pointer-events-none">
+              Edit Mode
+            </span>
+          </button>
+        </div>
+      )}
+
+      {canWrite && isEditMode && !isTaskModularModalOpen && (
+        <div className="fixed top-[154px] sm:top-[160px] left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-2.5 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden pointer-events-auto">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
+            <Edit2 className="w-3.5 h-3.5 text-blue-500" />
+            <span>Editing Mode</span>
+          </div>
+
+          {/* Highlight Me Button INSIDE Edit Mode Panel */}
+          <button
+            type="button"
+            onClick={() => setIsHighlightDelegationOn(!isHighlightDelegationOn)}
+            className={cn(
+              "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8 shrink-0",
+              isHighlightDelegationOn
+                ? "bg-amber-100 dark:bg-[#2d2415] border-amber-500 text-amber-900 dark:text-amber-300 ring-1 ring-amber-500/50 font-extrabold"
+                : "bg-slate-100 dark:bg-[#1c1c1e] border-slate-300 dark:border-slate-700/80 text-amber-600 dark:text-amber-400 hover:bg-slate-200 dark:hover:bg-[#252528]"
+            )}
+            title={t('Highlight My Tasks')}
+          >
+            <span className="text-amber-500 dark:text-amber-400 text-xs">🎯</span>
+            <span>Highlight Me</span>
+          </button>
+
+          {/* Edit Mode Batch Actions */}
+          <GanttToolbarActions
+            selectedProjectIds={selectedProjectIds}
+            selectedTaskIds={selectedTaskIds}
+            handleSetTextColor={handleSetTextColor}
+            handleSetBaselineSelected={handleSetBaselineSelected}
+            handleUnlinkModularTasks={handleUnlinkModularTasks}
+            setIsTaskModularModalOpen={setIsTaskModularModalOpen}
+            sumMode={sumMode}
+            setSumMode={setSumMode}
+            handleDeleteSelected={handleDeleteSelected}
+            isHideMode={isHideMode}
+            setIsHideMode={setIsHideMode}
+            hiddenRows={hiddenRows}
+            setHiddenRows={setHiddenRows}
+            handleExportToPDF={handleExportToPDF}
+            isExporting={isExporting}
+          />
+
+          {/* Close Edit Mode button */}
+          <button
+            type="button"
+            onClick={() => setIsEditMode(false)}
+            className="flex items-center justify-center gap-1 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-[#38383c] dark:hover:bg-[#444448] text-slate-700 dark:text-slate-200 font-bold rounded-lg text-xs transition-colors shrink-0 cursor-pointer active:scale-95"
+            title="Done / Exit Edit Mode"
+          >
+            <span>Done</span>
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+      </div>
+
+      {/* Row 2: Action Toolbar (Date Filter, + Add Column, Today) */}
+      <div className="flex flex-col gap-1 w-full">
+        <div className="flex flex-wrap items-center gap-2 justify-between w-full">
+          <div className="flex flex-wrap items-center gap-2">
+            <GanttToolbarDateFilter
+              handleTodayClick={handleTodayClick}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              scaleInput={scaleInput}
+              setScaleInput={setScaleInput}
+              dayWidth={dayWidth}
+              setDayWidth={setDayWidth}
+              isWidthChanged={isWidthChanged}
+              setIsWidthChanged={setIsWidthChanged}
+              saveDayWidth={saveDayWidth}
+              tempStartDate={tempStartDate}
+              setTempStartDate={setTempStartDate}
+              tempEndDate={tempEndDate}
+              setTempEndDate={setTempEndDate}
+              setFilterStartDate={setFilterStartDate}
+              setFilterEndDate={setFilterEndDate}
+            />
+
+            <ColumnAdder
+              availableColumns={GANTT_AVAILABLE_COLUMNS}
+              visibleColumns={visibleColumns}
+              onAddColumn={handleToggleColumn}
+            />
+
+            <FixedProjectInput projects={projects} />
+
+            <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+              <DebouncedSearchInput
+                value={searchTerm}
+                onChange={setSearchTerm}
+                placeholder="Search (+ AND, , OR)"
+              />
+            </div>
+
+
+          </div>
+
+          {/* Task loading spinner - Only on cold start when no cached tasks exist */}
+          {isTasksLoading && (!tasks || tasks.length === 0) && (
+            <div className="flex items-center gap-1 text-xs text-blue-400 font-semibold animate-pulse ml-auto">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>{t('Syncing...')}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+

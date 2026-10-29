@@ -97,64 +97,77 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
 }: DetailFilterToolbarProps) {
   return (
     <>
-      <div className="px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-wrap items-center justify-between gap-2.5 shrink-0 print:hidden rounded-t-xl">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full">
-        <select 
-          value={globalYearFilter}
-          onChange={(e) => setGlobalYearFilter(e.target.value)}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
-        >
-          <option value="all">All Years</option>
-          {years.map(y => <option key={y} value={y}>Year {y}</option>)}
-        </select>
-        <select 
-          value={effectiveStore}
-          onChange={(e) => setGlobalStoreFilter(e.target.value)}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
-        >
-          {stores.length > 1 && <option value="all">All Stores</option>}
-          {stores.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <MultiCheckboxSelect 
-          value={globalLocationFilter}
-          onChange={setGlobalLocationFilter}
-          options={locationFilterOptions}
-          placeholder="All Locations"
-          className="min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
-        />
-        <select 
-          value={statusFilter}
-          onChange={(e) => onStatusFilterChange(e.target.value)}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none cursor-pointer"
-        >
-          <option value="all">All Status</option>
-          <option value="Upcoming">Upcoming</option>
-          <option value="On process">On process</option>
-          <option value="On process + Upcoming 3 days">On process + Upcoming 3 days</option>
-          <option value="Handover">Handover</option>
-          <option value="Completed">Completed</option>
-          <option value="Canceled">Canceled</option>
-        </select>
+      <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+        {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+          {/* Col 1: Year */}
+          <select 
+            value={globalYearFilter}
+            onChange={(e) => setGlobalYearFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">All Years</option>
+            {years.map(y => <option key={y} value={y}>Year {y}</option>)}
+          </select>
 
-        <FixedProjectInput projects={projects} />
+          {/* Col 2: Store */}
+          <select 
+            value={effectiveStore}
+            onChange={(e) => setGlobalStoreFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            {stores.length > 1 && <option value="all">All Stores</option>}
+            {stores.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
 
-        <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
-          <DebouncedSearchInput 
-            value={searchTerm}
-            onChange={onSearchTermChange}
-            placeholder="Search in detail..."
+          {/* Col 3: Location */}
+          <MultiCheckboxSelect 
+            value={globalLocationFilter}
+            onChange={setGlobalLocationFilter}
+            options={locationFilterOptions}
+            placeholder="All Locations"
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs"
           />
+
+          {/* Col 4: Status */}
+          <select 
+            value={statusFilter}
+            onChange={(e) => onStatusFilterChange(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">All Status</option>
+            <option value="Upcoming">Upcoming</option>
+            <option value="On process">On process</option>
+            <option value="On process + Upcoming 3 days">On process + Upcoming 3 days</option>
+            <option value="Handover">Handover</option>
+            <option value="Completed">Completed</option>
+            <option value="Canceled">Canceled</option>
+          </select>
         </div>
 
-        <div className="hidden xl:flex items-center gap-2 shrink-0 ml-auto">
-          <ColumnAdder 
-            availableColumns={availableColumnsForUser} 
-            visibleColumns={visibleColumns} 
-            onAddColumn={onToggleColumn} 
-          />
+        {/* Row 2: Fixed Project, Search & Column Adder */}
+        <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+          <div className="flex flex-wrap items-center gap-2 flex-grow">
+            <FixedProjectInput projects={projects} />
+
+            <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+              <DebouncedSearchInput 
+                value={searchTerm}
+                onChange={onSearchTermChange}
+                placeholder="Search in detail..."
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
+            <ColumnAdder 
+              availableColumns={availableColumnsForUser} 
+              visibleColumns={visibleColumns} 
+              onAddColumn={onToggleColumn} 
+            />
+          </div>
         </div>
       </div>
-    </div>
 
       {/* Floating Edit Mode Button - Moved to bottom-16 right-4 to avoid overlapping search bar */}
       {hasWritePermission && !isEditMode && (

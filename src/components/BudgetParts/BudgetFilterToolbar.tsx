@@ -59,34 +59,39 @@ export function BudgetFilterToolbar({
   const projects = useAppStore(state => state.projects);
 
   return (
-    <div className="px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-wrap items-center justify-between gap-2.5 shrink-0 print:hidden rounded-t-xl">
-      <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-grow">
+    <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+      {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+        {/* Col 1: Year */}
         <select 
           value={globalYearFilter} 
           onChange={(e) => setGlobalYearFilter(e.target.value)}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
         >
           <option value="all">{t('All Years')}</option>
           {years.map(y => <option key={y} value={y}>{t('Year')} {y}</option>)}
         </select>
 
+        {/* Col 2: Store */}
         <select 
           value={effectiveStore} 
           onChange={(e) => setGlobalStoreFilter(e.target.value)}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
         >
           {stores.length > 1 && <option value="all">{t('All Stores')}</option>}
           {stores.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
 
+        {/* Col 3: Location */}
         <MultiCheckboxSelect 
           value={globalLocationFilter}
           onChange={setGlobalLocationFilter}
           options={locationOptions}
           placeholder={t('All Locations')}
-          className="min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs"
         />
 
+        {/* Col 4: Money Filter */}
         <select
           value={moneyFilter}
           onChange={(e) => {
@@ -97,75 +102,80 @@ export function BudgetFilterToolbar({
               safeSetItemSession("taka_budget_money_filter", val);
             }
           }}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none cursor-pointer"
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
         >
           <option value="all">{t('All Projects')}</option>
           <option value="has_money">{t('Has Budget or Actual')}</option>
           <option value="has_budget">{t('Has Budget Only')}</option>
           <option value="has_act_forc">{t('Has Actual/Forc Only')}</option>
         </select>
-
-        <FixedProjectInput projects={projects} />
-
-        <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
-          <DebouncedSearchInput 
-            value={searchTerm} 
-            onChange={(val) => setSearchTerm(val)}
-            placeholder={t('Search anything...')}
-          />
-        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 justify-end">
-        {canWrite && (
-          <button 
-            type="button"
-            onClick={onAddBudget}
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer"
-            title={t('Add Budget')}
-          >
-            <Plus className="w-4 h-4" />
-            <span>{t('Add Budget')}</span>
-          </button>
-        )}
+      {/* Row 2: Fixed Project, Search & Action Buttons */}
+      <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+        <div className="flex flex-wrap items-center gap-2 flex-grow">
+          <FixedProjectInput projects={projects} />
 
-        <button 
-          type="button"
-          onClick={handleExportBudget} 
-          className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
-          title="Export Filtered CSV"
-        >
-          <Download className="w-4 h-4" />
-          <span className="hidden sm:inline">{t('Export CSV')}</span>
-        </button>
-        
-        {canWrite && (
-          <>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleImportBudget} 
-              accept=".csv" 
-              className="hidden" 
+          <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+            <DebouncedSearchInput 
+              value={searchTerm} 
+              onChange={(val) => setSearchTerm(val)}
+              placeholder={t('Search anything...')}
             />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          {canWrite && (
             <button 
               type="button"
-              onClick={() => fileInputRef.current?.click()} 
-              className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
-              title="Import Budget CSV (Updates matching projects)"
+              onClick={onAddBudget}
+              className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer"
+              title={t('Add Budget')}
             >
-              <Upload className="w-4 h-4" />
-              <span className="hidden sm:inline">{t('Import CSV')}</span>
+              <Plus className="w-4 h-4" />
+              <span>{t('Add Budget')}</span>
             </button>
-          </>
-        )}
+          )}
 
-        <div className="hidden xl:flex items-center gap-2 shrink-0">
-          <ColumnAdder 
-            availableColumns={AVAILABLE_COLUMNS} 
-            visibleColumns={visibleColumns} 
-            onAddColumn={handleToggleColumn} 
-          />
+          <button 
+            type="button"
+            onClick={handleExportBudget} 
+            className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
+            title="Export Filtered CSV"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">{t('Export CSV')}</span>
+          </button>
+          
+          {canWrite && (
+            <>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleImportBudget} 
+                accept=".csv" 
+                className="hidden" 
+              />
+              <button 
+                type="button"
+                onClick={() => fileInputRef.current?.click()} 
+                className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
+                title="Import Budget CSV (Updates matching projects)"
+              >
+                <Upload className="w-4 h-4" />
+                <span className="hidden sm:inline">{t('Import CSV')}</span>
+              </button>
+            </>
+          )}
+
+          <div className="flex items-center gap-2 shrink-0">
+            <ColumnAdder 
+              availableColumns={AVAILABLE_COLUMNS} 
+              visibleColumns={visibleColumns} 
+              onAddColumn={handleToggleColumn} 
+            />
+          </div>
         </div>
       </div>
     </div>
