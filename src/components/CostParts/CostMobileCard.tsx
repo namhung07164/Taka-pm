@@ -201,8 +201,9 @@ export const CostMobileCard = React.memo(function CostMobileCard({
 
       {canWrite && isExpanded && (
         <button
+          type="button"
           onClick={() => handleAddCost(p)}
-          className="mt-2 w-full py-2 bg-slate-100 dark:bg-[#1e1e20] hover:bg-slate-200 dark:hover:bg-[#333336] text-slate-600 dark:text-[#a3a3a3] text-sm font-bold rounded-lg border border-slate-200 dark:border-[#444446] border-dashed flex items-center justify-center gap-2 transition-colors cursor-pointer"
+          className="mt-2 w-full py-2 bg-slate-100 dark:bg-[#1e1e20] hover:bg-slate-200 dark:hover:bg-[#333336] text-slate-600 dark:text-[#a3a3a3] text-sm font-bold rounded-lg border border-slate-200 dark:border-[#444446] border-dashed flex items-center justify-center gap-2 transition-all active:scale-95 touch-manipulation cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           Add Cost Entry

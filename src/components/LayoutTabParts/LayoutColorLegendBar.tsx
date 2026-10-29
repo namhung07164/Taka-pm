@@ -346,7 +346,7 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
                               ? "bg-purple-100 dark:bg-purple-950/80 border-purple-500 text-purple-950 dark:text-purple-100 ring-2 ring-purple-400/50 font-bold"
                               : "bg-slate-50/90 hover:bg-slate-100 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 border-slate-200/80 dark:border-slate-700 text-slate-800 dark:text-slate-200"
                           )}
-                          title={`Click to ${isSelected ? 'clear highlight' : 'highlight on canvas'} group ${g.name} (${g.matchCount} ${g.matchCount === 1 ? 'unit' : 'units'}${g.totalArea > 0 ? ` • ${Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²` : ''}${g.areaPercent ? ` • ${Number(g.areaPercent).toFixed(1)}%` : ''})`}
+                          title={`Click to ${isSelected ? 'clear highlight' : 'highlight on canvas'} group ${g.name} (${g.matchCount} ${g.matchCount === 1 ? 'unit' : 'units'}${g.totalArea > 0 ? ` • ${Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 2 })} m²` : ''}${g.areaPercent ? ` • ${Number(g.areaPercent).toFixed(1)}%` : ''})`}
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span
@@ -369,14 +369,14 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
                           </div>
                           <span
                             className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 shrink-0 whitespace-nowrap flex items-center gap-1 shadow-2xs"
-                            title={`Units: ${g.matchCount}${g.totalArea > 0 ? ` • Area: ${Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²` : ''}${g.areaPercent ? ` • ${Number(g.areaPercent).toFixed(1)}% of categorized area` : ''}`}
+                            title={`Units: ${g.matchCount}${g.totalArea > 0 ? ` • Area: ${Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 2 })} m²` : ''}${g.areaPercent ? ` • ${Number(g.areaPercent).toFixed(1)}% of categorized area` : ''}`}
                           >
                             <span>{g.matchCount} {g.matchCount === 1 ? 'unit' : 'units'}</span>
                             {g.totalArea > 0 && (
                               <>
                                 <span className="text-slate-300 dark:text-slate-600 font-normal">•</span>
                                 <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                                  {Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²
+                                  {Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 2 })} m²
                                 </span>
                               </>
                             )}
@@ -405,7 +405,7 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
                     {totalAreaAllGroups > 0 && (
                       <>
                         <span className="text-slate-300 dark:text-slate-600">•</span>
-                        <span className="text-emerald-600 dark:text-emerald-400">{Number(totalAreaAllGroups).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">{Number(totalAreaAllGroups).toLocaleString('en-US', { maximumFractionDigits: 2 })} m²</span>
                         <span className="text-slate-300 dark:text-slate-600">•</span>
                         <span className="text-indigo-600 dark:text-indigo-400">100%</span>
                       </>

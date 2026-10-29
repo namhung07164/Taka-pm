@@ -236,8 +236,9 @@ export const CostTableRow = React.memo(function CostTableRow({
               />
               {canWrite && (
                 <button
+                  type="button"
                   onClick={() => handleAddCost(p)}
-                  className="px-3 py-1 bg-blue-100 dark:bg-[#333336] text-blue-700 dark:text-[#8ab4f8] hover:bg-blue-200 dark:hover:bg-[#444446] rounded text-[10px] font-bold shadow-sm transition-colors flex items-center gap-1 cursor-pointer"
+                  className="px-3 py-1 bg-blue-100 dark:bg-[#333336] text-blue-700 dark:text-[#8ab4f8] hover:bg-blue-200 dark:hover:bg-[#444446] rounded text-[10px] font-bold shadow-sm transition-all active:scale-95 touch-manipulation flex items-center gap-1 cursor-pointer"
                 >
                   <Plus className="w-3 h-3" />
                   Add Cost

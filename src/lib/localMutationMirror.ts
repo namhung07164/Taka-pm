@@ -177,6 +177,13 @@ export function mirrorLocalWrite(
         store.setTasks(rollupParentTaskDatesAndStatus(store.tasks, nextGroups));
       }
     }
+  } else if (logical === 'taka_costs') {
+    if (store.isCostsRequested || (store.costs && store.costs.length > 0)) {
+      const existingCost = (store.costs || []).find((c) => c.id === docId);
+      if (!existingCost || existingCost.updatedAt !== cleanCopy.updatedAt) {
+        store.optimisticUpdateCosts([cleanCopy as Cost]);
+      }
+    }
   } else if (logical === 'taka_tasks' && cleanCopy.delegation !== undefined && Object.keys(cleanCopy).length <= 5) {
     const existingTask = (store.tasks || []).find((t) => t.id === docId);
     if (existingTask && existingTask.delegation !== cleanCopy.delegation) {

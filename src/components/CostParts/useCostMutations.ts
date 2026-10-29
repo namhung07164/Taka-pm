@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { doc } from 'firebase/firestore';
 import { writeBatch, setDoc, deleteDoc } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
@@ -19,6 +19,9 @@ export function useCostMutations({
   expandedCodes,
   toggleProjectExpansion,
 }: UseCostMutationsParams) {
+  const expandedCodesRef = useRef(expandedCodes);
+  expandedCodesRef.current = expandedCodes;
+
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -31,69 +34,90 @@ export function useCostMutations({
     onConfirm: () => {},
   });
 
-  const handleAddCost = async (project: Project) => {
-    if (!canWrite) return;
+  const handleAddCost = useCallback(
+    (project: Project) => {
+      if (!canWrite) return;
 
-    const derivedYear = project.year
-      ? project.year
-      : project.start
-      ? Number(String(project.start).substring(0, 4))
-      : undefined;
+      const derivedYear = project.year
+        ? project.year
+        : project.start
+        ? Number(String(project.start).substring(0, 4))
+        : undefined;
 
-    const newCost: Cost = {
-      id: generateId(),
-      projectCode: project.code || '',
-      actual: 0,
-      firstPaid: 0,
-      secondPaid: 0,
-      thirdPaid: 0,
-      supportingFee: 0,
-      description: 'New Cost Entry',
-      vendor: '',
-      updatedAt: new Date().toISOString(),
-    };
+      const newCost: Cost = {
+        id: generateId(),
+        projectId: project.id ? String(project.id) : undefined,
+        projectCode: project.code || '',
+        actual: 0,
+        costType: 'act',
+        firstPaid: 0,
+        secondPaid: 0,
+        thirdPaid: 0,
+        supportingFee: 0,
+        description: 'New Cost Entry',
+        vendor: '',
+        updatedAt: new Date().toISOString(),
+      };
 
-    if (derivedYear !== undefined && derivedYear !== null && !isNaN(Number(derivedYear))) {
-      newCost.projectYear = derivedYear;
-    }
-    if (project.store !== undefined && project.store !== null) {
-      newCost.projectStore = project.store;
-    }
-
-    // Safety check: remove ANY undefined values to prevent Firestore crash
-    Object.keys(newCost).forEach((key) => {
-      if ((newCost as any)[key] === undefined) {
-        delete (newCost as any)[key];
+      if (derivedYear !== undefined && derivedYear !== null && !isNaN(Number(derivedYear))) {
+        newCost.projectYear = derivedYear;
       }
-    });
+      if (project.store !== undefined && project.store !== null) {
+        newCost.projectStore = project.store;
+      }
 
-    try {
-      setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', newCost.id), newCost);
+      // Safety check: remove ANY undefined values to prevent Firestore crash
+      Object.keys(newCost).forEach((key) => {
+        if ((newCost as any)[key] === undefined) {
+          delete (newCost as any)[key];
+        }
+      });
+
+      // 1. Zero-Delay Optimistic UI: update Zustand & expand project group in 0ms
+      useAppStore.getState().optimisticUpdateCosts([newCost]);
+
       const groupKey = `${project.code}-${derivedYear}-${project.store}-${project.no}`;
+      const currentExpanded = expandedCodesRef.current;
       if (
-        !expandedCodes.includes(groupKey) &&
-        !expandedCodes.includes(String(project.id))
+        !currentExpanded.includes(groupKey) &&
+        !currentExpanded.includes(String(project.id))
       ) {
         toggleProjectExpansion(groupKey);
       }
 
-      undoManager.push({
-        description: `Add Cost to ${project.code} (${derivedYear})`,
-        revert: async () => {
-          deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', newCost.id));
-        },
-      });
-    } catch (e) {
-      console.error('[CostTab] Error saving cost:', e);
-    }
-  };
+      // 2. Push Firestore network operation to background without blocking UI
+      try {
+        Promise.resolve(
+          setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', newCost.id), newCost)
+        ).catch((err) => {
+          console.error('[CostTab] Background setDoc error:', err);
+        });
 
-  const handleDeleteCost = async (c: Cost) => {
+        undoManager.push({
+          description: `Add Cost to ${project.code} (${derivedYear})`,
+          revert: async () => {
+            useAppStore.getState().optimisticDeleteCosts([newCost.id]);
+            deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', newCost.id));
+          },
+        });
+      } catch (e) {
+        console.error('[CostTab] Error saving cost:', e);
+      }
+    },
+    [canWrite, toggleProjectExpansion]
+  );
+
+  const handleDeleteCost = useCallback((c: Cost) => {
     setConfirmModal({
       isOpen: true,
       title: 'Delete Cost',
       message: 'Delete this Cost?',
-      onConfirm: async () => {
+      onConfirm: () => {
+        // 1. Zero-Delay Optimistic UI: close modal & remove from Zustand in 0ms
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        useAppStore.getState().optimisticDeleteCosts([c.id]);
+
+        // 2. Push Firestore soft-delete and storage cleanup to background
         try {
           const nowIso = new Date().toISOString();
           const batch = writeBatch(db);
@@ -112,6 +136,7 @@ export function useCostMutations({
           undoManager.push({
             description: `Delete Cost`,
             revert: async () => {
+              useAppStore.getState().optimisticUpdateCosts([c]);
               setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id), c);
             },
           });
@@ -120,9 +145,9 @@ export function useCostMutations({
         }
       },
     });
-  };
+  }, []);
 
-  const handleUpdateCost = async (c: Cost, field: keyof Cost, value: any) => {
+  const handleUpdateCost = useCallback((c: Cost, field: keyof Cost, value: any) => {
     try {
       const updates: any = { [field]: value, updatedAt: new Date().toISOString() };
 
@@ -146,13 +171,15 @@ export function useCostMutations({
         }
       });
 
-      // Optimistically update the UI to prevent input lag
+      // Optimistically update the UI in 0ms to prevent input lag
       useAppStore.getState().optimisticUpdateCosts([newCostData]);
 
-      setDoc(
-        doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id),
-        newCostData
-      );
+      Promise.resolve(
+        setDoc(
+          doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id),
+          newCostData
+        )
+      ).catch((err) => console.error('[CostTab] Background update error:', err));
 
       undoManager.push({
         description: `Update Cost: ${field}`,
@@ -167,7 +194,7 @@ export function useCostMutations({
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
   return {
     confirmModal,

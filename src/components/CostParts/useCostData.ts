@@ -21,6 +21,17 @@ interface UseCostDataParams {
   initialSearchTerm?: string;
 }
 
+const EMPTY_COST_ARRAY: Cost[] = [];
+
+function getProjectCompositeKey(p: Project): string {
+  const pCode = String(p.code || '').trim().toLowerCase();
+  const pYr = String(
+    p.year ? p.year : p.start ? String(p.start).substring(0, 4) : ''
+  ).trim();
+  const pStore = String(p.store || '').trim().toLowerCase();
+  return `${p.id || p.no || ''}|${pCode}|${pYr}|${pStore}`;
+}
+
 export function useCostData({
   projects,
   costs,
@@ -51,66 +62,116 @@ export function useCostData({
     );
   }, []);
 
-  const handleProjectLinkClick = (p: Project) => {
-    if (!p) return;
-    setDetailTabFilterCode(p.code);
-    setDetailTabStoreFilter(p.store || 'all');
-    if (p.year) {
-      setGlobalYearFilter(String(p.year));
-      safeSetItemSession('taka_detail_year', String(p.year));
-    } else {
-      setGlobalYearFilter('all');
-      safeSetItemSession('taka_detail_year', 'all');
-    }
-    if (p.store) {
-      setGlobalStoreFilter(p.store);
-      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, String(p.store));
-    } else {
-      setGlobalStoreFilter('all');
-      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, 'all');
-    }
-    setActiveTab('detail');
-  };
+  const handleProjectLinkClick = useCallback(
+    (p: Project) => {
+      if (!p) return;
+      setDetailTabFilterCode(p.code);
+      setDetailTabStoreFilter(p.store || 'all');
+      if (p.year) {
+        setGlobalYearFilter(String(p.year));
+        safeSetItemSession('taka_detail_year', String(p.year));
+      } else {
+        setGlobalYearFilter('all');
+        safeSetItemSession('taka_detail_year', 'all');
+      }
+      if (p.store) {
+        setGlobalStoreFilter(p.store);
+        safeSetItemLocal(`taka_store_filter_${currentUser.id}`, String(p.store));
+      } else {
+        setGlobalStoreFilter('all');
+        safeSetItemLocal(`taka_store_filter_${currentUser.id}`, 'all');
+      }
+      setActiveTab('detail');
+    },
+    [
+      currentUser.id,
+      setActiveTab,
+      setDetailTabFilterCode,
+      setDetailTabStoreFilter,
+      setGlobalStoreFilter,
+      setGlobalYearFilter,
+    ]
+  );
 
-  // O(1) Pre-indexed Map for Costs by Project Code
-  const costsMapByCode = useMemo(() => {
-    const map = new Map<string, Cost[]>();
+  // O(1) Pre-indexed Map for Costs by Project Code, with referentially stable arrays per project
+  const prevProjectCostsCacheRef = React.useRef<Map<string, Cost[]>>(new Map());
+
+  const projectCostsByCompositeKey = useMemo(() => {
+    const byCode = new Map<string, Cost[]>();
     for (let i = 0; i < costs.length; i++) {
       const c = costs[i];
       if (c.isDeleted) continue;
       const cCode = String(c.projectCode || (c as any).code || '').trim().toLowerCase();
       if (!cCode) continue;
-      let list = map.get(cCode);
+      let list = byCode.get(cCode);
       if (!list) {
         list = [];
-        map.set(cCode, list);
+        byCode.set(cCode, list);
       }
       list.push(c);
     }
-    return map;
-  }, [costs]);
 
-  // Helper to get matching costs for a project in O(1) + O(k) candidate filter
-  const getGroupCostsForProject = useCallback(
-    (p: Project) => {
+    const prevCache = prevProjectCostsCacheRef.current;
+    const nextCache = new Map<string, Cost[]>();
+
+    for (let i = 0; i < projects.length; i++) {
+      const p = projects[i];
+      const key = getProjectCompositeKey(p);
       const pCode = String(p.code || '').trim().toLowerCase();
-      const candidateCosts = costsMapByCode.get(pCode) || [];
-      const pYr = String(p.year || '').trim();
+      const candidates = byCode.get(pCode);
+      if (!candidates || candidates.length === 0) {
+        nextCache.set(key, EMPTY_COST_ARRAY);
+        continue;
+      }
+
+      const pId = p.id ? String(p.id).trim() : '';
+      const pYr = String(
+        p.year ? p.year : p.start ? String(p.start).substring(0, 4) : ''
+      ).trim();
       const pStore = String(p.store || '').trim().toLowerCase();
 
-      return candidateCosts.filter((c) => {
+      const matched: Cost[] = [];
+      for (let j = 0; j < candidates.length; j++) {
+        const c = candidates[j];
+        if (pId && c.projectId && String(c.projectId).trim() !== pId) {
+          continue;
+        }
         const costYear = String(c.projectYear || (c as any).year || '').trim();
-        const matchesYear = !costYear || !pYr || costYear === pYr;
-        if (!matchesYear) return false;
+        if (costYear && pYr && costYear !== pYr) continue;
 
         const costStore = String(c.projectStore || (c as any).store || '').trim().toLowerCase();
-        const matchesStore = !costStore || !pStore || costStore === pStore;
-        if (!matchesStore) return false;
+        if (costStore && pStore && costStore !== pStore) continue;
 
-        return true;
-      });
+        matched.push(c);
+      }
+
+      if (matched.length === 0) {
+        nextCache.set(key, EMPTY_COST_ARRAY);
+      } else {
+        const prevArr = prevCache.get(key);
+        if (
+          prevArr &&
+          prevArr.length === matched.length &&
+          prevArr.every((item, idx) => item === matched[idx])
+        ) {
+          nextCache.set(key, prevArr);
+        } else {
+          nextCache.set(key, matched);
+        }
+      }
+    }
+
+    prevProjectCostsCacheRef.current = nextCache;
+    return nextCache;
+  }, [costs, projects]);
+
+  // Helper to get matching costs for a project in O(1) with referential stability
+  const getGroupCostsForProject = useCallback(
+    (p: Project): Cost[] => {
+      if (!p) return EMPTY_COST_ARRAY;
+      return projectCostsByCompositeKey.get(getProjectCompositeKey(p)) || EMPTY_COST_ARRAY;
     },
-    [costsMapByCode]
+    [projectCostsByCompositeKey]
   );
 
   // Sub-hook: Search term & filter synchronization
@@ -185,13 +246,19 @@ export function useCostData({
   const stores = allowedStores;
   const locationOptions = useLocationOptions();
 
-  const toggleGroup = (id: string | number) => {
-    toggleProjectExpansion(String(id));
-  };
+  const toggleGroup = useCallback(
+    (id: string | number) => {
+      toggleProjectExpansion(String(id));
+    },
+    [toggleProjectExpansion]
+  );
 
-  const formatCurrency = (val: number | undefined) => {
-    return formatCurrencyValue(val, currency, jpyRate, usdRate);
-  };
+  const formatCurrency = useCallback(
+    (val: number | undefined) => {
+      return formatCurrencyValue(val, currency, jpyRate, usdRate);
+    },
+    [currency, jpyRate, usdRate]
+  );
 
   const fixedProjectCode = useAppStore((state) => state.fixedProjectCode);
 
@@ -284,13 +351,16 @@ export function useCostData({
         if (!isMatch) return false;
       }
 
-      const totalAct =
-        matchingGroupCosts.length > 0
-          ? matchingGroupCosts.reduce((sum, c) => sum + (c.actual || 0), 0)
-          : p.financial?.totalActualPaid || p.actual || 0;
+      const hasCostEntries = matchingGroupCosts.length > 0;
+      const fallbackProjectAct = p.financial?.totalActualPaid || p.actual || 0;
+      const totalAct = hasCostEntries
+        ? matchingGroupCosts.reduce((sum, c) => sum + (c.actual || 0), 0)
+        : fallbackProjectAct;
       if (
         hasActForcFilter === 'has_value' &&
         totalAct === 0 &&
+        fallbackProjectAct === 0 &&
+        !hasCostEntries &&
         !paidDateStart &&
         !paidDateEnd
       )
@@ -300,7 +370,6 @@ export function useCostData({
     });
   }, [
     projects,
-    costs,
     fixedProjectCode,
     globalYearFilter,
     effectiveStore,
@@ -362,15 +431,13 @@ export function useCostData({
     }
   }, [paidDateStart, paidDateEnd, paidStageFilter, filteredProjectsForDisplay, setExpandedCodes]);
 
-  const toggleAll = () => {
-    if (expandedCodes.length === 0) {
-      setExpandedCodes(
-        filteredProjectsForDisplay.map((p) => `${p.code}-${p.year}-${p.store}-${p.no}`)
-      );
-    } else {
-      setExpandedCodes([]);
-    }
-  };
+  const toggleAll = useCallback(() => {
+    setExpandedCodes((prev) =>
+      prev.length === 0
+        ? filteredProjectsForDisplay.map((p) => `${p.code}-${p.year}-${p.store}-${p.no}`)
+        : []
+    );
+  }, [filteredProjectsForDisplay]);
 
   return {
     currency,

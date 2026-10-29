@@ -179,7 +179,7 @@ export function calculateSummaryData({
     return projectMatchesScope(pMeta, { store, location, year });
   });
 
-  const filteredUnitInfo = (unitInfo || []).filter((unit) => {
+  const storeAndLocFilteredUnitInfo = (unitInfo || []).filter((unit) => {
     if (store && store !== 'all') {
       const uStore = String(unit.store || '').toUpperCase().trim();
       if (uStore && uStore !== 'ALL' && uStore !== store.toUpperCase().trim()) return false;
@@ -194,12 +194,19 @@ export function calculateSummaryData({
       const isStorewide = uLoc === 'ALL' || uLoc === 'STORE' || uLoc === 'STOREWIDE' || uLoc === 'WHOLE STORE' || uLoc === 'ALL FLOORS';
       if (uLoc && !isStorewide && uLoc !== targetLoc) return false;
     }
-    if (year && year !== 'all') {
-      const uYear = String(unit.year || '').trim();
-      if (uYear && uYear !== 'ALL' && uYear !== String(year).trim()) return false;
-    }
     return true;
   });
+
+  const yearFilteredUnitInfo =
+    year && year !== 'all'
+      ? storeAndLocFilteredUnitInfo.filter((unit) => {
+          const uYear = String(unit.year || '').trim();
+          return !uYear || uYear === 'ALL' || uYear === String(year).trim();
+        })
+      : storeAndLocFilteredUnitInfo;
+
+  const filteredUnitInfo =
+    yearFilteredUnitInfo.length > 0 ? yearFilteredUnitInfo : storeAndLocFilteredUnitInfo;
 
   return filteredUnitInfo.map((unit) => {
     let salesAmount = 0;

@@ -176,7 +176,7 @@ export function computeActiveGroupsAndColorMaps({
     }
   });
 
-  totalFloorUnitsArea = Math.round(totalFloorUnitsArea * 10) / 10;
+  totalFloorUnitsArea = Math.round(totalFloorUnitsArea * 100) / 100;
 
   // Step 3: Compute total area for each group by summing primary project sizeM2 + secondary linked units' own sizeM2
   let totalCategorizedArea = 0;
@@ -203,7 +203,7 @@ export function computeActiveGroupsAndColorMaps({
         }
       });
 
-      const totalArea = Math.round(groupAreaSum * 10) / 10;
+      const totalArea = Math.round(groupAreaSum * 100) / 100;
       totalCategorizedArea += totalArea;
 
       groupsInUseMap.set(group.id, {
@@ -215,7 +215,7 @@ export function computeActiveGroupsAndColorMaps({
     }
   });
 
-  totalCategorizedArea = Math.round(totalCategorizedArea * 10) / 10;
+  totalCategorizedArea = Math.round(totalCategorizedArea * 100) / 100;
 
   // Step 4: Calculate final percentages
   groupsInUseMap.forEach((group, gid) => {
