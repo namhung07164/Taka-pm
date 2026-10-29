@@ -81,14 +81,25 @@ export function SettingTab({ rules }: SettingTabProps) {
     await requestNotificationPermission(currentUser.id);
   };
 
-  const triggerConfirmAction = (title: string, message: string, onConfirm: () => Promise<void>) => {
+  const triggerConfirmAction = (
+    title: string,
+    message: string,
+    onConfirm: () => Promise<void> | void,
+    confirmStyle: "primary" | "danger" = "primary",
+    confirmText: string = "OK"
+  ) => {
     setConfirmModal({
       isOpen: true,
       title,
       message,
+      confirmStyle,
+      confirmText,
       onConfirm: async () => {
-        await onConfirm();
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await onConfirm();
+        } finally {
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
       }
     });
   };
@@ -101,6 +112,8 @@ export function SettingTab({ rules }: SettingTabProps) {
             isOpen={confirmModal.isOpen}
             title={confirmModal.title}
             message={confirmModal.message}
+            confirmStyle={confirmModal.confirmStyle || "primary"}
+            confirmText={confirmModal.confirmText || "OK"}
             onConfirm={confirmModal.onConfirm}
             onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
           />
@@ -123,32 +136,72 @@ export function SettingTab({ rules }: SettingTabProps) {
                   async () => {
                     try {
                       if ('serviceWorker' in navigator) {
-                        const registrations = await navigator.serviceWorker.getRegistrations();
-                        await Promise.all(
-                          registrations.map(async (reg) => {
-                            try {
-                              await reg.update();
-                              if (reg.waiting) {
-                                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-                              }
-                            } catch {}
-                          })
-                        );
-                      }
-                      if ('caches' in window) {
-                        const cacheNames = await window.caches.keys();
-                        await Promise.all(cacheNames.map((name) => window.caches.delete(name)));
+                        const swTask = (async () => {
+                          try {
+                            const registrations = await navigator.serviceWorker.getRegistrations();
+                            for (const reg of registrations) {
+                              try {
+                                if (reg.waiting) {
+                                  reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                                }
+                                await reg.update().catch(() => {});
+                                await reg.unregister().catch(() => {});
+                              } catch {}
+                            }
+                          } catch {}
+                        })();
+                        await Promise.race([
+                          swTask,
+                          new Promise(resolve => setTimeout(resolve, 600))
+                        ]);
                       }
                     } catch (e) {
-                      console.warn('[ForceUpdate] Asset cache refresh warning:', e);
+                      console.warn('[ForceUpdate] SW warning:', e);
                     }
+
+                    try {
+                      if ('caches' in window) {
+                        const cacheTask = (async () => {
+                          try {
+                            const cacheNames = await window.caches.keys();
+                            await Promise.all(cacheNames.map((name) => window.caches.delete(name).catch(() => {})));
+                          } catch {}
+                        })();
+                        await Promise.race([
+                          cacheTask,
+                          new Promise(resolve => setTimeout(resolve, 600))
+                        ]);
+                      }
+                    } catch (e) {
+                      console.warn('[ForceUpdate] Cache purge warning:', e);
+                    }
+
+                    try {
+                      sessionStorage.clear();
+                    } catch {}
+
+                    const timestamp = Date.now();
                     const url = new URL(window.location.href);
-                    url.searchParams.set('v', String(Date.now()));
-                    window.location.replace(url.toString());
-                  }
+                    url.searchParams.set('v', String(timestamp));
+                    url.searchParams.set('force_update', String(timestamp));
+
+                    try {
+                      window.location.href = url.toString();
+                    } catch {}
+
+                    setTimeout(() => {
+                      try {
+                        window.location.reload();
+                      } catch {
+                        window.location.href = url.toString();
+                      }
+                    }, 100);
+                  },
+                  "primary",
+                  "OK"
                 );
               }}
-              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm"
+              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm cursor-pointer active:scale-95 touch-manipulation"
             >
               <RefreshCw className="w-5 h-5 text-emerald-500" />
               Force Update App

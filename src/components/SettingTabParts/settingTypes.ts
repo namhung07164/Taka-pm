@@ -8,5 +8,7 @@ export interface ConfirmModalState {
   isOpen: boolean;
   title: string;
   message: string;
-  onConfirm: () => void;
+  confirmStyle?: "danger" | "primary";
+  confirmText?: string;
+  onConfirm: () => void | Promise<void>;
 }
