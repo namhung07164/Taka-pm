@@ -202,7 +202,7 @@ export function useDynamicUnitSummary({
 
       const excelItem = summaryLookup.get(uKey);
       const isRestricted = restrictedProjectCodes.has(uKey);
-      const editTabUnitSize = getUnitEffectiveSizeM2(u, activeVersion, undefined, true);
+      const editTabUnitSize = getUnitEffectiveSizeM2(u, activeVersion, excelItem?.size, true);
       const effectiveUnitSize = getUnitEffectiveSizeM2(u, activeVersion, excelItem?.size);
       editTabSizeByUnitKey.set(u.id, editTabUnitSize);
       editTabSizeByUnitKey.set(uKey, editTabUnitSize);
@@ -373,6 +373,7 @@ export function useDynamicUnitSummary({
           item.appProjectActual = p.actual || 0;
 
           const isSecondaryGrouped = isSecondaryGroupedUnitForProject(p, item.unitName || code);
+          (item as any).isGroupedSecondaryUnit = isSecondaryGrouped;
           if (isSecondaryGrouped) {
             const ownEditSize = editTabSizeByUnitKey.get(code) ?? editTabSizeByUnitKey.get(item.unitName.toLowerCase()) ?? 0;
             item.appProjectSizeM2 = ownEditSize;

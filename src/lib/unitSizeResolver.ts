@@ -180,10 +180,22 @@ export function getUnitEffectiveSizeM2(
     return fb;
   }
 
-  if (!skipProjectFallback) {
-    const uName = String(unit.name || unit.id || '').trim();
-    if (uName) {
-      const uNameLower = uName.toLowerCase();
+  const uName = String(unit.name || unit.id || '').trim();
+  if (uName) {
+    const uNameLower = uName.toLowerCase();
+    const unitInfoList = useDataStore.getState().unitInfo || [];
+    for (let i = 0; i < unitInfoList.length; i++) {
+      const ui = unitInfoList[i];
+      if (String(ui?.unit || '').trim().toLowerCase() === uNameLower) {
+        const uiSize = Number(String(ui?.size ?? '').replace(/,/g, '.'));
+        if (!isNaN(uiSize) && uiSize > 0) {
+          return uiSize;
+        }
+        break;
+      }
+    }
+
+    if (!skipProjectFallback) {
       const targetStore = String(unit.store || version?.store || useDataStore.getState().store || 'HCM').toUpperCase().trim();
       const targetLoc = normalizeFloorCode(unit.location || version?.location || useDataStore.getState().location);
       const targetYear = String(version?.year || '').trim();

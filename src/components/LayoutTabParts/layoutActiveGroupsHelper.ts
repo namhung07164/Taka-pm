@@ -1,3 +1,5 @@
+import { isSecondaryGroupedUnitForProject } from '../../lib/unitSizeResolver';
+
 export interface ActiveGroupCalculationParams {
   units: any[];
   filteredVersionForPaint: any;
@@ -50,26 +52,22 @@ export function computeActiveGroupsAndColorMaps({
     );
   };
 
-  const getUnitProjectSize = (u: any, dynamicItem: any, uName: string): number => {
-    const proj = getUnitProject(u, dynamicItem, uName);
-    const rawPSize =
-      proj?.sizeM2 ??
-      (proj as any)?.size ??
-      (proj as any)?.area ??
-      dynamicItem?.appProjectSizeM2 ??
-      aggregatedData[uName]?.appProjectSizeM2 ??
-      (u?.id ? aggregatedData[String(u.id).toLowerCase()]?.appProjectSizeM2 : 0);
-    const parsed = Number(String(rawPSize ?? '').replace(/,/g, ''));
-    return !isNaN(parsed) && parsed > 0 ? parsed : 0;
+  const isUnitSecondaryGrouped = (u: any, dynamicItem: any, uName: string, proj: any): boolean => {
+    if (dynamicItem?.isGroupedSecondaryUnit || aggregatedData[uName]?.isGroupedSecondaryUnit) {
+      return true;
+    }
+    if (u?.id && aggregatedData[String(u.id).toLowerCase()]?.isGroupedSecondaryUnit) {
+      return true;
+    }
+    if (proj && isSecondaryGroupedUnitForProject(proj, u?.name || u?.id || uName)) {
+      return true;
+    }
+    return false;
   };
 
-  const getUnitArea = (u: any, dynamicItem: any, uName: string): number => {
-    // 1. Highest priority: The Project's actual size (p.sizeM2 / appProjectSizeM2)
-    const projSize = getUnitProjectSize(u, dynamicItem, uName);
-    if (projSize > 0) return projSize;
-
-    // 2. Fallback to dynamicItem / aggregatedData / unit shape
+  const getUnitOwnSize = (u: any, dynamicItem: any, uName: string): number => {
     const rawSize =
+      aggregatedData[uName]?.editTabSizeM2 ??
       dynamicItem?.sizeM2 ??
       dynamicItem?.size ??
       aggregatedData[uName]?.sizeM2 ??
@@ -79,8 +77,37 @@ export function computeActiveGroupsAndColorMaps({
       u?.sizeM2 ??
       u?.size ??
       0;
-    const parsed = Number(String(rawSize).replace(/,/g, ''));
+    const parsed = Number(String(rawSize).replace(/,/g, '.'));
     return !isNaN(parsed) && parsed > 0 ? parsed : 0;
+  };
+
+  const getUnitProjectSize = (u: any, dynamicItem: any, uName: string): number => {
+    const proj = getUnitProject(u, dynamicItem, uName);
+    if (isUnitSecondaryGrouped(u, dynamicItem, uName, proj)) {
+      return getUnitOwnSize(u, dynamicItem, uName);
+    }
+    const rawPSize =
+      proj?.sizeM2 ??
+      (proj as any)?.size ??
+      (proj as any)?.area ??
+      dynamicItem?.appProjectSizeM2 ??
+      aggregatedData[uName]?.appProjectSizeM2 ??
+      (u?.id ? aggregatedData[String(u.id).toLowerCase()]?.appProjectSizeM2 : 0);
+    const parsed = Number(String(rawPSize ?? '').replace(/,/g, '.'));
+    return !isNaN(parsed) && parsed > 0 ? parsed : 0;
+  };
+
+  const getUnitArea = (u: any, dynamicItem: any, uName: string): number => {
+    const proj = getUnitProject(u, dynamicItem, uName);
+    if (isUnitSecondaryGrouped(u, dynamicItem, uName, proj)) {
+      return getUnitOwnSize(u, dynamicItem, uName);
+    }
+    // 1. Highest priority for primary project unit: The Project's actual size (p.sizeM2 / appProjectSizeM2)
+    const projSize = getUnitProjectSize(u, dynamicItem, uName);
+    if (projSize > 0) return projSize;
+
+    // 2. Fallback to dynamicItem / aggregatedData / unit shape
+    return getUnitOwnSize(u, dynamicItem, uName);
   };
 
   // Step 1: Assign color and matched group for each unit with active app project
@@ -103,7 +130,7 @@ export function computeActiveGroupsAndColorMaps({
     }
   });
 
-  // Step 2: Group matched units and collect distinct project sizes
+  // Step 2: Group matched units and collect distinct project sizes + linked secondary unit sizes
   const matchedUnitsByGroup = new Map<string, any[]>();
   const seenFloorProjectKeys = new Set<string>();
   let totalFloorUnitsArea = 0;
@@ -114,10 +141,11 @@ export function computeActiveGroupsAndColorMaps({
 
     const dynamicItem = dynamicSummaryMap.get(u.id) || (uName ? dynamicSummaryMap.get(uName) : null);
     const proj = getUnitProject(u, dynamicItem, uName);
+    const isSecondaryGrouped = isUnitSecondaryGrouped(u, dynamicItem, uName, proj);
     const projSize = getUnitProjectSize(u, dynamicItem, uName);
     const area = getUnitArea(u, dynamicItem, uName);
 
-    const projKey = proj
+    const projKey = !isSecondaryGrouped && proj
       ? String(proj.id || proj.code || u.name).trim().toLowerCase()
       : null;
 
@@ -143,13 +171,14 @@ export function computeActiveGroupsAndColorMaps({
         sizeM2: area,
         project: proj,
         projectSize: projSize,
+        isSecondaryGrouped,
       });
     }
   });
 
   totalFloorUnitsArea = Math.round(totalFloorUnitsArea * 10) / 10;
 
-  // Step 3: Compute total area for each group by summing projects' sizeM2
+  // Step 3: Compute total area for each group by summing primary project sizeM2 + secondary linked units' own sizeM2
   let totalCategorizedArea = 0;
 
   activeVersionGroups.forEach((group: any) => {
@@ -160,7 +189,7 @@ export function computeActiveGroupsAndColorMaps({
 
       matchedUnits.forEach((item) => {
         const proj = item.project;
-        const projKey = proj
+        const projKey = !item.isSecondaryGrouped && proj
           ? String(proj.id || proj.code || item.name).trim().toLowerCase()
           : null;
 

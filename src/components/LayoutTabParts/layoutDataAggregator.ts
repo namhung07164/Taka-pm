@@ -80,8 +80,12 @@ export function buildAggregatedUnitData({
         dataMap[key].isRestricted = true;
         return;
       }
-      const resolvedSize = dataMap[key].sizeM2 || dataMap[key].size || sumData.size || 0;
+      const parsedSumSize = Number(String(sumData.size ?? '').replace(/,/g, '.'));
+      const validSumSize = !isNaN(parsedSumSize) && parsedSumSize > 0 ? parsedSumSize : 0;
+      const resolvedEditTabSize = dataMap[key].editTabSizeM2 > 0 ? dataMap[key].editTabSizeM2 : validSumSize;
+      const resolvedSize = dataMap[key].sizeM2 || dataMap[key].size || validSumSize || 0;
       Object.assign(dataMap[key], {
+          editTabSizeM2: resolvedEditTabSize,
           size: resolvedSize,
           sizeM2: resolvedSize,
           sales: sumData.salesAmount || 0,
