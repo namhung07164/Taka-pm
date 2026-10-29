@@ -11,7 +11,7 @@ import {
   computePlanProgressPercent,
   computeActProgressPercent
 } from '../../lib/utils';
-import { getUnitEffectiveSizeM2 } from '../../lib/unitSizeResolver';
+import { getUnitEffectiveSizeM2, isSecondaryGroupedUnitForProject } from '../../lib/unitSizeResolver';
 
 export interface BuildAggregatedUnitDataParams {
   units: any[];
@@ -52,6 +52,7 @@ export function buildAggregatedUnitData({
     const uName = (u?.name || '').toLowerCase().trim();
     if (!uName) return;
     const isRestricted = restrictedProjectCodes.has(uName);
+    const editTabUnitSize = getUnitEffectiveSizeM2(u, version, undefined, true);
     const initialUnitSize = getUnitEffectiveSizeM2(u, version);
     dataMap[uName] = {
       name: u.name || '',
@@ -60,6 +61,7 @@ export function buildAggregatedUnitData({
       isRestricted,
       hasImage: Boolean(u.imageUrl || u.thumbnail || u.image),
       year: effectiveLayoutYear,
+      editTabSizeM2: editTabUnitSize,
       size: initialUnitSize, sizeM2: initialUnitSize, sales: 0, salesByCp: 0, salesByHcmcate: 0,
       profit: 0, profitByCp: 0, profitByHcmcate: 0,
       margin: 0, marginByCp: 0, hcmSalesEffi: 0, hcmMargin: 0,
@@ -311,17 +313,27 @@ export function buildAggregatedUnitData({
           dataMap[code].appProjectParty = partyStr;
           dataMap[code].appParty = partyStr;
 
-          const rawPSize = p.sizeM2 ?? (p as any)?.size ?? (p as any)?.area;
-          const parsedPSize = Number(String(rawPSize ?? '').replace(/,/g, ''));
-          const pEffectiveSize = !isNaN(parsedPSize) && parsedPSize > 0 ? parsedPSize : 0;
+          const isSecondaryGrouped = isSecondaryGroupedUnitForProject(p, dataMap[code].name || code);
+          dataMap[code].isGroupedSecondaryUnit = isSecondaryGrouped;
 
-          if (pEffectiveSize > 0) {
-            dataMap[code].sizeM2 = pEffectiveSize;
-            dataMap[code].size = pEffectiveSize;
-            dataMap[code].appProjectSizeM2 = pEffectiveSize;
-          } else if (p.sizeM2) {
-            dataMap[code].sizeM2 = p.sizeM2;
-            dataMap[code].appProjectSizeM2 = p.sizeM2;
+          if (isSecondaryGrouped) {
+            const ownEditSize = dataMap[code].editTabSizeM2 || 0;
+            dataMap[code].sizeM2 = ownEditSize;
+            dataMap[code].size = ownEditSize;
+            dataMap[code].appProjectSizeM2 = ownEditSize;
+          } else {
+            const rawPSize = p.sizeM2 ?? (p as any)?.size ?? (p as any)?.area;
+            const parsedPSize = Number(String(rawPSize ?? '').replace(/,/g, '.'));
+            const pEffectiveSize = !isNaN(parsedPSize) && parsedPSize > 0 ? parsedPSize : 0;
+
+            if (pEffectiveSize > 0) {
+              dataMap[code].sizeM2 = pEffectiveSize;
+              dataMap[code].size = pEffectiveSize;
+              dataMap[code].appProjectSizeM2 = pEffectiveSize;
+            } else if (p.sizeM2) {
+              dataMap[code].sizeM2 = p.sizeM2;
+              dataMap[code].appProjectSizeM2 = p.sizeM2;
+            }
           }
           dataMap[code].matchedProject = p;
           dataMap[code].shopType = p.shopType || (p as any).shop_type || dataMap[code].shopType || '';

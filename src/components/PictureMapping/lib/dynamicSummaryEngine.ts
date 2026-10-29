@@ -6,7 +6,7 @@ import { useDataStore } from '../DataContext';
 import { getStatus, computeProjectActStatus, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
 import { calculateSummaryData, SummaryDataItem } from './summaryData';
 import { DynamicUnitSummaryItem, matchSingleRule } from './dynamicRuleMatcher';
-import { getUnitEffectiveSizeM2 } from '../../../lib/unitSizeResolver';
+import { getUnitEffectiveSizeM2, isSecondaryGroupedUnitForProject } from '../../../lib/unitSizeResolver';
 
 export type { DynamicUnitSummaryItem };
 export { matchSingleRule };
@@ -194,6 +194,7 @@ export function useDynamicUnitSummary({
     });
 
     // Step A: Initialize summary item for each unit
+    const editTabSizeByUnitKey = new Map<string, number>();
     units.forEach((u) => {
       const uName = String(u.name || '').trim();
       const uKey = uName.toLowerCase();
@@ -201,7 +202,10 @@ export function useDynamicUnitSummary({
 
       const excelItem = summaryLookup.get(uKey);
       const isRestricted = restrictedProjectCodes.has(uKey);
+      const editTabUnitSize = getUnitEffectiveSizeM2(u, activeVersion, undefined, true);
       const effectiveUnitSize = getUnitEffectiveSizeM2(u, activeVersion, excelItem?.size);
+      editTabSizeByUnitKey.set(u.id, editTabUnitSize);
+      editTabSizeByUnitKey.set(uKey, editTabUnitSize);
 
       const item: DynamicUnitSummaryItem = {
         unitId: u.id,
@@ -367,16 +371,25 @@ export function useDynamicUnitSummary({
           item.appProjectParty = p.party || (p as any).contractor || '';
           item.appProjectBudget = p.budget || 0;
           item.appProjectActual = p.actual || 0;
-          const rawPSize = p.sizeM2 ?? (p as any)?.size ?? (p as any)?.area;
-          const parsedPSize = Number(String(rawPSize ?? '').replace(/,/g, ''));
-          const pEffectiveSize = !isNaN(parsedPSize) && parsedPSize > 0 ? parsedPSize : 0;
 
-          if (pEffectiveSize > 0) {
-            item.appProjectSizeM2 = pEffectiveSize;
-            item.sizeM2 = pEffectiveSize;
-            item.size = pEffectiveSize;
+          const isSecondaryGrouped = isSecondaryGroupedUnitForProject(p, item.unitName || code);
+          if (isSecondaryGrouped) {
+            const ownEditSize = editTabSizeByUnitKey.get(code) ?? editTabSizeByUnitKey.get(item.unitName.toLowerCase()) ?? 0;
+            item.appProjectSizeM2 = ownEditSize;
+            item.sizeM2 = ownEditSize;
+            item.size = ownEditSize;
           } else {
-            item.appProjectSizeM2 = item.appProjectSizeM2 || item.sizeM2 || 0;
+            const rawPSize = p.sizeM2 ?? (p as any)?.size ?? (p as any)?.area;
+            const parsedPSize = Number(String(rawPSize ?? '').replace(/,/g, '.'));
+            const pEffectiveSize = !isNaN(parsedPSize) && parsedPSize > 0 ? parsedPSize : 0;
+
+            if (pEffectiveSize > 0) {
+              item.appProjectSizeM2 = pEffectiveSize;
+              item.sizeM2 = pEffectiveSize;
+              item.size = pEffectiveSize;
+            } else {
+              item.appProjectSizeM2 = item.appProjectSizeM2 || item.sizeM2 || 0;
+            }
           }
           item.matchedProject = p;
           item.appProjectShopType = p.shopType || (p as any).type || '';

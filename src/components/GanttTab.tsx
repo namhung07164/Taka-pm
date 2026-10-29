@@ -95,6 +95,7 @@ export function GanttTab({
     onStatusFilterChange,
     searchTerm,
     setSearchTerm,
+    deferredSearchTerm,
     uniqueYears,
     uniqueStores,
     locationOptions,
@@ -202,7 +203,8 @@ export function GanttTab({
     hiddenRowsSet,
     getGroupTasksForProject,
     tableContainerRef,
-    handleMainScroll
+    handleMainScroll,
+    deferredSearchTerm
   });
 
   // 5. Dependencies and Tooltips

@@ -2264,13 +2264,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                 {/* Search & Filter */}
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 z-10 pointer-events-none" />
                     <DebouncedSearchInput
                       placeholder="Tìm kiếm version theo tên, năm..."
                       value={copyBgSearchTerm}
                       onChange={(val) => setCopyBgSearchTerm(val)}
                       debounceMs={250}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl pl-9 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+                      className="w-full"
+                      inputClassName="w-full bg-slate-950 border border-slate-700 rounded-xl py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
                     />
                   </div>
                   <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer select-none shrink-0 px-2">

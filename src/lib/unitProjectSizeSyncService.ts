@@ -4,7 +4,9 @@ import { useAppStore } from '../store/useAppStore';
 import { extractAllProjectCodes, projectMatchesUnitCode } from './utilsParts/projectCodeAndScopeUtils';
 import {
   ensureMappingConfigHydrated,
+  extractPrimaryProjectCodes,
   getUnitEffectiveSizeM2,
+  isProjectGroupedWithOthers,
   normalizeFloorCode,
   resolveMatchedUnitSizeM2,
 } from './unitSizeResolver';
@@ -90,7 +92,9 @@ export interface ProjectSizeSyncInput {
 export function syncProjectSizeToUnits(projectInput: ProjectSizeSyncInput): void {
   ensureMappingConfigHydrated();
 
-  const pCodes = extractAllProjectCodes(projectInput);
+  const pCodes = isProjectGroupedWithOthers(projectInput)
+    ? extractPrimaryProjectCodes(projectInput)
+    : extractAllProjectCodes(projectInput);
   if (pCodes.length === 0) return;
 
   const state = useDataStore.getState();
@@ -103,7 +107,7 @@ export function syncProjectSizeToUnits(projectInput: ProjectSizeSyncInput): void
     projectInput.sizeM2 !== null &&
     String(projectInput.sizeM2).trim() !== '' &&
     !isNaN(Number(projectInput.sizeM2)) &&
-    Number(projectInput.sizeM2) > 0
+    Number(projectInput.sizeM2) >= 0
       ? Math.round(Number(projectInput.sizeM2) * 100) / 100
       : undefined;
 
@@ -154,7 +158,7 @@ export function syncProjectSizeToUnits(projectInput: ProjectSizeSyncInput): void
   const masterSizeByUnit = new Map<string, number>();
   (state.unitInfo || []).forEach((ui: any) => {
     const uKey = String(ui?.unit || '').trim().toLowerCase();
-    const sz = Number(String(ui?.size ?? '').replace(/,/g, ''));
+    const sz = Number(String(ui?.size ?? '').replace(/,/g, '.'));
     if (uKey && !isNaN(sz) && sz > 0) {
       masterSizeByUnit.set(uKey, sz);
     }
@@ -211,7 +215,7 @@ export function syncProjectSizeToUnits(projectInput: ProjectSizeSyncInput): void
 
       if (isCodeMatch) {
         const fallbackMaster = masterSizeByUnit.get(uNameLower);
-        const effSize = getUnitEffectiveSizeM2(u, primaryVersion, fallbackMaster);
+        const effSize = getUnitEffectiveSizeM2(u, primaryVersion, fallbackMaster, true);
         matchedUnits.push({ key, unit: u, currentSize: effSize });
       }
     });
@@ -228,10 +232,8 @@ export function syncProjectSizeToUnits(projectInput: ProjectSizeSyncInput): void
     } else {
       // Multiple units matched to this project
       if (Math.abs(newProjectSize - currentTotal) < 0.01 && currentTotal > 0) {
-        // Total matches existing sum of units -> preserve each unit's individual size
         matchedUnits.forEach((m) => newSizeByUnitKey.set(m.key, m.currentSize));
       } else if (currentTotal > 0) {
-        // Scale proportionally so sum equals newProjectSize
         let runningSum = 0;
         matchedUnits.forEach((m, idx) => {
           if (idx === matchedUnits.length - 1) {
@@ -244,7 +246,6 @@ export function syncProjectSizeToUnits(projectInput: ProjectSizeSyncInput): void
           }
         });
       } else {
-        // Previous sum was 0 -> distribute evenly across matched units
         let runningSum = 0;
         const evenShare = Math.round((newProjectSize / matchedUnits.length) * 100) / 100;
         matchedUnits.forEach((m, idx) => {
@@ -291,7 +292,7 @@ export function syncProjectSizeToUnits(projectInput: ProjectSizeSyncInput): void
         const targetVal = newSizeByUnitKey.get(m.key);
         const uId = m.unit.id;
         const uNameUpper = String(m.unit.name || '').trim().toUpperCase();
-        if (targetVal !== undefined && targetVal > 0) {
+        if (targetVal !== undefined && targetVal >= 0) {
           if (uId && nextUnitSizes[uId] !== targetVal) {
             nextUnitSizes[uId] = targetVal;
             versionChanged = true;
@@ -376,6 +377,7 @@ export function syncProjectSizeToUnits(projectInput: ProjectSizeSyncInput): void
 export interface UnitSizeSyncInput {
   unitId?: string;
   unitName?: string;
+  newSizeM2?: number;
   store?: string;
   location?: string;
   year?: string | number;
@@ -389,18 +391,67 @@ export interface UnitSizeSyncInput {
  * in Zustand (`useAppStore.projects`), Dexie (`localDb`), and Firestore (`taka_projects`).
  */
 export function syncUnitSizeToMatchedProjects(params: UnitSizeSyncInput): void {
-  const dataState = useDataStore.getState();
+  let dataState = useDataStore.getState();
   const targetStore = (String(params.store || dataState.store || 'HCM').toUpperCase().trim() === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
   const targetLoc = normalizeFloorCode(params.location || dataState.location);
   const targetYear = String(params.year || '').trim();
-
-  // Persist mapping config to localStorage & Firestore in background
-  schedulePersistMappingConfigToFirestore();
 
   const uName = String(params.unitName || '').trim();
   const uId = String(params.unitId || '').trim();
   const uNameLower = uName.toLowerCase();
   const uIdLower = uId.toLowerCase();
+
+  // Immediately sync updatedUnits, updatedVersions, and unitInfo into useDataStore so resolvers see fresh state
+  if (params.updatedUnits || params.updatedVersions || params.newSizeM2 !== undefined) {
+    const partKey = `${targetStore}_${targetLoc}`;
+    const existingPart = dataState.storeLocationData?.[partKey];
+    const nextMapUnits = params.updatedUnits ?? existingPart?.mapUnits ?? dataState.mapUnits;
+    const nextMapVersions = params.updatedVersions ?? existingPart?.mapVersions ?? dataState.mapVersions;
+    const nextActiveVerId = params.activeVersionId !== undefined
+      ? params.activeVersionId
+      : (existingPart?.activeMapVersionId ?? dataState.activeMapVersionId ?? null);
+
+    const nextStoreLocationData: Record<string, StoreLocationRecord> = {
+      ...(dataState.storeLocationData || {}),
+      [partKey]: {
+        mapUnits: nextMapUnits,
+        mapVersions: nextMapVersions,
+        activeMapVersionId: nextActiveVerId,
+      },
+    };
+
+    const nextUnitInfo =
+      uNameLower && params.newSizeM2 !== undefined && Array.isArray(dataState.unitInfo)
+        ? dataState.unitInfo.map((ui: any) => {
+            const uKey = String(ui?.unit || '').trim().toLowerCase();
+            if (uKey === uNameLower) {
+              return { ...ui, size: params.newSizeM2 ?? 0 };
+            }
+            return ui;
+          })
+        : dataState.unitInfo;
+
+    const isCurrentActivePartition =
+      dataState.store === targetStore && normalizeFloorCode(dataState.location) === targetLoc;
+
+    useDataStore.setState({
+      storeLocationData: nextStoreLocationData,
+      ...(isCurrentActivePartition
+        ? {
+            mapUnits: nextMapUnits,
+            mapVersions: nextMapVersions,
+          }
+        : {}),
+      unitInfo: nextUnitInfo,
+    });
+
+    autoBackupStoreLocationData(nextStoreLocationData, targetStore, targetLoc, nextActiveVerId);
+    dataState = useDataStore.getState();
+  }
+
+  // Persist mapping config to localStorage & Firestore in background
+  schedulePersistMappingConfigToFirestore();
+
   if (!uNameLower && !uIdLower) return;
 
   // Linked project codes via projectLink
@@ -443,7 +494,10 @@ export function syncUnitSizeToMatchedProjects(params: UnitSizeSyncInput): void {
       return p;
     }
 
-    const pCodes = extractAllProjectCodes(p);
+    // Use primary codes when project is grouped with others so secondary unit edits do not overwrite master project size
+    const pCodes = isProjectGroupedWithOthers(p)
+      ? extractPrimaryProjectCodes(p)
+      : extractAllProjectCodes(p);
     if (pCodes.length === 0) return p;
 
     const isExact = pCodes.some((c) => {
@@ -457,7 +511,7 @@ export function syncUnitSizeToMatchedProjects(params: UnitSizeSyncInput): void {
 
     if (!isMatch) return p;
 
-    // Recompute the project's total Size (m²) from all its matched units in this version/year
+    // Recompute the project's total Size (m²) from its primary matched units in this version/year
     const resolved = resolveMatchedUnitSizeM2({
       code: p.code,
       linkCodes: p.linkCodes ?? p.code,
@@ -466,8 +520,10 @@ export function syncUnitSizeToMatchedProjects(params: UnitSizeSyncInput): void {
       year: p.year || targetYear,
     });
 
-    const nextSizeM2 = resolved.sizeM2;
-    const currentSizeM2 = p.sizeM2 !== undefined && p.sizeM2 !== null && p.sizeM2 > 0 ? p.sizeM2 : undefined;
+    const nextSizeM2 = resolved.sizeM2 !== undefined
+      ? resolved.sizeM2
+      : (params.newSizeM2 !== undefined ? params.newSizeM2 : undefined);
+    const currentSizeM2 = p.sizeM2 !== undefined && p.sizeM2 !== null ? Number(p.sizeM2) : undefined;
 
     if (currentSizeM2 === nextSizeM2) return p;
 
@@ -475,14 +531,14 @@ export function syncUnitSizeToMatchedProjects(params: UnitSizeSyncInput): void {
     const docId = p.id || String(p.no);
     if (docId) {
       queueProjectPatch(String(docId), {
-        sizeM2: nextSizeM2 ?? null,
+        sizeM2: nextSizeM2 ?? 0,
         updatedAt: nowIso,
       });
     }
 
     return {
       ...p,
-      sizeM2: nextSizeM2,
+      sizeM2: nextSizeM2 ?? 0,
       updatedAt: nowIso,
     };
   });

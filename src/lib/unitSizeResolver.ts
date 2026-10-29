@@ -95,8 +95,50 @@ export function normalizeFloorCode(rawLoc?: string | null): string {
 }
 
 /**
+ * Extracts only the primary project code tokens from `project.code` (ignoring `linkCodes`).
+ */
+export function extractPrimaryProjectCodes(p?: { code?: string | null } | null): string[] {
+  if (!p || !p.code) return [];
+  return extractAllProjectCodes({ code: p.code });
+}
+
+/**
+ * Checks whether a project has additional grouped codes in `linkCodes` beyond its primary `code`.
+ */
+export function isProjectGroupedWithOthers(p?: { code?: string | null; linkCodes?: string | null } | null): boolean {
+  if (!p || !p.linkCodes || !String(p.linkCodes).trim()) return false;
+  const allCodes = extractAllProjectCodes(p);
+  if (allCodes.length <= 1) return false;
+  const primaryCodes = extractPrimaryProjectCodes(p);
+  if (primaryCodes.length === 0) return allCodes.length > 1;
+  return allCodes.some(
+    (c) => !primaryCodes.includes(c) && !projectMatchesUnitCode(primaryCodes, c)
+  );
+}
+
+/**
+ * Checks if a unit name/code is a secondary grouped unit of project `p` (i.e. matched via `linkCodes`
+ * rather than matching `p.code` directly when `p` is grouped with other projects/units).
+ */
+export function isSecondaryGroupedUnitForProject(
+  p: { code?: string | null; linkCodes?: string | null } | null | undefined,
+  unitNameOrId: string
+): boolean {
+  if (!p || !unitNameOrId) return false;
+  const uClean = String(unitNameOrId).trim();
+  if (!uClean) return false;
+  const primaryCodes = extractPrimaryProjectCodes(p);
+  const matchesPrimary =
+    primaryCodes.length > 0 &&
+    (primaryCodes.some((c) => c.toLowerCase() === uClean.toLowerCase()) ||
+      projectMatchesUnitCode(primaryCodes, uClean));
+  if (matchesPrimary) return false;
+  return true;
+}
+
+/**
  * Resolves the effective Size (m²) of a single unit shape, respecting version-specific unitSizes first,
- * then unit.sizeM2 / unit.size, then fallback master Excel size, and finally any matched Project's sizeM2.
+ * then unit.sizeM2 / unit.size, then fallback master Excel size, and finally any non-grouped primary Project's sizeM2.
  */
 export function getUnitEffectiveSizeM2(
   unit?: Partial<UnitShape> | null,
@@ -105,32 +147,35 @@ export function getUnitEffectiveSizeM2(
   skipProjectFallback = false
 ): number {
   if (!unit) {
-    const fb = Number(String(fallbackSize ?? '').replace(/,/g, ''));
+    const fb = Number(String(fallbackSize ?? '').replace(/,/g, '.'));
     return !isNaN(fb) && fb > 0 ? fb : 0;
   }
 
   if (version?.unitSizes) {
-    if (unit.id && typeof version.unitSizes[unit.id] === 'number' && version.unitSizes[unit.id] > 0) {
+    if (unit.id && typeof version.unitSizes[unit.id] === 'number' && !isNaN(version.unitSizes[unit.id]) && version.unitSizes[unit.id] >= 0) {
       return version.unitSizes[unit.id];
     }
     const uNameKey = String(unit.name || '').trim().toUpperCase();
-    if (uNameKey && typeof version.unitSizes[uNameKey] === 'number' && version.unitSizes[uNameKey] > 0) {
+    if (uNameKey && typeof version.unitSizes[uNameKey] === 'number' && !isNaN(version.unitSizes[uNameKey]) && version.unitSizes[uNameKey] >= 0) {
       return version.unitSizes[uNameKey];
     }
   }
 
-  if (typeof unit.sizeM2 === 'number' && !isNaN(unit.sizeM2) && unit.sizeM2 > 0) {
+  if (typeof unit.sizeM2 === 'number' && !isNaN(unit.sizeM2) && unit.sizeM2 >= 0) {
     return unit.sizeM2;
   }
-  if (typeof unit.size === 'number' && !isNaN(unit.size) && unit.size > 0) {
+  if (typeof unit.size === 'number' && !isNaN(unit.size) && unit.size >= 0) {
     return unit.size;
   }
-  const parsedUnitSize = Number(String((unit as any).sizeM2 ?? (unit as any).size ?? '').replace(/,/g, ''));
-  if (!isNaN(parsedUnitSize) && parsedUnitSize > 0) {
-    return parsedUnitSize;
+  const rawUnitSize = (unit as any).sizeM2 ?? (unit as any).size;
+  if (rawUnitSize !== undefined && rawUnitSize !== null && String(rawUnitSize).trim() !== '') {
+    const parsedUnitSize = Number(String(rawUnitSize).replace(/,/g, '.'));
+    if (!isNaN(parsedUnitSize) && parsedUnitSize >= 0) {
+      return parsedUnitSize;
+    }
   }
 
-  const fb = Number(String(fallbackSize ?? '').replace(/,/g, ''));
+  const fb = Number(String(fallbackSize ?? '').replace(/,/g, '.'));
   if (!isNaN(fb) && fb > 0) {
     return fb;
   }
@@ -154,12 +199,13 @@ export function getUnitEffectiveSizeM2(
         const isStorewide = !pLoc || pLoc === 'ALL' || pLoc === 'STORE' || pLoc === 'STOREWIDE' || pLoc === 'WHOLE STORE' || pLoc === 'ALL FLOORS';
         if (!isStorewide && targetLoc && pLoc !== targetLoc) continue;
 
-        const pCodes = extractAllProjectCodes(p);
-        if (pCodes.length === 0) continue;
-        const isExact = pCodes.some((c) => c.toLowerCase() === uNameLower);
-        if (isExact || projectMatchesUnitCode(pCodes, uName)) {
-          const shareCount = Math.max(1, pCodes.length);
-          return Math.round((p.sizeM2 / shareCount) * 100) / 100;
+        // Rule: Grouped secondary projects/units NEVER inherit the master project's sizeM2.
+        // Only a unit that directly matches the project's primary code (when not a secondary grouped unit) can fallback.
+        const primaryCodes = extractPrimaryProjectCodes(p);
+        if (primaryCodes.length === 0) continue;
+        const isPrimaryExact = primaryCodes.some((c) => c.toLowerCase() === uNameLower);
+        if (isPrimaryExact || projectMatchesUnitCode(primaryCodes, uName)) {
+          return Math.round(p.sizeM2 * 100) / 100;
         }
       }
     }
@@ -295,7 +341,9 @@ export function resolveMatchedUnitSizeM2(projectOrInput: {
 }): MatchedUnitSizeResult {
   ensureMappingConfigHydrated();
 
-  const pCodes = extractAllProjectCodes(projectOrInput);
+  const pCodes = isProjectGroupedWithOthers(projectOrInput)
+    ? extractPrimaryProjectCodes(projectOrInput)
+    : extractAllProjectCodes(projectOrInput);
   if (pCodes.length === 0) {
     return EMPTY_MATCH_RESULT;
   }

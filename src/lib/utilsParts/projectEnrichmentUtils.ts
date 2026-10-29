@@ -10,7 +10,12 @@ import {
   computeActProgressFromSummaries,
   computeProjectActStatus,
 } from "./progressAndStatusUtils";
-import { resolveMatchedUnitSizeM2 } from "../unitSizeResolver";
+import {
+  extractPrimaryProjectCodes,
+  isProjectGroupedWithOthers,
+  resolveMatchedUnitSizeM2,
+} from "../unitSizeResolver";
+import { extractAllProjectCodes } from "./projectCodeAndScopeUtils";
 import { rollupTaskSummaries } from "../taskRollupHelpers";
 import { useDataStore } from "../../components/PictureMapping/DataContext";
 
@@ -139,6 +144,23 @@ export function enrichProjects(
     }
   }
 
+  // Pre-compute secondary grouped project codes per (store|year) so grouped projects take size strictly from EditTab (or 0)
+  const secondaryGroupedCodesByScope = new Set<string>();
+  for (let i = 0; i < projects.length; i++) {
+    const mp = projects[i];
+    if (!mp || mp.isDeleted || !isProjectGroupedWithOthers(mp)) continue;
+    const mpStore = String(mp.store || 'HCM').toUpperCase().trim() === 'HN' ? 'HN' : 'HCM';
+    const mpYear = String(mp.year || '').trim();
+    const primarySet = new Set(extractPrimaryProjectCodes(mp));
+    const allCodes = extractAllProjectCodes(mp);
+    for (let j = 0; j < allCodes.length; j++) {
+      const c = allCodes[j];
+      if (!primarySet.has(c)) {
+        secondaryGroupedCodesByScope.add(`${mpStore}|${mpYear}|${c}`);
+      }
+    }
+  }
+
   const enrichedProjects = projects.map((p) => {
     const pId = p.id ? String(p.id).trim() : "";
     const pCode = String(p.code || "").trim().toLowerCase();
@@ -199,9 +221,15 @@ export function enrichProjects(
       }
     }
 
+    const pStoreScope = String(p.store || 'HCM').toUpperCase().trim() === 'HN' ? 'HN' : 'HCM';
+    const pYearScope = String(p.year || '').trim();
+    const isSecondaryGroupedProject =
+      Boolean(pCode) && secondaryGroupedCodesByScope.has(`${pStoreScope}|${pYearScope}|${pCode}`);
+
     const isHydrated = isProjectTasksHydrated(pId);
     const cachedEntry = _perProjectEnrichCache.get(p);
     if (
+      !isSecondaryGroupedProject &&
       cachedEntry &&
       cachedEntry.isHydrated === isHydrated &&
       cachedEntry.mapUnitsRef === dataState.mapUnits &&
@@ -382,10 +410,16 @@ export function enrichProjects(
       projectTasks
     );
 
-    const resolvedSizeM2 =
-      p.sizeM2 !== undefined && p.sizeM2 !== null && p.sizeM2 > 0
-        ? p.sizeM2
-        : resolveMatchedUnitSizeM2(p).sizeM2;
+    const resolvedSizeM2 = isSecondaryGroupedProject
+      ? (resolveMatchedUnitSizeM2({
+          code: p.code,
+          store: p.store,
+          location: p.location,
+          year: p.year,
+        }).sizeM2 ?? 0)
+      : (p.sizeM2 !== undefined && p.sizeM2 !== null && p.sizeM2 > 0
+          ? p.sizeM2
+          : resolveMatchedUnitSizeM2(p).sizeM2);
 
     const enriched: Project = {
       ...p,

@@ -120,22 +120,53 @@ export function useDetailFlatRows({
         ? matchesAdvancedSearch(lowerSearchTerm, [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party])
         : true;
 
-      const tasksToRender = isProjectMatch
-        ? validGroupTasks
-        : lowerSearchTerm 
-          ? validGroupTasks.filter(t => {
-              const code = taskCodeMap.get(t.id) || '';
-              const commentsMatch = t.comments?.some(c => String(c.text || '').toLowerCase().includes(lowerSearchTerm));
-              const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm));
-              return (
-                String(t.name || '').toLowerCase().includes(lowerSearchTerm) ||
-                code.toLowerCase().includes(lowerSearchTerm) ||
-                String(t.party || '').toLowerCase().includes(lowerSearchTerm) ||
-                commentsMatch ||
-                notesMatch
-              );
-            })
-          : validGroupTasks;
+      const { parentTaskMap, groupTaskIndexMap, parentTaskIdsInProject } = buildProjectParentHierarchyIndex(validGroupTasks);
+
+      const directMatchedTaskIds = new Set<string>();
+      if (lowerSearchTerm) {
+        validGroupTasks.forEach((t, idx) => {
+          const code = taskCodeMap.get(t.id) || '';
+          const commentsMatch = t.comments?.some(c => String(c.text || '').toLowerCase().includes(lowerSearchTerm));
+          const notesMatch = t.notes?.some(n => String(n.content || '').toLowerCase().includes(lowerSearchTerm));
+          if (
+            doesTaskMatchSearchTerm(t, idx, p.code, lowerSearchTerm) ||
+            code.toLowerCase().includes(lowerSearchTerm) ||
+            commentsMatch ||
+            notesMatch
+          ) {
+            directMatchedTaskIds.add(String(t.id));
+          }
+        });
+      }
+
+      const shouldFilterTasks =
+        Boolean(lowerSearchTerm) &&
+        (directMatchedTaskIds.size > 0 || !isProjectMatch);
+
+      let tasksToRender = validGroupTasks;
+      if (shouldFilterTasks) {
+        const parentIdsWithMatchingChild = new Set<string>();
+        validGroupTasks.forEach(t => {
+          if (directMatchedTaskIds.has(String(t.id))) {
+            const mp = parentTaskMap.get(String(t.id));
+            if (mp && String(mp.id) !== String(t.id)) {
+              parentIdsWithMatchingChild.add(String(mp.id));
+            }
+          }
+        });
+
+        tasksToRender = validGroupTasks.filter(t => {
+          const tId = String(t.id);
+          if (directMatchedTaskIds.has(tId) || parentIdsWithMatchingChild.has(tId)) {
+            return true;
+          }
+          const mp = parentTaskMap.get(tId);
+          if (mp && directMatchedTaskIds.has(String(mp.id)) && !parentIdsWithMatchingChild.has(String(mp.id))) {
+            return true;
+          }
+          return false;
+        });
+      }
 
       const activeSummaries = (p.taskSummaries && Array.isArray(p.taskSummaries))
         ? p.taskSummaries.filter(ts => !isTaskDeletedInTracker(ts.id, p.id ? String(p.id) : undefined))
@@ -143,7 +174,7 @@ export function useDetailFlatRows({
       const summaryCount = activeSummaries.length;
       const loadedTaskCount = validGroupTasks.length;
       const authoritativeCount = loadedTaskCount > 0 ? loadedTaskCount : (Array.isArray(p.taskSummaries) ? summaryCount : (p.taskCount ?? 0));
-      const effectiveTaskCount = (lowerSearchTerm && !isProjectMatch)
+      const effectiveTaskCount = shouldFilterTasks
         ? tasksToRender.length
         : authoritativeCount;
 
@@ -175,8 +206,6 @@ export function useDetailFlatRows({
       });
 
       if (isExpanded) {
-        const { parentTaskMap, groupTaskIndexMap, parentTaskIdsInProject } = buildProjectParentHierarchyIndex(validGroupTasks);
-
         const seenRenderTaskIds = new Set<string>();
         tasksToRender.forEach((t, tIdx) => {
           if (t.id && seenRenderTaskIds.has(t.id)) return;
@@ -192,8 +221,7 @@ export function useDetailFlatRows({
             (rawParentId ? (parentTaskMap.get(rawParentId) || parentTaskMap.get(rawParentId.toLowerCase())) : undefined);
 
           if (matchedParent && !parentTaskIdsInProject.has(String(t.id)) && String(matchedParent.id) !== String(t.id)) {
-            // Only bypass collapse if user explicitly searched for a term that directly matches this child task and does not match the project as a whole
-            const isDirectChildSearchHit = Boolean(lowerSearchTerm && !isProjectMatch && doesTaskMatchSearchTerm(t, tIdx, p.code, lowerSearchTerm));
+            const isDirectChildSearchHit = Boolean(lowerSearchTerm && directMatchedTaskIds.has(String(t.id)));
             if (!isDirectChildSearchHit) {
               const candidateIds: string[] = [
                 String(matchedParent.id).trim(),

@@ -5,6 +5,7 @@ import { sortGroupTasks } from '../../lib/ganttUtils';
 import { rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { useAppStore } from '../../store/useAppStore';
 import { buildProjectParentHierarchyIndex } from '../../lib/parentHierarchyUtils';
+import { matchesAdvancedSearch } from '../../lib/utils';
 
 interface UseGanttVirtualizationParams {
   paginatedProjects: Project[];
@@ -14,6 +15,7 @@ interface UseGanttVirtualizationParams {
   getGroupTasksForProject: (p: Project) => Task[];
   tableContainerRef: React.RefObject<HTMLDivElement | null>;
   handleMainScroll: (e: React.UIEvent<HTMLDivElement>) => void;
+  deferredSearchTerm?: string;
 }
 
 export function useGanttVirtualization({
@@ -23,10 +25,12 @@ export function useGanttVirtualization({
   hiddenRowsSet,
   getGroupTasksForProject,
   tableContainerRef,
-  handleMainScroll
+  handleMainScroll,
+  deferredSearchTerm
 }: UseGanttVirtualizationParams) {
   const isPrintPreview = useAppStore(state => state.isPrintPreview);
   const isExportingPDF = useAppStore(state => state.isExportingPDF);
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(800);
   const scrollRafRef = useRef<number | null>(null);
@@ -57,10 +61,12 @@ export function useGanttVirtualization({
   // Flatten Gantt Rows
   const flatGanttRows = useMemo(() => {
     const rows: GanttTableRow[] = [];
+    const trimmedSearch = (deferredSearchTerm || '').trim();
+    const hasActiveSearch = Boolean(trimmedSearch);
 
     paginatedProjects.forEach((p, pIdx) => {
       const pId = p.id || p.code;
-      const isProjectExpanded = expandedProjects.includes(pId);
+      const isProjectExpanded = expandedProjects.includes(pId) || hasActiveSearch;
       const isProjectHidden = hiddenRowsSet.has(`proj-${pId}`);
 
       rows.push({
@@ -90,6 +96,38 @@ export function useGanttVirtualization({
       pTasks.forEach((t, idx) => {
         if (t.id) pTaskIndexMap.set(t.id, idx);
       });
+
+      const doesTaskMatch = (t: Task): boolean => {
+        if (!hasActiveSearch) return true;
+        return matchesAdvancedSearch(trimmedSearch, [
+          t.name,
+          t.taskCodePhu,
+          t.party,
+          t.runningStatus,
+          ...(t.notes ? t.notes.map(n => n.content) : []),
+          ...(t.comments ? t.comments.map(c => c.text) : []),
+        ]);
+      };
+
+      const isProjectMetaMatch = hasActiveSearch
+        ? matchesAdvancedSearch(trimmedSearch, [
+            p.store,
+            p.location,
+            p.year,
+            p.code,
+            p.linkCodes,
+            p.name,
+            p.detail,
+            (p as any).description,
+            p.note,
+            p.party,
+          ])
+        : true;
+
+      const anyTaskMatches = hasActiveSearch ? pTasks.some(doesTaskMatch) : false;
+      const shouldFilterTasks =
+        hasActiveSearch &&
+        (Boolean(fixedProjectCode && fixedProjectCode.trim()) || anyTaskMatches || !isProjectMetaMatch);
 
       // Group parent and child tasks using shared robust hierarchy index
       const {
@@ -124,11 +162,36 @@ export function useGanttVirtualization({
       sortedParentTasks.forEach((t, ptIdx) => {
         const isTaskHidden = hiddenRowsSet.has(`task-${t.id}`);
         const rawChildren = childTasksMap.get(String(t.id)) || childTasksMap.get(t.id) || [];
-        const children = sortGroupTasks(rawChildren);
-        const hasChildren = children.length > 0;
-        const isModularExpanded = expandedModularSet.has(String(t.id)) ||
+        const allChildren = sortGroupTasks(rawChildren);
+
+        let childrenToRender = allChildren;
+        let forceExpandForSearch = false;
+
+        if (shouldFilterTasks) {
+          const parentMatches = doesTaskMatch(t);
+          const matchingChildren = allChildren.filter(doesTaskMatch);
+          if (!parentMatches && matchingChildren.length === 0) {
+            return;
+          }
+          if (matchingChildren.length > 0) {
+            childrenToRender = matchingChildren;
+            if (!parentMatches) {
+              forceExpandForSearch = true;
+            }
+          } else {
+            childrenToRender = allChildren;
+          }
+        }
+
+        const hasChildren = childrenToRender.length > 0;
+        const isModularExpanded =
+          forceExpandForSearch ||
+          expandedModularSet.has(String(t.id)) ||
           expandedModularSet.has(String(t.id).toLowerCase()) ||
-          (t.taskCodePhu ? (expandedModularSet.has(String(t.taskCodePhu).trim()) || expandedModularSet.has(String(t.taskCodePhu).trim().toLowerCase())) : false);
+          (t.taskCodePhu
+            ? expandedModularSet.has(String(t.taskCodePhu).trim()) ||
+              expandedModularSet.has(String(t.taskCodePhu).trim().toLowerCase())
+            : false);
         const tIndex = pTaskIndexMap.get(t.id) ?? ptIdx;
 
         rows.push({
@@ -139,14 +202,14 @@ export function useGanttVirtualization({
           project: p,
           isChild: false,
           hasChildren,
-          childCount: children.length,
-          childTasks: children,
+          childCount: childrenToRender.length,
+          childTasks: childrenToRender,
           isModularExpanded,
           isHidden: isTaskHidden
         });
 
         if (hasChildren && isModularExpanded) {
-          children.forEach((ct, ctIdx) => {
+          childrenToRender.forEach((ct, ctIdx) => {
             const isChildHidden = hiddenRowsSet.has(`task-${ct.id}`);
             const ctIndex = pTaskIndexMap.get(ct.id) ?? (tIndex + ctIdx + 1);
             rows.push({
@@ -171,6 +234,7 @@ export function useGanttVirtualization({
       childTasksMap.forEach((leftoverChildren, pId) => {
         if (!renderedParentIds.has(String(pId))) {
           leftoverChildren.forEach(ct => {
+            if (shouldFilterTasks && !doesTaskMatch(ct)) return;
             const isChildHidden = hiddenRowsSet.has(`task-${ct.id}`);
             const ctIndex = pTaskIndexMap.get(ct.id) ?? 0;
             rows.push({
@@ -196,7 +260,9 @@ export function useGanttVirtualization({
     expandedProjects,
     expandedModularSet,
     hiddenRowsSet,
-    getGroupTasksForProject
+    getGroupTasksForProject,
+    deferredSearchTerm,
+    fixedProjectCode
   ]);
 
   // Index row heights and offsets

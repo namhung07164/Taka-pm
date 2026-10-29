@@ -417,7 +417,11 @@ export const LayoutUnitTooltip: React.FC<LayoutUnitTooltipProps> = ({
             canWrite={canWrite}
             floorValue={floorValue}
             shopTypeValue={p?.shopType || (p as any)?.shop_type || (data as any)?.shopType || (data as any)?.shop_type || ''}
-            dataSize={p?.sizeM2 ?? (p as any)?.size ?? (p as any)?.area ?? data.sizeM2 ?? data.size ?? data.area ?? 0}
+            dataSize={
+              data.isGroupedSecondaryUnit
+                ? (data.editTabSizeM2 ?? data.sizeM2 ?? data.size ?? 0)
+                : (p?.sizeM2 ?? (p as any)?.size ?? (p as any)?.area ?? data.sizeM2 ?? data.size ?? data.area ?? 0)
+            }
             commentsCount={commentsCount}
             computedTakStart={computedTakStart}
             computedTakCompl={computedTakCompl}
