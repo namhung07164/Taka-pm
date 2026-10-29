@@ -466,93 +466,52 @@ export const FAQ_KNOWLEDGE_BASE: FaqKnowledgeEntry[] = [
 ];
 
 function normalizeText(str: string): string {
-  return str
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/[^a-z0-9\s+%*]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9\s+%*]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-export function searchFaqKnowledge(
-  rawQuery: string,
-  lang: 'vi' | 'en' = 'vi'
-): {
-  bestMatches: FaqKnowledgeEntry[];
-  formattedAnswer: string;
-} {
+export function searchFaqKnowledge(rawQuery: string, lang: 'vi' | 'en' = 'vi'): { bestMatches: FaqKnowledgeEntry[]; formattedAnswer: string } {
   const cleanQuery = rawQuery.trim();
   const normQuery = normalizeText(cleanQuery);
-
   if (!normQuery) {
     const starter = FAQ_KNOWLEDGE_BASE.slice(0, 3);
     return {
       bestMatches: starter,
-      formattedAnswer:
-        lang === 'vi'
-          ? 'Xin chào! Tôi là **Trợ lý Hướng dẫn Tương tác Takashimaya PM** (dữ liệu từ `USER_MANUAL.md` & `BUSINESS_LOGIC.md`).\n\nHãy bấm vào một chủ đề gợi ý bên dưới hoặc gõ câu hỏi của bạn — tôi sẽ giải thích ngắn gọn, dễ hiểu kèm nút mở trực tiếp tính năng đó!'
-          : 'Hello! I am the **Takashimaya PM Interactive Onboarding Assistant** (powered by `USER_MANUAL.md` & `BUSINESS_LOGIC.md`).\n\nTap any topic below or type your question for a simple, step-by-step explanation with direct tab shortcuts!'
+      formattedAnswer: lang === 'vi'
+        ? 'Xin chào! Tôi là **Trợ lý Hướng dẫn Tương tác Takashimaya PM** (dữ liệu từ `USER_MANUAL.md` & `BUSINESS_LOGIC.md`).\n\nHãy bấm vào một chủ đề gợi ý bên dưới hoặc gõ câu hỏi của bạn!'
+        : 'Hello! I am the **Takashimaya PM Interactive Onboarding Assistant** (powered by `USER_MANUAL.md` & `BUSINESS_LOGIC.md`).\n\nTap any topic below or type your question!'
     };
   }
-
   const tokens = normQuery.split(' ').filter(t => t.length >= 2);
-
   const scored = FAQ_KNOWLEDGE_BASE.map(entry => {
     let score = 0;
     const normTitle = normalizeText(entry.titleVi + ' ' + entry.titleEn);
     const normBody = normalizeText(entry.answerVi + ' ' + entry.answerEn);
     const normKeywords = entry.keywords.map(k => normalizeText(k));
-    const normPrompts = (entry.quickPromptsVi || [])
-      .concat(entry.quickPromptsEn || [])
-      .map(p => normalizeText(p));
-
+    const normPrompts = (entry.quickPromptsVi || []).concat(entry.quickPromptsEn || []).map(p => normalizeText(p));
     if (normTitle.includes(normQuery)) score += 30;
     if (normPrompts.some(p => p.includes(normQuery) || normQuery.includes(p))) score += 35;
     if (normBody.includes(normQuery)) score += 14;
-
     for (const kw of normKeywords) {
-      if (normQuery.includes(kw)) {
-        score += 18;
-      } else if (tokens.some(tk => kw.includes(tk) || tk.includes(kw))) {
-        score += 8;
-      }
+      if (normQuery.includes(kw)) score += 18;
+      else if (tokens.some(tk => kw.includes(tk) || tk.includes(kw))) score += 8;
     }
-
     for (const tk of tokens) {
       if (normTitle.includes(tk)) score += 6;
       if (normBody.includes(tk)) score += 3;
     }
-
     return { entry, score };
   }).sort((a, b) => b.score - a.score);
 
   const topMatches = scored.filter(s => s.score > 0).slice(0, 2).map(s => s.entry);
-
   if (topMatches.length === 0) {
     const fallback = FAQ_KNOWLEDGE_BASE.slice(0, 2);
     return {
       bestMatches: fallback,
-      formattedAnswer:
-        lang === 'vi'
-          ? `Tôi chưa tìm thấy mục khớp chính xác với **"${cleanQuery}"**, nhưng đây là hướng dẫn nền tảng dễ hiểu nhất từ \`USER_MANUAL.md\` dành cho bạn:\n\n` +
-            fallback.map(item => `### ${item.titleVi}\n${item.answerVi}`).join('\n\n---\n\n')
-          : `I could not find an exact match for **"${cleanQuery}"**, but here is the essential starter guide from \`USER_MANUAL.md\`:\n\n` +
-            fallback.map(item => `### ${item.titleEn}\n${item.answerEn}`).join('\n\n---\n\n')
+      formattedAnswer: lang === 'vi'
+        ? `Tôi chưa tìm thấy mục khớp chính xác với **"${cleanQuery}"**, nhưng đây là hướng dẫn nền tảng từ \`USER_MANUAL.md\`:\n\n` + fallback.map(item => `### ${item.titleVi}\n${item.answerVi}`).join('\n\n---\n\n')
+        : `I could not find an exact match for **"${cleanQuery}"**, but here is the starter guide from \`USER_MANUAL.md\`:\n\n` + fallback.map(item => `### ${item.titleEn}\n${item.answerEn}`).join('\n\n---\n\n')
     };
   }
-
-  const formattedAnswer = topMatches
-    .map(item => {
-      const title = lang === 'vi' ? item.titleVi : item.titleEn;
-      const body = lang === 'vi' ? item.answerVi : item.answerEn;
-      return `### ${title}\n${body}`;
-    })
-    .join('\n\n---\n\n');
-
-  return {
-    bestMatches: topMatches,
-    formattedAnswer
-  };
+  const formattedAnswer = topMatches.map(item => `### ${lang === 'vi' ? item.titleVi : item.titleEn}\n${lang === 'vi' ? item.answerVi : item.answerEn}`).join('\n\n---\n\n');
+  return { bestMatches: topMatches, formattedAnswer };
 }

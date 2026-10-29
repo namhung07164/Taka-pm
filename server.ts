@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
+import { registerFaqChatRoute } from './src/server/faqChatHandler';
 
 async function startServer() {
   const app = express();
@@ -117,73 +118,8 @@ async function startServer() {
     }
   });
 
-  // API FAQ Chatbot đọc trực tiếp từ USER_MANUAL.md & BUSINESS_LOGIC.md
-  const loadFaqKnowledgeDocs = () => {
-    let manualMd = '';
-    let businessMd = '';
-    try {
-      const manualPath = path.join(process.cwd(), 'USER_MANUAL.md');
-      if (fs.existsSync(manualPath)) {
-        manualMd = fs.readFileSync(manualPath, 'utf-8');
-      }
-    } catch {
-      manualMd = '';
-    }
-    try {
-      const blPath = path.join(process.cwd(), 'BUSINESS_LOGIC.md');
-      if (fs.existsSync(blPath)) {
-        businessMd = fs.readFileSync(blPath, 'utf-8');
-      }
-    } catch {
-      businessMd = '';
-    }
-    return { manualMd, businessMd };
-  };
-
-  app.post('/api/faq-chat', async (req, res) => {
-    try {
-      const { question, lang = 'vi', localContext = '' } = req.body || {};
-      if (!question || typeof question !== 'string') {
-        return res.status(400).json({ error: 'Missing question' });
-      }
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        return res.status(200).json({ answer: localContext || null, source: 'local_knowledge' });
-      }
-      const { manualMd, businessMd } = loadFaqKnowledgeDocs();
-      const { GoogleGenAI } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey });
-      const systemInstruction =
-        `You are the official Takashimaya Project Management (Taka PM) Interactive Onboarding & FAQ Assistant.\n` +
-        `Your goal is to explain features, workflows, and formulas to NEW USERS in the simplest, most visual, friendly, and easy-to-understand way possible.\n` +
-        `Structure your response clearly using:\n` +
-        `1. 🎯 **Hiểu đơn giản (Simple Idea)**: 1-2 short sentences.\n` +
-        `2. 👆 **Cách thao tác nhanh (Step-by-Step)**: Numbered steps showing exact button/tab names.\n` +
-        `3. 💡 **Ví dụ / Mẹo hay (Example / Pro Tip)**: Concrete example or shortcut.\n` +
-        `Answer strictly based on USER_MANUAL.md, BUSINESS_LOGIC.md, and the matched context below.\n` +
-        `Respond in ${lang === 'vi' ? 'Vietnamese' : 'English'}.\n\n` +
-        `--- USER_MANUAL.md ---\n${manualMd.slice(0, 22000)}\n\n` +
-        `--- BUSINESS_LOGIC.md ---\n${businessMd.slice(0, 12000)}\n\n` +
-        `--- MATCHED CONTEXT ---\n${localContext}`;
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: question,
-        config: {
-          systemInstruction,
-          temperature: 0.2,
-        },
-      });
-      return res.status(200).json({
-        answer: response.text || localContext || null,
-        source: 'gemini_user_manual',
-      });
-    } catch {
-      return res.status(200).json({
-        answer: req.body?.localContext || null,
-        source: 'local_fallback',
-      });
-    }
-  });
+  // API Hybrid 3-Tier FAQ Chatbot (Gemini 2.5 Flash + System Context + maxOutputTokens: 300)
+  registerFaqChatRoute(app);
 
   // In-memory LRU Cache cho binary PDF và Thumbnail để phản hồi 0ms cho các lần mở tiếp theo
   const mediaMemoryCache = new Map<string, { buffer: Buffer; contentType: string; ts: number }>();
