@@ -260,11 +260,7 @@ export function GanttTableView({
 
   const totalTimelineWidth = totalDays * dayWidth;
 
-  const { isPanning, handlePointerDown } = useGanttZoomAndPan({
-    mainScrollRef,
-    topScrollRef,
-    sideWidth
-  });
+  const { isPanning, handlePointerDown, handleStartMonthResize } = useGanttZoomAndPan({ mainScrollRef, topScrollRef, sideWidth });
 
   const allOrderedTaskIds = useMemo(() => {
     const fromRows = (flatGanttRows && flatGanttRows.length > 0 ? flatGanttRows : visibleGanttRows)
@@ -323,7 +319,7 @@ export function GanttTableView({
           startResizingColumn={startResizingColumn}
         />
         <div className="flex-1 shrink-0 overflow-visible" style={{ width: `${totalTimelineWidth}px` }}>
-          <GanttTimelineHeader timeUnits={timeUnits} dayWidth={dayWidth} />
+          <GanttTimelineHeader timeUnits={timeUnits} dayWidth={dayWidth} onStartMonthResize={handleStartMonthResize} />
         </div>
       </div>
 
