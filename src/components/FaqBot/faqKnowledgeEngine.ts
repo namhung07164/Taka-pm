@@ -211,12 +211,14 @@ export const FAQ_KNOWLEDGE_BASE: FaqKnowledgeEntry[] = [
       '• **Quy chuẩn tính Diện tích (`sizeM2`) trong bảng Color Legend**:\n' +
       '  - Diện tích của từng nhóm trạng thái (`Upcoming`, `In Progress`, `Completed`, `Shop Type`, `Party`, `Lease Status`) được tính bằng **tổng diện tích (`sizeM2`) của các Project duy nhất (unique projects)** thuộc nhóm đó (chống nhân đôi khi 1 project nối nhiều polygon).\n' +
       '  - Chỉ khi ô mặt bằng chưa gắn Project nào hoặc Project chưa có `sizeM2` thì mới fallback về diện tích hình học của ô (`unit.sizeM2`).\n' +
+      '• **Viền màu Trạng thái khi nhấp Color Legend**: Khi nhấp vào 1 ô trạng thái trong Color Legend (VD: `Completed`, `In Progress`), các gian hàng/dự án thuộc nhóm đó **có diện tích (`sizeM2 > 0`)** sẽ được vẽ **viền màu chính của trạng thái đó bao xung quanh**, các ô không có diện tích sẽ không có viền.\n' +
       '• **Quét QR Code từ Project Modal**: Khi quét mã QR bằng điện thoại, ứng dụng tự động chuyển sang đúng `Store`, `Year`, `Floor`, mở tab **Layout** và **Auto-Zoom** thẳng vào vị trí gian hàng.',
     answerEn:
       '• **Multi-Unit Link Codes (`linkCodes`)**: A single project can link to multiple floor plan units (e.g., `L1-101, L1-102`).\n' +
       '• **Color Legend Area (`m²`) Formula**:\n' +
       '  - Group areas (`Upcoming`, `In Progress`, `Completed`, `Shop Type`, `Party`, `Lease Status`) are computed as the **sum of `sizeM2` of unique matched projects** in that group (preventing double-counting across multi-polygon units).\n' +
       '  - Falls back to polygon `unit.sizeM2` only for unlinked units.\n' +
+      '• **Color Legend Active Border Highlight**: Clicking an item in Color Legend highlights units/projects in that group with a **status-colored surrounding outline if they have area (`sizeM2 > 0`)**. Units without area do not draw a border.\n' +
       '• **Mobile QR Code Auto-Zoom**: Scanning a project QR code automatically switches to the target `Store`, `Year`, and `Floor`, opens the **Layout** tab, and zooms directly into the unit.',
     relatedIds: ['project-status-lifecycle']
   },

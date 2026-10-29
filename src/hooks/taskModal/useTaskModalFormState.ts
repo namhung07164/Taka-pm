@@ -105,7 +105,7 @@ export function useTaskModalFormState({
     try {
       return buildTaskNoMap(projects || [], tasks || []);
     } catch {
-      return new Map<string, Task>();
+      return new Map<string, Task[]>();
     }
   }, [projects, tasks]);
 

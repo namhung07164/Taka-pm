@@ -27,6 +27,7 @@ export interface DynamicUnitSummaryItem {
   matchedTasksCount: number;
   task: string;
   activeTasks?: string[];
+  matchedProject?: any;
   // Excel / Master Business Data
   size: number;
   sizeM2?: number;

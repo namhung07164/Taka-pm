@@ -264,31 +264,47 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0 z-10">
                   <button
                     type="button"
-                    onClick={() => setLang(prev => (prev === 'vi' ? 'en' : 'vi'))}
-                    className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 text-[10px] font-bold uppercase tracking-wider transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLang(prev => (prev === 'vi' ? 'en' : 'vi'));
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-bold uppercase tracking-wider transition-colors active:scale-95 touch-manipulation cursor-pointer"
                     title="Switch Language (VN / EN)"
                   >
-                    <Globe className="w-3 h-3" />
+                    <Globe className="w-3.5 h-3.5" />
                     {lang.toUpperCase()}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setMessages([initialGreeting])}
-                    className="p-1.5 rounded-md bg-white/10 hover:bg-white/20 text-slate-200 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMessages([initialGreeting]);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 transition-colors active:scale-95 touch-manipulation cursor-pointer"
                     title="Reset Conversation"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => setIsOpen(false)}
-                    className="p-1.5 rounded-md bg-white/10 hover:bg-rose-500/80 text-slate-200 hover:text-white transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsOpen(false);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-600 text-slate-200 hover:text-white transition-all active:scale-90 touch-manipulation cursor-pointer z-20 shrink-0"
                     title="Close (Esc)"
+                    aria-label="Close FAQ Modal"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-4.5 h-4.5" />
                   </button>
                 </div>
               </div>
