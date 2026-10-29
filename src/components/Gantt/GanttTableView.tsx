@@ -295,13 +295,13 @@ export function GanttTableView({
         isExporting && "overflow-hidden"
       )}
     >
-      {/* Top Synchronized Timeline Header (Sticky Month Row) */}
+      {/* Top Synchronized Timeline Header (Sticky Month Row below Sticky Search/Fix Project Code Row) */}
       <div
         ref={topScrollRef}
         data-print-header="true"
         onScroll={handleTopScroll}
         onPointerDown={handlePointerDown}
-        className="sticky top-0 z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#18181a] flex shrink-0 shadow-xs"
+        className="sticky top-[48px] z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-[#18181a]/95 backdrop-blur-md flex shrink-0 shadow-xs"
       >
         <GanttLeftHeader
           sideWidth={sideWidth}
