@@ -32,7 +32,8 @@ export const LayoutColorLegendModal: React.FC<LayoutColorLegendModalProps> = ({
 
   const content = (
     <div
-      className={`fixed inset-0 ${zInfo.zClass} bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in duration-150 hide-on-actual-print print:hidden`}
+      className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in duration-150 hide-on-actual-print print:hidden"
+      style={{ zIndex: zInfo.zValue }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

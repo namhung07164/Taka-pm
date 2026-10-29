@@ -4,7 +4,7 @@ import { Layers, X, Filter, RotateCcw } from 'lucide-react';
 import { Project } from '../../types';
 import { ProjectFinancials } from './budgetTypes';
 import { useLanguage } from '../../lib/LanguageContext';
-import { getZIndexClass } from '../../lib/zIndexManager';
+import { getZIndexClass, getZIndexValue } from '../../lib/zIndexManager';
 import { BudgetLinkParentColumn } from './BudgetLinkParentColumn';
 import { BudgetLinkChildColumn } from './BudgetLinkChildColumn';
 
@@ -179,7 +179,10 @@ export function BudgetLinkModal({
   const parentStats = selectedParentProject ? getProjectFinancials(selectedParentProject) : null;
 
   return (
-    <div className={`fixed inset-0 ${getZIndexClass('MODAL_MODULAR')} flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto`}>
+    <div 
+      className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto"
+      style={{ zIndex: getZIndexValue('MODAL_MODULAR') }}
+    >
       <motion.div
         drag
         dragControls={dragControls}

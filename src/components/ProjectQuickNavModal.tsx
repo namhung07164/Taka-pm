@@ -20,7 +20,7 @@ import {
 import { TabId } from '../types';
 import { QuickNavTarget } from '../store/storeTypes';
 import { useAppStore } from '../store/useAppStore';
-import { getZIndexClass, useOverlayStack } from '../lib/zIndexManager';
+import { getZIndexClass, getZIndexValue, useOverlayStack } from '../lib/zIndexManager';
 import { formatDisplayDateMain } from '../lib/utils';
 
 interface ProjectQuickNavModalProps {
@@ -185,7 +185,8 @@ export function ProjectQuickNavModal({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.94, y: 8 }}
           transition={{ duration: 0.14, ease: 'easeOut' }}
-          className={`w-[90vw] sm:w-[300px] max-w-[320px] bg-white dark:bg-[#1e1e20] rounded-xl shadow-2xl border border-slate-200 dark:border-[#444446] overflow-hidden flex flex-col select-none touch-manipulation relative ${getZIndexClass('QUICK_NAV', 1)}`}
+          className="w-[90vw] sm:w-[300px] max-w-[320px] bg-white dark:bg-[#1e1e20] rounded-xl shadow-2xl border border-slate-200 dark:border-[#444446] overflow-hidden flex flex-col select-none touch-manipulation relative"
+          style={{ zIndex: getZIndexValue('QUICK_NAV', 1) }}
         >
           {/* Draggable Header */}
           <div className="px-3 py-2 border-b border-slate-100 dark:border-[#333336] bg-slate-50/90 dark:bg-[#252528] flex items-center justify-between gap-1.5 cursor-grab active:cursor-grabbing">

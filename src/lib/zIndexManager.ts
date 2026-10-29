@@ -44,6 +44,13 @@ export function getZIndexClass(layer: ZIndexLayer, offset: number = 0): string {
 }
 
 /**
+ * Returns inline React CSS style object for z-index
+ */
+export function getZIndexStyle(layer: ZIndexLayer, offset: number = 0): React.CSSProperties {
+  return { zIndex: getZIndexValue(layer, offset) };
+}
+
+/**
  * Active Overlay Registry for dynamic stacking, nesting, and tab-switch cleanup
  */
 interface OverlayEntry {

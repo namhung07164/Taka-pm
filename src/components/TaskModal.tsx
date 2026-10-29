@@ -27,7 +27,7 @@ import { deleteStorageFiles, extractStorageUrls } from "../lib/storageUtils";
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import { addPendingUpdate } from '../lib/syncQueue';
 import { QRCodeButton } from './QRCodeButton';
-import { getZIndexClass } from '../lib/zIndexManager';
+import { getZIndexClass, getZIndexValue } from '../lib/zIndexManager';
 import { syncProjectDatesByCode } from '../lib/projectDatesService';
 import { FastInput } from './FastInput';
 
@@ -120,7 +120,10 @@ export function TaskModal(props: TaskModalProps) {
 
   return (
     <Portal>
-      <div className={`fixed inset-0 bg-slate-900/60 ${getZIndexClass('MODAL_BASE')} flex items-center justify-center p-0 md:p-4`}>
+      <div 
+        className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-0 md:p-4"
+        style={{ zIndex: getZIndexValue('MODAL_BASE') }}
+      >
       <React.Suspense fallback={null}>
         {confirmModal.isOpen && (
           <ConfirmModal 

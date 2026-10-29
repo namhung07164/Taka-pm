@@ -6,7 +6,7 @@ import Draggable from 'react-draggable';
 import { X, GripHorizontal } from 'lucide-react';
 import { AppUser } from '../types';
 import { Portal } from './Portal';
-import { getZIndexClass } from '../lib/zIndexManager';
+import { getZIndexClass, getZIndexValue } from '../lib/zIndexManager';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -93,7 +93,10 @@ export function LoginModal({ isOpen, onClose, onLogin}: LoginModalProps) {
 
   return (
     <Portal>
-      <div className={`fixed inset-0 ${getZIndexClass('MODAL_BASE')} bg-slate-900/40 flex items-end md:items-center justify-center p-0 md:p-4 overflow-y-auto`} style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div 
+        className="fixed inset-0 bg-slate-900/40 flex items-end md:items-center justify-center p-0 md:p-4 overflow-y-auto" 
+        style={{ zIndex: getZIndexValue('MODAL_BASE'), WebkitOverflowScrolling: 'touch' }}
+      >
         <Draggable disabled={typeof window !== 'undefined' && window.innerWidth < 768} handle=".modal-handle" bounds="parent" nodeRef={nodeRef} cancel="button">
           <div ref={nodeRef} className="bg-white dark:bg-[#1e1e20] rounded-t-2xl md:rounded-2xl shadow-2xl w-full max-w-md p-6 md:p-8 relative pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8 my-auto border dark:border-[#333336]">
             <div className="modal-handle cursor-move absolute top-0 left-0 right-12 h-12"></div>
