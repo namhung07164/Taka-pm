@@ -172,7 +172,7 @@ export function GanttToolbar({
   }, [activeFocusTaskId, tasks]);
 
   return (
-    <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+    <div className="relative z-40 p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
       {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
       <div className="flex flex-col lg:flex-row gap-2 justify-between items-stretch lg:items-center w-full">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">

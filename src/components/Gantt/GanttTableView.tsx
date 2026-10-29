@@ -294,16 +294,19 @@ export function GanttTableView({
     <div
       ref={tableContainerRef}
       onDragOver={handleContainerDragOver}
-      className="flex-grow overflow-hidden flex flex-col bg-white dark:bg-[#1e1e20] relative min-h-0 select-none"
+      className={cn(
+        "flex-grow flex flex-col bg-white dark:bg-[#1e1e20] relative min-h-0 select-none w-full min-w-0",
+        isExporting && "overflow-hidden"
+      )}
     >
-      {/* Top Synchronized Timeline Header */}
+      {/* Top Synchronized Timeline Header (Sticky Month Row) */}
       <div
         ref={topScrollRef}
         data-print-header="true"
         onScroll={handleTopScroll}
-        className="overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#18181a] flex shrink-0"
+        onPointerDown={handlePointerDown}
+        className="sticky top-0 z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#18181a] flex shrink-0 shadow-xs"
       >
-        {/* Left Side Header */}
         <GanttLeftHeader
           sideWidth={sideWidth}
           isEditMode={isEditMode}
@@ -319,9 +322,7 @@ export function GanttTableView({
           handleToggleColumn={handleToggleColumn}
           startResizingColumn={startResizingColumn}
         />
-
-        {/* Right Side Timeline Units Header */}
-        <div className="flex-1 overflow-visible" style={{ width: `${totalTimelineWidth}px` }}>
+        <div className="flex-1 shrink-0 overflow-visible" style={{ width: `${totalTimelineWidth}px` }}>
           <GanttTimelineHeader timeUnits={timeUnits} dayWidth={dayWidth} />
         </div>
       </div>
@@ -337,7 +338,7 @@ export function GanttTableView({
           }
         }}
         className={cn(
-          "flex-grow overflow-auto relative flex min-h-0",
+          "flex-grow overflow-auto relative z-10 flex min-h-0 w-full max-w-full min-w-0 rounded-b-xl",
           isPanning ? "cursor-grabbing select-none" : "cursor-grab"
         )}
       >

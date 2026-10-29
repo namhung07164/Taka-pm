@@ -31761,16 +31761,19 @@ export function GanttTableView({
     <div
       ref={tableContainerRef}
       onDragOver={handleContainerDragOver}
-      className="flex-grow overflow-hidden flex flex-col bg-white dark:bg-[#1e1e20] relative min-h-0 select-none"
+      className={cn(
+        "flex-grow flex flex-col bg-white dark:bg-[#1e1e20] relative min-h-0 select-none w-full min-w-0",
+        isExporting && "overflow-hidden"
+      )}
     >
-      {/* Top Synchronized Timeline Header */}
+      {/* Top Synchronized Timeline Header (Sticky Month Row) */}
       <div
         ref={topScrollRef}
         data-print-header="true"
         onScroll={handleTopScroll}
-        className="overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#18181a] flex shrink-0"
+        onPointerDown={handlePointerDown}
+        className="sticky top-0 z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#18181a] flex shrink-0 shadow-xs"
       >
-        {/* Left Side Header */}
         <GanttLeftHeader
           sideWidth={sideWidth}
           isEditMode={isEditMode}
@@ -31786,9 +31789,7 @@ export function GanttTableView({
           handleToggleColumn={handleToggleColumn}
           startResizingColumn={startResizingColumn}
         />
-
-        {/* Right Side Timeline Units Header */}
-        <div className="flex-1 overflow-visible" style={{ width: `${totalTimelineWidth}px` }}>
+        <div className="flex-1 shrink-0 overflow-visible" style={{ width: `${totalTimelineWidth}px` }}>
           <GanttTimelineHeader timeUnits={timeUnits} dayWidth={dayWidth} />
         </div>
       </div>
@@ -31804,7 +31805,7 @@ export function GanttTableView({
           }
         }}
         className={cn(
-          "flex-grow overflow-auto relative flex min-h-0",
+          "flex-grow overflow-auto relative z-10 flex min-h-0 w-full max-w-full min-w-0 rounded-b-xl",
           isPanning ? "cursor-grabbing select-none" : "cursor-grab"
         )}
       >
@@ -31963,8 +31964,6 @@ export function GanttTableView({
     </div>
   );
 }
-
-
 ================================================================================
 FILE: src/components/Gantt/GanttTaskLeftColumns.tsx
 ================================================================================
@@ -32781,6 +32780,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { ColumnAdder } from '../ColumnAdder';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
 import { ViewMode } from './ganttTypes';
 import { GanttToolbarActions } from './GanttToolbarActions';
 import { GanttToolbarDateFilter } from './GanttToolbarDateFilter';
@@ -32937,6 +32937,7 @@ export function GanttToolbar({
 }: GanttToolbarProps) {
   const { t } = useLanguage();
   const tasks = useAppStore((state) => state.tasks);
+  const projects = useAppStore((state) => state.projects);
 
   const activeFocusTaskId = initialFocusTaskId || ganttTabFocusTaskId;
   const focusedTask = React.useMemo(() => {
@@ -32945,7 +32946,7 @@ export function GanttToolbar({
   }, [activeFocusTaskId, tasks]);
 
   return (
-    <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+    <div className="relative z-40 p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
       {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
       <div className="flex flex-col lg:flex-row gap-2 justify-between items-stretch lg:items-center w-full">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
@@ -33101,6 +33102,14 @@ export function GanttToolbar({
               onAddColumn={handleToggleColumn}
             />
 
+            <FixedProjectInput 
+              projects={projects} 
+              yearFilter={globalYearFilter}
+              storeFilter={effectiveStore}
+              locationFilter={globalLocationFilter}
+              statusFilter={filterProjectStatus}
+            />
+
             <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
               <DebouncedSearchInput
                 value={searchTerm}
@@ -33124,8 +33133,6 @@ export function GanttToolbar({
     </div>
   );
 }
-
-
 ================================================================================
 FILE: src/components/Gantt/GanttToolbarActions.tsx
 ================================================================================
@@ -99054,7 +99061,7 @@ html, body {
   min-height: 100%;
   width: 100%;
   margin: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: none;
 }
@@ -99071,7 +99078,7 @@ html:not(.dark), html:not(.dark) body {
 
 #root {
   width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -99518,8 +99525,6 @@ body.print-preview-active .print\:overflow-hidden {
   content-visibility: visible !important;
   contain-intrinsic-size: none !important;
 }
-
-
 
 ================================================================================
 FILE: src/lib/LanguageContext.tsx
