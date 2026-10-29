@@ -43502,6 +43502,7 @@ export const LayoutPrintLegendOverlay: React.FC<LayoutPrintLegendOverlayProps> =
 
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutTabFilterToolbar.tsx
+================================================================================
 import React, { memo, useMemo } from 'react';
 import { 
   Filter, 
@@ -43518,7 +43519,14 @@ import {
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 import { useAppStore } from '../../store/useAppStore';
 import { useDataStore } from '../PictureMapping/DataContext';
-import { getSavedCustomPaintCategories } from './LayoutPaintCategoriesSection';
+import {
+  getSavedCustomPaintCategories,
+  getSavedActivePaintFilter,
+  saveActivePaintFilterLocal,
+  savePaintCategoriesConfig,
+  applyGroupMappingsToVersions,
+  subscribePaintCategoriesConfig,
+} from './layoutPaintCategoriesService';
 
 interface LayoutTabFilterToolbarProps {
   activeStore: string;
@@ -43592,35 +43600,40 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
 }: LayoutTabFilterToolbarProps) {
   const layoutPaintCategory = useAppStore(state => state.layoutPaintCategory);
   const setLayoutPaintCategory = useAppStore(state => state.setLayoutPaintCategory);
-  const storeLocationData = useDataStore(state => state.storeLocationData);
-  const getAllStoreVersions = useDataStore(state => state.getAllStoreVersions);
+
+  const [syncedCustomCats, setSyncedCustomCats] = React.useState<string[]>(() => getSavedCustomPaintCategories());
+
+  // Listen to realtime cloud sync for paint categories filter data (categories, condition mappings, and active filter)
+  React.useEffect(() => {
+    const storeKey = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+    const unsub = subscribePaintCategoriesConfig((config) => {
+      if (Array.isArray(config.categories) && config.categories.length > 0) {
+        setSyncedCustomCats(config.categories);
+      }
+      if (config.groupMappings && Object.keys(config.groupMappings).length > 0) {
+        applyGroupMappingsToVersions(config.groupMappings, storeKey);
+      }
+      if (config.activePaintFilter && config.activePaintFilter.trim()) {
+        setLayoutPaintCategory(config.activePaintFilter.trim());
+      }
+    });
+    return () => unsub();
+  }, [activeStore, setLayoutPaintCategory]);
 
   const availablePaintCategories = useMemo(() => {
-    const set = new Set<string>(getSavedCustomPaintCategories());
-    try {
-      const storeKey = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
-      const versions = getAllStoreVersions(storeKey) || [];
-      versions.forEach(v => {
-        (v.groups || []).forEach((g: any) => {
-          const raw = String(g.paintCategory || g.category || '').trim();
-          if (raw) {
-            raw.split(',').forEach(part => {
-              const trimmed = part.trim();
-              if (trimmed) set.add(trimmed);
-            });
-          }
-        });
-      });
-    } catch {
-      // ignore
-    }
-    return Array.from(set);
-  }, [activeStore, getAllStoreVersions, storeLocationData]);
+    const baseCats = syncedCustomCats.length > 0 ? syncedCustomCats : getSavedCustomPaintCategories();
+    return Array.from(new Set<string>(baseCats.map(c => String(c || '').trim()).filter(Boolean)));
+  }, [syncedCustomCats]);
 
   React.useEffect(() => {
     if (availablePaintCategories.length > 0) {
       if (layoutPaintCategory === 'all' || (!availablePaintCategories.includes(layoutPaintCategory) && layoutPaintCategory !== 'none')) {
-        setLayoutPaintCategory(availablePaintCategories[0]);
+        const saved = getSavedActivePaintFilter();
+        if (availablePaintCategories.includes(saved)) {
+          setLayoutPaintCategory(saved);
+        } else {
+          setLayoutPaintCategory(availablePaintCategories[0]);
+        }
       }
     } else if (layoutPaintCategory === 'all') {
       setLayoutPaintCategory('none');
@@ -43808,7 +43821,14 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
                 <Palette className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                 <select
                   value={layoutPaintCategory}
-                  onChange={(e) => setLayoutPaintCategory(e.target.value)}
+                  onChange={(e) => {
+                    const nextVal = e.target.value;
+                    setLayoutPaintCategory(nextVal);
+                    saveActivePaintFilterLocal(nextVal);
+                    if (isAdmin) {
+                      savePaintCategoriesConfig({ activePaintFilter: nextVal });
+                    }
+                  }}
                   className="bg-transparent border-none text-xs text-indigo-700 dark:text-indigo-300 font-bold outline-none cursor-pointer w-full truncate"
                   title="Filter units by Paint Category"
                 >
@@ -43873,8 +43893,6 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
 });
 
 
-
-FILE: src/components/LayoutTabParts/LayoutTabFullscreenView.tsx
 ================================================================================
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform, animate } from 'motion/react';
@@ -159014,29 +159032,26 @@ export function useLayoutAggregates({
 
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutPaintCategoriesSection.tsx
-import React, { useState, useMemo } from 'react';
-import { Palette, Plus, X, ChevronDown, ChevronUp, Tag, Check, Cloud } from 'lucide-react';
+================================================================================
+import React, { useState, useMemo, useEffect } from 'react';
+import { Palette, Plus, X, ChevronDown, ChevronUp, Tag, Check, Cloud, Lock, ShieldCheck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useDataStore } from '../PictureMapping/DataContext';
 import { getHatchCssStyle } from './layoutPatternUtils';
 import { triggerBackgroundR2Sync } from '../PictureMapping/lib/dynamicExportService';
 import { useAppStore } from '../../store/useAppStore';
+import {
+  CUSTOM_PAINT_CATEGORIES_STORAGE_KEY,
+  getSavedCustomPaintCategories,
+  getSavedPaintGroupMappings,
+  saveActivePaintFilterLocal,
+  savePaintCategoriesConfig,
+  applyGroupMappingsToVersions,
+  subscribePaintCategoriesConfig,
+  resolveGroupPaintCategory,
+} from './layoutPaintCategoriesService';
 
-export const CUSTOM_PAINT_CATEGORIES_STORAGE_KEY = 'taka_layout_custom_paint_categories';
-const DEFAULT_PRESET_CATEGORIES = ['Status', 'Timeline', 'Department', 'Risk'];
-
-export function getSavedCustomPaintCategories(): string[] {
-  try {
-    const raw = localStorage.getItem(CUSTOM_PAINT_CATEGORIES_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.filter(Boolean);
-    }
-  } catch {
-    // ignore
-  }
-  return DEFAULT_PRESET_CATEGORIES;
-}
+export { CUSTOM_PAINT_CATEGORIES_STORAGE_KEY, getSavedCustomPaintCategories };
 
 export interface LayoutPaintCategoriesSectionProps {
   version?: any;
@@ -159053,10 +159068,15 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
   const [newCategoryInput, setNewCategoryInput] = useState('');
   const [applyAllFloors, setApplyAllFloors] = useState(true);
   const [customCategories, setCustomCategories] = useState<string[]>(() => getSavedCustomPaintCategories());
+  const [groupMappings, setGroupMappings] = useState<Record<string, string>>(() => getSavedPaintGroupMappings());
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
+  const currentUser = useAppStore(state => state.currentUser);
   const layoutPaintCategory = useAppStore(state => state.layoutPaintCategory);
   const setLayoutPaintCategory = useAppStore(state => state.setLayoutPaintCategory);
+
+  const isAdmin = currentUser?.role?.toLowerCase() === 'admin';
+  const canModify = canWrite && isAdmin;
 
   const storeLocationData = useDataStore(state => state.storeLocationData);
   const getAllStoreVersions = useDataStore(state => state.getAllStoreVersions);
@@ -159082,56 +159102,80 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
     return targetVersion?.groups || [];
   }, [targetVersion]);
 
-  // Collect all unique categories from groups + custom presets
+  // Authoritative list of available paint categories synced across all devices
   const allCategories = useMemo(() => {
-    const set = new Set<string>(customCategories);
-    allVersions.forEach(v => {
-      (v.groups || []).forEach((g: any) => {
-        const raw = String(g.paintCategory || g.category || '').trim();
-        if (raw) {
-          raw.split(',').forEach(part => {
-            const trimmed = part.trim();
-            if (trimmed) set.add(trimmed);
-          });
-        }
-      });
-    });
-    return Array.from(set);
-  }, [customCategories, allVersions]);
+    return Array.from(new Set<string>(customCategories.map(c => String(c || '').trim()).filter(Boolean)));
+  }, [customCategories]);
 
-  const saveCustomCategories = (next: string[]) => {
+  // Realtime Cloud synchronization of Paint Categories filter data across devices and users
+  useEffect(() => {
+    const unsub = subscribePaintCategoriesConfig((config) => {
+      if (Array.isArray(config.categories) && config.categories.length > 0) {
+        setCustomCategories(config.categories);
+      }
+      if (config.groupMappings) {
+        setGroupMappings(config.groupMappings);
+        if (Object.keys(config.groupMappings).length > 0) {
+          applyGroupMappingsToVersions(config.groupMappings, activeStore);
+        }
+      }
+    });
+    return () => unsub();
+  }, [activeStore]);
+
+  const saveCustomCategories = (next: string[], nextMappings?: Record<string, string>) => {
+    if (!canModify) return;
     setCustomCategories(next);
-    try {
-      localStorage.setItem(CUSTOM_PAINT_CATEGORIES_STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // ignore
+    if (nextMappings !== undefined) {
+      setGroupMappings(nextMappings);
     }
+    savePaintCategoriesConfig(
+      {
+        categories: next,
+        ...(nextMappings !== undefined ? { groupMappings: nextMappings } : {}),
+      },
+      currentUser?.email
+    );
   };
 
   const handleAddCategory = () => {
+    if (!canModify) return;
     const trimmed = newCategoryInput.trim();
     if (!trimmed) return;
     if (!allCategories.some(c => c.toLowerCase() === trimmed.toLowerCase())) {
-      saveCustomCategories([...customCategories, trimmed]);
+      saveCustomCategories([...allCategories, trimmed]);
     }
     setNewCategoryInput('');
   };
 
   const handleRemoveCategoryTag = (catToRemove: string) => {
-    const nextCustom = customCategories.filter(c => c.toLowerCase() !== catToRemove.toLowerCase());
-    saveCustomCategories(nextCustom);
+    if (!canModify) return;
+    const nextCustom = allCategories.filter(c => c.toLowerCase() !== catToRemove.toLowerCase());
 
-    // Also unassign this category from groups
+    // Strip removed category from groupMappings as well
+    const currentMappings = { ...getSavedPaintGroupMappings(), ...groupMappings };
+    const cleanedMappings: Record<string, string> = {};
+    Object.entries(currentMappings).forEach(([key, val]) => {
+      const remaining = String(val || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s && s.toLowerCase() !== catToRemove.toLowerCase())
+        .join(', ');
+      cleanedMappings[key] = remaining;
+    });
+
+    // Also unassign this category from groups in DataStore versions
     const updatedVers = allVersions.map(v => ({
       ...v,
       groups: (v.groups || []).map((g: any) => {
-        const raw = String(g.paintCategory || g.category || '').trim();
-        if (!raw) return g;
+        const raw = resolveGroupPaintCategory(g, currentMappings);
         const remaining = raw
           .split(',')
           .map(s => s.trim())
           .filter(s => s && s.toLowerCase() !== catToRemove.toLowerCase())
           .join(', ');
+        if (g.name) cleanedMappings[g.name] = remaining;
+        if (g.id) cleanedMappings[g.id] = remaining;
         return {
           ...g,
           paintCategory: remaining,
@@ -159140,14 +159184,19 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
       }),
     }));
     updateStoreVersionsAcrossLocations(updatedVers, activeStore);
+
+    saveCustomCategories(nextCustom, cleanedMappings);
+
     if (layoutPaintCategory.toLowerCase() === catToRemove.toLowerCase()) {
-      setLayoutPaintCategory('all');
+      const fallbackCat = nextCustom[0] || 'none';
+      setLayoutPaintCategory(fallbackCat);
+      saveActivePaintFilterLocal(fallbackCat);
     }
   };
 
   const toggleGroupCategory = (group: any, cat: string) => {
-    if (!canWrite) return;
-    const currentRaw = String(group.paintCategory || group.category || '').trim();
+    if (!canModify) return;
+    const currentRaw = resolveGroupPaintCategory(group, groupMappings);
     const currentList = currentRaw
       ? currentRaw.split(',').map(s => s.trim()).filter(Boolean)
       : [];
@@ -159156,6 +159205,18 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
       ? currentList.filter(c => c.toLowerCase() !== cat.toLowerCase())
       : [...currentList, cat];
     const nextCategoryStr = nextList.join(', ');
+
+    const nextMappings: Record<string, string> = {
+      ...getSavedPaintGroupMappings(),
+      ...groupMappings,
+    };
+
+    if (group.id) {
+      nextMappings[group.id] = nextCategoryStr;
+    }
+    if (applyAllFloors && group.name) {
+      nextMappings[group.name] = nextCategoryStr;
+    }
 
     const updatedVers = allVersions.map(v => {
       if (!applyAllFloors && targetVersion && v.id !== targetVersion.id) {
@@ -159166,6 +159227,12 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
         groups: (v.groups || []).map((g: any) => {
           const isSameGroup = g.id === group.id || (applyAllFloors && g.name === group.name);
           if (!isSameGroup) return g;
+          if (g.id) {
+            nextMappings[g.id] = nextCategoryStr;
+          }
+          if (applyAllFloors && g.name) {
+            nextMappings[g.name] = nextCategoryStr;
+          }
           return {
             ...g,
             paintCategory: nextCategoryStr,
@@ -159176,11 +159243,57 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
     });
 
     updateStoreVersionsAcrossLocations(updatedVers, activeStore);
+    setGroupMappings(nextMappings);
+
+    savePaintCategoriesConfig(
+      {
+        groupMappings: nextMappings,
+        categories: allCategories,
+      },
+      currentUser?.email
+    );
   };
 
-  const handleCloudSaveCategories = () => {
-    triggerBackgroundR2Sync(activeStore);
+  const handleCloudSaveCategories = async () => {
+    if (!canModify) return;
     setSyncMessage('Syncing to Cloud...');
+    try {
+      // 1. Gather all group mappings across target version & all floors
+      const nextMappings: Record<string, string> = {
+        ...getSavedPaintGroupMappings(),
+        ...groupMappings,
+      };
+      allVersions.forEach((v: any) => {
+        (v.groups || []).forEach((g: any) => {
+          const raw = resolveGroupPaintCategory(g, nextMappings);
+          if (g.name) nextMappings[g.name] = raw;
+          if (g.id) nextMappings[g.id] = raw;
+        });
+      });
+      groups.forEach((g: any) => {
+        const raw = resolveGroupPaintCategory(g, nextMappings);
+        if (g.name) nextMappings[g.name] = raw;
+        if (g.id) nextMappings[g.id] = raw;
+      });
+
+      setGroupMappings(nextMappings);
+
+      // 2. Persist filter data and activePaintFilter to Firestore taka_config/paint_categories
+      await savePaintCategoriesConfig(
+        {
+          categories: allCategories,
+          groupMappings: nextMappings,
+          activePaintFilter: layoutPaintCategory,
+        },
+        currentUser?.email
+      );
+
+      // 3. Trigger background R2 sync for image assets & layout
+      triggerBackgroundR2Sync(activeStore);
+      setSyncMessage('Synced to Cloud');
+    } catch {
+      setSyncMessage('Sync Failed');
+    }
     setTimeout(() => setSyncMessage(null), 2500);
   };
 
@@ -159198,12 +159311,21 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
         </button>
 
         <div className="flex items-center gap-1.5">
-          {canWrite && (
+          {isAdmin ? (
+            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 shadow-2xs">
+              <ShieldCheck className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" /> Admin Setup
+            </span>
+          ) : (
+            <span className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 flex items-center gap-1">
+              <Lock className="w-2.5 h-2.5 text-slate-400" /> Read Only
+            </span>
+          )}
+          {canModify && (
             <button
               type="button"
               onClick={handleCloudSaveCategories}
               className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-2xs transition cursor-pointer active:scale-95"
-              title="Save Paint Category mappings to Cloud R2 & Firestore"
+              title="Save Paint Category mappings to Cloud & broadcast to all users"
             >
               <Cloud className="w-3 h-3" />
               <span>{syncMessage || 'Save Cloud'}</span>
@@ -159214,6 +159336,16 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
 
       {!isCollapsed && (
         <div className="space-y-3 pt-1 animate-in fade-in duration-150">
+          {/* Non-Admin Informational Banner */}
+          {!isAdmin && (
+            <div className="flex items-center gap-2 p-2 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 text-[11px] text-amber-800 dark:text-amber-300">
+              <Lock className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>
+                Only <strong>Admin</strong> can configure paint categories and condition assignments. All users automatically apply the active filter configured by Admin.
+              </span>
+            </div>
+          )}
+
           {/* Active Filter Quick Switcher */}
           <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-900/90 px-2.5 py-1.5 rounded-xl border border-indigo-200/70 dark:border-indigo-800/60">
             <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
@@ -159221,7 +159353,14 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
             </span>
             <select
               value={layoutPaintCategory}
-              onChange={(e) => setLayoutPaintCategory(e.target.value)}
+              onChange={(e) => {
+                const nextVal = e.target.value;
+                setLayoutPaintCategory(nextVal);
+                saveActivePaintFilterLocal(nextVal);
+                if (isAdmin) {
+                  savePaintCategoriesConfig({ activePaintFilter: nextVal }, currentUser?.email);
+                }
+              }}
               className="bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 text-xs font-bold px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 outline-none cursor-pointer"
             >
               {allCategories.map(cat => (
@@ -159232,31 +159371,35 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
           </div>
 
           {/* Manage Paint Category Tags */}
-          {canWrite && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500 tracking-wider">
-                  Available Paint Categories
-                </span>
-                <label className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={applyAllFloors}
-                    onChange={(e) => setApplyAllFloors(e.target.checked)}
-                    className="rounded accent-indigo-600 w-3 h-3"
-                  />
-                  <span>Sync across floors</span>
-                </label>
-              </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500 tracking-wider">
+                Available Paint Categories
+              </span>
+              <label className={cn(
+                "flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400",
+                canModify ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+              )}>
+                <input
+                  type="checkbox"
+                  disabled={!canModify}
+                  checked={applyAllFloors}
+                  onChange={(e) => setApplyAllFloors(e.target.checked)}
+                  className="rounded accent-indigo-600 w-3 h-3"
+                />
+                <span>Sync across floors</span>
+              </label>
+            </div>
 
-              <div className="flex flex-wrap gap-1">
-                {allCategories.map(cat => (
-                  <span
-                    key={cat}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 shadow-2xs"
-                  >
-                    <Tag className="w-2.5 h-2.5 opacity-70" />
-                    {cat}
+            <div className="flex flex-wrap gap-1">
+              {allCategories.map(cat => (
+                <span
+                  key={cat}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 shadow-2xs"
+                >
+                  <Tag className="w-2.5 h-2.5 opacity-70" />
+                  {cat}
+                  {canModify && (
                     <button
                       type="button"
                       onClick={() => handleRemoveCategoryTag(cat)}
@@ -159265,10 +159408,12 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
                     >
                       <X className="w-2.5 h-2.5" />
                     </button>
-                  </span>
-                ))}
-              </div>
+                  )}
+                </span>
+              ))}
+            </div>
 
+            {canModify && (
               <div className="flex items-center gap-1.5 pt-0.5">
                 <input
                   type="text"
@@ -159291,8 +159436,8 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
                   <Plus className="w-3.5 h-3.5" /> Add
                 </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Dynamic Conditions List -> Assign to Paint Categories */}
           <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
@@ -159306,7 +159451,7 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
               </div>
             ) : (
               groups.map((g: any) => {
-                const rawCat = String(g.paintCategory || g.category || '').trim();
+                const rawCat = resolveGroupPaintCategory(g, groupMappings);
                 const assignedList = rawCat
                   ? rawCat.split(',').map((s: string) => s.trim()).filter(Boolean)
                   : [];
@@ -159353,10 +159498,11 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
                           <button
                             key={cat}
                             type="button"
-                            disabled={!canWrite}
+                            disabled={!canModify}
                             onClick={() => toggleGroupCategory(g, cat)}
                             className={cn(
-                              "px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all flex items-center gap-1 cursor-pointer active:scale-95",
+                              "px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all flex items-center gap-1",
+                              canModify ? "cursor-pointer active:scale-95" : "cursor-default opacity-85",
                               isAssigned
                                 ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
                                 : "bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-indigo-400"
@@ -159379,9 +159525,438 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
   );
 };
 
-
 ================================================================================
 FILE: src/components/LayoutTabParts/layoutPaintCategoriesService.ts
+================================================================================
+import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { setDoc } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import { useDataStore } from '../PictureMapping/DataContext';
+import { useAppStore } from '../../store/useAppStore';
+
+export const CUSTOM_PAINT_CATEGORIES_STORAGE_KEY = 'taka_layout_custom_paint_categories';
+export const ACTIVE_PAINT_FILTER_STORAGE_KEY = 'taka_layout_active_paint_filter';
+export const PAINT_GROUP_MAPPINGS_STORAGE_KEY = 'taka_layout_paint_group_mappings';
+
+export const DEFAULT_PRESET_CATEGORIES = [
+  'Status',
+  'Timeline',
+  'Department',
+  'Risk',
+  'Progress',
+  'Shop type',
+];
+
+export interface PaintCategoriesConfig {
+  categories: string[];
+  groupMappings?: Record<string, string>;
+  activePaintFilter?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+// Memory cache to avoid redundant JSON parsing
+let cachedCategories: string[] | null = null;
+let cachedActiveFilter: string | null = null;
+let cachedGroupMappings: Record<string, string> | null = null;
+
+// Shared singleton Firestore listener state (Anti-Read-Storm)
+type ConfigSubscriber = (config: PaintCategoriesConfig) => void;
+const subscribers = new Set<ConfigSubscriber>();
+let sharedFirestoreUnsub: Unsubscribe | null = null;
+let hasSeededInitialDoc = false;
+
+/**
+ * Get locally cached paint categories (0ms read)
+ */
+export function getSavedCustomPaintCategories(): string[] {
+  if (cachedCategories && cachedCategories.length > 0) {
+    return cachedCategories;
+  }
+  try {
+    const raw = localStorage.getItem(CUSTOM_PAINT_CATEGORIES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        cachedCategories = parsed.map((c: any) => String(c || '').trim()).filter(Boolean);
+        if (cachedCategories.length > 0) {
+          return cachedCategories;
+        }
+      }
+    }
+  } catch {
+    // fallback
+  }
+  cachedCategories = [...DEFAULT_PRESET_CATEGORIES];
+  return cachedCategories;
+}
+
+/**
+ * Get locally cached active paint filter (Device-local UI state only)
+ */
+export function getSavedActivePaintFilter(): string {
+  if (cachedActiveFilter) return cachedActiveFilter;
+  try {
+    const raw = localStorage.getItem(ACTIVE_PAINT_FILTER_STORAGE_KEY);
+    if (raw && typeof raw === 'string' && raw.trim()) {
+      cachedActiveFilter = raw.trim();
+      return cachedActiveFilter;
+    }
+  } catch {
+    // fallback
+  }
+  return 'Status';
+}
+
+/**
+ * Save active paint filter locally on this device only (never overwrites other devices' active view)
+ */
+export function saveActivePaintFilterLocal(activeCategory: string): void {
+  const trimmed = String(activeCategory || '').trim();
+  if (!trimmed) return;
+  cachedActiveFilter = trimmed;
+  try {
+    localStorage.setItem(ACTIVE_PAINT_FILTER_STORAGE_KEY, trimmed);
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+/**
+ * Get locally cached condition group mappings
+ */
+export function getSavedPaintGroupMappings(): Record<string, string> {
+  if (cachedGroupMappings) return cachedGroupMappings;
+  try {
+    const raw = localStorage.getItem(PAINT_GROUP_MAPPINGS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        cachedGroupMappings = parsed;
+        return cachedGroupMappings;
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return {};
+}
+
+/**
+ * Resolve effective paint category string for a dynamic condition group,
+ * prioritizing synced cloud groupMappings (including empty string "" when unassigned).
+ */
+export function resolveGroupPaintCategory(
+  group: any,
+  groupMappings?: Record<string, string> | null
+): string {
+  if (!group) return '';
+  const mappings = groupMappings ?? getSavedPaintGroupMappings();
+  if (mappings && typeof mappings === 'object') {
+    if (group.id && Object.prototype.hasOwnProperty.call(mappings, group.id)) {
+      return String(mappings[group.id] ?? '').trim();
+    }
+    if (group.name && Object.prototype.hasOwnProperty.call(mappings, gNameKey(group.name))) {
+      return String(mappings[gNameKey(group.name)] ?? '').trim();
+    }
+    if (group.name && Object.prototype.hasOwnProperty.call(mappings, group.name)) {
+      return String(mappings[group.name] ?? '').trim();
+    }
+  }
+  return String(group.paintCategory ?? group.category ?? '').trim();
+}
+
+function gNameKey(name: string): string {
+  return String(name || '').trim();
+}
+
+function notifySubscribers(config: PaintCategoriesConfig) {
+  subscribers.forEach((cb) => {
+    try {
+      cb(config);
+    } catch (err) {
+      console.warn('[layoutPaintCategoriesService] subscriber error:', err);
+    }
+  });
+}
+
+/**
+ * Save paint categories filter data (categories list & condition mappings) to LocalStorage + Cloud Firestore
+ */
+export async function savePaintCategoriesConfig(
+  config: Partial<PaintCategoriesConfig>,
+  currentEmail?: string
+): Promise<void> {
+  try {
+    // 1. Optimistic local cache update (0ms)
+    if (config.categories && Array.isArray(config.categories)) {
+      const cleaned = Array.from(
+        new Set(config.categories.map((c) => String(c || '').trim()).filter(Boolean))
+      );
+      cachedCategories = cleaned;
+      localStorage.setItem(CUSTOM_PAINT_CATEGORIES_STORAGE_KEY, JSON.stringify(cleaned));
+    }
+    if (config.groupMappings !== undefined) {
+      cachedGroupMappings = config.groupMappings;
+      localStorage.setItem(PAINT_GROUP_MAPPINGS_STORAGE_KEY, JSON.stringify(config.groupMappings));
+    }
+    if (config.activePaintFilter !== undefined) {
+      const trimmedFilter = String(config.activePaintFilter || '').trim();
+      cachedActiveFilter = trimmedFilter;
+      try {
+        localStorage.setItem(ACTIVE_PAINT_FILTER_STORAGE_KEY, trimmedFilter);
+      } catch {}
+      try {
+        useAppStore.getState().setLayoutPaintCategory(trimmedFilter);
+      } catch {}
+    }
+
+    const currentConfigSnapshot: PaintCategoriesConfig = {
+      categories: cachedCategories || getSavedCustomPaintCategories(),
+      groupMappings: cachedGroupMappings || getSavedPaintGroupMappings(),
+      activePaintFilter: cachedActiveFilter || getSavedActivePaintFilter(),
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentEmail || 'system',
+    };
+
+    // Immediate in-memory notification to all mounted Layout components (0ms)
+    notifySubscribers(currentConfigSnapshot);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('taka_paint_categories_updated', {
+          detail: currentConfigSnapshot,
+        })
+      );
+    }
+
+    // 2. Cloud Firestore Persistence (taka_config/paint_categories)
+    const paintCategoriesDocRef = doc(
+      db,
+      'artifacts',
+      APP_ID,
+      'public',
+      'data',
+      'taka_config',
+      'paint_categories'
+    );
+
+    const payload: Record<string, any> = {
+      updatedAt: currentConfigSnapshot.updatedAt,
+      updatedBy: currentConfigSnapshot.updatedBy,
+    };
+
+    if (config.categories !== undefined) {
+      payload.categories = cachedCategories;
+    }
+    if (config.groupMappings !== undefined) {
+      payload.groupMappings = cachedGroupMappings;
+    }
+    if (config.activePaintFilter !== undefined) {
+      payload.activePaintFilter = config.activePaintFilter;
+    }
+
+    await setDoc(paintCategoriesDocRef, payload, { merge: true });
+
+    // 3. Touch versions document to alert snapshot listeners
+    const versionsDocRef = doc(
+      db,
+      'artifacts',
+      APP_ID,
+      'public',
+      'data',
+      'taka_config',
+      'versions'
+    );
+    await setDoc(
+      versionsDocRef,
+      {
+        paintCategoriesVersion: Date.now(),
+        updatedAt: currentConfigSnapshot.updatedAt,
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn('[layoutPaintCategoriesService] Cloud save failed:', err);
+  }
+}
+
+/**
+ * Apply cloud group mappings onto local versions in DataStore
+ */
+export function applyGroupMappingsToVersions(
+  groupMappings: Record<string, string>,
+  targetStore: 'HCM' | 'HN'
+) {
+  if (!groupMappings || Object.keys(groupMappings).length === 0) return;
+  try {
+    const dataStore = useDataStore.getState();
+    const allVers = dataStore.getAllStoreVersions(targetStore) || [];
+    if (!allVers || allVers.length === 0) return;
+
+    let hasChanges = false;
+    const updatedVers = allVers.map((v) => {
+      let vChanged = false;
+      const nextGroups = (v.groups || []).map((g: any) => {
+        const hasId = g?.id && Object.prototype.hasOwnProperty.call(groupMappings, g.id);
+        const hasName = g?.name && Object.prototype.hasOwnProperty.call(groupMappings, g.name);
+        if (!hasId && !hasName) return g;
+
+        const assigned = hasId ? String(groupMappings[g.id] ?? '').trim() : String(groupMappings[g.name] ?? '').trim();
+        const currentCat = String(g.paintCategory ?? g.category ?? '').trim();
+        if (assigned !== currentCat) {
+          vChanged = true;
+          return {
+            ...g,
+            paintCategory: assigned,
+            category: assigned,
+          };
+        }
+        return g;
+      });
+      if (vChanged) {
+        hasChanges = true;
+        return { ...v, groups: nextGroups };
+      }
+      return v;
+    });
+
+    if (hasChanges) {
+      dataStore.updateStoreVersionsAcrossLocations(updatedVers, targetStore);
+    }
+  } catch (err) {
+    console.warn('[layoutPaintCategoriesService] applyGroupMappingsToVersions error:', err);
+  }
+}
+
+function ensureSharedListener() {
+  if (sharedFirestoreUnsub) return;
+
+  const paintCategoriesDocRef = doc(
+    db,
+    'artifacts',
+    APP_ID,
+    'public',
+    'data',
+    'taka_config',
+    'paint_categories'
+  );
+
+  sharedFirestoreUnsub = onSnapshot(
+    paintCategoriesDocRef,
+    (snap) => {
+      if (!snap.exists()) {
+        const initialCategories = getSavedCustomPaintCategories();
+        const initialMappings = getSavedPaintGroupMappings();
+        const initialConfig: PaintCategoriesConfig = {
+          categories: initialCategories,
+          groupMappings: initialMappings,
+        };
+        notifySubscribers(initialConfig);
+
+        // Seed initial document once so all devices share the same cloud filter data
+        if (!hasSeededInitialDoc) {
+          hasSeededInitialDoc = true;
+          setDoc(
+            paintCategoriesDocRef,
+            {
+              categories: initialCategories,
+              groupMappings: initialMappings,
+              updatedAt: new Date().toISOString(),
+              updatedBy: 'system_init',
+            },
+            { merge: true }
+          ).catch(() => {});
+        }
+        return;
+      }
+
+      const data = snap.data() as PaintCategoriesConfig;
+      const categories =
+        Array.isArray(data.categories) && data.categories.length > 0
+          ? Array.from(new Set(data.categories.map((c) => String(c || '').trim()).filter(Boolean)))
+          : getSavedCustomPaintCategories();
+
+      cachedCategories = categories;
+      try {
+        localStorage.setItem(CUSTOM_PAINT_CATEGORIES_STORAGE_KEY, JSON.stringify(categories));
+      } catch {}
+
+      const groupMappings =
+        data.groupMappings && typeof data.groupMappings === 'object'
+          ? data.groupMappings
+          : getSavedPaintGroupMappings();
+
+      cachedGroupMappings = groupMappings;
+      try {
+        localStorage.setItem(PAINT_GROUP_MAPPINGS_STORAGE_KEY, JSON.stringify(groupMappings));
+      } catch {}
+
+      // Apply mappings to both stores in DataStore if loaded
+      applyGroupMappingsToVersions(groupMappings, 'HCM');
+      applyGroupMappingsToVersions(groupMappings, 'HN');
+
+      if (data.activePaintFilter && typeof data.activePaintFilter === 'string' && data.activePaintFilter.trim()) {
+        const nextFilter = data.activePaintFilter.trim();
+        cachedActiveFilter = nextFilter;
+        try {
+          localStorage.setItem(ACTIVE_PAINT_FILTER_STORAGE_KEY, nextFilter);
+        } catch {}
+        try {
+          useAppStore.getState().setLayoutPaintCategory(nextFilter);
+        } catch {}
+      }
+
+      const nextConfig: PaintCategoriesConfig = {
+        categories,
+        groupMappings,
+        activePaintFilter: data.activePaintFilter || cachedActiveFilter || undefined,
+        updatedAt: data.updatedAt,
+        updatedBy: data.updatedBy,
+      };
+
+      notifySubscribers(nextConfig);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('taka_paint_categories_updated', {
+            detail: nextConfig,
+          })
+        );
+      }
+    },
+    (err) => {
+      console.warn('[layoutPaintCategoriesService] onSnapshot error:', err);
+    }
+  );
+}
+
+/**
+ * Real-time listener for taka_config/paint_categories filter data across all devices and users
+ */
+export function subscribePaintCategoriesConfig(
+  onUpdate: (config: PaintCategoriesConfig) => void
+): Unsubscribe {
+  subscribers.add(onUpdate);
+
+  // Immediately deliver cached state on mount (0ms)
+  onUpdate({
+    categories: getSavedCustomPaintCategories(),
+    groupMappings: getSavedPaintGroupMappings(),
+    activePaintFilter: getSavedActivePaintFilter(),
+  });
+
+  ensureSharedListener();
+
+  return () => {
+    subscribers.delete(onUpdate);
+    if (subscribers.size === 0 && sharedFirestoreUnsub) {
+      sharedFirestoreUnsub();
+      sharedFirestoreUnsub = null;
+    }
+  };
+}
+
 ================================================================================
 import { doc, getDoc, setDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import { db, APP_ID } from '../../lib/firebase';

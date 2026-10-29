@@ -184,6 +184,10 @@ Phân công đầu việc cho từng cá nhân (`PIC`), phòng ban hoặc nhà t
   - Khi bạn nhấp chọn 1 dòng trạng thái trong bảng **Color Legend** (VD: bấm vào ô `Completed` hoặc `In Progress`):
     + Những gian hàng/dự án nào thuộc nhóm đó và **có diện tích (`sizeM2 > 0`)** sẽ tự động sáng lên **đường viền màu chính của trạng thái đó bao xung quanh**.
     + Những ô **không có diện tích (`sizeM2 = 0` hoặc trống)** sẽ **không hiện viền**, giúp bạn nhận diện ngay các dự án có diện tích thực tế trên mặt bằng.
+* **🎨 Phân Loại Tô Màu (Paint Categories) – Độc Quyền Admin**:
+  - **Cấu hình độc quyền Admin**: Việc thiết lập, thêm mới, xóa bỏ Paint Categories và gắn các nhóm điều kiện (`dynamic conditions`) vào danh mục trong **Edit Mode** chỉ có duy nhất **Admin** mới được thực hiện.
+  - **Tự động áp dụng cho toàn bộ người dùng**: Khi Admin cấu hình hoặc chọn bộ lọc Paint Category (`Active Paint Filter`), hệ thống tự động lưu trữ lên Cloud Firestore và đồng bộ thời gian thực đến tất cả tài khoản User khác. Mọi người dùng sẽ tự động áp dụng bộ lọc màu theo đúng cấu hình của Admin.
+  - **Chế độ Read-Only cho User**: Các tài khoản thông thường xem danh mục ở chế độ Chỉ đọc (Read-Only) và tự động nhận kết quả tô màu theo Admin.
 
 ### 👆 Tương tác 1 chạm trên Mặt Bằng 2D
 * **Chạm vào Gian hàng (Unit Tooltip thông minh)**:

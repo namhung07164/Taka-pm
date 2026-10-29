@@ -2,6 +2,7 @@ import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import { setDoc } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { useDataStore } from '../PictureMapping/DataContext';
+import { useAppStore } from '../../store/useAppStore';
 
 export const CUSTOM_PAINT_CATEGORIES_STORAGE_KEY = 'taka_layout_custom_paint_categories';
 export const ACTIVE_PAINT_FILTER_STORAGE_KEY = 'taka_layout_active_paint_filter';
@@ -19,6 +20,7 @@ export const DEFAULT_PRESET_CATEGORIES = [
 export interface PaintCategoriesConfig {
   categories: string[];
   groupMappings?: Record<string, string>;
+  activePaintFilter?: string;
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -168,10 +170,21 @@ export async function savePaintCategoriesConfig(
       cachedGroupMappings = config.groupMappings;
       localStorage.setItem(PAINT_GROUP_MAPPINGS_STORAGE_KEY, JSON.stringify(config.groupMappings));
     }
+    if (config.activePaintFilter !== undefined) {
+      const trimmedFilter = String(config.activePaintFilter || '').trim();
+      cachedActiveFilter = trimmedFilter;
+      try {
+        localStorage.setItem(ACTIVE_PAINT_FILTER_STORAGE_KEY, trimmedFilter);
+      } catch {}
+      try {
+        useAppStore.getState().setLayoutPaintCategory(trimmedFilter);
+      } catch {}
+    }
 
     const currentConfigSnapshot: PaintCategoriesConfig = {
       categories: cachedCategories || getSavedCustomPaintCategories(),
       groupMappings: cachedGroupMappings || getSavedPaintGroupMappings(),
+      activePaintFilter: cachedActiveFilter || getSavedActivePaintFilter(),
       updatedAt: new Date().toISOString(),
       updatedBy: currentEmail || 'system',
     };
@@ -208,6 +221,9 @@ export async function savePaintCategoriesConfig(
     }
     if (config.groupMappings !== undefined) {
       payload.groupMappings = cachedGroupMappings;
+    }
+    if (config.activePaintFilter !== undefined) {
+      payload.activePaintFilter = config.activePaintFilter;
     }
 
     await setDoc(paintCategoriesDocRef, payload, { merge: true });
@@ -350,9 +366,21 @@ function ensureSharedListener() {
       applyGroupMappingsToVersions(groupMappings, 'HCM');
       applyGroupMappingsToVersions(groupMappings, 'HN');
 
+      if (data.activePaintFilter && typeof data.activePaintFilter === 'string' && data.activePaintFilter.trim()) {
+        const nextFilter = data.activePaintFilter.trim();
+        cachedActiveFilter = nextFilter;
+        try {
+          localStorage.setItem(ACTIVE_PAINT_FILTER_STORAGE_KEY, nextFilter);
+        } catch {}
+        try {
+          useAppStore.getState().setLayoutPaintCategory(nextFilter);
+        } catch {}
+      }
+
       const nextConfig: PaintCategoriesConfig = {
         categories,
         groupMappings,
+        activePaintFilter: data.activePaintFilter || cachedActiveFilter || undefined,
         updatedAt: data.updatedAt,
         updatedBy: data.updatedBy,
       };
@@ -385,6 +413,7 @@ export function subscribePaintCategoriesConfig(
   onUpdate({
     categories: getSavedCustomPaintCategories(),
     groupMappings: getSavedPaintGroupMappings(),
+    activePaintFilter: getSavedActivePaintFilter(),
   });
 
   ensureSharedListener();

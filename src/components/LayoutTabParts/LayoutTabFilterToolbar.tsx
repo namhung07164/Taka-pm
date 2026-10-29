@@ -18,6 +18,7 @@ import {
   getSavedCustomPaintCategories,
   getSavedActivePaintFilter,
   saveActivePaintFilterLocal,
+  savePaintCategoriesConfig,
   applyGroupMappingsToVersions,
   subscribePaintCategoriesConfig,
 } from './layoutPaintCategoriesService';
@@ -97,7 +98,7 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
 
   const [syncedCustomCats, setSyncedCustomCats] = React.useState<string[]>(() => getSavedCustomPaintCategories());
 
-  // Listen to realtime cloud sync for paint categories filter data (categories list & condition mappings only)
+  // Listen to realtime cloud sync for paint categories filter data (categories, condition mappings, and active filter)
   React.useEffect(() => {
     const storeKey = (activeStore === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
     const unsub = subscribePaintCategoriesConfig((config) => {
@@ -107,9 +108,12 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
       if (config.groupMappings && Object.keys(config.groupMappings).length > 0) {
         applyGroupMappingsToVersions(config.groupMappings, storeKey);
       }
+      if (config.activePaintFilter && config.activePaintFilter.trim()) {
+        setLayoutPaintCategory(config.activePaintFilter.trim());
+      }
     });
     return () => unsub();
-  }, [activeStore]);
+  }, [activeStore, setLayoutPaintCategory]);
 
   const availablePaintCategories = useMemo(() => {
     const baseCats = syncedCustomCats.length > 0 ? syncedCustomCats : getSavedCustomPaintCategories();
@@ -316,6 +320,9 @@ export const LayoutTabFilterToolbar = React.memo(function LayoutTabFilterToolbar
                     const nextVal = e.target.value;
                     setLayoutPaintCategory(nextVal);
                     saveActivePaintFilterLocal(nextVal);
+                    if (isAdmin) {
+                      savePaintCategoriesConfig({ activePaintFilter: nextVal });
+                    }
                   }}
                   className="bg-transparent border-none text-xs text-indigo-700 dark:text-indigo-300 font-bold outline-none cursor-pointer w-full truncate"
                   title="Filter units by Paint Category"

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Palette, Plus, X, ChevronDown, ChevronUp, Tag, Check, Cloud } from 'lucide-react';
+import { Palette, Plus, X, ChevronDown, ChevronUp, Tag, Check, Cloud, Lock, ShieldCheck } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useDataStore } from '../PictureMapping/DataContext';
 import { getHatchCssStyle } from './layoutPatternUtils';
@@ -39,6 +39,9 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
   const currentUser = useAppStore(state => state.currentUser);
   const layoutPaintCategory = useAppStore(state => state.layoutPaintCategory);
   const setLayoutPaintCategory = useAppStore(state => state.setLayoutPaintCategory);
+
+  const isAdmin = currentUser?.role?.toLowerCase() === 'admin';
+  const canModify = canWrite && isAdmin;
 
   const storeLocationData = useDataStore(state => state.storeLocationData);
   const getAllStoreVersions = useDataStore(state => state.getAllStoreVersions);
@@ -86,6 +89,7 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
   }, [activeStore]);
 
   const saveCustomCategories = (next: string[], nextMappings?: Record<string, string>) => {
+    if (!canModify) return;
     setCustomCategories(next);
     if (nextMappings !== undefined) {
       setGroupMappings(nextMappings);
@@ -100,6 +104,7 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
   };
 
   const handleAddCategory = () => {
+    if (!canModify) return;
     const trimmed = newCategoryInput.trim();
     if (!trimmed) return;
     if (!allCategories.some(c => c.toLowerCase() === trimmed.toLowerCase())) {
@@ -109,6 +114,7 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
   };
 
   const handleRemoveCategoryTag = (catToRemove: string) => {
+    if (!canModify) return;
     const nextCustom = allCategories.filter(c => c.toLowerCase() !== catToRemove.toLowerCase());
 
     // Strip removed category from groupMappings as well
@@ -154,7 +160,7 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
   };
 
   const toggleGroupCategory = (group: any, cat: string) => {
-    if (!canWrite) return;
+    if (!canModify) return;
     const currentRaw = resolveGroupPaintCategory(group, groupMappings);
     const currentList = currentRaw
       ? currentRaw.split(',').map(s => s.trim()).filter(Boolean)
@@ -214,6 +220,7 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
   };
 
   const handleCloudSaveCategories = async () => {
+    if (!canModify) return;
     setSyncMessage('Syncing to Cloud...');
     try {
       // 1. Gather all group mappings across target version & all floors
@@ -236,11 +243,12 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
 
       setGroupMappings(nextMappings);
 
-      // 2. Persist filter data to Firestore taka_config/paint_categories
+      // 2. Persist filter data and activePaintFilter to Firestore taka_config/paint_categories
       await savePaintCategoriesConfig(
         {
           categories: allCategories,
           groupMappings: nextMappings,
+          activePaintFilter: layoutPaintCategory,
         },
         currentUser?.email
       );
@@ -268,12 +276,21 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
         </button>
 
         <div className="flex items-center gap-1.5">
-          {canWrite && (
+          {isAdmin ? (
+            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 shadow-2xs">
+              <ShieldCheck className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" /> Admin Setup
+            </span>
+          ) : (
+            <span className="text-[9px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 flex items-center gap-1">
+              <Lock className="w-2.5 h-2.5 text-slate-400" /> Read Only
+            </span>
+          )}
+          {canModify && (
             <button
               type="button"
               onClick={handleCloudSaveCategories}
               className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-2xs transition cursor-pointer active:scale-95"
-              title="Save Paint Category mappings to Cloud R2 & Firestore"
+              title="Save Paint Category mappings to Cloud & broadcast to all users"
             >
               <Cloud className="w-3 h-3" />
               <span>{syncMessage || 'Save Cloud'}</span>
@@ -284,7 +301,17 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
 
       {!isCollapsed && (
         <div className="space-y-3 pt-1 animate-in fade-in duration-150">
-          {/* Active Filter Quick Switcher (Local viewing state) */}
+          {/* Non-Admin Informational Banner */}
+          {!isAdmin && (
+            <div className="flex items-center gap-2 p-2 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/50 text-[11px] text-amber-800 dark:text-amber-300">
+              <Lock className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>
+                Only <strong>Admin</strong> can configure paint categories and condition assignments. All users automatically apply the active filter configured by Admin.
+              </span>
+            </div>
+          )}
+
+          {/* Active Filter Quick Switcher */}
           <div className="flex items-center justify-between gap-2 bg-white dark:bg-slate-900/90 px-2.5 py-1.5 rounded-xl border border-indigo-200/70 dark:border-indigo-800/60">
             <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
               Active Paint Filter:
@@ -295,6 +322,9 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
                 const nextVal = e.target.value;
                 setLayoutPaintCategory(nextVal);
                 saveActivePaintFilterLocal(nextVal);
+                if (isAdmin) {
+                  savePaintCategoriesConfig({ activePaintFilter: nextVal }, currentUser?.email);
+                }
               }}
               className="bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 text-xs font-bold px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800 outline-none cursor-pointer"
             >
@@ -306,31 +336,35 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
           </div>
 
           {/* Manage Paint Category Tags */}
-          {canWrite && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500 tracking-wider">
-                  Available Paint Categories
-                </span>
-                <label className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={applyAllFloors}
-                    onChange={(e) => setApplyAllFloors(e.target.checked)}
-                    className="rounded accent-indigo-600 w-3 h-3"
-                  />
-                  <span>Sync across floors</span>
-                </label>
-              </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase text-slate-400 dark:text-slate-500 tracking-wider">
+                Available Paint Categories
+              </span>
+              <label className={cn(
+                "flex items-center gap-1 text-[10px] text-slate-500 dark:text-slate-400",
+                canModify ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+              )}>
+                <input
+                  type="checkbox"
+                  disabled={!canModify}
+                  checked={applyAllFloors}
+                  onChange={(e) => setApplyAllFloors(e.target.checked)}
+                  className="rounded accent-indigo-600 w-3 h-3"
+                />
+                <span>Sync across floors</span>
+              </label>
+            </div>
 
-              <div className="flex flex-wrap gap-1">
-                {allCategories.map(cat => (
-                  <span
-                    key={cat}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 shadow-2xs"
-                  >
-                    <Tag className="w-2.5 h-2.5 opacity-70" />
-                    {cat}
+            <div className="flex flex-wrap gap-1">
+              {allCategories.map(cat => (
+                <span
+                  key={cat}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/80 shadow-2xs"
+                >
+                  <Tag className="w-2.5 h-2.5 opacity-70" />
+                  {cat}
+                  {canModify && (
                     <button
                       type="button"
                       onClick={() => handleRemoveCategoryTag(cat)}
@@ -339,10 +373,12 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
                     >
                       <X className="w-2.5 h-2.5" />
                     </button>
-                  </span>
-                ))}
-              </div>
+                  )}
+                </span>
+              ))}
+            </div>
 
+            {canModify && (
               <div className="flex items-center gap-1.5 pt-0.5">
                 <input
                   type="text"
@@ -365,8 +401,8 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
                   <Plus className="w-3.5 h-3.5" /> Add
                 </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Dynamic Conditions List -> Assign to Paint Categories */}
           <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
@@ -427,10 +463,11 @@ export const LayoutPaintCategoriesSection: React.FC<LayoutPaintCategoriesSection
                           <button
                             key={cat}
                             type="button"
-                            disabled={!canWrite}
+                            disabled={!canModify}
                             onClick={() => toggleGroupCategory(g, cat)}
                             className={cn(
-                              "px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all flex items-center gap-1 cursor-pointer active:scale-95",
+                              "px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all flex items-center gap-1",
+                              canModify ? "cursor-pointer active:scale-95" : "cursor-default opacity-85",
                               isAssigned
                                 ? "bg-indigo-600 text-white border-indigo-600 shadow-2xs"
                                 : "bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-indigo-400"

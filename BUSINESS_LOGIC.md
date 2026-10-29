@@ -97,6 +97,11 @@
 - Khi nhấp vào một dòng trong Color Legend (Ví dụ: `Completed`, `In Progress`), các ô/dự án thuộc nhóm đó **có diện tích (`sizeM2 > 0`)** sẽ hiển thị **viền màu trạng thái rực rỡ nổi bật bao quanh polygon** trên bản đồ canvas.
 - Các ô/dự án **không có diện tích (`sizeM2 = 0` hoặc chưa nhập)** sẽ **không có viền màu xung quanh**, giúp người quản lý nhận biết trực quan diện tích thực tế.
 
+### 5.4. Thiết Lập & Gắn Paint Categories Độc Quyền Admin (Admin-Only Paint Setup & Real-time Filter Sync)
+- **Quyền hạn độc quyền Admin**: Chỉ duy nhất tài khoản `Admin` (`role === 'admin'`) mới có quyền tạo mới, xóa bỏ Paint Categories và gắn các nhóm điều kiện động (`condition groups`) vào từng Paint Category trong Edit Mode.
+- **Áp dụng bộ lọc toàn cục**: Khi Admin thiết lập hoặc chọn bộ lọc Paint Category (`activePaintFilter`), hệ thống tự động lưu trữ cấu hình lên Cloud Firestore (`taka_config/paint_categories`) và phát sóng thời gian thực đến tất cả tài khoản User khác. Toàn bộ người dùng sẽ tự động áp dụng bộ lọc và quy tắc phân loại hiển thị theo đúng cấu hình của Admin.
+- **Chế độ Read-Only cho User**: Tài khoản thông thường chỉ có thể xem danh mục và phân nhóm đã được Admin gán sẵn, không được phép can thiệp chỉnh sửa hay xóa bỏ.
+
 ---
 
 ## 🛡️ 6. BẢO MẬT PHÂN QUYỀN (RBAC) & TỰ ĐỘNG SAO LƯU (CLOUDFLARE R2 BACKUP)
