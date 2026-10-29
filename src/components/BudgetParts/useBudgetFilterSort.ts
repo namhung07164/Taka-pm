@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { matchesAdvancedSearch } from '../../lib/utils';
 import { BudgetTreeNode, BudgetSortConfig } from './budgetTypes';
+import { useAppStore } from '../../store/useAppStore';
 
 interface UseBudgetFilterSortParams {
   treeData: BudgetTreeNode[];
@@ -23,6 +24,7 @@ export function useBudgetFilterSort({
   searchTerm,
   deferredSearchTerm
 }: UseBudgetFilterSortParams) {
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
   const [sortConfig, setSortConfig] = useState<BudgetSortConfig | null>(null);
   const [visibleCount, setVisibleCount] = useState(30);
 
@@ -110,6 +112,13 @@ export function useBudgetFilterSort({
   }, [searchTerm, treeData, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
   const filterNode = (node: any): boolean => {
+    if (fixedProjectCode && fixedProjectCode.trim()) {
+      const fix = fixedProjectCode.trim().toLowerCase();
+      const nodeCode = (node.code || '').trim().toLowerCase();
+      const matchesFix = nodeCode === fix || nodeCode.includes(fix) || String(node.id || '').toLowerCase() === fix;
+      if (!matchesFix) return false;
+    }
+
     const pYear = node.year ? String(node.year).trim() : null;
     const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
     const matchesStore = effectiveStore === 'all' || (Boolean(node.store) && String(node.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
@@ -213,7 +222,7 @@ export function useBudgetFilterSort({
       roots = [...roots].sort(sortFn);
     }
     return roots;
-  }, [treeData, globalYearFilter, effectiveStore, globalLocationFilter, moneyFilter, deferredSearchTerm, sortConfig]);
+  }, [treeData, fixedProjectCode, globalYearFilter, effectiveStore, globalLocationFilter, moneyFilter, deferredSearchTerm, sortConfig]);
 
   const handleBudgetScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;

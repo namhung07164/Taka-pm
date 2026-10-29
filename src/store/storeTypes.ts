@@ -137,6 +137,8 @@ export interface UISlice {
   setGlobalLocationFilter: (location: string[]) => void;
   pinnedProjects: string[];
   setPinnedProjects: (pinned: string[]) => void;
+  fixedProjectCode: string;
+  setFixedProjectCode: (code: string) => void;
   setDetailTabStoreFilter: (store: string) => void;
   detailTabFocusTaskId: string;
   setDetailTabFocusTaskId: (id: string) => void;

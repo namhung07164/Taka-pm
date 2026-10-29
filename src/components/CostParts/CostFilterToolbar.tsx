@@ -2,6 +2,7 @@ import React, { memo } from 'react';
 import { Search } from 'lucide-react';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
 import { ColumnAdder } from '../ColumnAdder';
 import { FullReplaceImport } from '../FullReplaceImport';
 import { AVAILABLE_COLUMNS } from './costTypes';
@@ -50,6 +51,8 @@ export const CostFilterToolbar = React.memo(function CostFilterToolbar({
   handleExportCosts,
   handleImportCosts,
 }: CostFilterToolbarProps) {
+  const projects = useAppStore((state) => state.projects);
+
   return (
     <div className="px-3 sm:px-4 md:px-5 py-3 md:py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-col xl:flex-row gap-3 justify-between items-stretch xl:items-center shrink-0 print:hidden">
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full xl:w-auto flex-grow min-w-0">
@@ -95,6 +98,8 @@ export const CostFilterToolbar = React.memo(function CostFilterToolbar({
           <option value="all">All Act/Forc</option>
           <option value="has_value">Has Act/Forc</option>
         </select>
+
+        <FixedProjectInput projects={projects} />
 
         <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
           <DebouncedSearchInput

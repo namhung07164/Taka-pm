@@ -1,4 +1,5 @@
 import React, { memo } from 'react';
+import { FixedProjectInput } from '../FixedProjectInput';
 import { Search, Edit3, Plus, Wand2, Hash, X, ArrowUpDown, Unlink } from 'lucide-react';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
@@ -134,6 +135,8 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
           <option value="Completed">Completed</option>
           <option value="Canceled">Canceled</option>
         </select>
+
+        <FixedProjectInput projects={projects} />
 
         <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
           <DebouncedSearchInput 

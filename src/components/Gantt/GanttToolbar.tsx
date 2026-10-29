@@ -6,6 +6,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { ColumnAdder } from '../ColumnAdder';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
 import { ViewMode } from './ganttTypes';
 import { GanttToolbarActions } from './GanttToolbarActions';
 import { GanttToolbarDateFilter } from './GanttToolbarDateFilter';
@@ -162,6 +163,7 @@ export function GanttToolbar({
 }: GanttToolbarProps) {
   const { t } = useLanguage();
   const tasks = useAppStore((state) => state.tasks);
+  const projects = useAppStore((state) => state.projects);
 
   const activeFocusTaskId = initialFocusTaskId || ganttTabFocusTaskId;
   const focusedTask = React.useMemo(() => {
@@ -325,6 +327,8 @@ export function GanttToolbar({
               visibleColumns={visibleColumns}
               onAddColumn={handleToggleColumn}
             />
+
+            <FixedProjectInput projects={projects} />
 
             <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
               <DebouncedSearchInput

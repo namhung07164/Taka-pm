@@ -8,6 +8,7 @@ import {
 } from '../../lib/utils';
 import { computeAllTaskCodes } from '../../lib/ganttUtils';
 import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+import { useAppStore } from '../../store/useAppStore';
 import { SortConfig } from './detailTypes';
 import { useDetailProjectInfo } from './useDetailProjectInfo';
 import { useDetailFlatRows, buildProjectParentHierarchyIndex } from './useDetailFlatRows';
@@ -172,12 +173,23 @@ export function useDetailData({
     return globalLocationFilter.filter((loc) => available.has(loc));
   }, [projects, globalYearFilter, effectiveStore, globalLocationFilter]);
 
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
+
   const filteredProjects = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayTime = today.getTime();
 
     return projects.filter(p => {
+      if (fixedProjectCode && fixedProjectCode.trim()) {
+        const fix = fixedProjectCode.trim().toLowerCase();
+        const pCode = (p.code || '').trim().toLowerCase();
+        const rawLink = Array.isArray(p.linkCodes) ? p.linkCodes : typeof p.linkCodes === 'string' ? [p.linkCodes] : [];
+        const pLinkCodes = rawLink.map((c: any) => String(c).trim().toLowerCase());
+        const matchesFix = pCode === fix || pCode.includes(fix) || pLinkCodes.includes(fix) || String(p.id).toLowerCase() === fix;
+        if (!matchesFix) return false;
+      }
+
       const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
       const info = projectInfoMap.get(pKey) || getProjectInfo(p);
       const pYear = p.year ? String(p.year).trim() : null;
@@ -226,7 +238,7 @@ export function useDetailData({
 
       return true;
     });
-  }, [projects, projectInfoMap, getProjectInfo, globalYearFilter, effectiveStore, effectiveLocationFilter, statusFilter, deferredSearchTerm, tasksByProjectKey]);
+  }, [projects, projectInfoMap, getProjectInfo, globalYearFilter, effectiveStore, effectiveLocationFilter, statusFilter, deferredSearchTerm, tasksByProjectKey, fixedProjectCode]);
 
   useDetailFilterSync({
     projects,

@@ -344,8 +344,18 @@ export function useGanttProjectsFilter({
     return map;
   }, [hasActiveSearchTerm, projects, getGroupTasksForProject]);
 
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
+
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
+      // Check fixedProjectCode
+      if (fixedProjectCode && fixedProjectCode.trim()) {
+        const fix = fixedProjectCode.trim().toLowerCase();
+        const pCode = (p.code || '').trim().toLowerCase();
+        const matchesFix = pCode === fix || pCode.includes(fix) || String(p.id).toLowerCase() === fix;
+        if (!matchesFix) return false;
+      }
+
       // Strict single-project isolation when navigated via Quick Navigation
       if (ganttTabFilterProjectId) {
         const isTarget = (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
@@ -376,6 +386,7 @@ export function useGanttProjectsFilter({
     });
   }, [
     projects,
+    fixedProjectCode,
     ganttTabFilterProjectId,
     globalYearFilter,
     effectiveStore,

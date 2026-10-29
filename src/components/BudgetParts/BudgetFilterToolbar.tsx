@@ -1,10 +1,12 @@
 import React, { useRef } from 'react';
 import { Search, Download, Upload, Plus } from 'lucide-react';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { ColumnAdder } from '../ColumnAdder';
 import { useLanguage } from '../../lib/LanguageContext';
 import { safeSetItemSession } from '../../lib/storage';
+import { useAppStore } from '../../store/useAppStore';
 import { AVAILABLE_COLUMNS } from './budgetTypes';
 
 interface BudgetFilterToolbarProps {
@@ -54,6 +56,7 @@ export function BudgetFilterToolbar({
 }: BudgetFilterToolbarProps) {
   const { t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const projects = useAppStore(state => state.projects);
 
   return (
     <div className="px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-wrap items-center justify-between gap-2.5 shrink-0 print:hidden rounded-t-xl">
@@ -101,6 +104,8 @@ export function BudgetFilterToolbar({
           <option value="has_budget">{t('Has Budget Only')}</option>
           <option value="has_act_forc">{t('Has Actual/Forc Only')}</option>
         </select>
+
+        <FixedProjectInput projects={projects} />
 
         <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
           <DebouncedSearchInput 

@@ -193,8 +193,17 @@ export function useCostData({
     return formatCurrencyValue(val, currency, jpyRate, usdRate);
   };
 
+  const fixedProjectCode = useAppStore((state) => state.fixedProjectCode);
+
   const filteredProjectsForDisplay = useMemo(() => {
     return projects.filter((p) => {
+      if (fixedProjectCode && fixedProjectCode.trim()) {
+        const fix = fixedProjectCode.trim().toLowerCase();
+        const pCode = (p.code || '').trim().toLowerCase();
+        const matchesFix = pCode === fix || pCode.includes(fix) || String(p.id).toLowerCase() === fix;
+        if (!matchesFix) return false;
+      }
+
       const pYear = p.year
         ? String(p.year).trim()
         : p.start
@@ -292,6 +301,7 @@ export function useCostData({
   }, [
     projects,
     costs,
+    fixedProjectCode,
     globalYearFilter,
     effectiveStore,
     globalLocationFilter,

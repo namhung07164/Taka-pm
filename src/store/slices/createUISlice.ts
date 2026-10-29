@@ -361,6 +361,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     safeSetItemLocal("taka_pinned_projects", JSON.stringify(pinned));
     set({ pinnedProjects: pinned });
   },
+  fixedProjectCode: "",
+  setFixedProjectCode: (fixedProjectCode) => set({ fixedProjectCode }),
   setDetailTabStoreFilter: (globalStoreFilter) => set({ globalStoreFilter }),
   detailTabFocusTaskId: "",
   setDetailTabFocusTaskId: (detailTabFocusTaskId) => set({ detailTabFocusTaskId }),

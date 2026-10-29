@@ -169309,3 +169309,3688 @@ export const LayoutEditModeModal: React.FC<LayoutEditModeModalProps> = ({
   return content;
 };
 
+
+
+// FILE: src/components/FixedProjectInput.tsx
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { Lock, X, Pin, ChevronDown } from 'lucide-react';
+import { useAppStore } from '../store/useAppStore';
+import { Project } from '../types';
+import { cn } from '../lib/utils';
+
+interface FixedProjectInputProps {
+  projects?: Project[];
+  className?: string;
+}
+
+export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({ projects = [], className = '' }) => {
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
+  const setFixedProjectCode = useAppStore(state => state.setFixedProjectCode);
+
+  const [inputVal, setInputVal] = useState(fixedProjectCode || '');
+  const [isOpenDropdown, setIsOpenDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Sync inputVal when fixedProjectCode changes externally
+  useEffect(() => {
+    setInputVal(fixedProjectCode || '');
+  }, [fixedProjectCode]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpenDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter project candidates
+  const candidateProjects = useMemo(() => {
+    if (!projects || projects.length === 0) return [];
+    const term = inputVal.trim().toLowerCase();
+    const uniqueMap = new Map<string, Project>();
+    
+    projects.forEach(p => {
+      if (!p.code) return;
+      const codeKey = p.code.trim().toUpperCase();
+      if (!uniqueMap.has(codeKey)) {
+        uniqueMap.set(codeKey, p);
+      }
+    });
+
+    const uniqueList = Array.from(uniqueMap.values());
+    if (!term) return uniqueList.slice(0, 30);
+
+    return uniqueList.filter(p => {
+      const code = String(p.code || '').toLowerCase();
+      const name = String(p.name || '').toLowerCase();
+      const store = String(p.store || '').toLowerCase();
+      return code.includes(term) || name.includes(term) || store.includes(term);
+    }).slice(0, 30);
+  }, [projects, inputVal]);
+
+  const handleApplyFix = (codeToFix: string) => {
+    const cleanCode = codeToFix.trim().toUpperCase();
+    if (!cleanCode) return;
+    setFixedProjectCode(cleanCode);
+    setInputVal(cleanCode);
+    setIsOpenDropdown(false);
+  };
+
+  const handleClearFix = () => {
+    setFixedProjectCode('');
+    setInputVal('');
+    setIsOpenDropdown(false);
+  };
+
+  const isFixed = Boolean(fixedProjectCode && fixedProjectCode.trim());
+
+  if (isFixed) {
+    return (
+      <div className={cn("inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-100 dark:bg-amber-950/60 border-2 border-amber-500 text-amber-900 dark:text-amber-200 rounded-lg text-xs font-bold shadow-xs shrink-0 select-none animate-in fade-in duration-150", className)}>
+        <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+        <span className="font-extrabold uppercase tracking-wide">Fix: {fixedProjectCode}</span>
+        <button
+          type="button"
+          onClick={handleClearFix}
+          className="ml-0.5 p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 rounded-md text-amber-700 dark:text-amber-300 hover:text-amber-950 dark:hover:text-white transition-colors cursor-pointer active:scale-95 touch-manipulation"
+          title="Clear Fixed Project"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("relative inline-block min-w-[130px] sm:min-w-[150px]", className)} ref={dropdownRef}>
+      <div className="relative flex items-center">
+        <Pin className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 absolute left-2.5 pointer-events-none" />
+        <input
+          type="text"
+          value={inputVal}
+          onChange={(e) => {
+            setInputVal(e.target.value);
+            setIsOpenDropdown(true);
+          }}
+          onFocus={() => setIsOpenDropdown(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && inputVal.trim()) {
+              e.preventDefault();
+              handleApplyFix(inputVal);
+            } else if (e.key === 'Escape') {
+              setIsOpenDropdown(false);
+            }
+          }}
+          placeholder="Fix Project Code..."
+          className="w-full pl-8 pr-7 py-1.5 bg-white dark:bg-[#1e1e20] border border-amber-300 dark:border-amber-700/80 text-slate-900 dark:text-[#e3e3e3] text-xs font-semibold rounded-lg focus:ring-2 focus:ring-amber-500 outline-none shadow-xs placeholder:text-slate-400 dark:placeholder:text-slate-500"
+        />
+        {inputVal.trim() ? (
+          <button
+            type="button"
+            onClick={() => handleApplyFix(inputVal)}
+            className="absolute right-1 p-0.5 px-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded text-[10px] font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
+            title="Fix Project"
+          >
+            Fix
+          </button>
+        ) : (
+          <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+        )}
+      </div>
+
+      {isOpenDropdown && candidateProjects.length > 0 && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-[9999] bg-white dark:bg-[#252528] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl max-h-56 overflow-y-auto p-1 text-xs select-none animate-in fade-in duration-100">
+          <div className="px-2 py-1 text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 border-b border-slate-100 dark:border-[#333336]">
+            Select Project to Fix
+          </div>
+          {candidateProjects.map((p) => (
+            <button
+              key={`${p.code}_${p.id}`}
+              type="button"
+              onClick={() => handleApplyFix(p.code)}
+              className="w-full text-left px-2.5 py-1.5 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg flex items-center justify-between gap-2 cursor-pointer transition-colors active:scale-98"
+            >
+              <span className="font-mono font-bold text-blue-700 dark:text-blue-400 uppercase">{p.code}</span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[100px]">{p.name || p.store}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
+FixedProjectInput.displayName = 'FixedProjectInput';
+
+
+
+// FILE: src/store/storeTypes.ts
+import { safeGetItemLocal, safeSetItemLocal, safeRemoveItemLocal, safeGetItemSession, safeSetItemSession, safeRemoveItemSession } from "../lib/storage";
+import { User } from "firebase/auth";
+import { Project, Task, Cost, AppUser, DelegationGroup, PermissionMatrix, TabId } from "../types";
+import { UndoAction } from "../lib/undoManager";
+
+export interface QuickNavTarget {
+  project: Project;
+  task?: Task | null;
+  taskCode?: string;
+}
+
+export interface UISlice {
+  isFocusMode: boolean;
+  setIsFocusMode: (val: boolean) => void;
+  ribbonDisplayMode: "always_show" | "tabs_only" | "fullscreen";
+  setRibbonDisplayMode: (mode: "always_show" | "tabs_only" | "fullscreen") => void;
+  showQuickAccessToolbar: boolean;
+  setShowQuickAccessToolbar: (show: boolean) => void;
+  isPrintPreview: boolean;
+  setIsPrintPreview: (val: boolean) => void;
+  printOrientation: "portrait" | "landscape";
+  setPrintOrientation: (val: "portrait" | "landscape") => void;
+  printPaperSize: "A2" | "A3" | "A4";
+  setPrintPaperSize: (val: "A2" | "A3" | "A4") => void;
+  printDate: boolean;
+  setPrintDate: (val: boolean) => void;
+  expandedProjectIds: string[];
+  toggleProjectExpansion: (projectId: string) => void;
+  setExpandedProjectIds: (ids: string[]) => void;
+  visibleActiveProjectIds: string[];
+  setVisibleActiveProjectIds: (ids: string[]) => void;
+  searchActiveProjectIds: string[];
+  setSearchActiveProjectIds: (ids: string[]) => void;
+  printFilterHeader: boolean;
+  setPrintFilterHeader: (val: boolean) => void;
+  printScaleMode: "default" | "fit-cols" | "fit-rows" | "fit-page" | "fill-page" | "custom";
+  setPrintScaleMode: (val: "default" | "fit-cols" | "fit-rows" | "fit-page" | "fill-page" | "custom") => void;
+  printScaleCustom: number;
+  setPrintScaleCustom: (val: number) => void;
+  printDpi: number;
+  setPrintDpi: (val: number) => void;
+  printWatermark: "none" | "draft" | "confidential";
+  setPrintWatermark: (val: "none" | "draft" | "confidential") => void;
+  printTarget: "browser" | "pdf" | "excel";
+  setPrintTarget: (val: "browser" | "pdf" | "excel") => void;
+  showTour: boolean;
+  setShowTour: (val: boolean) => void;
+  isExportingPDF: boolean;
+  setIsExportingPDF: (val: boolean) => void;
+
+  // Gantt View & Scale Controls
+  ganttViewMode: "monthly" | "weekly" | "quarterly";
+  setGanttViewMode: (mode: "monthly" | "weekly" | "quarterly") => void;
+  ganttDayWidth: number;
+  setGanttDayWidth: (width: number) => void;
+  ganttScaleInput: string;
+  setGanttScaleInput: (val: string) => void;
+  isGanttWidthChanged: boolean;
+  setIsGanttWidthChanged: (val: boolean) => void;
+  saveGanttDayWidth: () => void;
+  isGanttSettingsOpen: boolean;
+  setIsGanttSettingsOpen: (val: boolean) => void;
+  ganttShowDependencies: boolean;
+  setGanttShowDependencies: (val: boolean) => void;
+
+  // UI State
+  activeTab: TabId;
+  setActiveTab: (tab: TabId) => void;
+  tabHistory: TabId[];
+  setTabHistory: (history: TabId[] | ((prev: TabId[]) => TabId[])) => void;
+
+  theme: "light" | "dark";
+  setTheme: (theme: "light" | "dark") => void;
+  
+  printRangeType: "entire" | "custom";
+  setPrintRangeType: (type: "entire" | "custom") => void;
+  printStartDate: string | null;
+  setPrintStartDate: (date: string | null) => void;
+  printEndDate: string | null;
+  setPrintEndDate: (date: string | null) => void;
+
+  toast: { title: string; message: string; type?: "success" | "error" | "info" | "warning" } | null;
+  setToast: (toast: { title: string; message: string; type?: "success" | "error" | "info" | "warning" } | null) => void;
+
+  // Modals
+  isLoginModalOpen: boolean;
+  setIsLoginModalOpen: (isOpen: boolean) => void;
+  isProjectModalOpen: boolean;
+  setIsProjectModalOpen: (isOpen: boolean) => void;
+  isTaskModalOpen: boolean;
+  setIsTaskModalOpen: (isOpen: boolean) => void;
+  isUserModalOpen: boolean;
+  setIsUserModalOpen: (isOpen: boolean) => void;
+  isCalendarSyncModalOpen: boolean;
+  setIsCalendarSyncModalOpen: (isOpen: boolean) => void;
+  isCommandPaletteOpen: boolean;
+  setIsCommandPaletteOpen: (isOpen: boolean) => void;
+
+  quickNavTarget: QuickNavTarget | null;
+  setQuickNavTarget: (target: QuickNavTarget | null) => void;
+
+  editingProject: Project | null;
+  setEditingProject: (project: Project | null) => void;
+  editingTask: Task | null;
+  setEditingTask: (task: Task | null) => void;
+  editingUser: AppUser | null;
+  setEditingUser: (user: AppUser | null) => void;
+
+  modalInitialTab: "details" | "chat" | "delegation";
+  setModalInitialTab: (tab: "details" | "chat" | "delegation") => void;
+  focusCommentId: string | null;
+  setFocusCommentId: (id: string | null) => void;
+  isReadOnlyModal: boolean;
+  setIsReadOnlyModal: (isReadOnly: boolean) => void;
+
+  prefillProjectCode: string | null;
+  setPrefillProjectCode: (code: string | null) => void;
+  prefillProjectYear: number | string | null;
+  setPrefillProjectYear: (year: number | string | null) => void;
+  prefillProjectStore: string | null;
+  setPrefillProjectStore: (store: string | null) => void;
+  prefillProjectId: string | null;
+  setPrefillProjectId: (id: string | null) => void;
+
+  // Filters & Navigation
+  costTabSearchTerm: string;
+  setCostTabSearchTerm: (term: string) => void;
+  budgetTabSearchTerm: string;
+  setBudgetTabSearchTerm: (term: string) => void;
+  detailTabFilterCode: string;
+  setDetailTabFilterCode: (code: string) => void;
+  globalStoreFilter: string;
+  setGlobalStoreFilter: (filter: string) => void;
+  globalYearFilter: string;
+  setGlobalYearFilter: (year: string) => void;
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (location: string[]) => void;
+  pinnedProjects: string[];
+  setPinnedProjects: (pinned: string[]) => void;
+  fixedProjectCode: string;
+  setFixedProjectCode: (code: string) => void;
+  setDetailTabStoreFilter: (store: string) => void;
+  detailTabFocusTaskId: string;
+  setDetailTabFocusTaskId: (id: string) => void;
+  detailReturnScrollId: string;
+  setDetailReturnScrollId: (id: string) => void;
+  ganttTabFocusTaskId: string;
+  setGanttTabFocusTaskId: (id: string) => void;
+  ganttTabFilterProjectId: string;
+  setGanttTabFilterProjectId: (id: string) => void;
+  ganttTriggerToday: number;
+  triggerGanttToday: () => void;
+  layoutTabFilters: { store?: string; location?: string; projectCode?: string; sourceTaskId?: string; _ts?: number } | null;
+  setLayoutTabFilters: (filters: { store?: string; location?: string; projectCode?: string; sourceTaskId?: string; _ts?: number } | null) => void;
+  notificationFilterId: string | null;
+  setNotificationFilterId: (id: string | null) => void;
+
+  layoutTooltipVisibility: LayoutTooltipVisibility;
+  setLayoutTooltipVisibility: (updater: Partial<LayoutTooltipVisibility> | ((prev: LayoutTooltipVisibility) => LayoutTooltipVisibility)) => void;
+  resetLayoutTooltipVisibility: () => void;
+  layoutPaintCategory: string;
+  setLayoutPaintCategory: (cat: string) => void;
+  zoomableImageSrc: string | null;
+  setZoomableImageSrc: (src: string | null) => void;
+}
+
+export interface LayoutTooltipVisibility {
+  projectCode: boolean;
+  projectName: boolean;
+  mdStatus: boolean;
+  actStatus: boolean;
+  legendColor: boolean;
+  floor: boolean;
+  startDate: boolean;
+  endDate: boolean;
+  detail: boolean;
+  description: boolean;
+  progressBars: boolean;
+  shopType?: boolean;
+  area: boolean;
+  // Smart Notifications & Alerts Config
+  notifications?: boolean;
+  alertOverdue?: boolean;
+  alertDelay?: boolean;
+  alertHandover?: boolean;
+  alertOpening?: boolean;
+  alertOpeningRisk?: boolean;
+}
+
+export interface DataSlice {
+  // Data State (Firebase)
+  user: User | null;
+  setUser: (user: User | null) => void;
+  currentUser: AppUser;
+  setCurrentUser: (user: AppUser) => void;
+  
+  projects: Project[];
+  setProjects: (projects: Project[]) => void;
+  tasks: Task[];
+  setTasks: (tasks: Task[]) => void;
+  isTasksRequested: boolean;
+  setIsTasksRequested: (isTasksRequested: boolean) => void;
+  isTasksLoading: boolean;
+  setIsTasksLoading: (isTasksLoading: boolean) => void;
+  allProjectsForNotifs: Project[];
+  setAllProjectsForNotifs: (projects: Project[]) => void;
+  allTasksForNotifs: Task[];
+  setAllTasksForNotifs: (tasks: Task[]) => void;
+  costs: Cost[];
+  setCosts: (costs: Cost[]) => void;
+  isCostsRequested: boolean;
+  setIsCostsRequested: (isCostsRequested: boolean) => void;
+  isCostsLoading: boolean;
+  setIsCostsLoading: (isCostsLoading: boolean) => void;
+  appUsers: AppUser[];
+  setAppUsers: (users: AppUser[]) => void;
+  subAppUsers: any[];
+  setSubAppUsers: (users: any[]) => void;
+  notificationRules: any[];
+  setNotificationRules: (rules: any[]) => void;
+  locations: string[];
+  setLocations: (locations: string[]) => void;
+  locationVisibility: Record<string, boolean>;
+  setLocationVisibility: (visibility: Record<string, boolean>) => void;
+  parties: string[];
+  setParties: (parties: string[]) => void;
+  delegationGroups: DelegationGroup[];
+  setDelegationGroups: (groups: DelegationGroup[]) => void;
+  isDelegationsRequested: boolean;
+  setIsDelegationsRequested: (isDelegationsRequested: boolean) => void;
+  isDelegationsLoading: boolean;
+  setIsDelegationsLoading: (isDelegationsLoading: boolean) => void;
+  permissionMatrix: PermissionMatrix;
+  setPermissionMatrix: (matrix: PermissionMatrix) => void;
+  activeNotifications: any[];
+  setActiveNotifications: (notifications: any[]) => void;
+  cloudStatus: "online" | "offline" | "syncing";
+  setCloudStatus: (status: "online" | "offline" | "syncing") => void;
+
+  undoStack: UndoAction[];
+  setUndoStack: (stack: UndoAction[]) => void;
+  redoStack: UndoAction[];
+  setRedoStack: (stack: UndoAction[]) => void;
+
+  currency: 'VND' | 'JPY' | 'USD';
+  setCurrency: (currency: 'VND' | 'JPY' | 'USD') => void;
+  jpyRate: number;
+  setJpyRate: (rate: number) => void;
+  usdRate: number;
+  setUsdRate: (rate: number) => void;
+
+  r2Config: { accountId: string; bucketName: string; accessKeyId: string; secretAccessKey: string } | null;
+  setR2Config: (config: { accountId: string; bucketName: string; accessKeyId: string; secretAccessKey: string } | null) => void;
+}
+
+export interface OptimisticSlice {
+  optimisticUpdateTasks: (updatedTasks: (Partial<Task> & { id: string })[]) => void;
+  optimisticDeleteTasks: (taskIds: string[]) => void;
+  optimisticUpdateCosts: (updatedCosts: (Partial<Cost> & { id: string })[]) => void;
+  optimisticDeleteCosts: (costIds: string[]) => void;
+  optimisticUpdateProjects: (updatedProjects: (Partial<Project> & { id: string })[]) => void;
+  optimisticDeleteProjects: (projectIds: string[]) => void;
+  optimisticUpdateProjectFinancial: (projectId: string, updates: any) => void;
+  rollbackProjectFinancial: (projectId: string, oldFinancial: any) => void;
+}
+
+export type AppState = UISlice & DataSlice & OptimisticSlice;
+
+
+
+// FILE: src/store/slices/createUISlice.ts
+import { StateCreator } from "zustand";
+import { safeGetItemLocal, safeSetItemLocal, safeGetDeviceItemLocal, safeSetDeviceItemLocal, getDeviceScreenType } from "../../lib/storage";
+import { TabId } from "../../types";
+import { AppState, UISlice } from "../storeTypes";
+
+const getInitialActiveTab = (): TabId => {
+  // Safe Boot (#2): Always start on 'general' tab to prevent heavy query read storms
+  // from Gantt/Detail tabs on initial cold start.
+  return "general";
+};
+
+export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get) => ({
+  isFocusMode: false,
+  setIsFocusMode: (val) => set({ isFocusMode: val }),
+  ribbonDisplayMode: (safeGetItemLocal("taka_ribbon_display_mode") as "always_show" | "tabs_only" | "fullscreen") || "always_show",
+  setRibbonDisplayMode: (mode) => {
+    safeSetItemLocal("taka_ribbon_display_mode", mode);
+    set({ ribbonDisplayMode: mode });
+  },
+  showQuickAccessToolbar: safeGetItemLocal("taka_show_quick_access_toolbar") !== "false",
+  setShowQuickAccessToolbar: (show) => {
+    safeSetItemLocal("taka_show_quick_access_toolbar", String(show));
+    set({ showQuickAccessToolbar: show });
+  },
+  isPrintPreview: false,
+  setIsPrintPreview: (val) => set({ isPrintPreview: val }),
+  printOrientation: "landscape",
+  setPrintOrientation: (val) => set({ printOrientation: val }),
+  
+  printPaperSize: (safeGetItemLocal("taka_print_paper_size") as "A2" | "A3" | "A4") || "A4",
+  setPrintPaperSize: (val) => {
+    safeSetItemLocal("taka_print_paper_size", val);
+    set({ printPaperSize: val });
+  },
+  
+  printDate: safeGetItemLocal("taka_print_date") === "true",
+  setPrintDate: (val) => {
+    safeSetItemLocal("taka_print_date", String(val));
+    set({ printDate: val });
+  },
+
+  // Gantt View & Scale State (Device Screen & User Adjusted)
+  ganttViewMode: (safeGetDeviceItemLocal("taka_gantt_view_mode") as any) || "monthly",
+  setGanttViewMode: (mode) => {
+    safeSetDeviceItemLocal("taka_gantt_view_mode", mode);
+    set({ ganttViewMode: mode });
+  },
+  ganttDayWidth: (() => {
+    const saved = safeGetDeviceItemLocal("taka_gantt_day_width");
+    if (saved) {
+      return Math.max(0.6, Math.min(120, Number(saved)));
+    }
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    return isMobile ? 6 : 8;
+  })(),
+  setGanttDayWidth: (width) => {
+    safeSetDeviceItemLocal("taka_gantt_day_width", String(width));
+    set({ ganttDayWidth: width });
+  },
+  ganttScaleInput: (() => {
+    const saved = safeGetDeviceItemLocal("taka_gantt_scale_input");
+    if (saved) return saved;
+    const savedWidth = safeGetDeviceItemLocal("taka_gantt_day_width");
+    if (savedWidth) {
+      return String(Math.round((Number(savedWidth) / 8) * 75));
+    }
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    return isMobile ? "56" : "75";
+  })(),
+  setGanttScaleInput: (val) => {
+    safeSetDeviceItemLocal("taka_gantt_scale_input", val);
+    set({ ganttScaleInput: val });
+  },
+  isGanttWidthChanged: false,
+  setIsGanttWidthChanged: (val) => set({ isGanttWidthChanged: val }),
+  saveGanttDayWidth: () => {
+    const currentWidth = get().ganttDayWidth;
+    const currentScale = get().ganttScaleInput;
+    safeSetDeviceItemLocal("taka_gantt_day_width", String(currentWidth));
+    safeSetDeviceItemLocal("taka_gantt_scale_input", String(currentScale));
+    set({ isGanttWidthChanged: false });
+    get().setToast({
+      title: "Saved",
+      message: `Scale (${currentScale}% / ${currentWidth}px) saved for ${getDeviceScreenType()} screen`
+    });
+  },
+  isGanttSettingsOpen: false,
+  setIsGanttSettingsOpen: (val) => set({ isGanttSettingsOpen: val }),
+  ganttShowDependencies: safeGetItemLocal("taka_gantt_show_dependencies") !== "false",
+  setGanttShowDependencies: (val) => {
+    safeSetItemLocal("taka_gantt_show_dependencies", String(val));
+    set({ ganttShowDependencies: val });
+  },
+
+  expandedProjectIds: [],
+  toggleProjectExpansion: (projectId) => set((state) => {
+    const strId = String(projectId || '').trim();
+    if (!strId) return state;
+    const projectsList = state.projects || [];
+    const proj =
+      projectsList.find((p) => String(p.id || '').trim() === strId) ||
+      projectsList.find(
+        (p) =>
+          String(p.code || '').trim().toLowerCase() === strId.toLowerCase() &&
+          (state.globalYearFilter === 'all' || String(p.year || '').trim() === String(state.globalYearFilter).trim())
+      ) ||
+      projectsList.find((p) => String(p.code || '').trim().toLowerCase() === strId.toLowerCase());
+    const canonicalId = proj?.id ? String(proj.id).trim() : strId;
+    const idAliases = new Set<string>([strId, canonicalId]);
+    if (proj?.code) {
+      const c = String(proj.code).trim();
+      idAliases.add(c);
+      idAliases.add(c.toLowerCase());
+      idAliases.add(c.toUpperCase());
+      idAliases.add(c.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-'));
+      idAliases.add(c.replace(/-/g, '–'));
+    }
+    if (proj?.id) {
+      idAliases.add(String(proj.id).trim());
+    }
+    const isCurrentlyExpanded = state.expandedProjectIds.some((id) => idAliases.has(String(id).trim()));
+    const remaining = state.expandedProjectIds.filter((id) => !idAliases.has(String(id).trim()));
+    const next = isCurrentlyExpanded ? remaining : [...remaining, canonicalId];
+    return { expandedProjectIds: next };
+  }),
+  setExpandedProjectIds: (ids) => {
+    set({ expandedProjectIds: ids });
+  },
+
+  visibleActiveProjectIds: [],
+  setVisibleActiveProjectIds: (ids) => {
+    set((state) => {
+      if (
+        state.visibleActiveProjectIds.length === ids.length &&
+        state.visibleActiveProjectIds.every((id, idx) => id === ids[idx])
+      ) {
+        return state;
+      }
+      return { visibleActiveProjectIds: ids };
+    });
+  },
+
+  searchActiveProjectIds: [],
+  setSearchActiveProjectIds: (ids) => {
+    set((state) => {
+      if (
+        state.searchActiveProjectIds.length === ids.length &&
+        state.searchActiveProjectIds.every((id, idx) => id === ids[idx])
+      ) {
+        return state;
+      }
+      return { searchActiveProjectIds: ids };
+    });
+  },
+
+  printFilterHeader: safeGetItemLocal("taka_print_filter_header") !== "false",
+  setPrintFilterHeader: (val) => {
+    safeSetItemLocal("taka_print_filter_header", String(val));
+    set({ printFilterHeader: val });
+  },
+  
+  printScaleMode: (safeGetItemLocal("taka_print_scale_mode") as any) || "default",
+  setPrintScaleMode: (val) => {
+    safeSetItemLocal("taka_print_scale_mode", val);
+    set({ printScaleMode: val });
+  },
+  
+  printScaleCustom: safeGetItemLocal("taka_print_scale_custom") ? parseInt(safeGetItemLocal("taka_print_scale_custom")!, 10) : 100,
+  setPrintScaleCustom: (val) => {
+    safeSetItemLocal("taka_print_scale_custom", String(val));
+    set({ printScaleCustom: val });
+  },
+  
+  printDpi: safeGetItemLocal("taka_print_dpi") ? parseInt(safeGetItemLocal("taka_print_dpi")!, 10) : 300,
+  setPrintDpi: (val) => {
+    safeSetItemLocal("taka_print_dpi", String(val));
+    set({ printDpi: val });
+  },
+  
+  printWatermark: (safeGetItemLocal("taka_print_watermark") as any) || "none",
+  setPrintWatermark: (val) => {
+    safeSetItemLocal("taka_print_watermark", val);
+    set({ printWatermark: val });
+  },
+  
+  printTarget: "pdf",
+  setPrintTarget: (val) => set({ printTarget: val }),
+  
+  showTour: false,
+  setShowTour: (val) => set({ showTour: val }),
+  
+  isExportingPDF: false,
+  setIsExportingPDF: (val) => set({ isExportingPDF: val }),
+
+  activeTab: getInitialActiveTab(),
+  setActiveTab: (activeTab) => set({ activeTab }),
+  tabHistory: [],
+  setTabHistory: (updater) => set((state) => ({ 
+    tabHistory: typeof updater === 'function' ? updater(state.tabHistory) : updater 
+  })),
+
+  theme: "light",
+  setTheme: (theme) => set({ theme }),
+
+  printRangeType: "entire",
+  setPrintRangeType: (printRangeType) => set({ printRangeType }),
+  printStartDate: null,
+  setPrintStartDate: (printStartDate) => set({ printStartDate }),
+  printEndDate: null,
+  setPrintEndDate: (printEndDate) => set({ printEndDate }),
+
+  toast: null,
+  setToast: (toast) => set({ toast }),
+
+  isLoginModalOpen: false,
+  setIsLoginModalOpen: (isLoginModalOpen) => set({ isLoginModalOpen }),
+  isProjectModalOpen: false,
+  setIsProjectModalOpen: (isProjectModalOpen) => set({ isProjectModalOpen }),
+  isTaskModalOpen: false,
+  setIsTaskModalOpen: (isTaskModalOpen) => set({ isTaskModalOpen }),
+  isUserModalOpen: false,
+  setIsUserModalOpen: (isUserModalOpen) => set({ isUserModalOpen }),
+  isCalendarSyncModalOpen: false,
+  setIsCalendarSyncModalOpen: (isCalendarSyncModalOpen) => set({ isCalendarSyncModalOpen }),
+  isCommandPaletteOpen: false,
+  setIsCommandPaletteOpen: (isCommandPaletteOpen) => set({ isCommandPaletteOpen }),
+
+  quickNavTarget: null,
+  setQuickNavTarget: (quickNavTarget) => set({ quickNavTarget }),
+
+  editingProject: null,
+  setEditingProject: (editingProject) => set({ editingProject }),
+  editingTask: null,
+  setEditingTask: (editingTask) => set({ editingTask }),
+  editingUser: null,
+  setEditingUser: (editingUser) => set({ editingUser }),
+
+  modalInitialTab: "details",
+  setModalInitialTab: (modalInitialTab) => set({ modalInitialTab }),
+  focusCommentId: null,
+  setFocusCommentId: (focusCommentId) => set({ focusCommentId }),
+  isReadOnlyModal: false,
+  setIsReadOnlyModal: (isReadOnlyModal) => set({ isReadOnlyModal }),
+
+  prefillProjectCode: null,
+  setPrefillProjectCode: (prefillProjectCode) => set({ prefillProjectCode }),
+  prefillProjectYear: null,
+  setPrefillProjectYear: (prefillProjectYear) => set({ prefillProjectYear }),
+  prefillProjectStore: null,
+  setPrefillProjectStore: (prefillProjectStore) => set({ prefillProjectStore }),
+  prefillProjectId: null,
+  setPrefillProjectId: (prefillProjectId) => set({ prefillProjectId }),
+
+  costTabSearchTerm: "",
+  setCostTabSearchTerm: (costTabSearchTerm) => set({ costTabSearchTerm }),
+  budgetTabSearchTerm: "",
+  setBudgetTabSearchTerm: (budgetTabSearchTerm) => set({ budgetTabSearchTerm }),
+  detailTabFilterCode: "",
+  setDetailTabFilterCode: (detailTabFilterCode) => set({ detailTabFilterCode }),
+  globalStoreFilter: (() => {
+    const direct = safeGetItemLocal("taka_store_filter") || safeGetItemLocal("taka_store_filter_guest");
+    if (direct && String(direct).toLowerCase() !== 'all') return direct;
+    
+    let isOnlyHN = false;
+    try {
+      const savedAuth = safeGetItemLocal("taka_auth_v1");
+      if (savedAuth) {
+        const u = JSON.parse(savedAuth);
+        const isAdmin = u.role === 'admin';
+        const hasHCM = !!u?.storePermissions?.hcm;
+        const hasHN = !!u?.storePermissions?.hn;
+        isOnlyHN = !isAdmin && !hasHCM && hasHN;
+        
+        if (u?.preferences?.defaultStore && String(u.preferences.defaultStore).toLowerCase() !== 'all') {
+            return u.preferences.defaultStore;
+        }
+      }
+    } catch {}
+    
+    return isOnlyHN ? "HN" : "HCM";
+  })(),
+  setGlobalStoreFilter: (filter) => {
+    safeSetItemLocal("taka_store_filter", filter);
+    const prev = get().globalStoreFilter;
+    if (prev !== filter) {
+      // Switching store (e.g. HCM -> HN or HN -> HCM): reset location filter to avoid stale floor filters blocking new store
+      safeSetItemLocal("taka_location_filter", JSON.stringify([]));
+      set({ globalStoreFilter: filter, globalLocationFilter: [] });
+    } else {
+      set({ globalStoreFilter: filter });
+    }
+  },
+  globalYearFilter: (() => {
+    const direct = safeGetItemLocal("taka_year_filter");
+    if (direct && String(direct).toLowerCase() !== 'all') return direct;
+    
+    let isOnlyHN = false;
+    try {
+      const savedAuth = safeGetItemLocal("taka_auth_v1");
+      if (savedAuth) {
+        const u = JSON.parse(savedAuth);
+        const isAdmin = u.role === 'admin';
+        const hasHCM = !!u?.storePermissions?.hcm;
+        const hasHN = !!u?.storePermissions?.hn;
+        isOnlyHN = !isAdmin && !hasHCM && hasHN;
+
+        if (u?.preferences?.defaultYear && String(u.preferences.defaultYear).toLowerCase() !== 'all') {
+           return String(u.preferences.defaultYear);
+        }
+      }
+    } catch {}
+    
+    return isOnlyHN ? "2027" : new Date().getFullYear().toString();
+  })(),
+  setGlobalYearFilter: (globalYearFilter) => {
+    safeSetItemLocal("taka_year_filter", globalYearFilter);
+    set({ globalYearFilter });
+  },
+  globalLocationFilter: (() => {
+    try {
+      const LAST_ACT_KEY = "taka_last_activity_time";
+      const FIFTEEN_MINS_MS = 15 * 60 * 1000;
+      const lastAct = safeGetItemLocal(LAST_ACT_KEY);
+      const now = Date.now();
+
+      // If first launch or inactivity > 15 minutes: default to [] ("All Locations")
+      if (!lastAct || (now - Number(lastAct) > FIFTEEN_MINS_MS)) {
+        safeSetItemLocal(LAST_ACT_KEY, String(now));
+        safeSetItemLocal("taka_location_filter", JSON.stringify([]));
+        return [];
+      }
+
+      const stored = safeGetItemLocal("taka_location_filter");
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) {
+        if (typeof parsed === 'string' && parsed !== 'all') return [parsed];
+        return [];
+      }
+      return parsed.filter((l: string) => l !== 'all');
+    } catch {
+      return [];
+    }
+  })(),
+  setGlobalLocationFilter: (globalLocationFilter) => {
+    try {
+      safeSetItemLocal("taka_last_activity_time", String(Date.now()));
+    } catch {}
+    const cleaned = Array.isArray(globalLocationFilter) ? globalLocationFilter.filter(l => l !== 'all') : [];
+    safeSetItemLocal("taka_location_filter", JSON.stringify(cleaned));
+    set({ globalLocationFilter: cleaned });
+  },
+  pinnedProjects: (() => {
+    try {
+      const stored = safeGetItemLocal("taka_pinned_projects");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return [];
+  })(),
+  setPinnedProjects: (pinned) => {
+    safeSetItemLocal("taka_pinned_projects", JSON.stringify(pinned));
+    set({ pinnedProjects: pinned });
+  },
+  fixedProjectCode: "",
+  setFixedProjectCode: (fixedProjectCode) => set({ fixedProjectCode }),
+  setDetailTabStoreFilter: (globalStoreFilter) => set({ globalStoreFilter }),
+  detailTabFocusTaskId: "",
+  setDetailTabFocusTaskId: (detailTabFocusTaskId) => set({ detailTabFocusTaskId }),
+  detailReturnScrollId: "",
+  setDetailReturnScrollId: (detailReturnScrollId) => set({ detailReturnScrollId }),
+  ganttTabFocusTaskId: "",
+  setGanttTabFocusTaskId: (ganttTabFocusTaskId) => set({ ganttTabFocusTaskId }),
+  ganttTabFilterProjectId: "",
+  setGanttTabFilterProjectId: (ganttTabFilterProjectId) => set({ ganttTabFilterProjectId }),
+  ganttTriggerToday: 0,
+  triggerGanttToday: () => set({ ganttTriggerToday: Date.now() }),
+  layoutTabFilters: null,
+  setLayoutTabFilters: (layoutTabFilters) => set({ layoutTabFilters }),
+  notificationFilterId: null,
+  setNotificationFilterId: (notificationFilterId) => set({ notificationFilterId }),
+
+  layoutTooltipVisibility: (() => {
+    const defaultVal = {
+      projectCode: true,
+      projectName: true,
+      mdStatus: true,
+      actStatus: true,
+      legendColor: true,
+      floor: true,
+      startDate: true,
+      endDate: true,
+      detail: true,
+      description: true,
+      progressBars: true,
+      shopType: true,
+      area: true,
+      notifications: true,
+      alertOverdue: true,
+      alertDelay: true,
+      alertHandover: true,
+      alertOpening: true,
+      alertOpeningRisk: true,
+    };
+    try {
+      const stored = safeGetItemLocal("taka_layout_tooltip_visibility");
+      if (stored) {
+        return { ...defaultVal, ...JSON.parse(stored) };
+      }
+    } catch {}
+    return defaultVal;
+  })(),
+  setLayoutTooltipVisibility: (updater) => set((state) => {
+    const next = typeof updater === 'function' ? updater(state.layoutTooltipVisibility) : { ...state.layoutTooltipVisibility, ...updater };
+    safeSetItemLocal("taka_layout_tooltip_visibility", JSON.stringify(next));
+    return { layoutTooltipVisibility: next };
+  }),
+  resetLayoutTooltipVisibility: () => set(() => {
+    const defaultVal = {
+      projectCode: true,
+      projectName: true,
+      mdStatus: true,
+      actStatus: true,
+      legendColor: true,
+      floor: true,
+      startDate: true,
+      endDate: true,
+      detail: true,
+      description: true,
+      progressBars: true,
+      shopType: true,
+      area: true,
+      notifications: true,
+      alertOverdue: true,
+      alertDelay: true,
+      alertHandover: true,
+      alertOpening: true,
+      alertOpeningRisk: true,
+    };
+    safeSetItemLocal("taka_layout_tooltip_visibility", JSON.stringify(defaultVal));
+    return { layoutTooltipVisibility: defaultVal };
+  }),
+  layoutPaintCategory: "all",
+  setLayoutPaintCategory: (layoutPaintCategory) => set({ layoutPaintCategory }),
+  zoomableImageSrc: null,
+  setZoomableImageSrc: (zoomableImageSrc) => set({ zoomableImageSrc }),
+});
+
+
+
+// FILE: src/components/DetailTabParts/useDetailData.ts
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Project, Task, DelegationGroup, AppUser } from '../../types';
+import { 
+  getTaskStatus, 
+  parseDateTime, 
+  resolveActualStatus, 
+  matchesAdvancedSearch 
+} from '../../lib/utils';
+import { computeAllTaskCodes } from '../../lib/ganttUtils';
+import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+import { useAppStore } from '../../store/useAppStore';
+import { SortConfig } from './detailTypes';
+import { useDetailProjectInfo } from './useDetailProjectInfo';
+import { useDetailFlatRows, buildProjectParentHierarchyIndex } from './useDetailFlatRows';
+import { useDetailFocusTracking } from './useDetailFocusTracking';
+import { useDetailFilterSync, doesTaskMatchSearchTerm } from './useDetailFilterSync';
+
+interface UseDetailDataParams {
+  projects: Project[];
+  tasks: Task[];
+  delegationGroups: DelegationGroup[];
+  currentUser: AppUser;
+  effectiveStore: string;
+  globalYearFilter: string;
+  setGlobalYearFilter: (year: string) => void;
+  globalStoreFilter: string;
+  setGlobalStoreFilter: (store: string) => void;
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (locs: string[]) => void;
+  initialFilterCode?: string;
+  initialFocusTaskId?: string;
+  returnScrollId?: string;
+  onClearFocus?: () => void;
+  onBackToGantt?: () => void;
+  sortConfig: SortConfig | null;
+  expandedCodes: string[];
+  setExpandedCodes: (codes: string[]) => void;
+  setVisibleActiveProjectIds: (ids: string[]) => void;
+  canWrite: boolean;
+}
+
+function collectTaskAliases(
+  pId: string,
+  tasks: Task[],
+  projectInfoMap: Map<string, any>
+): { targetTask?: Task; aliases: Set<string> } {
+  const pIdStr = String(pId).trim();
+  const pIdLower = pIdStr.toLowerCase();
+  let targetTask = tasks.find(
+    (t) => String(t.id) === pIdStr || (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pIdLower)
+  );
+  if (!targetTask) {
+    for (const info of projectInfoMap.values()) {
+      const found = info.sortedTasks?.find(
+        (t: Task) => String(t.id) === pIdStr || (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pIdLower)
+      );
+      if (found) {
+        targetTask = found;
+        break;
+      }
+    }
+  }
+  const aliases = new Set<string>([pIdStr, pIdLower]);
+  if (targetTask) {
+    if (targetTask.id) {
+      aliases.add(String(targetTask.id).trim());
+      aliases.add(String(targetTask.id).trim().toLowerCase());
+    }
+    if (targetTask.taskCodePhu) {
+      aliases.add(String(targetTask.taskCodePhu).trim());
+      aliases.add(String(targetTask.taskCodePhu).trim().toLowerCase());
+    }
+  }
+  return { targetTask, aliases };
+}
+
+export function useDetailData({
+  projects,
+  tasks,
+  delegationGroups,
+  currentUser: _currentUser,
+  effectiveStore,
+  globalYearFilter,
+  setGlobalYearFilter,
+  globalStoreFilter,
+  setGlobalStoreFilter,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  initialFilterCode,
+  initialFocusTaskId,
+  returnScrollId: _returnScrollId,
+  onClearFocus,
+  onBackToGantt,
+  sortConfig,
+  expandedCodes,
+  setExpandedCodes,
+  setVisibleActiveProjectIds,
+}: UseDetailDataParams) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const [visibleCount, setVisibleCount] = useState(30);
+  const initialStatus = safeGetItemSession("taka_detail_status_filter");
+  const defaultStatus = initialStatus && initialStatus !== 'all' ? initialStatus : 'On process + Upcoming 3 days';
+  const [statusFilter, setStatusFilter] = useState(defaultStatus);
+  const lastSelectedStatusFilterRef = useRef<string>(defaultStatus);
+
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const lastCheckedTaskIdRef = useRef<string | null>(null);
+
+  // Focus & Viewport Tracking Hook
+  const {
+    activeProjectInView,
+    handleClearFocus,
+    handleBackToGantt,
+  } = useDetailFocusTracking({
+    projects,
+    tasks,
+    initialFilterCode,
+    initialFocusTaskId,
+    onClearFocus,
+    onBackToGantt,
+    searchTerm,
+    setSearchTerm,
+    globalYearFilter,
+    setGlobalYearFilter,
+    globalStoreFilter,
+    setGlobalStoreFilter,
+    statusFilter,
+    setStatusFilter,
+    expandedCodes,
+    setExpandedCodes,
+  });
+
+  // Project Info Map & Helpers Hook
+  const {
+    tasksByProjectKey,
+    projectInfoMap,
+    getProjectInfo,
+  } = useDetailProjectInfo({ projects, tasks });
+
+  const delegationGroupByParentKey = useMemo(() => {
+    const map = new Map<string, DelegationGroup>();
+    delegationGroups.forEach(g => {
+      if (g.parentTaskId) {
+        const keyWithStore = `${g.parentTaskId}-${g.projectStore || ''}`;
+        map.set(keyWithStore, g);
+        if (!map.has(g.parentTaskId)) {
+          map.set(g.parentTaskId, g);
+        }
+      }
+    });
+    return map;
+  }, [delegationGroups]);
+
+  const isFirstMountVisibleCountRef = useRef(true);
+  useEffect(() => {
+    if (isFirstMountVisibleCountRef.current) {
+      isFirstMountVisibleCountRef.current = false;
+      return;
+    }
+    setVisibleCount(30);
+  }, [searchTerm, globalStoreFilter, globalYearFilter, globalLocationFilter, statusFilter]);
+
+  const effectiveLocationFilter = useMemo(() => {
+    if (globalLocationFilter.length === 0) return globalLocationFilter;
+    const available = new Set<string>();
+    projects.forEach((p) => {
+      const pYear = p.year ? String(p.year).trim() : '';
+      if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter).trim()) return;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return;
+      if (p.location) available.add(p.location);
+    });
+    return globalLocationFilter.filter((loc) => available.has(loc));
+  }, [projects, globalYearFilter, effectiveStore, globalLocationFilter]);
+
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
+
+  const filteredProjects = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayTime = today.getTime();
+
+    return projects.filter(p => {
+      if (fixedProjectCode && fixedProjectCode.trim()) {
+        const fix = fixedProjectCode.trim().toLowerCase();
+        const pCode = (p.code || '').trim().toLowerCase();
+        const rawLink = Array.isArray(p.linkCodes) ? p.linkCodes : typeof p.linkCodes === 'string' ? [p.linkCodes] : [];
+        const pLinkCodes = rawLink.map((c: any) => String(c).trim().toLowerCase());
+        const matchesFix = pCode === fix || pCode.includes(fix) || pLinkCodes.includes(fix) || String(p.id).toLowerCase() === fix;
+        if (!matchesFix) return false;
+      }
+
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const info = projectInfoMap.get(pKey) || getProjectInfo(p);
+      const pYear = p.year ? String(p.year).trim() : null;
+      if (globalYearFilter !== 'all' && (pYear === null || pYear !== String(globalYearFilter).trim())) return false;
+      if (effectiveStore !== 'all' && (!p.store || String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())) return false;
+      if (effectiveLocationFilter.length > 0 && (!p.location || !effectiveLocationFilter.includes(p.location))) return false;
+
+      let matchesStatus = true;
+      if (statusFilter === 'On process + Upcoming 3 days') {
+        if (info.status === 'On process') {
+          matchesStatus = true;
+        } else if (info.status === 'Upcoming') {
+          const dStart = parseDateTime(info.start);
+          if (dStart) {
+            dStart.setHours(0, 0, 0, 0);
+            const diffTime = dStart.getTime() - todayTime;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            matchesStatus = diffDays <= 3 && diffDays >= 0;
+          } else {
+            matchesStatus = false;
+          }
+        } else {
+          matchesStatus = false;
+        }
+      } else {
+        matchesStatus = statusFilter === 'all' || info.status === statusFilter;
+      }
+      if (!matchesStatus) return false;
+
+      const groupTasks = info.sortedTasks || tasksByProjectKey.get(`${p.code || ''}-${p.year || ''}-${p.store || ''}`) || [];
+      if (deferredSearchTerm) {
+        const isMatch = matchesAdvancedSearch(
+          deferredSearchTerm,
+          [p.store, p.location, p.year, p.code, p.linkCodes, p.name, p.detail, (p as any).description, p.note, p.party],
+          [],
+          (term) => {
+            const summariesMatch = p.taskSummaries?.some(ts =>
+              String(ts.name || "").toLowerCase().includes(term)
+            ) || false;
+            if (summariesMatch) return true;
+            return groupTasks.some((t, idx) => doesTaskMatchSearchTerm(t, idx, p.code, term));
+          }
+        );
+        if (!isMatch) return false;
+      }
+
+      return true;
+    });
+  }, [projects, projectInfoMap, getProjectInfo, globalYearFilter, effectiveStore, effectiveLocationFilter, statusFilter, deferredSearchTerm, tasksByProjectKey, fixedProjectCode]);
+
+  useDetailFilterSync({
+    projects,
+    filteredProjects,
+    tasksByProjectKey,
+    getProjectInfo,
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    statusFilter,
+    setStatusFilter,
+    lastSelectedStatusFilterRef,
+    globalYearFilter,
+    effectiveStore,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    effectiveLocationFilter,
+    initialFilterCode,
+    visibleCount,
+    setVisibleCount,
+    setVisibleActiveProjectIds,
+  });
+
+  const allVisibleTaskIds = useMemo(() => {
+    return filteredProjects.slice(0, visibleCount).flatMap(p => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const pInfo = projectInfoMap.get(pKey) || getProjectInfo(p);
+      return (pInfo.sortedTasks || []).map(t => t.id);
+    });
+  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo]);
+
+  const lowerSearchTerm = deferredSearchTerm.toLowerCase().trim();
+
+  // Task code & status maps
+  const taskCodeMap = useMemo(() => {
+    return computeAllTaskCodes(projects, tasks);
+  }, [projects, tasks]);
+
+  const taskActualStatusMap = useMemo(() => {
+    const map = new Map<string, { label: string; color: string }>();
+    for (let idx = 0; idx < tasks.length; idx++) {
+      const t = tasks[idx];
+      const taskStatus = getTaskStatus(t.start, t.finish);
+      const delegationGroup = delegationGroupByParentKey.get(t.id);
+      const actStatus = resolveActualStatus(taskStatus, delegationGroup?.subTasks || [], t);
+      map.set(t.id, actStatus);
+    }
+    return map;
+  }, [tasks, delegationGroupByParentKey]);
+
+  // Pre-indexed O(1) map of subtask counts per resolved canonical parent task ID
+  const childTasksCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    projects.forEach(p => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const info = projectInfoMap.get(pKey) || getProjectInfo(p);
+      const pTasks = info.sortedTasks || [];
+      if (pTasks.length === 0) return;
+      const { localChildCountByParentId } = buildProjectParentHierarchyIndex(pTasks);
+      localChildCountByParentId.forEach((cnt, pid) => {
+        map.set(pid, cnt);
+      });
+    });
+    return map;
+  }, [projects, projectInfoMap, getProjectInfo]);
+
+  // Modular parent task expand/collapse state (isolated to Detail Tab)
+  const [expandedModularTasks, setExpandedModularTasks] = useState<string[]>(() => {
+    try {
+      const saved = safeGetItemSession('taka_detail_modular_expanded') || sessionStorage.getItem('taka_detail_modular_expanded');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const expandedModularTasksSet = useMemo(() => {
+    const set = new Set<string>();
+    expandedModularTasks.forEach(id => {
+      const idStr = String(id).trim();
+      set.add(idStr);
+      set.add(idStr.toLowerCase());
+    });
+    return set;
+  }, [expandedModularTasks]);
+
+  const handleToggleModularParent = useCallback((parentTaskId: string) => {
+    const { targetTask, aliases } = collectTaskAliases(parentTaskId, tasks, projectInfoMap);
+    const pId = String(parentTaskId).trim();
+    if (!pId) return;
+
+    setExpandedModularTasks(prev => {
+      const isCurrentlyExpanded = prev.some(id => aliases.has(String(id).trim()) || aliases.has(String(id).trim().toLowerCase()));
+      let next: string[];
+      if (isCurrentlyExpanded) {
+        next = prev.filter(id => !aliases.has(String(id).trim()) && !aliases.has(String(id).trim().toLowerCase()));
+      } else {
+        const canonicalId = targetTask?.id ? String(targetTask.id).trim() : pId;
+        const cleaned = prev.filter(id => !aliases.has(String(id).trim()) && !aliases.has(String(id).trim().toLowerCase()));
+        cleaned.push(canonicalId);
+        next = cleaned;
+      }
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(next));
+      return next;
+    });
+  }, [tasks, projectInfoMap]);
+
+  const handleToggleProjectModularTasks = useCallback((parentTaskIds: string[], expand: boolean) => {
+    setExpandedModularTasks(prev => {
+      const prevSet = new Set(prev);
+      parentTaskIds.forEach(pId => {
+        const { targetTask, aliases } = collectTaskAliases(pId, tasks, projectInfoMap);
+        aliases.forEach(a => expand ? prevSet.add(a) : prevSet.delete(a));
+        if (targetTask?.id) expand ? prevSet.add(String(targetTask.id).trim()) : prevSet.delete(String(targetTask.id).trim());
+      });
+      const next = Array.from(prevSet);
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(next));
+      return next;
+    });
+  }, [tasks, projectInfoMap]);
+
+  const { currentModularParentIds, totalChildTasksCount } = useMemo(() => {
+    const parentIdSet = new Set<string>();
+    let totalChildren = 0;
+    filteredProjects.slice(0, visibleCount).forEach(p => {
+      const pKey = `${p.code || ''}-${p.year || ''}-${p.store || ''}-${p.id || p.no}`;
+      const info = projectInfoMap.get(pKey) || getProjectInfo(p);
+      const pTasks = info.sortedTasks || [];
+      if (pTasks.length === 0) return;
+      const { projectModularParentIds, projectChildTasksCount } = buildProjectParentHierarchyIndex(pTasks);
+      projectModularParentIds.forEach(pid => parentIdSet.add(pid));
+      totalChildren += projectChildTasksCount;
+    });
+
+    return {
+      currentModularParentIds: Array.from(parentIdSet),
+      totalChildTasksCount: totalChildren,
+    };
+  }, [filteredProjects, visibleCount, projectInfoMap, getProjectInfo]);
+
+  const isAllModularExpanded = useMemo(() => {
+    if (currentModularParentIds.length === 0) return false;
+    return currentModularParentIds.some(id => 
+      expandedModularTasksSet.has(id) || expandedModularTasksSet.has(id.toLowerCase())
+    );
+  }, [currentModularParentIds, expandedModularTasksSet]);
+
+  const handleToggleExpandAllModular = useCallback(() => {
+    if (isAllModularExpanded) {
+      setExpandedModularTasks([]);
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify([]));
+    } else {
+      setExpandedModularTasks(currentModularParentIds);
+      safeSetItemSession('taka_detail_modular_expanded', JSON.stringify(currentModularParentIds));
+    }
+  }, [isAllModularExpanded, currentModularParentIds]);
+
+  const modularParentsCount = useMemo(() => {
+    return currentModularParentIds.length;
+  }, [currentModularParentIds]);
+
+  // Virtual Windowing Flat Rows
+  const flatTableRows = useDetailFlatRows({
+    filteredProjects,
+    visibleCount,
+    projectInfoMap,
+    getProjectInfo,
+    sortConfig,
+    expandedCodes,
+    expandedModularTasks: expandedModularTasksSet,
+    delegationGroups,
+    lowerSearchTerm,
+    taskCodeMap,
+  });
+
+  // Selection handlers
+  const handleSelectAllTasksInProject = useCallback((groupTasks: Task[], select: boolean) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      groupTasks.forEach(t => {
+        if (select) next.add(t.id);
+        else next.delete(t.id);
+      });
+      return next;
+    });
+  }, []);
+
+  const handleToggleSelectTask = useCallback((taskId: string, shiftKey: boolean) => {
+    const strTaskId = String(taskId);
+    setSelectedTaskIds(prev => {
+      const next = new Set(Array.from(prev).map(String));
+      const isChecked = !next.has(strTaskId);
+      if (isChecked) {
+        if (shiftKey && lastCheckedTaskIdRef.current && lastCheckedTaskIdRef.current !== strTaskId) {
+          const visibleIds = allVisibleTaskIds.map(String);
+          const lastIdx = visibleIds.indexOf(lastCheckedTaskIdRef.current);
+          const currentIdx = visibleIds.indexOf(strTaskId);
+          if (lastIdx !== -1 && currentIdx !== -1) {
+            const minIdx = Math.min(lastIdx, currentIdx);
+            const maxIdx = Math.max(lastIdx, currentIdx);
+            for (let idx = minIdx; idx <= maxIdx; idx++) {
+              next.add(visibleIds[idx]);
+            }
+          } else {
+            next.add(strTaskId);
+          }
+        } else {
+          next.add(strTaskId);
+        }
+        lastCheckedTaskIdRef.current = strTaskId;
+      } else {
+        next.delete(strTaskId);
+        lastCheckedTaskIdRef.current = null;
+      }
+      return next;
+    });
+  }, [allVisibleTaskIds]);
+
+  return {
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    visibleCount,
+    setVisibleCount,
+    statusFilter,
+    setStatusFilter,
+    lastSelectedStatusFilterRef,
+    selectedTaskIds,
+    setSelectedTaskIds,
+    lastCheckedTaskIdRef,
+    activeProjectInView,
+    delegationGroupByParentKey,
+    projectInfoMap,
+    getProjectInfo,
+    filteredProjects,
+    allVisibleTaskIds,
+    lowerSearchTerm,
+    taskCodeMap,
+    taskActualStatusMap,
+    childTasksCountMap,
+    expandedModularTasks: expandedModularTasksSet,
+    handleToggleModularParent,
+    handleToggleProjectModularTasks,
+    isAllModularExpanded,
+    handleToggleExpandAllModular,
+    totalChildTasksCount,
+    modularParentsCount,
+    flatTableRows,
+    handleSelectAllTasksInProject,
+    handleToggleSelectTask,
+    handleClearFocus,
+    handleBackToGantt,
+  };
+}
+
+
+
+// FILE: src/components/DetailTabParts/DetailFilterToolbar.tsx
+import React, { memo } from 'react';
+import { FixedProjectInput } from '../FixedProjectInput';
+import { Search, Edit3, Plus, Wand2, Hash, X, ArrowUpDown, Unlink } from 'lucide-react';
+import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { ColumnAdder } from '../ColumnAdder';
+import { FullReplaceImport } from '../FullReplaceImport';
+import { Project, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { cn } from '../../lib/utils';
+import { doc } from 'firebase/firestore';
+import { db, APP_ID } from '../../lib/firebase';
+import { generateId } from '../../lib/utils';
+
+interface DetailFilterToolbarProps {
+  globalYearFilter: string;
+  setGlobalYearFilter: (v: string) => void;
+  years: (number | string)[];
+  effectiveStore: string;
+  setGlobalStoreFilter: (v: string) => void;
+  stores: string[];
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (v: string[]) => void;
+  locationFilterOptions: string[];
+  statusFilter: string;
+  onStatusFilterChange: (v: string) => void;
+  searchTerm: string;
+  onSearchTermChange: (v: string) => void;
+  availableColumnsForUser: { id: string; label: string }[];
+  visibleColumns: string[];
+  onToggleColumn: (col: string) => void;
+  hasWritePermission: boolean;
+  isEditMode: boolean;
+  setIsEditMode: (v: boolean) => void;
+  canWrite: boolean;
+  onAddProject: () => void;
+  onAddTask: (p?: Project | null) => void;
+  activeProjectInView?: Project | null;
+  filteredProjects: Project[];
+  projects: Project[];
+  handleSyncAllPredecessors: (v: boolean) => void;
+  isSyncingPredecessors: boolean;
+  handleConvertAllSubtasksToHash?: () => void;
+  isConvertingToHash?: boolean;
+  currentUser: AppUser;
+  handleExportProjects: () => void;
+  handleImportProjects: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleExportTasks: () => void;
+  handleImportTasks: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  parseCSVDate?: (d: any) => string;
+  onSortSubTasks?: () => void;
+  isSortingSubTasks?: boolean;
+  selectedTaskCount?: number;
+  onBulkAction?: (action: any) => void;
+}
+
+export const DetailFilterToolbar = memo(function DetailFilterToolbar({
+  globalYearFilter,
+  setGlobalYearFilter,
+  years,
+  effectiveStore,
+  setGlobalStoreFilter,
+  stores,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  locationFilterOptions,
+  statusFilter,
+  onStatusFilterChange,
+  searchTerm,
+  onSearchTermChange,
+  availableColumnsForUser,
+  visibleColumns,
+  onToggleColumn,
+  hasWritePermission,
+  isEditMode,
+  setIsEditMode,
+  canWrite,
+  onAddProject,
+  onAddTask,
+  activeProjectInView,
+  filteredProjects,
+  projects,
+  handleSyncAllPredecessors,
+  isSyncingPredecessors,
+  handleConvertAllSubtasksToHash,
+  isConvertingToHash,
+  currentUser,
+  handleExportProjects,
+  handleImportProjects,
+  handleExportTasks,
+  handleImportTasks,
+  parseCSVDate,
+  onSortSubTasks,
+  isSortingSubTasks,
+  selectedTaskCount = 0,
+  onBulkAction
+}: DetailFilterToolbarProps) {
+  return (
+    <>
+      <div className="px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-wrap items-center justify-between gap-2.5 shrink-0 print:hidden rounded-t-xl">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full">
+        <select 
+          value={globalYearFilter}
+          onChange={(e) => setGlobalYearFilter(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+        >
+          <option value="all">All Years</option>
+          {years.map(y => <option key={y} value={y}>Year {y}</option>)}
+        </select>
+        <select 
+          value={effectiveStore}
+          onChange={(e) => setGlobalStoreFilter(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+        >
+          {stores.length > 1 && <option value="all">All Stores</option>}
+          {stores.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <MultiCheckboxSelect 
+          value={globalLocationFilter}
+          onChange={setGlobalLocationFilter}
+          options={locationFilterOptions}
+          placeholder="All Locations"
+          className="min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
+        />
+        <select 
+          value={statusFilter}
+          onChange={(e) => onStatusFilterChange(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none cursor-pointer"
+        >
+          <option value="all">All Status</option>
+          <option value="Upcoming">Upcoming</option>
+          <option value="On process">On process</option>
+          <option value="On process + Upcoming 3 days">On process + Upcoming 3 days</option>
+          <option value="Handover">Handover</option>
+          <option value="Completed">Completed</option>
+          <option value="Canceled">Canceled</option>
+        </select>
+
+        <FixedProjectInput projects={projects} />
+
+        <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+          <DebouncedSearchInput 
+            value={searchTerm}
+            onChange={onSearchTermChange}
+            placeholder="Search in detail..."
+          />
+        </div>
+
+        <div className="hidden xl:flex items-center gap-2 shrink-0 ml-auto">
+          <ColumnAdder 
+            availableColumns={availableColumnsForUser} 
+            visibleColumns={visibleColumns} 
+            onAddColumn={onToggleColumn} 
+          />
+        </div>
+      </div>
+    </div>
+
+      {/* Floating Edit Mode Button - Moved to bottom-16 right-4 to avoid overlapping search bar */}
+      {hasWritePermission && !isEditMode && (
+        <div className="fixed bottom-16 right-4 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
+          <button
+            onClick={() => setIsEditMode(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-blue-600 dark:bg-blue-600 border border-blue-400 text-white hover:bg-blue-700 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-2xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer ring-2 ring-blue-500/30"
+            title="Edit Mode"
+          >
+            <Edit3 className="w-4 h-4 text-white pointer-events-none" />
+            <span className="pointer-events-none">
+              Edit Mode
+            </span>
+          </button>
+        </div>
+      )}
+
+      {hasWritePermission && isEditMode && (
+        <div className="fixed top-[154px] sm:top-[160px] left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden pointer-events-auto">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
+              <Edit3 className="w-3.5 h-3.5 text-blue-500" />
+              <span>Editing Mode</span>
+            </div>
+
+            {canWrite && (
+              <>
+                <button 
+                  onClick={onAddProject}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-slate-900 dark:bg-blue-600 border border-slate-800 dark:border-blue-500 text-white rounded-lg hover:bg-slate-800 dark:hover:bg-blue-500 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs cursor-pointer active:scale-95"
+                  title="Add Project"
+                >
+                  <Plus className="w-4 h-4 pointer-events-none" />
+                  <span className="hidden sm:inline pointer-events-none">
+                    Add Project
+                  </span>
+                </button>
+
+                <button 
+                  onClick={() => {
+                    const targetProj = activeProjectInView || (filteredProjects && filteredProjects.length > 0 ? filteredProjects[0] : (projects && projects.length > 0 ? projects[0] : null));
+                    onAddTask(targetProj);
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 dark:bg-emerald-600 border border-emerald-700 text-white rounded-lg hover:bg-emerald-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 cursor-pointer"
+                  title={activeProjectInView?.code ? `Add Task for ${activeProjectInView.code}` : "Add New Task"}
+                >
+                  <Plus className="w-4 h-4 pointer-events-none" />
+                  <span className="hidden sm:inline pointer-events-none">
+                    {activeProjectInView?.code ? `+ Task (${activeProjectInView.code})` : 'Add New Task'}
+                  </span>
+                </button>
+
+                {onSortSubTasks && (
+                  <button 
+                    onClick={onSortSubTasks}
+                    disabled={isSortingSubTasks}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-600 dark:bg-amber-600 border border-amber-700 text-white rounded-lg hover:bg-amber-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title={activeProjectInView?.code ? `Sort sub-tasks for ${activeProjectInView.code} by Start Date & Dependencies` : "Sort sub-tasks by Start Date & Dependencies"}
+                  >
+                    <ArrowUpDown className={`w-4 h-4 pointer-events-none ${isSortingSubTasks ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline pointer-events-none">
+                      {isSortingSubTasks ? 'Sorting...' : (activeProjectInView?.code ? `Sort (${activeProjectInView.code})` : 'Sort Sub-tasks')}
+                    </span>
+                  </button>
+                )}
+
+                <button 
+                  onClick={() => handleSyncAllPredecessors(true)}
+                  disabled={isSyncingPredecessors}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-600 dark:bg-indigo-600 border border-indigo-700 text-white rounded-lg hover:bg-indigo-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                  title="Fix and synchronize all predecessor references with subtask codes"
+                >
+                  <Wand2 className={`w-4 h-4 pointer-events-none ${isSyncingPredecessors ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline pointer-events-none">
+                    {isSyncingPredecessors ? 'Syncing...' : 'Sync Predecessor'}
+                  </span>
+                </button>
+
+                {handleConvertAllSubtasksToHash && (
+                  <button 
+                    onClick={() => handleConvertAllSubtasksToHash()}
+                    disabled={isConvertingToHash}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-cyan-600 dark:bg-cyan-600 border border-cyan-700 text-white rounded-lg hover:bg-cyan-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title="Scan and convert '-' to '#' for subtask codes and predecessors"
+                  >
+                    <Hash className={`w-4 h-4 pointer-events-none ${isConvertingToHash ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline pointer-events-none">
+                      {isConvertingToHash ? 'Converting...' : "Convert '-' to '#'"}
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => onBulkAction && onBulkAction('unlink')}
+                  disabled={selectedTaskCount < 1}
+                  className={cn(
+                    "flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 cursor-pointer",
+                    selectedTaskCount >= 1
+                      ? "bg-amber-600 dark:bg-amber-600 border border-amber-700 text-white hover:bg-amber-700"
+                      : "opacity-40 cursor-not-allowed bg-slate-200 dark:bg-[#333336] text-slate-400 border border-slate-300 dark:border-slate-700"
+                  )}
+                  title="Unlink selected tasks from parent modular link"
+                >
+                  <Unlink className="w-4 h-4 pointer-events-none" />
+                  <span className="hidden sm:inline pointer-events-none">
+                    Unlink{selectedTaskCount > 0 ? ` (${selectedTaskCount})` : ''}
+                  </span>
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setIsEditMode(false)}
+              className="flex items-center justify-center p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-[#e3e3e3] rounded-lg hover:bg-slate-100 dark:hover:bg-[#333336] transition-colors shrink-0 ml-1 cursor-pointer"
+              title="Done Editing"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
+        {hasWritePermission && (
+          <>
+            <div className="flex gap-1 items-center">
+              {currentUser.role === 'admin' && (
+                <FullReplaceImport 
+                  collectionName="taka_projects"
+                  onImportSuccess={(count) => useAppStore.getState().setToast({ title: "Success", message: String(`Full replace successful! Imported ${count} projects.`) })}
+                  onParseRow={(row, headers) => {
+                    const p: any = {};
+                    let rowNo: any = null;
+                    headers.forEach((h, i) => {
+                      const fieldMap: any = { 'store': 'store', 'location': 'location', 'year': 'year', 'code': 'code', 'name': 'name', 'no': 'no', 'shoptype': 'shopType', 'shop type': 'shopType', 'shop_type': 'shopType', 'shop': 'shopType', 'sizem2': 'sizeM2', 'size': 'sizeM2', 'area': 'sizeM2' };
+                      const target = fieldMap[h];
+                      if (target) {
+                        let val: any = row[i];
+                        if (target === 'year' || target === 'no' || target === 'sizeM2') val = isNaN(Number(val)) ? val : Number(val);
+                        if (target === 'shopType') val = val !== undefined && val !== null ? String(val).trim() : '';
+                        p[target] = val;
+                        if (target === 'no') rowNo = val;
+                      }
+                    });
+                    if (!p.code) return null;
+                    return p;
+                  }}
+                  id="detail-full-import-projects-btn"
+                  hiddenBtn={true}
+                />
+              )}
+              <button id="detail-export-projects-btn" onClick={handleExportProjects} className="hidden" />
+              <input id="detail-import-projects-input" type="file" accept=".csv" onChange={handleImportProjects} className="hidden" />
+            </div>
+            <div className="flex gap-1 items-center hidden">
+              {currentUser.role === 'admin' && (
+                <FullReplaceImport 
+                  collectionName="taka_tasks"
+                  onImportSuccess={(count) => useAppStore.getState().setToast({ title: "Success", message: String(`Full replace successful! Imported ${count} tasks.`) })}
+                  onParseRow={(row, headers) => {
+                    const t: any = {};
+                    headers.forEach((h, i) => {
+                      let key = h;
+                      if (h === 'task name') key = 'name';
+                      if (h === 'projectcode') key = 'projectCode';
+                      if (h === 'year' || h === 'projectyear') key = 'projectYear';
+                      if (h === 'store' || h === 'projectstore') key = 'projectStore';
+                      if (h === 'sub-task code' || h === 'sub task code' || h === 'subtask code' || h === 'sub_task_code' || h === 'taskcodephu' || h === 'task code phu' || h === 'task_code_phu') key = 'taskCodePhu';
+                      if (h === 'orderindex' || h === 'order_index') key = 'orderIndex';
+                      if (h === 'delegation' || h === 'task delegation' || h === 'task_delegation' || h === 'isdelegation') key = 'delegation';
+                      if (h === 'task flexible' || h === 'task_flexible' || h === 'taskflexible' || h === 'flexible' || h === 'realtimeupdate' || h === 'realtime_update') key = 'realtimeUpdate';
+                      if (['projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'id'].includes(key)) {
+                        let val: any = row[i];
+                        if (key === 'start' || key === 'finish') val = parseCSVDate(val);
+                        else if (key === 'delegation' || key === 'realtimeUpdate') {
+                          const strVal = String(val || '').trim().toLowerCase();
+                          val = (strVal === 'true' || strVal === '1' || strVal === 'yes' || strVal === 'on');
+                        } else if (key === 'projectYear') {
+                          val = isNaN(Number(val)) ? val : Number(val);
+                        }
+                        t[key] = val;
+                      }
+                    });
+                    if (!t.projectCode || !t.name) return null;
+                    return t;
+                  }}
+                  onRecordSave={(record, batch) => {
+                     if (record.delegation) {
+                        const now = new Date().toISOString();
+                        const dateStr = now.substring(0, 10);
+                        const activeUser = useAppStore.getState().currentUser || currentUser;
+                        const activeUserId = activeUser?.id && activeUser.id !== 'guest' ? activeUser.id : (activeUser?.username || 'system');
+                        const rawParty = (record.party && record.party.trim()) ? record.party.trim() : '';
+                        const parsedParty = rawParty.split(/[,;/+]+/).map(s => s.trim()).filter(Boolean)[0] || rawParty;
+                        const deterministicGroupId = `del_${record.id}`;
+
+                        if (parsedParty) {
+                          const newGroup = {
+                            id: deterministicGroupId,
+                            parentTaskId: record.id,
+                            name: record.name || 'Delegated Task',
+                            projectCode: record.projectCode,
+                            projectStore: record.projectStore,
+                            projectYear: (record.projectYear !== undefined && record.projectYear !== null && !isNaN(Number(record.projectYear))) ? Number(record.projectYear) : (Number(projects.find(p => p.code === record.projectCode)?.year) || new Date().getFullYear()),
+                            subTasks: [{ 
+                               id: generateId(), 
+                               name: '', 
+                               comments: '', 
+                               status: 'Assigned', 
+                               delegationStatus: 'Assigned', 
+                               priority: 'Mid', 
+                               party: parsedParty, 
+                               startAct: dateStr, 
+                               finishAct: dateStr, 
+                               updatedAt: now 
+                            }],
+                            updatedAt: now,
+                            createdBy: activeUserId
+                          };
+                          const delRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', deterministicGroupId);
+                          batch.set(delRef, newGroup, { merge: true });
+                        }
+                     }
+                  }}
+                  id="detail-full-import-tasks-btn"
+                  hiddenBtn={true}
+                />
+              )}
+              <button id="detail-export-tasks-btn" onClick={handleExportTasks} className="hidden" />
+              <input id="detail-import-tasks-input" type="file" accept=".csv, .xlsx, .xls" onChange={handleImportTasks} className="hidden" />
+            </div>
+          </>
+        )}
+    </>
+  );
+});
+
+
+
+// FILE: src/components/Gantt/useGanttProjectsFilter.ts
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { Project, Task, AppUser } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { 
+  getStatus, 
+  getProjectDatesAndStatus,
+  matchProjectStatusFilter,
+  parseDateTime, 
+  getUserAllowedStores, 
+  getEffectiveStoreFilter, 
+  matchesAdvancedSearch 
+} from '../../lib/utils';
+import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
+import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
+import { deduplicateTasksInMemory } from '../../lib/taskDeduplicationService';
+import { filterNonOrphanTasks } from '../../lib/taskRollupService';
+
+interface UseGanttProjectsFilterParams {
+  projects: Project[];
+  tasks: Task[];
+  delegationGroups: any[];
+  currentUser: AppUser;
+}
+
+export function useGanttProjectsFilter({
+  projects,
+  tasks,
+  delegationGroups,
+  currentUser
+}: UseGanttProjectsFilterParams) {
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
+  const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
+  const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
+  const setExpandedProjects = useAppStore(state => state.setExpandedProjectIds);
+  const ganttTabFilterProjectId = useAppStore(state => state.ganttTabFilterProjectId);
+  const setGanttTabFilterProjectId = useAppStore(state => state.setGanttTabFilterProjectId);
+
+  const [searchTerm, setSearchTerm] = useState(() => safeGetItemSession("taka_gantt_search") || "");
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+
+  // Sync QuickNav targeted project filter
+  useEffect(() => {
+    if (ganttTabFilterProjectId) {
+      const targetProj = projects.find(
+        p => (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+             (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase())
+      );
+      const codeToDisplay = targetProj?.code || ganttTabFilterProjectId;
+      setSearchTerm(codeToDisplay);
+      setFilterProjectStatus('all');
+    }
+  }, [ganttTabFilterProjectId, projects]);
+
+  const [filterProjectStatus, setFilterProjectStatus] = useState<string>(() => {
+    if ((safeGetItemSession("taka_gantt_search") || "").trim()) return 'all';
+    const saved = safeGetItemSession("taka_gantt_status_filter");
+    return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
+  });
+
+  const lastSelectedStatusFilterRef = useRef<string>(
+    (() => {
+      const saved = safeGetItemSession("taka_gantt_status_filter");
+      return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
+    })()
+  );
+  const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
+  const wasSearchingRef = useRef<boolean>(!!(safeGetItemSession("taka_gantt_search") || "").trim());
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      safeSetItemSession("taka_gantt_search", searchTerm);
+      if (ganttTabFilterProjectId) {
+        const targetProj = projects.find(
+          p => (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+               (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase())
+        );
+        const expectedCode = targetProj?.code || ganttTabFilterProjectId;
+        if (!searchTerm.trim() || searchTerm.trim().toUpperCase() !== expectedCode.trim().toUpperCase()) {
+          setGanttTabFilterProjectId('');
+        }
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchTerm, ganttTabFilterProjectId, setGanttTabFilterProjectId, projects]);
+
+  const onStatusFilterChange = useCallback((status: string) => {
+    setFilterProjectStatus(status);
+    if (!searchTerm.trim()) {
+      lastSelectedStatusFilterRef.current = status;
+      safeSetItemSession("taka_gantt_status_filter", status);
+    }
+  }, [searchTerm]);
+
+  // Status & Location filter preservation during search
+  useEffect(() => {
+    const isSearching = !!deferredSearchTerm.trim();
+    if (!wasSearchingRef.current && isSearching) {
+      if (filterProjectStatus !== 'all') {
+        lastSelectedStatusFilterRef.current = filterProjectStatus;
+        safeSetItemSession("taka_gantt_status_filter", filterProjectStatus);
+      }
+      lastSelectedLocationFilterRef.current = globalLocationFilter;
+      setFilterProjectStatus('all');
+      wasSearchingRef.current = true;
+    } else if (wasSearchingRef.current && !isSearching) {
+      const restored = lastSelectedStatusFilterRef.current || safeGetItemSession("taka_gantt_status_filter") || 'On process + Upcoming 3 days';
+      const finalStatus = restored && restored !== 'all' ? restored : 'On process + Upcoming 3 days';
+      setFilterProjectStatus(finalStatus);
+      setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
+      wasSearchingRef.current = false;
+    }
+  }, [deferredSearchTerm]);
+
+  // Reset to default 'On process + Upcoming 3 days' when switching Year or Store
+  const prevGanttScopeRef = useRef(`${globalYearFilter}_${effectiveStore}`);
+  useEffect(() => {
+    const currentScope = `${globalYearFilter}_${effectiveStore}`;
+    if (prevGanttScopeRef.current !== currentScope) {
+      prevGanttScopeRef.current = currentScope;
+      if (!searchTerm.trim()) {
+        setFilterProjectStatus('On process + Upcoming 3 days');
+        lastSelectedStatusFilterRef.current = 'On process + Upcoming 3 days';
+        safeSetItemSession("taka_gantt_status_filter", 'On process + Upcoming 3 days');
+      }
+      if (globalLocationFilter.length > 0) {
+        const hasMatchingLoc = projects.some(p => {
+          if (p.isDeleted) return false;
+          const pYear = p.year ? String(p.year) : null;
+          if (globalYearFilter !== 'all' && pYear !== String(globalYearFilter)) return false;
+          if (effectiveStore !== 'all' && String(p.store || '').toUpperCase() !== String(effectiveStore).toUpperCase()) return false;
+          return p.location && globalLocationFilter.includes(p.location);
+        });
+        if (!hasMatchingLoc) {
+          setGlobalLocationFilter([]);
+        }
+      }
+    }
+  }, [globalYearFilter, effectiveStore, searchTerm, projects, globalLocationFilter, setGlobalLocationFilter]);
+
+  const uniqueYears = useMemo(() => {
+    const yearsSet = new Set<string>();
+    projects.forEach(p => {
+      if (p.year) yearsSet.add(String(p.year));
+    });
+    ['2026', '2027'].forEach(y => yearsSet.add(y));
+    return Array.from(yearsSet).sort();
+  }, [projects]);
+
+  const uniqueStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
+  const locationOptions = useLocationOptions();
+
+  // Index tasks by project ID, project key, and code
+  const tasksByProjectId = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach(t => {
+      if (t.projectId) {
+        const pId = String(t.projectId);
+        if (!map.has(pId)) map.set(pId, []);
+        map.get(pId)!.push(t);
+      }
+    });
+    return map;
+  }, [tasks]);
+
+  const tasksByProject = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach(t => {
+      const key = `${String(t.projectCode || '').trim().toUpperCase()}_${String(t.projectYear || '').trim()}_${String(t.projectStore || '').trim().toUpperCase()}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(t);
+    });
+    return map;
+  }, [tasks]);
+
+  const tasksMapByCode = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach(t => {
+      const code = String(t.projectCode || '').trim().toUpperCase();
+      if (!map.has(code)) map.set(code, []);
+      map.get(code)!.push(t);
+    });
+    return map;
+  }, [tasks]);
+
+  const projectTasksCache = useMemo(
+    () => new WeakMap<Project, Task[]>(),
+    [tasksByProjectId, tasksByProject, tasksMapByCode]
+  );
+
+  const getGroupTasksForProject = useCallback(
+    (p: Project): Task[] => {
+      if (!p) return [];
+      const cached = projectTasksCache.get(p);
+      if (cached) return cached;
+
+      const realTasksMap = new Map<string, Task>();
+      const virtualTasksMap = new Map<string, Task>();
+
+      const pIdStr = p.id ? String(p.id).trim() : '';
+      const pStore = p.store ? String(p.store).trim().toUpperCase() : '';
+      const pYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+
+      const tryAddTask = (t: Task) => {
+        if (!t || (!t.id && !t.name) || t.isDeleted) return;
+        const tIdStr = String(t.id || '').trim();
+        if (tIdStr && isTaskDeletedInTracker(tIdStr, pIdStr || undefined)) return;
+        if ((!t.name || !String(t.name).trim()) && (!t.start || !String(t.start).trim()) && (!t.finish || !String(t.finish).trim()) && !t.taskCodePhu) {
+          return;
+        }
+
+        const tProjId = t.projectId ? String(t.projectId).trim() : '';
+        if (tProjId && pIdStr) {
+          if (tProjId !== pIdStr) return;
+        } else {
+          const tStore = t.projectStore ? String(t.projectStore).trim().toUpperCase() : '';
+          const tYear = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+          if (pStore && tStore && pStore !== tStore) return;
+          if (pYear && tYear && pYear !== tYear) return;
+        }
+
+        const mapKey = (tIdStr || String(t.name)).toLowerCase();
+        const isVirtual = Boolean((t as any)._isVirtualSummary);
+        if (isVirtual) {
+          if (!virtualTasksMap.has(mapKey)) virtualTasksMap.set(mapKey, t);
+        } else {
+          realTasksMap.set(mapKey, t);
+        }
+      };
+
+      // 1. By projectId
+      if (pIdStr && tasksByProjectId.has(pIdStr)) {
+        tasksByProjectId.get(pIdStr)!.forEach(tryAddTask);
+      }
+
+      // 2. By project key (CODE_YEAR_STORE)
+      const key = `${String(p.code || '').trim().toUpperCase()}_${pYear}_${pStore}`;
+      const foundByKey = tasksByProject.get(key);
+      if (foundByKey && foundByKey.length > 0) {
+        foundByKey.forEach(tryAddTask);
+      }
+
+      // 3. By project code
+      const codeKey = String(p.code || '').trim().toUpperCase();
+      if (codeKey) {
+        const foundByCode = tasksMapByCode.get(codeKey);
+        if (foundByCode && foundByCode.length > 0) {
+          foundByCode.forEach(tryAddTask);
+        }
+      }
+
+      // 4. Fallback & Merge from taskSummaries if taskSummaries has more items than realTasksMap
+      if (p.taskSummaries && Array.isArray(p.taskSummaries) && realTasksMap.size < p.taskSummaries.length) {
+        p.taskSummaries.forEach((ts, idx) => {
+          if (isTaskDeletedInTracker(ts.id, pIdStr || undefined)) return;
+          if ((!ts.name || !String(ts.name).trim()) && (!ts.start || !String(ts.start).trim()) && (!ts.finish || !String(ts.finish).trim()) && !ts.taskCodePhu) {
+            return;
+          }
+          const rawTsId = ts.id ? String(ts.id).trim() : '';
+          const tsId = rawTsId || `ts_${p.id || p.code}_${p.store || 'HCM'}_${p.year || ''}_${idx}`;
+          const tsIdLower = tsId.toLowerCase();
+          if (!virtualTasksMap.has(tsIdLower)) {
+            virtualTasksMap.set(tsIdLower, {
+              id: tsId,
+              name: (ts.name && String(ts.name).trim()) ? ts.name : (ts.taskCodePhu || `Task ${idx + 1}`),
+              start: ts.start || p.computedTakStart || p.start || '',
+              finish: ts.finish || p.computedTakCompl || p.handover || '',
+              projectCode: p.code || '',
+              projectStore: p.store || 'HCM',
+              projectYear: p.year ? String(p.year) : '',
+              party: ts.party || p.party || '',
+              runningStatus: ts.runningStatus || 'On process',
+              duration: ts.duration || '',
+              parentTaskId: ts.parentTaskId,
+              taskCodePhu: ts.taskCodePhu || (p.code ? `${p.code}#${idx + 1}` : undefined),
+              orderIndex: ts.orderIndex !== undefined ? ts.orderIndex : idx,
+              projectId: p.id,
+              ...ts,
+              _isVirtualSummary: true,
+            } as unknown as Task);
+          }
+        });
+      }
+
+      const rawGroupTasks: Task[] = Array.from(realTasksMap.values());
+      const realCodeSet = new Set<string>();
+      const realNameOrdSet = new Set<string>();
+      rawGroupTasks.forEach(rt => {
+        if (rt.taskCodePhu) realCodeSet.add(String(rt.taskCodePhu).trim().toLowerCase());
+        if (rt.name) {
+          const nLower = String(rt.name).trim().toLowerCase();
+          const ordStr = rt.orderIndex !== undefined && rt.orderIndex !== null ? String(rt.orderIndex) : '';
+          realNameOrdSet.add(`${nLower}|${ordStr}`);
+        }
+      });
+
+      virtualTasksMap.forEach((vt, mapKey) => {
+        if (realTasksMap.has(mapKey)) return;
+        const vtCode = vt.taskCodePhu ? String(vt.taskCodePhu).trim().toLowerCase() : '';
+        if (vtCode && realCodeSet.has(vtCode)) return;
+        const vtName = vt.name ? String(vt.name).trim().toLowerCase() : '';
+        const vtOrd = vt.orderIndex !== undefined && vt.orderIndex !== null ? String(vt.orderIndex) : '';
+        if (!vt.id || String(vt.id).startsWith('ts_')) {
+          if (vtName && realNameOrdSet.has(`${vtName}|${vtOrd}`)) return;
+        }
+        rawGroupTasks.push(vt);
+      });
+
+      if (rawGroupTasks.length <= 1) {
+        projectTasksCache.set(p, rawGroupTasks);
+        return rawGroupTasks;
+      }
+      const { dedupedTasks } = deduplicateTasksInMemory(rawGroupTasks, [p]);
+      const { cleaned } = filterNonOrphanTasks(dedupedTasks);
+      projectTasksCache.set(p, cleaned);
+      return cleaned;
+    },
+    [projectTasksCache, tasksByProjectId, tasksByProject, tasksMapByCode]
+  );
+
+  const hasActiveSearchTerm = Boolean(deferredSearchTerm.trim());
+
+  // Pre-indexed Search Pool Cache built lazily only when user actually searches
+  const projectSearchIndex = useMemo(() => {
+    const map = new Map<string, { pPool: (string | number | undefined | null)[]; tPools: (string | number | undefined | null)[][] }>();
+    if (!hasActiveSearchTerm) return map;
+    projects.forEach(p => {
+      const pTasks = getGroupTasksForProject(p);
+      const pPool = [p.code, p.name, p.store, p.location, p.year, p.detail, p.party];
+      const tPools = pTasks.map(t => [
+        t.name,
+        t.taskCodePhu,
+        t.party,
+        t.runningStatus,
+        t.predecessor,
+        ...(t.notes ? t.notes.map(n => n.content) : [])
+      ]);
+      map.set(p.id || p.code, { pPool, tPools });
+    });
+    return map;
+  }, [hasActiveSearchTerm, projects, getGroupTasksForProject]);
+
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
+
+  const filteredProjects = useMemo(() => {
+    return projects.filter(p => {
+      // Check fixedProjectCode
+      if (fixedProjectCode && fixedProjectCode.trim()) {
+        const fix = fixedProjectCode.trim().toLowerCase();
+        const pCode = (p.code || '').trim().toLowerCase();
+        const matchesFix = pCode === fix || pCode.includes(fix) || String(p.id).toLowerCase() === fix;
+        if (!matchesFix) return false;
+      }
+
+      // Strict single-project isolation when navigated via Quick Navigation
+      if (ganttTabFilterProjectId) {
+        const isTarget = (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
+                         (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase());
+        return isTarget;
+      }
+
+      const computedTakStart = p.computedTakStart || p.start || "";
+      const status = p.computedStatus || getStatus(computedTakStart, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
+      const pYear = p.year ? String(p.year).trim() : null;
+      const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
+      const matchesStore = effectiveStore === 'all' || (Boolean(p.store) && String(p.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
+      const matchesLocation = globalLocationFilter.length === 0 || (p.location && globalLocationFilter.includes(p.location));
+
+      const matchesStatus = matchProjectStatusFilter(status, filterProjectStatus, computedTakStart);
+
+      if (!matchesYear || !matchesStore || !matchesLocation || !matchesStatus) return false;
+
+      if (!deferredSearchTerm.trim()) return true;
+
+      const indexed = projectSearchIndex.get(p.id || p.code);
+      if (indexed) {
+        if (matchesAdvancedSearch(deferredSearchTerm, [...indexed.pPool, status])) return true;
+        return indexed.tPools.some(tPool => matchesAdvancedSearch(deferredSearchTerm, tPool));
+      }
+
+      return matchesAdvancedSearch(deferredSearchTerm, [p.code, p.name, p.store, p.location, status]);
+    });
+  }, [
+    projects,
+    fixedProjectCode,
+    ganttTabFilterProjectId,
+    globalYearFilter,
+    effectiveStore,
+    globalLocationFilter,
+    filterProjectStatus,
+    deferredSearchTerm,
+    projectSearchIndex
+  ]);
+
+  const [visibleCount, setVisibleCount] = useState(20);
+
+  const sortedProjects = useMemo(() => {
+    return [...filteredProjects].sort((a, b) => {
+      const startA = a.computedTakStart || '9999-12-31';
+      const startB = b.computedTakStart || '9999-12-31';
+      if (startA !== startB) return startA.localeCompare(startB);
+      return a.code.localeCompare(b.code);
+    });
+  }, [filteredProjects]);
+
+  const isPrintPreview = useAppStore(state => state.isPrintPreview);
+  const isExportingPDF = useAppStore(state => state.isExportingPDF);
+
+  const paginatedProjects = useMemo(() => {
+    if (isPrintPreview || isExportingPDF) return sortedProjects;
+    return sortedProjects.slice(0, visibleCount);
+  }, [sortedProjects, visibleCount, isPrintPreview, isExportingPDF]);
+
+  const handleLoadMore = useCallback(() => {
+    setVisibleCount(prev => Math.min(prev + 20, sortedProjects.length));
+  }, [sortedProjects.length]);
+
+  // Search filter operates on Project Summaries + loaded tasks first (Tri-Gate Lazy Loading).
+  // Projects remain in summarized/collapsed state until user taps Expand (+), which triggers Delta Sync task fetching.
+  const lastAutoExpandedSearchRef = useRef<string>('');
+  useEffect(() => {
+    const term = deferredSearchTerm.trim();
+    if (!term) {
+      lastAutoExpandedSearchRef.current = '';
+    }
+  }, [deferredSearchTerm]);
+
+  return {
+    globalYearFilter,
+    setGlobalYearFilter,
+    globalStoreFilter,
+    setGlobalStoreFilter,
+    effectiveStore,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    filterProjectStatus,
+    onStatusFilterChange,
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    uniqueYears,
+    uniqueStores,
+    locationOptions,
+    tasksByProject,
+    tasksMapByCode,
+    getGroupTasksForProject,
+    filteredProjects,
+    sortedProjects,
+    paginatedProjects,
+    visibleCount,
+    setVisibleCount,
+    handleLoadMore
+  };
+}
+
+
+
+// FILE: src/components/Gantt/GanttToolbar.tsx
+import React, { Dispatch, SetStateAction, useMemo } from 'react';
+import { Search, Loader2, Edit2, X, Target } from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { useLanguage } from '../../lib/LanguageContext';
+import { useAppStore } from '../../store/useAppStore';
+import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
+import { ColumnAdder } from '../ColumnAdder';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
+import { ViewMode } from './ganttTypes';
+import { GanttToolbarActions } from './GanttToolbarActions';
+import { GanttToolbarDateFilter } from './GanttToolbarDateFilter';
+
+const GANTT_AVAILABLE_COLUMNS = [
+  { id: 'start', label: 'Start' },
+  { id: 'finish', label: 'Finish' },
+  { id: 'party', label: 'Party' },
+  { id: 'duration', label: 'Duration' },
+  { id: 'predecessor', label: 'Predecessor' },
+];
+
+export interface GanttToolbarProps {
+  // Year & Store & Location & Status filters
+  globalYearFilter: string;
+  setGlobalYearFilter: (year: string) => void;
+  uniqueYears: string[];
+
+  effectiveStore: string;
+  setGlobalStoreFilter: (store: string) => void;
+  uniqueStores: string[];
+
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (locs: string[]) => void;
+  locationOptions: string[];
+
+  filterProjectStatus: string;
+  onStatusFilterChange: (status: string) => void;
+
+  isTasksLoading: boolean;
+
+  // Delegation Highlight
+  canWrite: boolean;
+  isEditMode: boolean;
+  setIsEditMode: (val: boolean) => void;
+  isHighlightDelegationOn: boolean;
+  setIsHighlightDelegationOn: (val: boolean) => void;
+
+  // Edit Mode actions
+  selectedProjectIds: string[];
+  selectedTaskIds: string[];
+  setSelectedProjectIds: (ids: string[]) => void;
+  setSelectedTaskIds: React.Dispatch<React.SetStateAction<string[]>>;
+  handleSetTextColor: (color: string | null) => void;
+  handleSetBaselineSelected: () => void;
+  handleToggleRealtimeUpdate: () => void;
+  handleUnlinkModularTasks?: (childTaskIds?: string[]) => void | Promise<void>;
+  isTaskModularModalOpen?: boolean;
+  setIsTaskModularModalOpen: (val: boolean) => void;
+  sumMode: "none" | "duration";
+  setSumMode: (val: "none" | "duration") => void;
+  handleDeleteSelected: () => void;
+  handleDragStart: (e: React.DragEvent) => void;
+  isHideMode: boolean;
+  setIsHideMode: (val: boolean) => void;
+  hiddenRows: string[];
+  setHiddenRows: (rows: string[]) => void;
+  handleExportToPDF: () => void;
+  isExporting: boolean;
+
+  // Date Filter
+  tempStartDate: string;
+  setTempStartDate: (val: string) => void;
+  tempEndDate: string;
+  setTempEndDate: (val: string) => void;
+  setFilterStartDate: (val: string) => void;
+  setFilterEndDate: (val: string) => void;
+
+  // Columns & View Controls
+  visibleColumns: string[];
+  handleToggleColumn: (colId: string) => void;
+  handleTodayClick: () => void;
+
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
+
+  scaleInput: string;
+  setScaleInput: (val: string) => void;
+  dayWidth: number;
+  setDayWidth: (val: number) => void;
+  isWidthChanged: boolean;
+  setIsWidthChanged: (val: boolean) => void;
+  saveDayWidth: () => void;
+
+  // Search
+  searchTerm: string;
+  setSearchTerm: (term: string) => void;
+  initialFocusTaskId?: string;
+  ganttTabFocusTaskId?: string | null;
+  ganttTabFilterProjectId?: string | null;
+  handleClearFocus: () => void;
+}
+
+export function GanttToolbar({
+  globalYearFilter,
+  setGlobalYearFilter,
+  uniqueYears,
+  effectiveStore,
+  setGlobalStoreFilter,
+  uniqueStores,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  locationOptions,
+  filterProjectStatus,
+  onStatusFilterChange,
+  isTasksLoading,
+  canWrite,
+  isEditMode,
+  setIsEditMode,
+  isHighlightDelegationOn,
+  setIsHighlightDelegationOn,
+  selectedProjectIds,
+  selectedTaskIds,
+  setSelectedProjectIds,
+  setSelectedTaskIds,
+  handleSetTextColor,
+  handleSetBaselineSelected,
+  handleUnlinkModularTasks,
+  isTaskModularModalOpen = false,
+  setIsTaskModularModalOpen,
+  sumMode,
+  setSumMode,
+  handleDeleteSelected,
+  isHideMode,
+  setIsHideMode,
+  hiddenRows,
+  setHiddenRows,
+  handleExportToPDF,
+  isExporting,
+  tempStartDate,
+  setTempStartDate,
+  tempEndDate,
+  setTempEndDate,
+  setFilterStartDate,
+  setFilterEndDate,
+  visibleColumns,
+  handleToggleColumn,
+  handleTodayClick,
+  viewMode,
+  setViewMode,
+  scaleInput,
+  setScaleInput,
+  dayWidth,
+  setDayWidth,
+  isWidthChanged,
+  setIsWidthChanged,
+  saveDayWidth,
+  searchTerm,
+  setSearchTerm,
+  initialFocusTaskId,
+  ganttTabFocusTaskId,
+  ganttTabFilterProjectId,
+  handleClearFocus,
+}: GanttToolbarProps) {
+  const { t } = useLanguage();
+  const tasks = useAppStore((state) => state.tasks);
+  const projects = useAppStore((state) => state.projects);
+
+  const activeFocusTaskId = initialFocusTaskId || ganttTabFocusTaskId;
+  const focusedTask = React.useMemo(() => {
+    if (!activeFocusTaskId || !tasks) return null;
+    return tasks.find(t => String(t.id) === String(activeFocusTaskId)) || null;
+  }, [activeFocusTaskId, tasks]);
+
+  return (
+    <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+      {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+      <div className="flex flex-col lg:flex-row gap-2 justify-between items-stretch lg:items-center w-full">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+          {/* Col 1: Year */}
+          <select
+            value={globalYearFilter}
+            onChange={(e) => setGlobalYearFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">{t('All Years')}</option>
+            {uniqueYears.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+
+          {/* Col 2: Store */}
+          <select
+            value={effectiveStore}
+            onChange={(e) => setGlobalStoreFilter(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            {uniqueStores.length > 1 && <option value="all">{t('All Stores')}</option>}
+            {uniqueStores.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+
+          {/* Col 3: Location */}
+          <MultiCheckboxSelect
+            value={globalLocationFilter}
+            onChange={setGlobalLocationFilter}
+            options={locationOptions}
+            placeholder={t('All Locations')}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs"
+          />
+
+          {/* Col 4: Status */}
+          <select
+            value={filterProjectStatus}
+            onChange={(e) => onStatusFilterChange(e.target.value)}
+            className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
+          >
+            <option value="all">{t('All Statuses')}</option>
+            <option value="On process & Upcoming">{t('On Process & Upcoming')}</option>
+            <option value="On process">{t('On process')}</option>
+            <option value="On process + Upcoming 3 days">{t('On process + Upcoming 3 days')}</option>
+            <option value="Upcoming">{t('Upcoming')}</option>
+            <option value="Completed">{t('Completed')}</option>
+            <option value="Handover">{t('Handover')}</option>
+            <option value="Canceled">{t('Canceled')}</option>
+          </select>
+        </div>
+
+      {/* Floating Sticky Edit Mode Button - Moved to bottom-16 right-4 */}
+      {canWrite && !isEditMode && !isTaskModularModalOpen && (
+        <div className="fixed bottom-16 right-4 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => setIsEditMode(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-blue-600 dark:bg-blue-600 border border-blue-400 text-white hover:bg-blue-700 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-2xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer ring-2 ring-blue-500/30"
+            title="Edit Mode"
+          >
+            <Edit2 className="w-4 h-4 text-white pointer-events-none" />
+            <span className="pointer-events-none">
+              Edit Mode
+            </span>
+          </button>
+        </div>
+      )}
+
+      {canWrite && isEditMode && !isTaskModularModalOpen && (
+        <div className="fixed top-[154px] sm:top-[160px] left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-2.5 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden pointer-events-auto">
+          <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
+            <Edit2 className="w-3.5 h-3.5 text-blue-500" />
+            <span>Editing Mode</span>
+          </div>
+
+          {/* Highlight Me Button INSIDE Edit Mode Panel */}
+          <button
+            type="button"
+            onClick={() => setIsHighlightDelegationOn(!isHighlightDelegationOn)}
+            className={cn(
+              "px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs border active:scale-95 cursor-pointer h-8 shrink-0",
+              isHighlightDelegationOn
+                ? "bg-amber-100 dark:bg-[#2d2415] border-amber-500 text-amber-900 dark:text-amber-300 ring-1 ring-amber-500/50 font-extrabold"
+                : "bg-slate-100 dark:bg-[#1c1c1e] border-slate-300 dark:border-slate-700/80 text-amber-600 dark:text-amber-400 hover:bg-slate-200 dark:hover:bg-[#252528]"
+            )}
+            title={t('Highlight My Tasks')}
+          >
+            <span className="text-amber-500 dark:text-amber-400 text-xs">🎯</span>
+            <span>Highlight Me</span>
+          </button>
+
+          {/* Edit Mode Batch Actions */}
+          <GanttToolbarActions
+            selectedProjectIds={selectedProjectIds}
+            selectedTaskIds={selectedTaskIds}
+            handleSetTextColor={handleSetTextColor}
+            handleSetBaselineSelected={handleSetBaselineSelected}
+            handleUnlinkModularTasks={handleUnlinkModularTasks}
+            setIsTaskModularModalOpen={setIsTaskModularModalOpen}
+            sumMode={sumMode}
+            setSumMode={setSumMode}
+            handleDeleteSelected={handleDeleteSelected}
+            isHideMode={isHideMode}
+            setIsHideMode={setIsHideMode}
+            hiddenRows={hiddenRows}
+            setHiddenRows={setHiddenRows}
+            handleExportToPDF={handleExportToPDF}
+            isExporting={isExporting}
+          />
+
+          {/* Close Edit Mode button */}
+          <button
+            type="button"
+            onClick={() => setIsEditMode(false)}
+            className="flex items-center justify-center gap-1 px-3 py-1.5 bg-slate-200 hover:bg-slate-300 dark:bg-[#38383c] dark:hover:bg-[#444448] text-slate-700 dark:text-slate-200 font-bold rounded-lg text-xs transition-colors shrink-0 cursor-pointer active:scale-95"
+            title="Done / Exit Edit Mode"
+          >
+            <span>Done</span>
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+      </div>
+
+      {/* Row 2: Action Toolbar (Date Filter, + Add Column, Today) */}
+      <div className="flex flex-col gap-1 w-full">
+        <div className="flex flex-wrap items-center gap-2 justify-between w-full">
+          <div className="flex flex-wrap items-center gap-2">
+            <GanttToolbarDateFilter
+              handleTodayClick={handleTodayClick}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              scaleInput={scaleInput}
+              setScaleInput={setScaleInput}
+              dayWidth={dayWidth}
+              setDayWidth={setDayWidth}
+              isWidthChanged={isWidthChanged}
+              setIsWidthChanged={setIsWidthChanged}
+              saveDayWidth={saveDayWidth}
+              tempStartDate={tempStartDate}
+              setTempStartDate={setTempStartDate}
+              tempEndDate={tempEndDate}
+              setTempEndDate={setTempEndDate}
+              setFilterStartDate={setFilterStartDate}
+              setFilterEndDate={setFilterEndDate}
+            />
+
+            <ColumnAdder
+              availableColumns={GANTT_AVAILABLE_COLUMNS}
+              visibleColumns={visibleColumns}
+              onAddColumn={handleToggleColumn}
+            />
+
+            <FixedProjectInput projects={projects} />
+
+            <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+              <DebouncedSearchInput
+                value={searchTerm}
+                onChange={setSearchTerm}
+                placeholder="Search (+ AND, , OR)"
+              />
+            </div>
+
+
+          </div>
+
+          {/* Task loading spinner - Only on cold start when no cached tasks exist */}
+          {isTasksLoading && (!tasks || tasks.length === 0) && (
+            <div className="flex items-center gap-1 text-xs text-blue-400 font-semibold animate-pulse ml-auto">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              <span>{t('Syncing...')}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+// FILE: src/components/BudgetParts/useBudgetFilterSort.ts
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { matchesAdvancedSearch } from '../../lib/utils';
+import { BudgetTreeNode, BudgetSortConfig } from './budgetTypes';
+import { useAppStore } from '../../store/useAppStore';
+
+interface UseBudgetFilterSortParams {
+  treeData: BudgetTreeNode[];
+  globalYearFilter: string;
+  effectiveStore: string;
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (locs: string[]) => void;
+  moneyFilter: string;
+  searchTerm: string;
+  deferredSearchTerm: string;
+}
+
+export function useBudgetFilterSort({
+  treeData,
+  globalYearFilter,
+  effectiveStore,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  moneyFilter,
+  searchTerm,
+  deferredSearchTerm
+}: UseBudgetFilterSortParams) {
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
+  const [sortConfig, setSortConfig] = useState<BudgetSortConfig | null>(null);
+  const [visibleCount, setVisibleCount] = useState(30);
+
+  const isChildMatchSearch = (child: any, term: string): boolean => {
+    if (!term) return false;
+    const cSearchFields = [
+      child.code,
+      child.name,
+      child.store,
+      child.location,
+      child.type,
+      child.note,
+      child.year,
+      child.budget,
+      child.totalActual,
+      child.remaining
+    ];
+    return matchesAdvancedSearch(term, cSearchFields);
+  };
+
+  const isParentMatchSearch = (node: any, term: string): boolean => {
+    if (!term) return false;
+    const searchFields = [
+      node.code,
+      node.name,
+      node.store,
+      node.location,
+      node.type,
+      node.note,
+      node.year,
+      node.totalBudget,
+      node.totalActual,
+      node.remaining
+    ];
+    return matchesAdvancedSearch(term, searchFields);
+  };
+
+  // Auto-jump to matched project location(s) when searching (Debounced)
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (!term) return;
+    if (!treeData || treeData.length === 0) return;
+
+    const timer = setTimeout(() => {
+      const matchedLocationsList: string[] = [];
+
+      treeData.forEach((node: any) => {
+        const pYear = node.year ? String(node.year) : null;
+        if (globalYearFilter !== 'all' && pYear !== globalYearFilter) return;
+        if (effectiveStore !== 'all' && node.store !== effectiveStore) return;
+
+        const parentMatch = isParentMatchSearch(node, term);
+        if (parentMatch && node.location) {
+          matchedLocationsList.push(node.location);
+        }
+
+        if (node.children && node.children.length > 0) {
+          node.children.forEach((child: any) => {
+            const cYear = child.year ? String(child.year) : null;
+            if (globalYearFilter !== 'all' && cYear && cYear !== globalYearFilter) return;
+            if (effectiveStore !== 'all' && child.store && child.store !== effectiveStore) return;
+
+            if (isChildMatchSearch(child, term) || parentMatch) {
+              if (child.location) matchedLocationsList.push(child.location);
+              else if (node.location) matchedLocationsList.push(node.location);
+            }
+          });
+        }
+      });
+
+      const matchedLocations = Array.from(
+        new Set(matchedLocationsList.filter((loc): loc is string => !!loc && loc.trim() !== ''))
+      );
+
+      if (matchedLocations.length > 0) {
+        const currentLocs = globalLocationFilter || [];
+        const isSame = currentLocs.length === matchedLocations.length && currentLocs.every(l => matchedLocations.includes(l));
+        if (!isSame) {
+          setGlobalLocationFilter(matchedLocations);
+        }
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm, treeData, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
+
+  const filterNode = (node: any): boolean => {
+    if (fixedProjectCode && fixedProjectCode.trim()) {
+      const fix = fixedProjectCode.trim().toLowerCase();
+      const nodeCode = (node.code || '').trim().toLowerCase();
+      const matchesFix = nodeCode === fix || nodeCode.includes(fix) || String(node.id || '').toLowerCase() === fix;
+      if (!matchesFix) return false;
+    }
+
+    const pYear = node.year ? String(node.year).trim() : null;
+    const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
+    const matchesStore = effectiveStore === 'all' || (Boolean(node.store) && String(node.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
+    
+    // Strict Scope Guard: A parent project that does not belong to the selected Year or Store scope MUST NOT be displayed
+    if (!matchesYear || !matchesStore) {
+      return false;
+    }
+
+    const matchesLocation = globalLocationFilter.length === 0 || (node.location && globalLocationFilter.includes(node.location));
+    
+    const hasBudget = (node.totalBudget || 0) !== 0;
+    const hasActForc = (node.totalActual || 0) !== 0;
+    let matchesMoney = true;
+    if (moneyFilter === 'has_money') matchesMoney = hasBudget || hasActForc;
+    else if (moneyFilter === 'has_budget') matchesMoney = hasBudget;
+    else if (moneyFilter === 'has_act_forc') matchesMoney = hasActForc;
+    
+    const baseParentMatch = matchesLocation && matchesMoney;
+    const parentMatchesSearch = !deferredSearchTerm || isParentMatchSearch(node, deferredSearchTerm);
+
+    if (node.children && node.children.length > 0) {
+      const validChildren = node.children.filter((child: any) => {
+        const cYear = child.year ? String(child.year).trim() : pYear;
+        const cMatchesYear = globalYearFilter === 'all' || !cYear || cYear === String(globalYearFilter).trim();
+        const cStore = child.store ? String(child.store).toUpperCase().trim() : (node.store ? String(node.store).toUpperCase().trim() : '');
+        const cMatchesStore = effectiveStore === 'all' || !cStore || cStore === effectiveStore.toUpperCase().trim();
+        const cMatchesLocation = globalLocationFilter.length === 0 || (!child.location) || globalLocationFilter.includes(child.location);
+        
+        const cHasBudget = (child.budget || 0) !== 0;
+        const cHasActForc = (child.totalActual || 0) !== 0;
+        let cMatchesMoney = true;
+        if (moneyFilter === 'has_money') cMatchesMoney = cHasBudget || cHasActForc || matchesMoney;
+        else if (moneyFilter === 'has_budget') cMatchesMoney = cHasBudget || hasBudget;
+        else if (moneyFilter === 'has_act_forc') cMatchesMoney = cHasActForc || hasActForc;
+
+        return cMatchesYear && cMatchesStore && cMatchesLocation && cMatchesMoney;
+      });
+
+      const hasMultiChildren = node.children.length >= 2;
+
+      if (!deferredSearchTerm.trim()) {
+        node.filteredChildren = validChildren.map((c: any) => ({ ...c, isSearchMatch: false }));
+        return baseParentMatch || validChildren.length > 0;
+      }
+
+      const matchingChildIds = new Set<string>();
+      validChildren.forEach((child: any) => {
+        if (isChildMatchSearch(child, deferredSearchTerm)) {
+          matchingChildIds.add(child.id);
+        }
+      });
+
+      const anyChildMatchesSearch = matchingChildIds.size > 0;
+
+      if (hasMultiChildren) {
+        if (anyChildMatchesSearch || (baseParentMatch && parentMatchesSearch)) {
+          const shouldFilterChildren = !parentMatchesSearch && anyChildMatchesSearch;
+          node.filteredChildren = validChildren
+            .filter((child: any) => shouldFilterChildren ? matchingChildIds.has(child.id) : true)
+            .map((child: any) => ({
+              ...child,
+              isSearchMatch: matchingChildIds.has(child.id)
+            }));
+          return true;
+        }
+        node.filteredChildren = [];
+        return false;
+      } else {
+        if (anyChildMatchesSearch) {
+          node.filteredChildren = validChildren
+            .filter((c: any) => matchingChildIds.has(c.id))
+            .map((c: any) => ({ ...c, isSearchMatch: true }));
+          return true;
+        } else if (baseParentMatch && parentMatchesSearch) {
+          node.filteredChildren = validChildren.map((c: any) => ({ ...c, isSearchMatch: false }));
+          return true;
+        }
+        node.filteredChildren = [];
+        return false;
+      }
+    } else {
+      node.filteredChildren = [];
+      return baseParentMatch && parentMatchesSearch;
+    }
+  };
+
+  const filteredRoots = useMemo(() => {
+    let roots = treeData.filter(filterNode);
+    if (sortConfig) {
+      const sortFn = (a: any, b: any) => {
+        let valA = 0, valB = 0;
+        if (sortConfig.key === 'totalBudget') { valA = a.totalBudget || 0; valB = b.totalBudget || 0; }
+        else if (sortConfig.key === 'actual') { valA = a.totalActual || 0; valB = b.totalActual || 0; }
+        else if (sortConfig.key === 'variance') { valA = a.remaining || 0; valB = b.remaining || 0; }
+
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      };
+      roots = [...roots].sort(sortFn);
+    }
+    return roots;
+  }, [treeData, fixedProjectCode, globalYearFilter, effectiveStore, globalLocationFilter, moneyFilter, deferredSearchTerm, sortConfig]);
+
+  const handleBudgetScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const st = target.scrollTop;
+    const sh = target.scrollHeight;
+    const ch = target.clientHeight;
+    if (sh - (st + ch) < 350) {
+      if (visibleCount < filteredRoots.length) {
+        setVisibleCount(prev => Math.min(prev + 30, filteredRoots.length));
+      }
+    }
+  }, [visibleCount, filteredRoots.length]);
+
+  const handleSort = (key: string) => {
+    setSortConfig(prev => {
+      if (prev && prev.key === key) {
+        if (prev.direction === 'asc') return { key, direction: 'desc' };
+        return null;
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const totalGlobalBudget = filteredRoots.reduce((sum, p) => sum + (p.totalBudget || 0), 0);
+  const totalGlobalActual = filteredRoots.reduce((sum, p) => sum + (p.totalActual || 0), 0);
+  const totalGlobalSupportingFee = filteredRoots.reduce((sum, p) => sum + (p.totalSupportingFee || 0), 0);
+  const totalGlobalRemaining = totalGlobalBudget - totalGlobalActual + totalGlobalSupportingFee;
+  const totalVarianceColor = totalGlobalRemaining < 0 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400';
+
+  return {
+    sortConfig,
+    setSortConfig,
+    visibleCount,
+    setVisibleCount,
+    filteredRoots,
+    handleBudgetScroll,
+    handleSort,
+    totalGlobalBudget,
+    totalGlobalActual,
+    totalGlobalSupportingFee,
+    totalGlobalRemaining,
+    totalVarianceColor
+  };
+}
+
+
+
+// FILE: src/components/BudgetParts/BudgetFilterToolbar.tsx
+import React, { useRef } from 'react';
+import { Search, Download, Upload, Plus } from 'lucide-react';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
+import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
+import { ColumnAdder } from '../ColumnAdder';
+import { useLanguage } from '../../lib/LanguageContext';
+import { safeSetItemSession } from '../../lib/storage';
+import { useAppStore } from '../../store/useAppStore';
+import { AVAILABLE_COLUMNS } from './budgetTypes';
+
+interface BudgetFilterToolbarProps {
+  canWrite: boolean;
+  globalYearFilter: string;
+  setGlobalYearFilter: (val: string) => void;
+  years: string[];
+  effectiveStore: string;
+  setGlobalStoreFilter: (val: string) => void;
+  stores: string[];
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (locs: string[]) => void;
+  locationOptions: string[];
+  moneyFilter: string;
+  setMoneyFilter: (val: string) => void;
+  lastSelectedMoneyFilterRef: React.MutableRefObject<string>;
+  searchTerm: string;
+  setSearchTerm: (val: string) => void;
+  visibleColumns: string[];
+  handleToggleColumn: (colId: string) => void;
+  handleExportBudget: () => void;
+  handleImportBudget: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onAddBudget?: () => void;
+}
+
+export function BudgetFilterToolbar({
+  canWrite,
+  globalYearFilter,
+  setGlobalYearFilter,
+  years,
+  effectiveStore,
+  setGlobalStoreFilter,
+  stores,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  locationOptions,
+  moneyFilter,
+  setMoneyFilter,
+  lastSelectedMoneyFilterRef,
+  searchTerm,
+  setSearchTerm,
+  visibleColumns,
+  handleToggleColumn,
+  handleExportBudget,
+  handleImportBudget,
+  onAddBudget
+}: BudgetFilterToolbarProps) {
+  const { t } = useLanguage();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const projects = useAppStore(state => state.projects);
+
+  return (
+    <div className="px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-wrap items-center justify-between gap-2.5 shrink-0 print:hidden rounded-t-xl">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-grow">
+        <select 
+          value={globalYearFilter} 
+          onChange={(e) => setGlobalYearFilter(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+        >
+          <option value="all">{t('All Years')}</option>
+          {years.map(y => <option key={y} value={y}>{t('Year')} {y}</option>)}
+        </select>
+
+        <select 
+          value={effectiveStore} 
+          onChange={(e) => setGlobalStoreFilter(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+        >
+          {stores.length > 1 && <option value="all">{t('All Stores')}</option>}
+          {stores.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+
+        <MultiCheckboxSelect 
+          value={globalLocationFilter}
+          onChange={setGlobalLocationFilter}
+          options={locationOptions}
+          placeholder={t('All Locations')}
+          className="min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
+        />
+
+        <select
+          value={moneyFilter}
+          onChange={(e) => {
+            const val = e.target.value;
+            setMoneyFilter(val);
+            if (!searchTerm.trim()) {
+              lastSelectedMoneyFilterRef.current = val;
+              safeSetItemSession("taka_budget_money_filter", val);
+            }
+          }}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none cursor-pointer"
+        >
+          <option value="all">{t('All Projects')}</option>
+          <option value="has_money">{t('Has Budget or Actual')}</option>
+          <option value="has_budget">{t('Has Budget Only')}</option>
+          <option value="has_act_forc">{t('Has Actual/Forc Only')}</option>
+        </select>
+
+        <FixedProjectInput projects={projects} />
+
+        <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+          <DebouncedSearchInput 
+            value={searchTerm} 
+            onChange={(val) => setSearchTerm(val)}
+            placeholder={t('Search anything...')}
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 justify-end">
+        {canWrite && (
+          <button 
+            type="button"
+            onClick={onAddBudget}
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer"
+            title={t('Add Budget')}
+          >
+            <Plus className="w-4 h-4" />
+            <span>{t('Add Budget')}</span>
+          </button>
+        )}
+
+        <button 
+          type="button"
+          onClick={handleExportBudget} 
+          className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
+          title="Export Filtered CSV"
+        >
+          <Download className="w-4 h-4" />
+          <span className="hidden sm:inline">{t('Export CSV')}</span>
+        </button>
+        
+        {canWrite && (
+          <>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleImportBudget} 
+              accept=".csv" 
+              className="hidden" 
+            />
+            <button 
+              type="button"
+              onClick={() => fileInputRef.current?.click()} 
+              className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
+              title="Import Budget CSV (Updates matching projects)"
+            >
+              <Upload className="w-4 h-4" />
+              <span className="hidden sm:inline">{t('Import CSV')}</span>
+            </button>
+          </>
+        )}
+
+        <div className="hidden xl:flex items-center gap-2 shrink-0">
+          <ColumnAdder 
+            availableColumns={AVAILABLE_COLUMNS} 
+            visibleColumns={visibleColumns} 
+            onAddColumn={handleToggleColumn} 
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+// FILE: src/components/CostParts/useCostData.ts
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Project, Cost, AppUser, AppRole } from '../../types';
+import {
+  getUserAllowedStores,
+  getEffectiveStoreFilter,
+  matchesAdvancedSearch,
+  formatCurrencyValue,
+} from '../../lib/utils';
+import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { safeSetItemLocal, safeSetItemSession } from '../../lib/storage';
+import { useAppStore } from '../../store/useAppStore';
+import { useCostDateFilter } from './useCostDateFilter';
+import { useCostColumns } from './useCostColumns';
+import { useCostTotals } from './useCostTotals';
+import { useCostSearchFilter } from './useCostSearchFilter';
+
+interface UseCostDataParams {
+  projects: Project[];
+  costs: Cost[];
+  currentUser: AppUser;
+  initialSearchTerm?: string;
+}
+
+export function useCostData({
+  projects,
+  costs,
+  currentUser,
+  initialSearchTerm = '',
+}: UseCostDataParams) {
+  const permissionMatrix = useAppStore((state) => state.permissionMatrix);
+  const currency = useAppStore((state) => state.currency);
+  const jpyRate = useAppStore((state) => state.jpyRate);
+  const usdRate = useAppStore((state) => state.usdRate);
+
+  const globalYearFilter = useAppStore((state) => state.globalYearFilter);
+  const setGlobalYearFilter = useAppStore((state) => state.setGlobalYearFilter);
+  const globalStoreFilter = useAppStore((state) => state.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore((state) => state.setGlobalStoreFilter);
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const globalLocationFilter = useAppStore((state) => state.globalLocationFilter);
+  const setGlobalLocationFilter = useAppStore((state) => state.setGlobalLocationFilter);
+  const setDetailTabFilterCode = useAppStore((state) => state.setDetailTabFilterCode);
+  const setDetailTabStoreFilter = useAppStore((state) => state.setDetailTabStoreFilter);
+  const setActiveTab = useAppStore((state) => state.setActiveTab);
+  const costTabSearchTerm = useAppStore((state) => state.costTabSearchTerm);
+
+  const [expandedCodes, setExpandedCodes] = useState<string[]>([]);
+  const toggleProjectExpansion = useCallback((id: string) => {
+    setExpandedCodes((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  }, []);
+
+  const handleProjectLinkClick = (p: Project) => {
+    if (!p) return;
+    setDetailTabFilterCode(p.code);
+    setDetailTabStoreFilter(p.store || 'all');
+    if (p.year) {
+      setGlobalYearFilter(String(p.year));
+      safeSetItemSession('taka_detail_year', String(p.year));
+    } else {
+      setGlobalYearFilter('all');
+      safeSetItemSession('taka_detail_year', 'all');
+    }
+    if (p.store) {
+      setGlobalStoreFilter(p.store);
+      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, String(p.store));
+    } else {
+      setGlobalStoreFilter('all');
+      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, 'all');
+    }
+    setActiveTab('detail');
+  };
+
+  // O(1) Pre-indexed Map for Costs by Project Code
+  const costsMapByCode = useMemo(() => {
+    const map = new Map<string, Cost[]>();
+    for (let i = 0; i < costs.length; i++) {
+      const c = costs[i];
+      if (c.isDeleted) continue;
+      const cCode = String(c.projectCode || (c as any).code || '').trim().toLowerCase();
+      if (!cCode) continue;
+      let list = map.get(cCode);
+      if (!list) {
+        list = [];
+        map.set(cCode, list);
+      }
+      list.push(c);
+    }
+    return map;
+  }, [costs]);
+
+  // Helper to get matching costs for a project in O(1) + O(k) candidate filter
+  const getGroupCostsForProject = useCallback(
+    (p: Project) => {
+      const pCode = String(p.code || '').trim().toLowerCase();
+      const candidateCosts = costsMapByCode.get(pCode) || [];
+      const pYr = String(p.year || '').trim();
+      const pStore = String(p.store || '').trim().toLowerCase();
+
+      return candidateCosts.filter((c) => {
+        const costYear = String(c.projectYear || (c as any).year || '').trim();
+        const matchesYear = !costYear || !pYr || costYear === pYr;
+        if (!matchesYear) return false;
+
+        const costStore = String(c.projectStore || (c as any).store || '').trim().toLowerCase();
+        const matchesStore = !costStore || !pStore || costStore === pStore;
+        if (!matchesStore) return false;
+
+        return true;
+      });
+    },
+    [costsMapByCode]
+  );
+
+  // Sub-hook: Search term & filter synchronization
+  const {
+    searchTerm,
+    setSearchTerm,
+    deferredSearchTerm,
+    hasActForcFilter,
+    setHasActForcFilter,
+  } = useCostSearchFilter({
+    projects,
+    costs,
+    currentUser,
+    initialSearchTerm,
+    costTabSearchTerm,
+    globalYearFilter,
+    effectiveStore,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    getGroupCostsForProject,
+  });
+
+  // Sub-hook: Columns visibility & resizable widths
+  const {
+    visibleColumns,
+    colWidths,
+    handleResize,
+    handleToggleColumn,
+  } = useCostColumns({ userId: currentUser.id });
+
+  // Sub-hook: Paid Date filter
+  const {
+    isPaidDateFilterOpen,
+    setIsPaidDateFilterOpen,
+    paidDateStart,
+    paidDateEnd,
+    paidStageFilter,
+    setPaidStageFilter,
+    tempDateStart,
+    tempDateEnd,
+    handleTempStartChange,
+    handleTempEndChange,
+    commitDateFilter,
+    handleClearPaidDateFilter,
+    getCostPaidMatches,
+  } = useCostDateFilter();
+
+  const isAdmin = currentUser.role === 'admin';
+  const role = currentUser.role as AppRole;
+  const isArchiveYear =
+    globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
+  const canWrite =
+    (isAdmin || !!permissionMatrix[role]?.Write?.costDetail) && !isArchiveYear;
+
+  const years = useMemo(() => {
+    const projYears = projects
+      .map((p) => {
+        if (p.year) return String(p.year).trim();
+        if (p.start) return String(p.start).substring(0, 4);
+        return null;
+      })
+      .filter(Boolean) as string[];
+
+    const baseYears = ['2026', '2027'];
+    const unique = Array.from(new Set([...projYears, ...baseYears]))
+      .filter(Boolean)
+      .sort();
+    return unique.length > 0 ? unique : ['2026', '2027'];
+  }, [projects]);
+
+  const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
+  const stores = allowedStores;
+  const locationOptions = useLocationOptions();
+
+  const toggleGroup = (id: string | number) => {
+    toggleProjectExpansion(String(id));
+  };
+
+  const formatCurrency = (val: number | undefined) => {
+    return formatCurrencyValue(val, currency, jpyRate, usdRate);
+  };
+
+  const fixedProjectCode = useAppStore((state) => state.fixedProjectCode);
+
+  const filteredProjectsForDisplay = useMemo(() => {
+    return projects.filter((p) => {
+      if (fixedProjectCode && fixedProjectCode.trim()) {
+        const fix = fixedProjectCode.trim().toLowerCase();
+        const pCode = (p.code || '').trim().toLowerCase();
+        const matchesFix = pCode === fix || pCode.includes(fix) || String(p.id).toLowerCase() === fix;
+        if (!matchesFix) return false;
+      }
+
+      const pYear = p.year
+        ? String(p.year).trim()
+        : p.start
+        ? String(p.start).substring(0, 4)
+        : null;
+      if (
+        globalYearFilter !== 'all' &&
+        (pYear === null || pYear !== String(globalYearFilter).trim())
+      )
+        return false;
+      if (
+        effectiveStore !== 'all' &&
+        (!p.store ||
+          String(p.store).toUpperCase().trim() !== effectiveStore.toUpperCase().trim())
+      )
+        return false;
+      if (
+        globalLocationFilter.length > 0 &&
+        (!p.location || !globalLocationFilter.includes(p.location))
+      )
+        return false;
+
+      const groupCosts = getGroupCostsForProject(p);
+
+      if (paidDateStart || paidDateEnd) {
+        const hasMatchingPaidCost = groupCosts.some(
+          (c) => getCostPaidMatches(c, paidDateStart, paidDateEnd, paidStageFilter).matches
+        );
+        if (!hasMatchingPaidCost) return false;
+      }
+
+      const matchingGroupCosts =
+        paidDateStart || paidDateEnd
+          ? groupCosts.filter(
+              (c) =>
+                getCostPaidMatches(c, paidDateStart, paidDateEnd, paidStageFilter).matches
+            )
+          : groupCosts;
+
+      if (deferredSearchTerm) {
+        const isMatch = matchesAdvancedSearch(
+          deferredSearchTerm,
+          [
+            p.store,
+            p.location,
+            p.year,
+            p.code,
+            p.linkCodes,
+            p.name,
+            p.detail,
+            (p as any).description,
+            p.note,
+          ],
+          [],
+          (term) => {
+            return matchingGroupCosts.some((c) => {
+              const cBalance =
+                (c.actual || 0) -
+                (c.firstPaid || 0) -
+                (c.secondPaid || 0) -
+                (c.thirdPaid || 0);
+              const costFields = [
+                c.description,
+                c.vendor,
+                c.actual,
+                c.firstPaid,
+                c.secondPaid,
+                c.thirdPaid,
+                c.supportingFee,
+                cBalance,
+              ];
+              return costFields.some((val) =>
+                String(val || '').toLowerCase().includes(term)
+              );
+            });
+          }
+        );
+        if (!isMatch) return false;
+      }
+
+      const totalAct =
+        matchingGroupCosts.length > 0
+          ? matchingGroupCosts.reduce((sum, c) => sum + (c.actual || 0), 0)
+          : p.financial?.totalActualPaid || p.actual || 0;
+      if (
+        hasActForcFilter === 'has_value' &&
+        totalAct === 0 &&
+        !paidDateStart &&
+        !paidDateEnd
+      )
+        return false;
+
+      return true;
+    });
+  }, [
+    projects,
+    costs,
+    fixedProjectCode,
+    globalYearFilter,
+    effectiveStore,
+    globalLocationFilter,
+    deferredSearchTerm,
+    hasActForcFilter,
+    paidDateStart,
+    paidDateEnd,
+    paidStageFilter,
+    getGroupCostsForProject,
+    getCostPaidMatches,
+  ]);
+
+  // Sub-hook: Aggregated Financial Totals
+  const {
+    filteredCostsForTotals,
+    totalActAll,
+    totalFirstPaidAll,
+    totalSecondPaidAll,
+    totalThirdPaidAll,
+    totalBalanceAll,
+    totalSupAll,
+    totalRemainingAll,
+  } = useCostTotals({
+    filteredProjectsForDisplay,
+    projects,
+    costs,
+    paidDateStart,
+    paidDateEnd,
+    paidStageFilter,
+    getGroupCostsForProject,
+    getCostPaidMatches,
+  });
+
+  const sortedProjects = projects;
+  const [visibleCount, setVisibleCount] = useState(30);
+
+  const handleCostScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const target = e.currentTarget;
+      const st = target.scrollTop;
+      const sh = target.scrollHeight;
+      const ch = target.clientHeight;
+
+      if (sh - (st + ch) < 350) {
+        if (visibleCount < filteredProjectsForDisplay.length) {
+          setVisibleCount((prev) => Math.min(prev + 30, filteredProjectsForDisplay.length));
+        }
+      }
+    },
+    [visibleCount, filteredProjectsForDisplay.length]
+  );
+
+  useEffect(() => {
+    if (paidDateStart || paidDateEnd) {
+      setExpandedCodes(
+        filteredProjectsForDisplay.map((p) => `${p.code}-${p.year}-${p.store}-${p.no}`)
+      );
+    }
+  }, [paidDateStart, paidDateEnd, paidStageFilter, filteredProjectsForDisplay, setExpandedCodes]);
+
+  const toggleAll = () => {
+    if (expandedCodes.length === 0) {
+      setExpandedCodes(
+        filteredProjectsForDisplay.map((p) => `${p.code}-${p.year}-${p.store}-${p.no}`)
+      );
+    } else {
+      setExpandedCodes([]);
+    }
+  };
+
+  return {
+    currency,
+    jpyRate,
+    usdRate,
+    canWrite,
+    isAdmin,
+    globalYearFilter,
+    setGlobalYearFilter,
+    effectiveStore,
+    setGlobalStoreFilter,
+    globalLocationFilter,
+    setGlobalLocationFilter,
+    searchTerm,
+    setSearchTerm,
+    hasActForcFilter,
+    setHasActForcFilter,
+    years,
+    stores,
+    locationOptions,
+    visibleColumns,
+    colWidths,
+    handleResize,
+    handleToggleColumn,
+    expandedCodes,
+    setExpandedCodes,
+    toggleGroup,
+    toggleAll,
+    toggleProjectExpansion,
+    handleProjectLinkClick,
+    formatCurrency,
+    filteredProjectsForDisplay,
+    filteredCostsForTotals,
+    totalActAll,
+    totalFirstPaidAll,
+    totalSecondPaidAll,
+    totalThirdPaidAll,
+    totalBalanceAll,
+    totalSupAll,
+    totalRemainingAll,
+    sortedProjects,
+    visibleCount,
+    setVisibleCount,
+    handleCostScroll,
+    getGroupCostsForProject,
+    getCostPaidMatches,
+    isPaidDateFilterOpen,
+    setIsPaidDateFilterOpen,
+    paidDateStart,
+    paidDateEnd,
+    paidStageFilter,
+    setPaidStageFilter,
+    tempDateStart,
+    tempDateEnd,
+    handleTempStartChange,
+    handleTempEndChange,
+    commitDateFilter,
+    handleClearPaidDateFilter,
+  };
+}
+
+
+
+// FILE: src/components/CostParts/CostFilterToolbar.tsx
+import React, { memo } from 'react';
+import { Search } from 'lucide-react';
+import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
+import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
+import { ColumnAdder } from '../ColumnAdder';
+import { FullReplaceImport } from '../FullReplaceImport';
+import { AVAILABLE_COLUMNS } from './costTypes';
+import { useAppStore } from '../../store/useAppStore';
+
+interface CostFilterToolbarProps {
+  globalYearFilter: string;
+  setGlobalYearFilter: (val: string) => void;
+  years: string[];
+  effectiveStore: string;
+  setGlobalStoreFilter: (val: string) => void;
+  stores: string[];
+  globalLocationFilter: string[];
+  setGlobalLocationFilter: (val: string[]) => void;
+  locationOptions: string[];
+  hasActForcFilter: string;
+  setHasActForcFilter: (val: string) => void;
+  searchTerm: string;
+  setSearchTerm: (val: string) => void;
+  visibleColumns: string[];
+  handleToggleColumn: (colId: string) => void;
+  canWrite: boolean;
+  isAdmin: boolean;
+  handleExportCosts: () => void;
+  handleImportCosts: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}
+
+export const CostFilterToolbar = React.memo(function CostFilterToolbar({
+  globalYearFilter,
+  setGlobalYearFilter,
+  years,
+  effectiveStore,
+  setGlobalStoreFilter,
+  stores,
+  globalLocationFilter,
+  setGlobalLocationFilter,
+  locationOptions,
+  hasActForcFilter,
+  setHasActForcFilter,
+  searchTerm,
+  setSearchTerm,
+  visibleColumns,
+  handleToggleColumn,
+  canWrite,
+  isAdmin,
+  handleExportCosts,
+  handleImportCosts,
+}: CostFilterToolbarProps) {
+  const projects = useAppStore((state) => state.projects);
+
+  return (
+    <div className="px-3 sm:px-4 md:px-5 py-3 md:py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-col xl:flex-row gap-3 justify-between items-stretch xl:items-center shrink-0 print:hidden">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full xl:w-auto flex-grow min-w-0">
+        <select
+          value={globalYearFilter}
+          onChange={(e) => setGlobalYearFilter(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+        >
+          <option value="all">All Years</option>
+          {years.map((y) => (
+            <option key={y} value={y}>
+              Year {y}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={effectiveStore}
+          onChange={(e) => setGlobalStoreFilter(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+        >
+          {stores.length > 1 && <option value="all">All Stores</option>}
+          {stores.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+
+        <MultiCheckboxSelect
+          value={globalLocationFilter}
+          onChange={setGlobalLocationFilter}
+          options={locationOptions}
+          placeholder="All Locations"
+          className="min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
+        />
+
+        <select
+          value={hasActForcFilter}
+          onChange={(e) => setHasActForcFilter(e.target.value)}
+          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none cursor-pointer"
+        >
+          <option value="all">All Act/Forc</option>
+          <option value="has_value">Has Act/Forc</option>
+        </select>
+
+        <FixedProjectInput projects={projects} />
+
+        <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+          <DebouncedSearchInput
+            value={searchTerm}
+            onChange={(val) => setSearchTerm(val)}
+            placeholder="Search in cost details..."
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0 self-end xl:self-center">
+        <ColumnAdder
+          availableColumns={AVAILABLE_COLUMNS}
+          visibleColumns={visibleColumns}
+          onAddColumn={handleToggleColumn}
+        />
+
+        {canWrite && (
+          <div className="flex gap-1 items-center">
+            {isAdmin && (
+              <FullReplaceImport
+                collectionName="taka_costs"
+                onImportSuccess={(count) =>
+                  useAppStore.getState().setToast({
+                    title: 'Notice',
+                    message: `Full replace successful! Imported ${count} cost entries.`,
+                  })
+                }
+                onParseRow={(row, headers) => {
+                  const c: any = {};
+                  const parseCSVNumber = (val: any) => {
+                    if (typeof val === 'string') {
+                      const cleaned = val.replace(/,/g, '').trim();
+                      if (cleaned === '-' || cleaned === '') return 0;
+                      const num = Number(cleaned);
+                      return isNaN(num) ? 0 : num;
+                    }
+                    return Number(val) || 0;
+                  };
+
+                  headers.forEach((h, i) => {
+                    const keyMap: Record<string, string> = {
+                      projectcode: 'projectCode',
+                      projectyear: 'projectYear',
+                      year: 'projectYear',
+                      projectstore: 'projectStore',
+                      store: 'projectStore',
+                      firstpaid: 'firstPaid',
+                      firstpaidat: 'firstPaidAt',
+                      secondpaid: 'secondPaid',
+                      secondpaidat: 'secondPaidAt',
+                      thirdpaid: 'thirdPaid',
+                      thirdpaidat: 'thirdPaidAt',
+                      supportingfee: 'supportingFee',
+                    };
+                    const field = keyMap[h] || h;
+                    let val: any = row[i];
+                    if (
+                      [
+                        'actual',
+                        'firstPaid',
+                        'secondPaid',
+                        'thirdPaid',
+                        'supportingFee',
+                      ].includes(field)
+                    ) {
+                      val = parseCSVNumber(val);
+                    }
+                    if (['projectYear'].includes(field)) {
+                      val = isNaN(Number(val)) ? val : Number(val);
+                    }
+                    c[field] = val;
+                  });
+                  if (!c.projectCode || !c.description) return null;
+                  return c;
+                }}
+                id="cost-full-import-btn"
+                hiddenBtn={true}
+              />
+            )}
+            <button
+              id="cost-export-btn"
+              onClick={handleExportCosts}
+              className="hidden"
+            />
+            <input
+              id="cost-import-input"
+              type="file"
+              accept=".csv"
+              onChange={handleImportCosts}
+              className="hidden"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
