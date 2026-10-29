@@ -4,6 +4,7 @@ import { Project } from '../../types';
 import { BudgetTreeNode } from './budgetTypes';
 import { BudgetMobileCard } from './BudgetMobileCard';
 import { useLanguage } from '../../lib/LanguageContext';
+import { useAppStore } from '../../store/useAppStore';
 
 interface BudgetMobileViewProps {
   filteredRoots: BudgetTreeNode[];
@@ -39,12 +40,14 @@ export function BudgetMobileView({
   formatCurrency
 }: BudgetMobileViewProps) {
   const { t } = useLanguage();
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
 
   const renderMobileCards = (nodes: BudgetTreeNode[], depth = 0): React.ReactNode[] => {
     let cards: React.ReactNode[] = [];
     nodes.forEach((node) => {
       const isParent = node.isParentNode && node.filteredChildren && node.filteredChildren.length > 0;
-      const isExpanded = searchTerm.trim() 
+      const hasActiveSearchOrFix = Boolean(searchTerm.trim() || (fixedProjectCode && fixedProjectCode.trim()));
+      const isExpanded = hasActiveSearchOrFix
         ? !collapsedInSearch.has(node.id || node.code) 
         : expandedParents.has(node.id || node.code);
 

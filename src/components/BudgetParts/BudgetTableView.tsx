@@ -70,11 +70,14 @@ export function BudgetTableView({
   const isPrintPreview = useAppStore(state => state.isPrintPreview);
   const isExportingPDF = useAppStore(state => state.isExportingPDF);
 
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
+
   const renderRows = (nodes: BudgetTreeNode[], depth = 0): React.ReactNode[] => {
     let rows: React.ReactNode[] = [];
     nodes.forEach((node, idx) => {
       const isParent = node.isParentNode && node.filteredChildren && node.filteredChildren.length > 0;
-      const isExpanded = searchTerm.trim() 
+      const hasActiveSearchOrFix = Boolean(searchTerm.trim() || (fixedProjectCode && fixedProjectCode.trim()));
+      const isExpanded = hasActiveSearchOrFix
         ? !collapsedInSearch.has(node.id || node.code) 
         : expandedParents.has(node.id || node.code);
 

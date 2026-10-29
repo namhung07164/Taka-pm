@@ -115,8 +115,12 @@ export function useBudgetFilterSort({
     if (fixedProjectCode && fixedProjectCode.trim()) {
       const fix = fixedProjectCode.trim().toLowerCase();
       const nodeCode = (node.code || '').trim().toLowerCase();
-      const matchesFix = nodeCode === fix || nodeCode.includes(fix) || String(node.id || '').toLowerCase() === fix;
-      if (!matchesFix) return false;
+      const matchesParentFix = nodeCode === fix || nodeCode.includes(fix) || String(node.id || '').toLowerCase() === fix;
+      const matchesChildFix = node.children && node.children.some((c: any) => {
+        const cCode = (c.code || '').trim().toLowerCase();
+        return cCode === fix || cCode.includes(fix) || String(c.id || '').toLowerCase() === fix;
+      });
+      if (!matchesParentFix && !matchesChildFix) return false;
     }
 
     const pYear = node.year ? String(node.year).trim() : null;
@@ -167,7 +171,12 @@ export function useBudgetFilterSort({
 
       const matchingChildIds = new Set<string>();
       validChildren.forEach((child: any) => {
-        if (isChildMatchSearch(child, deferredSearchTerm)) {
+        const matchesSearch = isChildMatchSearch(child, deferredSearchTerm);
+        const matchesFix = fixedProjectCode && fixedProjectCode.trim() ? (
+          (child.code || '').trim().toLowerCase() === fixedProjectCode.trim().toLowerCase() ||
+          (child.code || '').trim().toLowerCase().includes(fixedProjectCode.trim().toLowerCase())
+        ) : false;
+        if (matchesSearch || matchesFix) {
           matchingChildIds.add(child.id);
         }
       });
@@ -176,7 +185,7 @@ export function useBudgetFilterSort({
 
       if (hasMultiChildren) {
         if (anyChildMatchesSearch || (baseParentMatch && parentMatchesSearch)) {
-          const shouldFilterChildren = !parentMatchesSearch && anyChildMatchesSearch;
+          const shouldFilterChildren = (!parentMatchesSearch && anyChildMatchesSearch) || Boolean(fixedProjectCode && fixedProjectCode.trim());
           node.filteredChildren = validChildren
             .filter((child: any) => shouldFilterChildren ? matchingChildIds.has(child.id) : true)
             .map((child: any) => ({

@@ -301,6 +301,7 @@ export function GanttTableView({
         data-print-header="true"
         onScroll={handleTopScroll}
         onPointerDown={handlePointerDown}
+        style={{ position: '-webkit-sticky' as any, top: '48px' }}
         className="sticky top-[48px] z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-[#18181a]/95 backdrop-blur-md flex shrink-0 shadow-xs"
       >
         <GanttLeftHeader

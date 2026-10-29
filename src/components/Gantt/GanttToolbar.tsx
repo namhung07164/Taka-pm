@@ -302,7 +302,10 @@ export function GanttToolbar({
       </div>
 
       {/* Row 2: Sticky Action Toolbar (Date Filter, Today, + Add Column, Fix Project Code, Search) */}
-      <div className="sticky top-0 z-40 px-2 py-2 sm:px-3 sm:py-2 bg-slate-100/95 dark:bg-[#121214]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col gap-1 shrink-0 print:hidden text-slate-800 dark:text-slate-100">
+      <div
+        style={{ position: '-webkit-sticky' as any, top: 0 }}
+        className="sticky top-0 z-40 px-2 py-2 sm:px-3 sm:py-2 bg-slate-100/95 dark:bg-[#121214]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col gap-1 shrink-0 print:hidden text-slate-800 dark:text-slate-100"
+      >
         <div className="flex flex-wrap items-center gap-2 justify-between w-full">
           <div className="flex flex-wrap items-center gap-2 flex-grow">
             <GanttToolbarDateFilter

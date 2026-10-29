@@ -5491,6 +5491,7 @@ import { Project } from '../../types';
 import { BudgetTreeNode } from './budgetTypes';
 import { BudgetMobileCard } from './BudgetMobileCard';
 import { useLanguage } from '../../lib/LanguageContext';
+import { useAppStore } from '../../store/useAppStore';
 
 interface BudgetMobileViewProps {
   filteredRoots: BudgetTreeNode[];
@@ -5526,12 +5527,14 @@ export function BudgetMobileView({
   formatCurrency
 }: BudgetMobileViewProps) {
   const { t } = useLanguage();
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
 
   const renderMobileCards = (nodes: BudgetTreeNode[], depth = 0): React.ReactNode[] => {
     let cards: React.ReactNode[] = [];
     nodes.forEach((node) => {
       const isParent = node.isParentNode && node.filteredChildren && node.filteredChildren.length > 0;
-      const isExpanded = searchTerm.trim() 
+      const hasActiveSearchOrFix = Boolean(searchTerm.trim() || (fixedProjectCode && fixedProjectCode.trim()));
+      const isExpanded = hasActiveSearchOrFix
         ? !collapsedInSearch.has(node.id || node.code) 
         : expandedParents.has(node.id || node.code);
 
@@ -6080,11 +6083,14 @@ export function BudgetTableView({
   const isPrintPreview = useAppStore(state => state.isPrintPreview);
   const isExportingPDF = useAppStore(state => state.isExportingPDF);
 
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
+
   const renderRows = (nodes: BudgetTreeNode[], depth = 0): React.ReactNode[] => {
     let rows: React.ReactNode[] = [];
     nodes.forEach((node, idx) => {
       const isParent = node.isParentNode && node.filteredChildren && node.filteredChildren.length > 0;
-      const isExpanded = searchTerm.trim() 
+      const hasActiveSearchOrFix = Boolean(searchTerm.trim() || (fixedProjectCode && fixedProjectCode.trim()));
+      const isExpanded = hasActiveSearchOrFix
         ? !collapsedInSearch.has(node.id || node.code) 
         : expandedParents.has(node.id || node.code);
 
@@ -6223,6 +6229,7 @@ export function BudgetTableView({
     </div>
   );
 }
+
 
 ================================================================================
 FILE: src/components/BudgetParts/budgetTreeScope.test.ts
@@ -7061,6 +7068,7 @@ FILE: src/components/BudgetParts/useBudgetFilterSort.ts
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { matchesAdvancedSearch } from '../../lib/utils';
 import { BudgetTreeNode, BudgetSortConfig } from './budgetTypes';
+import { useAppStore } from '../../store/useAppStore';
 
 interface UseBudgetFilterSortParams {
   treeData: BudgetTreeNode[];
@@ -7083,6 +7091,7 @@ export function useBudgetFilterSort({
   searchTerm,
   deferredSearchTerm
 }: UseBudgetFilterSortParams) {
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
   const [sortConfig, setSortConfig] = useState<BudgetSortConfig | null>(null);
   const [visibleCount, setVisibleCount] = useState(30);
 
@@ -7170,6 +7179,17 @@ export function useBudgetFilterSort({
   }, [searchTerm, treeData, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
   const filterNode = (node: any): boolean => {
+    if (fixedProjectCode && fixedProjectCode.trim()) {
+      const fix = fixedProjectCode.trim().toLowerCase();
+      const nodeCode = (node.code || '').trim().toLowerCase();
+      const matchesParentFix = nodeCode === fix || nodeCode.includes(fix) || String(node.id || '').toLowerCase() === fix;
+      const matchesChildFix = node.children && node.children.some((c: any) => {
+        const cCode = (c.code || '').trim().toLowerCase();
+        return cCode === fix || cCode.includes(fix) || String(c.id || '').toLowerCase() === fix;
+      });
+      if (!matchesParentFix && !matchesChildFix) return false;
+    }
+
     const pYear = node.year ? String(node.year).trim() : null;
     const matchesYear = globalYearFilter === 'all' || (pYear !== null && pYear === String(globalYearFilter).trim());
     const matchesStore = effectiveStore === 'all' || (Boolean(node.store) && String(node.store).toUpperCase().trim() === effectiveStore.toUpperCase().trim());
@@ -7218,7 +7238,12 @@ export function useBudgetFilterSort({
 
       const matchingChildIds = new Set<string>();
       validChildren.forEach((child: any) => {
-        if (isChildMatchSearch(child, deferredSearchTerm)) {
+        const matchesSearch = isChildMatchSearch(child, deferredSearchTerm);
+        const matchesFix = fixedProjectCode && fixedProjectCode.trim() ? (
+          (child.code || '').trim().toLowerCase() === fixedProjectCode.trim().toLowerCase() ||
+          (child.code || '').trim().toLowerCase().includes(fixedProjectCode.trim().toLowerCase())
+        ) : false;
+        if (matchesSearch || matchesFix) {
           matchingChildIds.add(child.id);
         }
       });
@@ -7227,7 +7252,7 @@ export function useBudgetFilterSort({
 
       if (hasMultiChildren) {
         if (anyChildMatchesSearch || (baseParentMatch && parentMatchesSearch)) {
-          const shouldFilterChildren = !parentMatchesSearch && anyChildMatchesSearch;
+          const shouldFilterChildren = (!parentMatchesSearch && anyChildMatchesSearch) || Boolean(fixedProjectCode && fixedProjectCode.trim());
           node.filteredChildren = validChildren
             .filter((child: any) => shouldFilterChildren ? matchingChildIds.has(child.id) : true)
             .map((child: any) => ({
@@ -7273,7 +7298,7 @@ export function useBudgetFilterSort({
       roots = [...roots].sort(sortFn);
     }
     return roots;
-  }, [treeData, globalYearFilter, effectiveStore, globalLocationFilter, moneyFilter, deferredSearchTerm, sortConfig]);
+  }, [treeData, fixedProjectCode, globalYearFilter, effectiveStore, globalLocationFilter, moneyFilter, deferredSearchTerm, sortConfig]);
 
   const handleBudgetScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
@@ -31768,6 +31793,7 @@ export function GanttTableView({
         data-print-header="true"
         onScroll={handleTopScroll}
         onPointerDown={handlePointerDown}
+        style={{ position: '-webkit-sticky' as any, top: '48px' }}
         className="sticky top-[48px] z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-[#18181a]/95 backdrop-blur-md flex shrink-0 shadow-xs"
       >
         <GanttLeftHeader
@@ -33093,7 +33119,10 @@ export function GanttToolbar({
       </div>
 
       {/* Row 2: Sticky Action Toolbar (Date Filter, Today, + Add Column, Fix Project Code, Search) */}
-      <div className="sticky top-0 z-40 px-2 py-2 sm:px-3 sm:py-2 bg-slate-100/95 dark:bg-[#121214]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col gap-1 shrink-0 print:hidden text-slate-800 dark:text-slate-100">
+      <div
+        style={{ position: '-webkit-sticky' as any, top: 0 }}
+        className="sticky top-0 z-40 px-2 py-2 sm:px-3 sm:py-2 bg-slate-100/95 dark:bg-[#121214]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col gap-1 shrink-0 print:hidden text-slate-800 dark:text-slate-100"
+      >
         <div className="flex flex-wrap items-center gap-2 justify-between w-full">
           <div className="flex flex-wrap items-center gap-2 flex-grow">
             <GanttToolbarDateFilter
