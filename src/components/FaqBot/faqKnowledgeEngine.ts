@@ -2,13 +2,7 @@ import { TabId } from '../../types';
 
 export interface FaqKnowledgeEntry {
   id: string;
-  category:
-    | 'Overview & Scope'
-    | 'Budget & Cost'
-    | 'Task & Gantt'
-    | 'Delegation & Tracker'
-    | 'Layout & Floor Plan'
-    | 'RBAC & Sync';
+  category: 'Overview & Scope' | 'Budget & Cost' | 'Task & Gantt' | 'Delegation & Tracker' | 'Layout & Floor Plan' | 'RBAC & Sync';
   titleVi: string;
   titleEn: string;
   keywords: string[];
@@ -22,11 +16,7 @@ export interface FaqKnowledgeEntry {
   relatedIds?: string[];
 }
 
-export const FAQ_CATEGORIES: Array<{
-  id: 'All' | FaqKnowledgeEntry['category'];
-  labelVi: string;
-  labelEn: string;
-}> = [
+export const FAQ_CATEGORIES: Array<{ id: 'All' | FaqKnowledgeEntry['category']; labelVi: string; labelEn: string }> = [
   { id: 'All', labelVi: 'Tất cả chủ đề', labelEn: 'All Topics' },
   { id: 'Overview & Scope', labelVi: 'Bắt đầu & Dự án', labelEn: 'Quick Start & Projects' },
   { id: 'Task & Gantt', labelVi: 'Task WBS & Gantt', labelEn: 'Task WBS & Gantt' },
@@ -42,21 +32,12 @@ export const FAQ_KNOWLEDGE_BASE: FaqKnowledgeEntry[] = [
     category: 'Overview & Scope',
     titleVi: '1. 🚀 Lộ trình 5 phút cho Người Mới & Quy tắc Cô lập 4 Khóa',
     titleEn: '1. 🚀 5-Minute New User Guide & 4-Key Isolation Rule',
-    keywords: [
-      'người mới', 'new user', 'bắt đầu', 'hướng dẫn', 'manual', 'store', 'hcm', 'hn',
-      'year', 'năm', 'cô lập', '4 khóa', 'read-only', 'khóa sổ', 'set 1st page', 'tiền tệ', 'vnd', 'jpy', 'usd'
-    ],
+    keywords: ['người mới', 'new user', 'bắt đầu', 'hướng dẫn', 'manual', 'store', 'hcm', 'hn', 'year', 'năm', 'cô lập', '4 khóa', 'read-only', 'khóa sổ', 'set 1st page', 'tiền tệ', 'vnd', 'jpy', 'usd'],
     targetTab: 'general',
     targetTabLabelVi: 'Mở Tab General (Trang chủ)',
     targetTabLabelEn: 'Open General Tab (Home)',
-    quickPromptsVi: [
-      'Làm sao tạo Dự án mới và nối ô mặt bằng?',
-      'Tại sao tôi không sửa được số tiền khi xem JPY/USD?'
-    ],
-    quickPromptsEn: [
-      'How do I create a new Project and link floor units?',
-      'Why is money editing locked when viewing JPY/USD?'
-    ],
+    quickPromptsVi: ['Làm sao tạo Dự án mới và nối ô mặt bằng?', 'Tại sao tôi không sửa được số tiền khi xem JPY/USD?'],
+    quickPromptsEn: ['How do I create a new Project and link floor units?', 'Why is money editing locked when viewing JPY/USD?'],
     answerVi:
       '🎯 **Hiểu đơn giản**: Hệ thống xoay quanh 4 bước: **Tạo Dự án (`General`) ➔ Chia việc (`Task detail` / `Gantt`) ➔ Quản lý tiền (`Budget` / `Cost`) ➔ Xem bản đồ 2D (`Layout`)**.\n' +
       '👆 **3 Thao tác đầu tiên cần biết**:\n' +
@@ -78,21 +59,12 @@ export const FAQ_KNOWLEDGE_BASE: FaqKnowledgeEntry[] = [
     category: 'Overview & Scope',
     titleVi: '2. 📊 Cách tạo Dự án, Nối nhiều ô mặt bằng & Tính ngày Tự động',
     titleEn: '2. 📊 Creating Projects, Multi-Unit Linking & Auto Dates',
-    keywords: [
-      'project', 'dự án', 'tạo dự án', 'new project', 'status', 'trạng thái', 'upcoming',
-      'in progress', 'completed', 'delayed', 'handover', 'opening', 'auto', 'manual', 'linkcodes', 'ghim', 'pin'
-    ],
+    keywords: ['project', 'dự án', 'tạo dự án', 'new project', 'status', 'trạng thái', 'upcoming', 'in progress', 'completed', 'delayed', 'handover', 'opening', 'auto', 'manual', 'linkcodes', 'ghim', 'pin'],
     targetTab: 'general',
     targetTabLabelVi: 'Mở Tab General để tạo/xem Dự án',
     targetTabLabelEn: 'Open General Tab for Projects',
-    quickPromptsVi: [
-      'Cách chia nhỏ công việc (Task) trong dự án?',
-      'Làm sao xem vị trí dự án trên bản đồ Layout?'
-    ],
-    quickPromptsEn: [
-      'How do I break a project into WBS Tasks?',
-      'How do I see the project on the 2D Layout map?'
-    ],
+    quickPromptsVi: ['Cách chia nhỏ công việc (Task) trong dự án?', 'Làm sao xem vị trí dự án trên bản đồ Layout?'],
+    quickPromptsEn: ['How do I break a project into WBS Tasks?', 'How do I see the project on the 2D Layout map?'],
     answerVi:
       '🎯 **Hiểu đơn giản**: Mỗi dòng trên Tab `General` là 1 dự án thi công gian hàng kèm trạng thái và 3 mốc ngày chính (`Start`, `Handover`, `Opening`).\n' +
       '👆 **Cách tạo Dự án chuẩn trong 3 bước**:\n' +
@@ -477,8 +449,8 @@ export function searchFaqKnowledge(rawQuery: string, lang: 'vi' | 'en' = 'vi'): 
     return {
       bestMatches: starter,
       formattedAnswer: lang === 'vi'
-        ? 'Xin chào! Tôi là **Trợ lý Hướng dẫn Tương tác Takashimaya PM** (dữ liệu từ `USER_MANUAL.md` & `BUSINESS_LOGIC.md`).\n\nHãy bấm vào một chủ đề gợi ý bên dưới hoặc gõ câu hỏi của bạn!'
-        : 'Hello! I am the **Takashimaya PM Interactive Onboarding Assistant** (powered by `USER_MANUAL.md` & `BUSINESS_LOGIC.md`).\n\nTap any topic below or type your question!'
+        ? 'Xin chào! Tôi là **Trợ lý Hướng dẫn Tương tác Takashimaya PM**.\n\nHãy bấm vào một chủ đề gợi ý hoặc gõ câu hỏi của bạn!'
+        : 'Hello! I am the **Takashimaya PM Interactive Onboarding Assistant**.\n\nTap any topic or type your question!'
     };
   }
   const tokens = normQuery.split(' ').filter(t => t.length >= 2);
@@ -508,10 +480,12 @@ export function searchFaqKnowledge(rawQuery: string, lang: 'vi' | 'en' = 'vi'): 
     return {
       bestMatches: fallback,
       formattedAnswer: lang === 'vi'
-        ? `Tôi chưa tìm thấy mục khớp chính xác với **"${cleanQuery}"**, nhưng đây là hướng dẫn nền tảng từ \`USER_MANUAL.md\`:\n\n` + fallback.map(item => `### ${item.titleVi}\n${item.answerVi}`).join('\n\n---\n\n')
-        : `I could not find an exact match for **"${cleanQuery}"**, but here is the starter guide from \`USER_MANUAL.md\`:\n\n` + fallback.map(item => `### ${item.titleEn}\n${item.answerEn}`).join('\n\n---\n\n')
+        ? `Tôi chưa tìm thấy mục khớp chính xác với **"${cleanQuery}"**, nhưng đây là hướng dẫn nền tảng:\n\n` + fallback.map(item => `### ${item.titleVi}\n${item.answerVi}`).join('\n\n---\n\n')
+        : `I could not find an exact match for **"${cleanQuery}"**, but here is the starter guide:\n\n` + fallback.map(item => `### ${item.titleEn}\n${item.answerEn}`).join('\n\n---\n\n')
     };
   }
-  const formattedAnswer = topMatches.map(item => `### ${lang === 'vi' ? item.titleVi : item.titleEn}\n${lang === 'vi' ? item.answerVi : item.answerEn}`).join('\n\n---\n\n');
-  return { bestMatches: topMatches, formattedAnswer };
+  return {
+    bestMatches: topMatches,
+    formattedAnswer: topMatches.map(item => `### ${lang === 'vi' ? item.titleVi : item.titleEn}\n${lang === 'vi' ? item.answerVi : item.answerEn}`).join('\n\n---\n\n')
+  };
 }
