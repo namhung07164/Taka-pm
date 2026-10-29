@@ -117,16 +117,28 @@ async function startServer() {
     }
   });
 
-  // API FAQ Chatbot đọc trực tiếp từ BUSINESS_LOGIC.md
-  let cachedBusinessLogicMd = '';
-  try {
-    const blPath = path.join(process.cwd(), 'BUSINESS_LOGIC.md');
-    if (fs.existsSync(blPath)) {
-      cachedBusinessLogicMd = fs.readFileSync(blPath, 'utf-8');
+  // API FAQ Chatbot đọc trực tiếp từ USER_MANUAL.md & BUSINESS_LOGIC.md
+  const loadFaqKnowledgeDocs = () => {
+    let manualMd = '';
+    let businessMd = '';
+    try {
+      const manualPath = path.join(process.cwd(), 'USER_MANUAL.md');
+      if (fs.existsSync(manualPath)) {
+        manualMd = fs.readFileSync(manualPath, 'utf-8');
+      }
+    } catch {
+      manualMd = '';
     }
-  } catch {
-    cachedBusinessLogicMd = '';
-  }
+    try {
+      const blPath = path.join(process.cwd(), 'BUSINESS_LOGIC.md');
+      if (fs.existsSync(blPath)) {
+        businessMd = fs.readFileSync(blPath, 'utf-8');
+      }
+    } catch {
+      businessMd = '';
+    }
+    return { manualMd, businessMd };
+  };
 
   app.post('/api/faq-chat', async (req, res) => {
     try {
@@ -138,13 +150,20 @@ async function startServer() {
       if (!apiKey) {
         return res.status(200).json({ answer: localContext || null, source: 'local_knowledge' });
       }
+      const { manualMd, businessMd } = loadFaqKnowledgeDocs();
       const { GoogleGenAI } = await import('@google/genai');
       const ai = new GoogleGenAI({ apiKey });
       const systemInstruction =
-        `You are the official Takashimaya Project Management FAQ Assistant for new and existing users.\n` +
-        `Answer strictly based on the following BUSINESS_LOGIC.md specification and local context.\n` +
-        `Respond concisely and clearly in ${lang === 'vi' ? 'Vietnamese' : 'English'} using bullet points and **bold** key terms.\n\n` +
-        `--- BUSINESS_LOGIC.md ---\n${cachedBusinessLogicMd.slice(0, 18000)}\n` +
+        `You are the official Takashimaya Project Management (Taka PM) Interactive Onboarding & FAQ Assistant.\n` +
+        `Your goal is to explain features, workflows, and formulas to NEW USERS in the simplest, most visual, friendly, and easy-to-understand way possible.\n` +
+        `Structure your response clearly using:\n` +
+        `1. 🎯 **Hiểu đơn giản (Simple Idea)**: 1-2 short sentences.\n` +
+        `2. 👆 **Cách thao tác nhanh (Step-by-Step)**: Numbered steps showing exact button/tab names.\n` +
+        `3. 💡 **Ví dụ / Mẹo hay (Example / Pro Tip)**: Concrete example or shortcut.\n` +
+        `Answer strictly based on USER_MANUAL.md, BUSINESS_LOGIC.md, and the matched context below.\n` +
+        `Respond in ${lang === 'vi' ? 'Vietnamese' : 'English'}.\n\n` +
+        `--- USER_MANUAL.md ---\n${manualMd.slice(0, 22000)}\n\n` +
+        `--- BUSINESS_LOGIC.md ---\n${businessMd.slice(0, 12000)}\n\n` +
         `--- MATCHED CONTEXT ---\n${localContext}`;
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -156,7 +175,7 @@ async function startServer() {
       });
       return res.status(200).json({
         answer: response.text || localContext || null,
-        source: 'gemini_business_logic',
+        source: 'gemini_user_manual',
       });
     } catch {
       return res.status(200).json({

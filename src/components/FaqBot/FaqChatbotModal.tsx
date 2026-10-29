@@ -10,7 +10,9 @@ import {
   RotateCcw,
   HelpCircle,
   ChevronRight,
-  Globe
+  Globe,
+  ExternalLink,
+  MessageSquarePlus
 } from 'lucide-react';
 import {
   FAQ_CATEGORIES,
@@ -18,11 +20,14 @@ import {
   FaqKnowledgeEntry,
   searchFaqKnowledge
 } from './faqKnowledgeEngine';
+import { useAppStore } from '../../store/useAppStore';
+import { TabId } from '../../types';
 
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  primaryEntry?: FaqKnowledgeEntry;
   relatedEntries?: FaqKnowledgeEntry[];
   timestamp: string;
 }
@@ -42,9 +47,10 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
       role: 'assistant',
       text:
         lang === 'vi'
-          ? 'Xin chào! Tôi là **Trợ lý Nghiệp vụ Takashimaya PM** (dữ liệu chuẩn từ `BUSINESS_LOGIC.md`).\n\nBạn là người dùng mới hay cần tra cứu nhanh công thức **Ngân sách 3 cấp**, **Chi phí 3 đợt & VAT**, **Gantt & Predecessor**, **Giao việc Tracker**, hay **Cách tính diện tích m² trên Layout**? Hãy chọn câu hỏi gợi ý hoặc nhập câu hỏi bên dưới!'
-          : 'Welcome! I am the **Takashimaya PM Business Logic Assistant** (grounded on `BUSINESS_LOGIC.md`).\n\nWhether you are a new user or looking up **3-Tier Budget formulas**, **3-Installment Costs & VAT**, **Gantt Predecessors**, **Delegation Tracker**, or **Floor Plan Area (m²)** rules, pick a topic below or ask a question!',
-      relatedEntries: FAQ_KNOWLEDGE_BASE.slice(0, 4),
+          ? '👋 Xin chào! Tôi là **Trợ lý Hướng dẫn Tương tác Takashimaya PM** (nạp từ `USER_MANUAL.md` & `BUSINESS_LOGIC.md`).\n\n🎯 **Dành cho người mới**: Hãy chọn một chủ đề bên dưới hoặc bấm vào câu hỏi gợi ý — tôi sẽ giải thích bằng **câu cú đơn giản, trực quan nhất** kèm nút **Mở trực tiếp Tab** để bạn thực hành ngay!'
+          : '👋 Welcome! I am the **Takashimaya PM Interactive Onboarding Assistant** (powered by `USER_MANUAL.md` & `BUSINESS_LOGIC.md`).\n\n🎯 **For New Users**: Tap any topic or quick question below for a **simple, visual, step-by-step guide** with **1-click Tab navigation**!',
+      primaryEntry: FAQ_KNOWLEDGE_BASE[0],
+      relatedEntries: FAQ_KNOWLEDGE_BASE.slice(0, 5),
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }),
     [lang]
@@ -84,6 +90,17 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
     return FAQ_KNOWLEDGE_BASE.filter(item => item.category === selectedCategory);
   }, [selectedCategory]);
 
+  const handleJumpToTab = useCallback((tabId: TabId) => {
+    try {
+      useAppStore.getState().setActiveTab(tabId);
+      if (typeof window !== 'undefined' && window.innerWidth < 768) {
+        setIsOpen(false);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const handleSelectEntry = useCallback(
     (entry: FaqKnowledgeEntry) => {
       const userQuestion = lang === 'vi' ? entry.titleVi : entry.titleEn;
@@ -105,6 +122,7 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
           id: `a_${Date.now() + 1}`,
           role: 'assistant',
           text: `### ${userQuestion}\n${answerBody}`,
+          primaryEntry: entry,
           relatedEntries: related,
           timestamp: now
         }
@@ -113,26 +131,26 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
     [lang]
   );
 
-  const handleSendQuestion = useCallback(
-    async (e?: React.FormEvent) => {
-      if (e) e.preventDefault();
-      const q = inputQuery.trim();
+  const submitQuestionText = useCallback(
+    async (rawQuestion: string) => {
+      const q = rawQuestion.trim();
       if (!q || isTyping) return;
 
       const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const userMsg: ChatMessage = {
-        id: `u_${Date.now()}`,
-        role: 'user',
-        text: q,
-        timestamp: now
-      };
-
-      setMessages(prev => [...prev, userMsg]);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `u_${Date.now()}`,
+          role: 'user',
+          text: q,
+          timestamp: now
+        }
+      ]);
       setInputQuery('');
       setIsTyping(true);
 
-      // Instant local BUSINESS_LOGIC.md match
       const localResult = searchFaqKnowledge(q, lang);
+      const topEntry = localResult.bestMatches[0];
 
       try {
         const res = await fetch('/api/faq-chat', {
@@ -154,6 +172,7 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                 id: `a_${Date.now()}`,
                 role: 'assistant',
                 text: data.answer,
+                primaryEntry: topEntry,
                 relatedEntries: localResult.bestMatches,
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               }
@@ -163,7 +182,7 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
           }
         }
       } catch {
-        // Fallback smoothly to deterministic BUSINESS_LOGIC.md engine
+        // Fallback to instant USER_MANUAL.md + BUSINESS_LOGIC.md engine
       }
 
       setMessages(prev => [
@@ -172,13 +191,22 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
           id: `a_${Date.now()}`,
           role: 'assistant',
           text: localResult.formattedAnswer,
+          primaryEntry: topEntry,
           relatedEntries: localResult.bestMatches,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
       setIsTyping(false);
     },
-    [inputQuery, isTyping, lang]
+    [isTyping, lang]
+  );
+
+  const handleSendQuestion = useCallback(
+    (e?: React.FormEvent) => {
+      if (e) e.preventDefault();
+      submitQuestionText(inputQuery);
+    },
+    [inputQuery, submitQuestionText]
   );
 
   const renderFormattedText = (raw: string) => {
@@ -196,7 +224,6 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
           </div>
         );
       }
-      // Format bold **text** and inline code `code`
       const parts = line.split(/(\*\*.*?\*\*|`.*?`)/g);
       return (
         <div key={idx} className="text-xs leading-relaxed text-slate-700 dark:text-slate-200">
@@ -231,7 +258,7 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
       <button
         type="button"
         onClick={() => setIsOpen(prev => !prev)}
-        title="Business Logic & FAQ Guide"
+        title="User Manual & Interactive FAQ Bot"
         className="fixed bottom-6 right-4 z-[9000] flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-600/30 border border-white/20 active:scale-95 touch-manipulation transition-all print:hidden"
       >
         <Bot className="w-4 h-4" />
@@ -255,7 +282,7 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
           >
             <div
               ref={nodeRef}
-              className="pointer-events-auto relative z-10 w-full sm:w-[540px] max-w-[96vw] h-[82vh] sm:h-[640px] max-h-[90vh] bg-white dark:bg-[#18181b] border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+              className="pointer-events-auto relative z-10 w-full sm:w-[560px] max-w-[96vw] h-[84vh] sm:h-[660px] max-h-[90vh] bg-white dark:bg-[#18181b] border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
@@ -268,12 +295,14 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <h3 className="text-xs sm:text-sm font-bold tracking-tight truncate">
-                        Takashimaya Business Logic & FAQ Bot
+                        Takashimaya Interactive Manual & FAQ
                       </h3>
                       <GripHorizontal className="w-3.5 h-3.5 text-slate-400 shrink-0 hidden sm:inline" />
                     </div>
                     <p className="text-[10px] text-blue-200/80 truncate">
-                      Interactive Onboarding & Rules Reference (BUSINESS_LOGIC.md)
+                      {lang === 'vi'
+                        ? 'Hướng dẫn trực quan cho Người mới (USER_MANUAL.md)'
+                        : 'Visual Step-by-Step Guide (USER_MANUAL.md)'}
                     </p>
                   </div>
                 </div>
@@ -282,7 +311,7 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                 <div className="flex items-center gap-1.5 shrink-0 z-30 pointer-events-auto">
                   <button
                     type="button"
-                    onClick={(e) => {
+                    onClick={e => {
                       e.stopPropagation();
                       setLang(prev => (prev === 'vi' ? 'en' : 'vi'));
                     }}
@@ -294,7 +323,7 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => {
+                    onClick={e => {
                       e.stopPropagation();
                       setMessages([initialGreeting]);
                     }}
@@ -305,12 +334,12 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                   </button>
                   <button
                     type="button"
-                    onClick={(e) => {
+                    onClick={e => {
                       e.preventDefault();
                       e.stopPropagation();
                       setIsOpen(false);
                     }}
-                    onTouchEnd={(e) => {
+                    onTouchEnd={e => {
                       e.preventDefault();
                       e.stopPropagation();
                       setIsOpen(false);
@@ -351,8 +380,8 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                   <BookOpen className="w-3 h-3 text-blue-500" />
                   <span>
                     {lang === 'vi'
-                      ? 'Chủ đề nghiệp vụ (Nhấn để xem ngay):'
-                      : 'Business Logic Topics (Click for instant guide):'}
+                      ? 'Chủ đề Cẩm nang (Chạm để xem giải thích đơn giản nhất):'
+                      : 'User Manual Topics (Tap for simple visual guide):'}
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -364,7 +393,7 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-white dark:bg-[#27272a] text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 hover:bg-blue-50 dark:hover:bg-blue-900/30 active:scale-95 transition-all text-left"
                     >
                       <HelpCircle className="w-3 h-3 shrink-0 text-blue-500" />
-                      <span className="truncate max-w-[230px]">
+                      <span className="truncate max-w-[240px]">
                         {lang === 'vi' ? entry.titleVi : entry.titleEn}
                       </span>
                     </button>
@@ -374,56 +403,117 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
 
               {/* Chat Messages Area */}
               <div className="flex-1 overflow-y-auto p-3.5 space-y-3 bg-slate-50/40 dark:bg-[#141417]">
-                {messages.map(msg => (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
-                  >
-                    <div
-                      className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 shadow-xs ${
-                        msg.role === 'user'
-                          ? 'bg-blue-600 text-white rounded-br-xs'
-                          : 'bg-white dark:bg-[#202024] border border-slate-200/90 dark:border-slate-700/80 rounded-bl-xs'
-                      }`}
-                    >
-                      {msg.role === 'user' ? (
-                        <div className="text-xs font-medium leading-relaxed">{msg.text}</div>
-                      ) : (
-                        <div className="space-y-0.5">{renderFormattedText(msg.text)}</div>
-                      )}
+                {messages.map(msg => {
+                  const quickPrompts =
+                    msg.primaryEntry
+                      ? lang === 'vi'
+                        ? msg.primaryEntry.quickPromptsVi
+                        : msg.primaryEntry.quickPromptsEn
+                      : undefined;
+                  const targetTab = msg.primaryEntry?.targetTab;
+                  const targetTabLabel =
+                    msg.primaryEntry
+                      ? lang === 'vi'
+                        ? msg.primaryEntry.targetTabLabelVi
+                        : msg.primaryEntry.targetTabLabelEn
+                      : undefined;
 
-                      {msg.role === 'assistant' && msg.relatedEntries && msg.relatedEntries.length > 0 && (
-                        <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-700/70">
-                          <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1">
-                            {lang === 'vi' ? 'Câu hỏi liên quan:' : 'Related Topics:'}
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                    >
+                      <div
+                        className={`max-w-[94%] rounded-2xl px-3.5 py-2.5 shadow-xs ${
+                          msg.role === 'user'
+                            ? 'bg-blue-600 text-white rounded-br-xs'
+                            : 'bg-white dark:bg-[#202024] border border-slate-200/90 dark:border-slate-700/80 rounded-bl-xs'
+                        }`}
+                      >
+                        {msg.role === 'user' ? (
+                          <div className="text-xs font-medium leading-relaxed">{msg.text}</div>
+                        ) : (
+                          <div className="space-y-0.5">{renderFormattedText(msg.text)}</div>
+                        )}
+
+                        {/* Interactive Direct Tab Action Button */}
+                        {msg.role === 'assistant' && targetTab && targetTabLabel && (
+                          <div className="mt-2.5 pt-2 border-t border-slate-100 dark:border-slate-700/70 flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                              {lang === 'vi' ? '🎯 Thực hành trực tiếp:' : '🎯 Try it now:'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleJumpToTab(targetTab)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs active:scale-95 touch-manipulation transition-all cursor-pointer"
+                            >
+                              <span>{targetTabLabel}</span>
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
                           </div>
-                          <div className="flex flex-wrap gap-1">
-                            {msg.relatedEntries.map(rel => (
-                              <button
-                                key={rel.id}
-                                type="button"
-                                onClick={() => handleSelectEntry(rel)}
-                                className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-900/40 text-[10px] font-semibold text-blue-600 dark:text-blue-300 transition-colors"
-                              >
-                                <span>{lang === 'vi' ? rel.titleVi : rel.titleEn}</span>
-                                <ChevronRight className="w-2.5 h-2.5" />
-                              </button>
-                            ))}
+                        )}
+
+                        {/* Interactive 1-Click Follow-up Questions */}
+                        {msg.role === 'assistant' && quickPrompts && quickPrompts.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700/70">
+                            <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                              <MessageSquarePlus className="w-3 h-3" />
+                              <span>
+                                {lang === 'vi'
+                                  ? 'Hỏi nhanh 1 chạm (Bấm để xem trả lời):'
+                                  : '1-Tap Follow-up Questions:'}
+                              </span>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              {quickPrompts.map((promptText, qIdx) => (
+                                <button
+                                  key={qIdx}
+                                  type="button"
+                                  onClick={() => submitQuestionText(promptText)}
+                                  className="inline-flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50/80 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200/70 dark:border-indigo-800/60 text-[11px] font-medium text-indigo-700 dark:text-indigo-200 text-left active:scale-98 transition-all cursor-pointer"
+                                >
+                                  <span>💬 {promptText}</span>
+                                  <ChevronRight className="w-3 h-3 shrink-0 text-indigo-500" />
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+
+                        {/* Related Topics */}
+                        {msg.role === 'assistant' && msg.relatedEntries && msg.relatedEntries.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700/70">
+                            <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mb-1">
+                              {lang === 'vi' ? 'Chủ đề liên quan:' : 'Related Topics:'}
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {msg.relatedEntries.map(rel => (
+                                <button
+                                  key={rel.id}
+                                  type="button"
+                                  onClick={() => handleSelectEntry(rel)}
+                                  className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-900/40 text-[10px] font-semibold text-blue-600 dark:text-blue-300 transition-colors cursor-pointer"
+                                >
+                                  <span>{lang === 'vi' ? rel.titleVi : rel.titleEn}</span>
+                                  <ChevronRight className="w-2.5 h-2.5" />
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[9px] text-slate-400 mt-0.5 px-1">{msg.timestamp}</span>
                     </div>
-                    <span className="text-[9px] text-slate-400 mt-0.5 px-1">{msg.timestamp}</span>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {isTyping && (
                   <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 px-2">
                     <div className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
                     <span>
                       {lang === 'vi'
-                        ? 'Đang tra cứu BUSINESS_LOGIC.md...'
-                        : 'Consulting BUSINESS_LOGIC.md...'}
+                        ? 'Đang tra cứu USER_MANUAL.md & BUSINESS_LOGIC.md...'
+                        : 'Consulting USER_MANUAL.md & BUSINESS_LOGIC.md...'}
                     </span>
                   </div>
                 )}
@@ -441,18 +531,18 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                   onChange={e => setInputQuery(e.target.value)}
                   placeholder={
                     lang === 'vi'
-                      ? 'Hỏi về Budget, Cost 3 đợt, Gantt, Tracker, Layout m²...'
-                      : 'Ask about Budget, 3-Installment Cost, Gantt, Tracker, Layout m²...'
+                      ? 'Nhập câu hỏi (VD: Cách tính m², Predecessor, Budget, Cost 3 đợt)...'
+                      : 'Ask anything (e.g., Area m², Predecessor, Budget, 3-Installment Cost)...'
                   }
                   className="flex-1 bg-slate-100 dark:bg-[#27272a] border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 outline-none"
                 />
                 <button
                   type="submit"
                   disabled={!inputQuery.trim() || isTyping}
-                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-1.5 active:scale-95 touch-manipulation transition-all shrink-0"
+                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-1.5 active:scale-95 touch-manipulation transition-all shrink-0 cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>{lang === 'vi' ? 'Gửi' : 'Ask'}</span>
+                  <span>{lang === 'vi' ? 'Hỏi' : 'Ask'}</span>
                 </button>
               </form>
             </div>
