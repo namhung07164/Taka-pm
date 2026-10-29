@@ -240,14 +240,28 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
 
       {isOpen && (
         <div className="fixed inset-0 z-[9998] pointer-events-none flex items-end sm:items-center justify-end sm:justify-center p-2 sm:p-4 print:hidden">
-          <Draggable nodeRef={nodeRef} handle=".modal-handle" bounds="parent">
+          {/* Backdrop on mobile for tapping outside */}
+          <div
+            className="fixed inset-0 bg-black/40 backdrop-blur-xs pointer-events-auto sm:hidden z-0"
+            onClick={() => setIsOpen(false)}
+          />
+
+          <Draggable
+            nodeRef={nodeRef}
+            handle=".modal-handle"
+            cancel="button, input, textarea, select, .no-drag"
+            disabled={typeof window !== 'undefined' && window.innerWidth < 768}
+            bounds="parent"
+          >
             <div
               ref={nodeRef}
-              className="pointer-events-auto w-full sm:w-[540px] max-w-[96vw] h-[82vh] sm:h-[640px] max-h-[90vh] bg-white dark:bg-[#18181b] border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+              className="pointer-events-auto relative z-10 w-full sm:w-[540px] max-w-[96vw] h-[82vh] sm:h-[640px] max-h-[90vh] bg-white dark:bg-[#18181b] border border-slate-200 dark:border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+              onClick={e => e.stopPropagation()}
             >
-              {/* Draggable Header */}
-              <div className="modal-handle cursor-grab active:cursor-grabbing bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white px-4 py-3 flex items-center justify-between select-none shrink-0">
-                <div className="flex items-center gap-2.5 min-w-0">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white px-4 py-3 flex items-center justify-between select-none shrink-0">
+                {/* Draggable Title Area only */}
+                <div className="modal-handle cursor-grab active:cursor-grabbing flex items-center gap-2.5 min-w-0 flex-1 mr-2 py-0.5">
                   <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-400/30 flex items-center justify-center shrink-0">
                     <Sparkles className="w-4 h-4 text-blue-300" />
                   </div>
@@ -256,7 +270,7 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                       <h3 className="text-xs sm:text-sm font-bold tracking-tight truncate">
                         Takashimaya Business Logic & FAQ Bot
                       </h3>
-                      <GripHorizontal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <GripHorizontal className="w-3.5 h-3.5 text-slate-400 shrink-0 hidden sm:inline" />
                     </div>
                     <p className="text-[10px] text-blue-200/80 truncate">
                       Interactive Onboarding & Rules Reference (BUSINESS_LOGIC.md)
@@ -264,16 +278,15 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0 z-10">
+                {/* Header Action Controls */}
+                <div className="flex items-center gap-1.5 shrink-0 z-30 pointer-events-auto">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       setLang(prev => (prev === 'vi' ? 'en' : 'vi'));
                     }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onTouchStart={(e) => e.stopPropagation()}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-[10px] font-bold uppercase tracking-wider transition-colors active:scale-95 touch-manipulation cursor-pointer"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 text-[10px] font-bold uppercase tracking-wider transition-colors active:scale-95 touch-manipulation cursor-pointer"
                     title="Switch Language (VN / EN)"
                   >
                     <Globe className="w-3.5 h-3.5" />
@@ -285,9 +298,7 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                       e.stopPropagation();
                       setMessages([initialGreeting]);
                     }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onTouchStart={(e) => e.stopPropagation()}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 transition-colors active:scale-95 touch-manipulation cursor-pointer"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 active:bg-white/30 text-slate-200 transition-colors active:scale-95 touch-manipulation cursor-pointer"
                     title="Reset Conversation"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -295,16 +306,20 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
                   <button
                     type="button"
                     onClick={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       setIsOpen(false);
                     }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onTouchStart={(e) => e.stopPropagation()}
-                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-rose-600 text-slate-200 hover:text-white transition-all active:scale-90 touch-manipulation cursor-pointer z-20 shrink-0"
+                    onTouchEnd={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsOpen(false);
+                    }}
+                    className="w-9 h-9 sm:w-8 sm:h-8 flex items-center justify-center rounded-lg bg-white/15 hover:bg-rose-600 active:bg-rose-700 text-white transition-all active:scale-90 touch-manipulation cursor-pointer z-30 shrink-0 shadow-sm"
                     title="Close (Esc)"
                     aria-label="Close FAQ Modal"
                   >
-                    <X className="w-4.5 h-4.5" />
+                    <X className="w-5 h-5 sm:w-4.5 sm:h-4.5" />
                   </button>
                 </div>
               </div>
