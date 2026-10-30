@@ -1,6 +1,6 @@
 import React, { Suspense, useState } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
-import { RefreshCw, Smartphone, Monitor, Bell, Activity, Database, Cloud, ChevronDown, ChevronUp } from "lucide-react";
+import { RefreshCw, Smartphone, Monitor, Bell, Activity, Database, Cloud, ChevronDown, ChevronUp, Download, Link2 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { doc } from 'firebase/firestore';
 import { setDoc } from '../lib/firestoreWrites';
@@ -17,6 +17,8 @@ import { SettingTabProps, ConfirmModalState } from "./SettingTabParts/settingTyp
 
 const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
 const DesktopOptimizationModal = lazyWithRetry(() => import('./DesktopOptimizationModal').then(m => ({ default: m.DesktopOptimizationModal })), 'DesktopOptimizationModal');
+const FirestoreSummarizedExportModal = lazyWithRetry(() => import('./SettingTabParts/FirestoreSummarizedExportModal').then(m => ({ default: m.FirestoreSummarizedExportModal })), 'FirestoreSummarizedExportModal');
+const ProjectLinksImagesManagerModal = lazyWithRetry(() => import('./SettingTabParts/ProjectLinksImagesManagerModal').then(m => ({ default: m.ProjectLinksImagesManagerModal })), 'ProjectLinksImagesManagerModal');
 
 export function SettingTab({ rules }: SettingTabProps) {
   const currentUser = useAppStore(state => state.currentUser)!;
@@ -26,6 +28,8 @@ export function SettingTab({ rules }: SettingTabProps) {
   const [showDataMaintenance, setShowDataMaintenance] = useState(false);
   const [showR2AutoBackup, setShowR2AutoBackup] = useState(false);
   const [showDesktopOptModal, setShowDesktopOptModal] = useState(false);
+  const [showSummaryExportModal, setShowSummaryExportModal] = useState(false);
+  const [showLinksImagesModal, setShowLinksImagesModal] = useState(false);
 
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({
     isOpen: false,
@@ -236,6 +240,26 @@ export function SettingTab({ rules }: SettingTabProps) {
               Test Local Notification
             </button>
 
+            <button
+              type="button"
+              onClick={() => setShowSummaryExportModal(true)}
+              title="Download Summarized Data on Firestore (Task Rollups, Financial Aggregates, Layout Summaries, Years Meta)"
+              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm cursor-pointer active:scale-95 touch-manipulation"
+            >
+              <Download className="w-5 h-5 text-blue-500" />
+              Download Firestore Summaries
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowLinksImagesModal(true)}
+              title="Audit and delete links & images attached to Project Codes in Comment Modular and Layout Picture"
+              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm cursor-pointer active:scale-95 touch-manipulation"
+            >
+              <Link2 className="w-5 h-5 text-indigo-500" />
+              Manage Project Links & Images
+            </button>
+
             {canViewPerformance && (
               <button 
                 onClick={() => setShowPerformanceDashboard(prev => !prev)}
@@ -368,6 +392,20 @@ export function SettingTab({ rules }: SettingTabProps) {
           <DesktopOptimizationModal 
             isOpen={showDesktopOptModal} 
             onClose={() => setShowDesktopOptModal(false)} 
+          />
+        )}
+        {showSummaryExportModal && (
+          <FirestoreSummarizedExportModal
+            isOpen={showSummaryExportModal}
+            onClose={() => setShowSummaryExportModal(false)}
+          />
+        )}
+        {showLinksImagesModal && (
+          <ProjectLinksImagesManagerModal
+            isOpen={showLinksImagesModal}
+            onClose={() => setShowLinksImagesModal(false)}
+            canWrite={canWrite}
+            onConfirmAction={triggerConfirmAction}
           />
         )}
       </Suspense>

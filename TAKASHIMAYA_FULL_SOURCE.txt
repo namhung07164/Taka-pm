@@ -78703,7 +78703,7 @@ FILE: src/components/SettingTab.tsx
 ================================================================================
 import React, { Suspense, useState } from 'react';
 import { useLanguage } from "../lib/LanguageContext";
-import { RefreshCw, Smartphone, Monitor, Bell, Activity, Database, Cloud, ChevronDown, ChevronUp } from "lucide-react";
+import { RefreshCw, Smartphone, Monitor, Bell, Activity, Database, Cloud, ChevronDown, ChevronUp, Download, Link2 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { doc } from 'firebase/firestore';
 import { setDoc } from '../lib/firestoreWrites';
@@ -78720,6 +78720,8 @@ import { SettingTabProps, ConfirmModalState } from "./SettingTabParts/settingTyp
 
 const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
 const DesktopOptimizationModal = lazyWithRetry(() => import('./DesktopOptimizationModal').then(m => ({ default: m.DesktopOptimizationModal })), 'DesktopOptimizationModal');
+const FirestoreSummarizedExportModal = lazyWithRetry(() => import('./SettingTabParts/FirestoreSummarizedExportModal').then(m => ({ default: m.FirestoreSummarizedExportModal })), 'FirestoreSummarizedExportModal');
+const ProjectLinksImagesManagerModal = lazyWithRetry(() => import('./SettingTabParts/ProjectLinksImagesManagerModal').then(m => ({ default: m.ProjectLinksImagesManagerModal })), 'ProjectLinksImagesManagerModal');
 
 export function SettingTab({ rules }: SettingTabProps) {
   const currentUser = useAppStore(state => state.currentUser)!;
@@ -78729,6 +78731,8 @@ export function SettingTab({ rules }: SettingTabProps) {
   const [showDataMaintenance, setShowDataMaintenance] = useState(false);
   const [showR2AutoBackup, setShowR2AutoBackup] = useState(false);
   const [showDesktopOptModal, setShowDesktopOptModal] = useState(false);
+  const [showSummaryExportModal, setShowSummaryExportModal] = useState(false);
+  const [showLinksImagesModal, setShowLinksImagesModal] = useState(false);
 
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({
     isOpen: false,
@@ -78939,6 +78943,26 @@ export function SettingTab({ rules }: SettingTabProps) {
               Test Local Notification
             </button>
 
+            <button
+              type="button"
+              onClick={() => setShowSummaryExportModal(true)}
+              title="Download Summarized Data on Firestore (Task Rollups, Financial Aggregates, Layout Summaries, Years Meta)"
+              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm cursor-pointer active:scale-95 touch-manipulation"
+            >
+              <Download className="w-5 h-5 text-blue-500" />
+              Download Firestore Summaries
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowLinksImagesModal(true)}
+              title="Audit and delete links & images attached to Project Codes in Comment Modular and Layout Picture"
+              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm cursor-pointer active:scale-95 touch-manipulation"
+            >
+              <Link2 className="w-5 h-5 text-indigo-500" />
+              Manage Project Links & Images
+            </button>
+
             {canViewPerformance && (
               <button 
                 onClick={() => setShowPerformanceDashboard(prev => !prev)}
@@ -79073,301 +79097,18 @@ export function SettingTab({ rules }: SettingTabProps) {
             onClose={() => setShowDesktopOptModal(false)} 
           />
         )}
-      </Suspense>
-    </div>
-  );
-}
-
-export default SettingTab;
-
-================================================================================
-import React, { Suspense, useState } from 'react';
-import { useLanguage } from "../lib/LanguageContext";
-import { RefreshCw, Smartphone, Monitor, Bell, Activity, Database, ChevronDown, ChevronUp } from "lucide-react";
-import { cn } from "../lib/utils";
-import { doc } from 'firebase/firestore';
-import { setDoc } from '../lib/firestoreWrites';
-import { db, APP_ID } from "../lib/firebase";
-import { requestNotificationPermission } from "../lib/notifications";
-import { useAppStore } from "../store/useAppStore";
-import { bumpConfigVersion } from "../lib/configCacheService";
-import { lazyWithRetry } from "../lib/lazyWithRetry";
-import { FirestorePerformanceDashboard } from "./FirestorePerformanceDashboard";
-import { SettingNotificationRules } from "./SettingTabParts/SettingNotificationRules";
-import { SettingDataMaintenance } from "./SettingTabParts/SettingDataMaintenance";
-import { SettingTabProps, ConfirmModalState } from "./SettingTabParts/settingTypes";
-
-const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
-const DesktopOptimizationModal = lazyWithRetry(() => import('./DesktopOptimizationModal').then(m => ({ default: m.DesktopOptimizationModal })), 'DesktopOptimizationModal');
-
-export function SettingTab({ rules }: SettingTabProps) {
-  const currentUser = useAppStore(state => state.currentUser)!;
-  const { t } = useLanguage();
-  
-  const [showPerformanceDashboard, setShowPerformanceDashboard] = useState(false);
-  const [showDataMaintenance, setShowDataMaintenance] = useState(false);
-  const [showDesktopOptModal, setShowDesktopOptModal] = useState(false);
-
-  const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({
-    isOpen: false,
-    title: '',
-    message: '',
-    onConfirm: () => {}
-  });
-
-  const canWrite = currentUser.role === 'admin' || currentUser.canWrite;
-  const isAdmin = currentUser.role === 'admin';
-  const roleLower = String(currentUser.role || '').toLowerCase();
-  const canViewPerformance = isAdmin || roleLower === 'manager' || roleLower === 'cp';
-
-  const jpyRate = useAppStore(state => state.jpyRate);
-  const usdRate = useAppStore(state => state.usdRate);
-  const [jpyRateInput, setJpyRateInput] = useState(jpyRate.toString());
-  const [usdRateInput, setUsdRateInput] = useState(usdRate.toString());
-
-  const handleSaveExchangeRates = async () => {
-    const parsedJpy = parseFloat(jpyRateInput);
-    const parsedUsd = parseFloat(usdRateInput);
-    
-    if (isNaN(parsedJpy) || isNaN(parsedUsd)) {
-      useAppStore.getState().setToast({ title: "Notice", message: "Please enter valid numbers for exchange rates." });
-      return;
-    }
-    
-    useAppStore.getState().setJpyRate(parsedJpy);
-    useAppStore.getState().setUsdRate(parsedUsd);
-    
-    try {
-      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_settings", "exchange_rates"), { 
-        jpyRate: parsedJpy,
-        usdRate: parsedUsd
-      }, { merge: true });
-      bumpConfigVersion('rates');
-      useAppStore.getState().setToast({ title: "Notice", message: "Exchange rates updated successfully." });
-    } catch (error) { 
-      console.error(error); 
-      useAppStore.getState().setToast({ title: "Notice", message: "Failed to update exchange rates." });
-    }
-  };
-
-  const handleEnablePush = async () => {
-    if (currentUser.id === "guest") {
-      useAppStore.getState().setToast({ title: "Notice", message: "Please login first to enable push notifications." });
-      return;
-    }
-    if (currentUser.notification === false) {
-      useAppStore.getState().setToast({ title: "Notice", message: "Push notifications are disabled for your account by the administrator." });
-      return;
-    }
-    await requestNotificationPermission(currentUser.id);
-  };
-
-  const triggerConfirmAction = (title: string, message: string, onConfirm: () => Promise<void>) => {
-    setConfirmModal({
-      isOpen: true,
-      title,
-      message,
-      onConfirm: async () => {
-        await onConfirm();
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
-      }
-    });
-  };
-
-  return (
-    <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm overflow-hidden overflow-y-auto">
-      <Suspense fallback={null}>
-        {confirmModal.isOpen && (
-          <ConfirmModal 
-            isOpen={confirmModal.isOpen}
-            title={confirmModal.title}
-            message={confirmModal.message}
-            onConfirm={confirmModal.onConfirm}
-            onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        {showSummaryExportModal && (
+          <FirestoreSummarizedExportModal
+            isOpen={showSummaryExportModal}
+            onClose={() => setShowSummaryExportModal(false)}
           />
         )}
-      </Suspense>
-
-      <div className="px-5 py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 shrink-0">
-        <h2 className="text-lg font-bold text-slate-800 dark:text-[#e3e3e3]">{t("Settings")}</h2>
-      </div>
-      
-      <div className="p-5 flex flex-col md:flex-row gap-4 border-b border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] items-center">
-        {currentUser.role !== 'guest' && (
-          <>
-            <button 
-              title="Update to latest Cloudflare build without clearing local database cache (0 Firestore Reads/Writes)"
-              onClick={() => {
-                triggerConfirmAction(
-                  "Force Update App (Zero-Read Smart Update)",
-                  "This will fetch the latest application build from Cloudflare and refresh static assets while preserving your local database (IndexedDB/Dexie) and Delta Sync state (0 extra Firestore Reads/Writes). Proceed?",
-                  async () => {
-                    try {
-                      if ('serviceWorker' in navigator) {
-                        const registrations = await navigator.serviceWorker.getRegistrations();
-                        await Promise.all(
-                          registrations.map(async (reg) => {
-                            try {
-                              await reg.update();
-                              if (reg.waiting) {
-                                reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-                              }
-                            } catch {}
-                          })
-                        );
-                      }
-                      if ('caches' in window) {
-                        const cacheNames = await window.caches.keys();
-                        await Promise.all(cacheNames.map((name) => window.caches.delete(name)));
-                      }
-                    } catch (e) {
-                      console.warn('[ForceUpdate] Asset cache refresh warning:', e);
-                    }
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('v', String(Date.now()));
-                    window.location.replace(url.toString());
-                  }
-                );
-              }}
-              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm"
-            >
-              <RefreshCw className="w-5 h-5 text-emerald-500" />
-              Force Update App
-            </button>
-            
-            <button 
-              title="Enable Push (iOS/PWA)"
-              onClick={handleEnablePush}
-              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm"
-            >
-              <Smartphone className="w-5 h-5 text-blue-500" />
-              Enable Push (iOS/PWA)
-            </button>
-
-            <button 
-              title="Cấu hình tối ưu Desktop (Chống ngủ tab Chrome/Edge)"
-              onClick={() => setShowDesktopOptModal(true)}
-              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm"
-            >
-              <Monitor className="w-5 h-5 text-indigo-500" />
-              Tối ưu Desktop (Chống ngủ tab)
-            </button>
-            
-            <button 
-              onClick={async () => {
-                const { testLocalNotification } = await import("../lib/notifications");
-                testLocalNotification();
-              }}
-              className="px-5 py-3 rounded-lg border border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 transition-colors flex items-center gap-3 font-medium text-slate-700 dark:text-[#c3c3c3] w-full md:w-auto shadow-sm"
-            >
-              <Bell className="w-5 h-5 text-blue-500" />
-              Test Local Notification
-            </button>
-
-            {canViewPerformance && (
-              <button 
-                onClick={() => setShowPerformanceDashboard(prev => !prev)}
-                title="Toggle Firestore Performance & Read Monitor"
-                className={cn(
-                  "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
-                  showPerformanceDashboard 
-                    ? "bg-blue-50 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-300"
-                    : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
-                )}
-              >
-                <Activity className="w-5 h-5 text-blue-500" />
-                Performance Monitor
-                {showPerformanceDashboard ? (
-                  <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-blue-500" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
-                )}
-              </button>
-            )}
-
-            {isAdmin && (
-              <button 
-                onClick={() => setShowDataMaintenance(prev => !prev)}
-                title="Bảo trì Dữ liệu & Bộ nhớ đệm (Database Maintenance)"
-                className={cn(
-                  "px-5 py-3 rounded-lg border transition-colors flex items-center gap-3 font-medium w-full md:w-auto shadow-sm",
-                  showDataMaintenance 
-                    ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300"
-                    : "border-slate-200 dark:border-[#444446] hover:bg-slate-50 dark:hover:bg-[#28282a]/50 text-slate-700 dark:text-[#c3c3c3]"
-                )}
-              >
-                <Database className="w-5 h-5 text-amber-500" />
-                Database Maintenance
-                {showDataMaintenance ? (
-                  <ChevronUp className="w-4 h-4 ml-auto md:ml-1 text-amber-500" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 ml-auto md:ml-1 text-slate-400" />
-                )}
-              </button>
-            )}
-          </>
-        )}
-      </div>
-
-      {isAdmin && showDataMaintenance && (
-        <SettingDataMaintenance 
-          isAdmin={isAdmin}
-          onConfirmAction={triggerConfirmAction}
-        />
-      )}
-
-      {canViewPerformance && showPerformanceDashboard && (
-        <FirestorePerformanceDashboard onClose={() => setShowPerformanceDashboard(false)} />
-      )}
-
-      {isAdmin && (
-        <>
-          <div className="px-5 py-4 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex justify-between items-center shrink-0">
-            <h2 className="text-md font-bold text-slate-800 dark:text-[#e3e3e3]">Currency Exchange</h2>
-          </div>
-          <div className="p-4 md:p-5 flex flex-col bg-white dark:bg-[#1e1e20] border-b border-slate-100 dark:border-[#333336] gap-4">
-            <div className="flex flex-col md:flex-row flex-wrap gap-4 items-end w-full">
-              <div className="w-full md:w-auto">
-                <label className="block text-xs font-bold text-slate-500 dark:text-[#a3a3a3] uppercase mb-1">JPY Rate (1 JPY = x VND)</label>
-                <input 
-                  type="number" 
-                  value={jpyRateInput}
-                  onChange={(e) => setJpyRateInput(e.target.value)}
-                  className="w-full md:w-48 p-2 rounded-lg border border-slate-300 dark:border-[#555558] text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-[#1e1e20]" 
-                />
-              </div>
-              <div className="w-full md:w-auto">
-                <label className="block text-xs font-bold text-slate-500 dark:text-[#a3a3a3] uppercase mb-1">USD Rate (1 USD = x VND)</label>
-                <input 
-                  type="number" 
-                  value={usdRateInput}
-                  onChange={(e) => setUsdRateInput(e.target.value)}
-                  className="w-full md:w-48 p-2 rounded-lg border border-slate-300 dark:border-[#555558] text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-[#1e1e20]" 
-                />
-              </div>
-              <button 
-                onClick={handleSaveExchangeRates}
-                disabled={!canWrite}
-                className="px-6 py-2 bg-emerald-600 dark:bg-emerald-500 hover:bg-emerald-700 text-white rounded-lg font-bold text-sm shadow-md transition-colors h-[38px] disabled:opacity-50 w-full md:w-auto mt-2 md:mt-0"
-              >
-                Save Rates
-              </button>
-            </div>
-          </div>
-
-          <SettingNotificationRules
-            rules={rules}
+        {showLinksImagesModal && (
+          <ProjectLinksImagesManagerModal
+            isOpen={showLinksImagesModal}
+            onClose={() => setShowLinksImagesModal(false)}
             canWrite={canWrite}
-            onConfirmDelete={triggerConfirmAction}
-          />
-        </>
-      )}
-
-      <Suspense fallback={null}>
-        {showDesktopOptModal && (
-          <DesktopOptimizationModal 
-            isOpen={showDesktopOptModal} 
-            onClose={() => setShowDesktopOptModal(false)} 
+            onConfirmAction={triggerConfirmAction}
           />
         )}
       </Suspense>
@@ -79376,6 +79117,7 @@ export function SettingTab({ rules }: SettingTabProps) {
 }
 
 export default SettingTab;
+
 ================================================================================
 FILE: src/components/SettingTabParts/SettingDataMaintenance.tsx
 ================================================================================
@@ -169356,3 +169098,2124 @@ export const generateSizeLabelLines = (unit: Record<string, any>, uInfo: any, se
 export const generateSizeLabel = (unit: Record<string, any>, uInfo: any, selectedLabels: string[]) => {
     return generateSizeLabelLines(unit, uInfo, selectedLabels).map(l => l.text).join('\n') || unit.name;
 };
+
+================================================================================
+FILE: src/components/SettingTabParts/firestoreSummarizedExportService.ts
+================================================================================
+import { collection, doc, getDoc, getDocsFromServer } from 'firebase/firestore';
+import { db, APP_ID } from '../../lib/firebase';
+import { useAppStore } from '../../store/useAppStore';
+import { localDb } from '../../lib/localDb';
+import { Project } from '../../types';
+import { useDataStore } from '../PictureMapping/DataContext';
+import { calculateSummaryData } from '../PictureMapping/lib/summaryData';
+
+export type SummaryExportCategory =
+  | 'all_summaries'
+  | 'project_task_summaries'
+  | 'financial_summaries'
+  | 'years_config_meta'
+  | 'layout_unit_summaries'
+  | 'unit_images_summaries';
+
+export interface SummaryExportOptions {
+  category: SummaryExportCategory;
+  sourceMode: 'firestore_server' | 'local_cache';
+  yearFilter: string;
+  storeFilter: string;
+  format: 'json' | 'csv';
+}
+
+function normalizeStore(store?: string | null): string {
+  if (!store) return '';
+  const s = String(store).trim().toUpperCase();
+  if (s.includes('HN') || s.includes('HÀ NỘI') || s.includes('HA NOI') || s.includes('HANOI')) return 'HN';
+  if (s.includes('HCM') || s.includes('HỒ CHÍ MINH') || s.includes('HO CHI MINH') || s.includes('SAI GON') || s.includes('SG')) return 'HCM';
+  return s;
+}
+
+function matchesYearAndStore(
+  itemYear: string | number | undefined,
+  itemStore: string | undefined,
+  yearFilter: string,
+  storeFilter: string
+): boolean {
+  if (yearFilter && yearFilter !== 'all') {
+    if (String(itemYear ?? '').trim() !== String(yearFilter).trim()) {
+      return false;
+    }
+  }
+  if (storeFilter && storeFilter !== 'all') {
+    const normItem = normalizeStore(itemStore);
+    const normFilter = normalizeStore(storeFilter);
+    if (normItem && normFilter && normItem !== normFilter) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function fetchProjectsForSummary(sourceMode: 'firestore_server' | 'local_cache'): Promise<Project[]> {
+  if (sourceMode === 'firestore_server') {
+    const snap = await getDocsFromServer(
+      collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects')
+    );
+    return snap.docs
+      .map((d) => ({ ...(d.data() as any), id: d.id } as Project))
+      .filter((p) => !p.isDeleted);
+  }
+
+  const memProjects = useAppStore.getState().projects || [];
+  let dbProjects: Project[] = [];
+  try {
+    dbProjects = await localDb.projects.toArray();
+  } catch {
+    // fallback to memory
+  }
+  const map = new Map<string, Project>();
+  dbProjects.forEach((p) => {
+    if (p?.id && !p.isDeleted) map.set(String(p.id), p);
+  });
+  memProjects.forEach((p) => {
+    if (p?.id && !p.isDeleted) map.set(String(p.id), p);
+  });
+  return Array.from(map.values());
+}
+
+export function buildProjectTaskSummariesPayload(projects: Project[]) {
+  return projects.map((p) => ({
+    projectId: p.id || '',
+    no: p.no,
+    year: p.year,
+    store: p.store,
+    projectCode: p.code,
+    linkCodes: p.linkCodes || '',
+    projectName: p.name,
+    location: p.location || '',
+    party: p.party || '',
+    shopType: p.shopType || '',
+    sizeM2: p.sizeM2 ?? 0,
+    mdStatus: p.mdStatus || '',
+    computedTakStart: p.computedTakStart || p.start || '',
+    computedTakCompl: p.computedTakCompl || p.handover || '',
+    computedOpening: p.computedOpening || p.opening || '',
+    computedStatus: p.computedStatus || '',
+    computedActStatus: p.computedActStatus || '',
+    computedPlanProgress: p.computedPlanProgress ?? 0,
+    computedActProgress: p.computedActProgress ?? 0,
+    taskCount: p.taskCount ?? (Array.isArray(p.taskSummaries) ? p.taskSummaries.length : 0),
+    taskSummaries: Array.isArray(p.taskSummaries) ? p.taskSummaries : [],
+    updatedAt: p.updatedAt || '',
+  }));
+}
+
+export function buildFinancialSummariesPayload(projects: Project[]) {
+  const storeTotals: Record<string, { budget: number; actual: number; approved: number; actualPaid: number; forecastPaid: number; balance: number; projectCount: number }> = {};
+  const yearTotals: Record<string, { budget: number; actual: number; approved: number; actualPaid: number; forecastPaid: number; balance: number; projectCount: number }> = {};
+
+  const items = projects.map((p) => {
+    const fin = p.financial;
+    const storeKey = normalizeStore(p.store) || 'OTHER';
+    const yearKey = String(p.year || 'Unknown');
+
+    const budget = Number(p.budget ?? fin?.totalBudget ?? 0);
+    const actual = Number(p.actual ?? 0);
+    const approved = Number(fin?.totalApproved ?? 0);
+    const actualPaid = Number(fin?.totalActualPaid ?? 0);
+    const forecastPaid = Number(fin?.totalForecastPaid ?? 0);
+    const balance = Number(fin?.totalBalance ?? (approved - (actualPaid + forecastPaid)));
+
+    if (!storeTotals[storeKey]) {
+      storeTotals[storeKey] = { budget: 0, actual: 0, approved: 0, actualPaid: 0, forecastPaid: 0, balance: 0, projectCount: 0 };
+    }
+    storeTotals[storeKey].budget += budget;
+    storeTotals[storeKey].actual += actual;
+    storeTotals[storeKey].approved += approved;
+    storeTotals[storeKey].actualPaid += actualPaid;
+    storeTotals[storeKey].forecastPaid += forecastPaid;
+    storeTotals[storeKey].balance += balance;
+    storeTotals[storeKey].projectCount += 1;
+
+    if (!yearTotals[yearKey]) {
+      yearTotals[yearKey] = { budget: 0, actual: 0, approved: 0, actualPaid: 0, forecastPaid: 0, balance: 0, projectCount: 0 };
+    }
+    yearTotals[yearKey].budget += budget;
+    yearTotals[yearKey].actual += actual;
+    yearTotals[yearKey].approved += approved;
+    yearTotals[yearKey].actualPaid += actualPaid;
+    yearTotals[yearKey].forecastPaid += forecastPaid;
+    yearTotals[yearKey].balance += balance;
+    yearTotals[yearKey].projectCount += 1;
+
+    return {
+      projectId: p.id || '',
+      year: p.year,
+      store: p.store,
+      projectCode: p.code,
+      projectName: p.name,
+      location: p.location || '',
+      party: p.party || '',
+      budget,
+      actual,
+      supportingFee: Number(p.supportingFee ?? 0),
+      totalApproved: approved,
+      totalActualPaid: actualPaid,
+      totalForecastPaid: forecastPaid,
+      totalBalance: balance,
+      financialRaw: fin || null,
+      updatedAt: p.updatedAt || '',
+    };
+  });
+
+  return {
+    aggregatedByStore: storeTotals,
+    aggregatedByYear: yearTotals,
+    projectFinancialSummaries: items,
+  };
+}
+
+async function fetchYearsAndConfigMeta(sourceMode: 'firestore_server' | 'local_cache') {
+  const st = useAppStore.getState();
+  if (sourceMode === 'local_cache') {
+    return {
+      locations: st.locations || [],
+      parties: st.parties || [],
+      exchangeRates: { jpyRate: st.jpyRate, usdRate: st.usdRate },
+      notificationRulesCount: (st.notificationRules || []).length,
+    };
+  }
+
+  const [yearsMetaSnap, versionsSnap, locationsSnap, partiesSnap, ratesSnap] = await Promise.all([
+    getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'years_meta')).catch(() => null),
+    getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'versions')).catch(() => null),
+    getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'locations')).catch(() => null),
+    getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'parties')).catch(() => null),
+    getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'exchange_rates')).catch(() => null),
+  ]);
+
+  return {
+    yearsMeta: yearsMetaSnap?.exists() ? yearsMetaSnap.data() : {},
+    configVersions: versionsSnap?.exists() ? versionsSnap.data() : {},
+    locationsConfig: locationsSnap?.exists() ? locationsSnap.data() : { list: st.locations || [] },
+    partiesConfig: partiesSnap?.exists() ? partiesSnap.data() : { list: st.parties || [] },
+    exchangeRates: ratesSnap?.exists() ? ratesSnap.data() : { jpyRate: st.jpyRate, usdRate: st.usdRate },
+  };
+}
+
+async function fetchLayoutUnitSummaries(
+  sourceMode: 'firestore_server' | 'local_cache',
+  yearFilter: string,
+  storeFilter: string
+) {
+  const ds = useDataStore.getState();
+  const computedSummaryRows = calculateSummaryData({
+    unitInfo: ds.unitInfo,
+    classInfo: ds.classInfo,
+    actualClassInfo: ds.actualClassInfo,
+    sales: ds.sales,
+    profits: ds.profits,
+    subFees: ds.subFees,
+    mdStatus: ds.mdStatus,
+    projectStatus: ds.projectStatus,
+    projectLink: ds.projectLink,
+    basePlan: ds.basePlan,
+    units: ds.units,
+    store: storeFilter !== 'all' ? storeFilter : undefined,
+    year: yearFilter !== 'all' ? yearFilter : undefined,
+  });
+
+  let firestoreMappingConfig: any = null;
+  if (sourceMode === 'firestore_server') {
+    try {
+      const snap = await getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'picture_mapping_config'));
+      if (snap.exists()) {
+        firestoreMappingConfig = snap.data();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const partitionSummaries = Object.entries(
+    firestoreMappingConfig?.storeLocationData || ds.storeLocationData || {}
+  ).map(([partitionKey, part]: [string, any]) => ({
+    partitionKey,
+    unitsCount: Array.isArray(part?.mapUnits) ? part.mapUnits.length : 0,
+    versionsCount: Array.isArray(part?.mapVersions) ? part.mapVersions.length : 0,
+    activeMapVersionId: part?.activeMapVersionId || null,
+  }));
+
+  return {
+    partitionSummaries,
+    computedUnitSummariesCount: computedSummaryRows.length,
+    computedUnitSummaries: computedSummaryRows,
+    firestorePictureMappingMeta: firestoreMappingConfig
+      ? {
+          store: firestoreMappingConfig.store,
+          location: firestoreMappingConfig.location,
+          year: firestoreMappingConfig.year,
+          updatedAt: firestoreMappingConfig.updatedAt,
+          timestamp: firestoreMappingConfig.timestamp,
+        }
+      : null,
+  };
+}
+
+async function fetchUnitImagesSummaries(
+  sourceMode: 'firestore_server' | 'local_cache',
+  storeFilter: string
+) {
+  if (sourceMode === 'firestore_server') {
+    const snap = await getDocsFromServer(
+      collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_unit_images')
+    );
+    const docs = snap.docs.map((d) => ({
+      docId: d.id,
+      ...(d.data() as any),
+    }));
+    return docs.filter((item) => {
+      if (storeFilter && storeFilter !== 'all') {
+        return normalizeStore(item.store) === normalizeStore(storeFilter);
+      }
+      return true;
+    });
+  }
+
+  const localItems: any[] = [];
+  if (typeof localStorage !== 'undefined') {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('taka_unit_images_')) {
+        try {
+          const rest = k.replace('taka_unit_images_', '');
+          const parts = rest.split('_');
+          const st = parts[0] || 'HCM';
+          const unitCode = parts.slice(1).join('_');
+          if (storeFilter && storeFilter !== 'all' && normalizeStore(st) !== normalizeStore(storeFilter)) {
+            continue;
+          }
+          const images = JSON.parse(localStorage.getItem(k) || '[]');
+          localItems.push({
+            docId: `${st}_${unitCode}`,
+            store: st,
+            unitCode,
+            imagesCount: Array.isArray(images) ? images.length : 0,
+            images,
+          });
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+  return localItems;
+}
+
+function escapeCsvCell(val: any): string {
+  if (val === null || val === undefined) return '';
+  const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
+  if (str.includes('"') || str.includes(',') || str.includes('\n') || str.includes('\r')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function convertRowsToCsv(headers: string[], rows: Record<string, any>[]): string {
+  const headerLine = headers.map(escapeCsvCell).join(',');
+  const bodyLines = rows.map((row) => headers.map((h) => escapeCsvCell(row[h])).join(','));
+  return '\uFEFF' + [headerLine, ...bodyLines].join('\r\n');
+}
+
+function triggerBrowserDownload(content: string, fileName: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export async function executeDownloadFirestoreSummaries(
+  options: SummaryExportOptions
+): Promise<{ fileName: string; recordCount: number }> {
+  const { category, sourceMode, yearFilter, storeFilter, format } = options;
+  const rawProjects = await fetchProjectsForSummary(sourceMode);
+  const filteredProjects = rawProjects.filter((p) =>
+    matchesYearAndStore(p.year, p.store, yearFilter, storeFilter)
+  );
+
+  const dateTag = new Date().toISOString().slice(0, 10);
+  const scopeTag = `${storeFilter === 'all' ? 'ALLStores' : storeFilter}_${yearFilter === 'all' ? 'ALLYears' : yearFilter}`;
+
+  if (format === 'csv') {
+    if (category === 'financial_summaries') {
+      const finData = buildFinancialSummariesPayload(filteredProjects);
+      const headers = [
+        'projectId', 'year', 'store', 'projectCode', 'projectName', 'location', 'party',
+        'budget', 'actual', 'supportingFee', 'totalApproved', 'totalActualPaid', 'totalForecastPaid', 'totalBalance', 'updatedAt'
+      ];
+      const csv = convertRowsToCsv(headers, finData.projectFinancialSummaries);
+      const fileName = `taka_financial_summaries_${scopeTag}_${dateTag}.csv`;
+      triggerBrowserDownload(csv, fileName, 'text/csv;charset=utf-8;');
+      return { fileName, recordCount: finData.projectFinancialSummaries.length };
+    }
+
+    if (category === 'layout_unit_summaries') {
+      const layoutData = await fetchLayoutUnitSummaries(sourceMode, yearFilter, storeFilter);
+      const headers = [
+        'unit', 'floor', 'size', 'projectCode', 'projectName', 'projectStatus', 'actStatus',
+        'mdStatus', 'party', 'startDate', 'endDate', 'task', 'salesAmount', 'profitAmount', 'margin'
+      ];
+      const csv = convertRowsToCsv(headers, layoutData.computedUnitSummaries as any[]);
+      const fileName = `taka_layout_unit_summaries_${scopeTag}_${dateTag}.csv`;
+      triggerBrowserDownload(csv, fileName, 'text/csv;charset=utf-8;');
+      return { fileName, recordCount: layoutData.computedUnitSummaries.length };
+    }
+
+    // Default CSV: Project & Task Summaries flattened
+    const projSummaries = buildProjectTaskSummariesPayload(filteredProjects);
+    const rows: Record<string, any>[] = [];
+    projSummaries.forEach((p) => {
+      const summaryNames = p.taskSummaries
+        .map((ts: any, idx: number) => `${ts.taskCodePhu || `#${idx + 1}`}: ${ts.name || ''} (${ts.start || ''} -> ${ts.finish || ''})`)
+        .join(' | ');
+      rows.push({
+        projectId: p.projectId,
+        no: p.no,
+        year: p.year,
+        store: p.store,
+        projectCode: p.projectCode,
+        linkCodes: p.linkCodes,
+        projectName: p.projectName,
+        location: p.location,
+        party: p.party,
+        shopType: p.shopType,
+        sizeM2: p.sizeM2,
+        mdStatus: p.mdStatus,
+        computedStatus: p.computedStatus,
+        computedActStatus: p.computedActStatus,
+        computedPlanProgress: p.computedPlanProgress,
+        computedActProgress: p.computedActProgress,
+        computedTakStart: p.computedTakStart,
+        computedTakCompl: p.computedTakCompl,
+        computedOpening: p.computedOpening,
+        taskCount: p.taskCount,
+        taskSummariesFormatted: summaryNames,
+        updatedAt: p.updatedAt,
+      });
+    });
+
+    const headers = [
+      'projectId', 'no', 'year', 'store', 'projectCode', 'linkCodes', 'projectName',
+      'location', 'party', 'shopType', 'sizeM2', 'mdStatus', 'computedStatus', 'computedActStatus',
+      'computedPlanProgress', 'computedActProgress', 'computedTakStart', 'computedTakCompl',
+      'computedOpening', 'taskCount', 'taskSummariesFormatted', 'updatedAt'
+    ];
+    const csv = convertRowsToCsv(headers, rows);
+    const fileName = `taka_project_task_summaries_${scopeTag}_${dateTag}.csv`;
+    triggerBrowserDownload(csv, fileName, 'text/csv;charset=utf-8;');
+    return { fileName, recordCount: rows.length };
+  }
+
+  // JSON Export
+  let payload: any = {};
+  let recordCount = 0;
+
+  if (category === 'project_task_summaries') {
+    const list = buildProjectTaskSummariesPayload(filteredProjects);
+    payload = { exportedAt: new Date().toISOString(), sourceMode, scope: { yearFilter, storeFilter }, count: list.length, projectTaskSummaries: list };
+    recordCount = list.length;
+  } else if (category === 'financial_summaries') {
+    const fin = buildFinancialSummariesPayload(filteredProjects);
+    payload = { exportedAt: new Date().toISOString(), sourceMode, scope: { yearFilter, storeFilter }, ...fin };
+    recordCount = fin.projectFinancialSummaries.length;
+  } else if (category === 'years_config_meta') {
+    const meta = await fetchYearsAndConfigMeta(sourceMode);
+    payload = { exportedAt: new Date().toISOString(), sourceMode, ...meta };
+    recordCount = Object.keys(meta.yearsMeta || {}).length || 1;
+  } else if (category === 'layout_unit_summaries') {
+    const layout = await fetchLayoutUnitSummaries(sourceMode, yearFilter, storeFilter);
+    payload = { exportedAt: new Date().toISOString(), sourceMode, scope: { yearFilter, storeFilter }, ...layout };
+    recordCount = layout.computedUnitSummariesCount;
+  } else if (category === 'unit_images_summaries') {
+    const imgs = await fetchUnitImagesSummaries(sourceMode, storeFilter);
+    payload = { exportedAt: new Date().toISOString(), sourceMode, storeFilter, count: imgs.length, unitImagesSummaries: imgs };
+    recordCount = imgs.length;
+  } else {
+    // all_summaries
+    const [meta, layout, imgs] = await Promise.all([
+      fetchYearsAndConfigMeta(sourceMode),
+      fetchLayoutUnitSummaries(sourceMode, yearFilter, storeFilter),
+      fetchUnitImagesSummaries(sourceMode, storeFilter),
+    ]);
+    const projTask = buildProjectTaskSummariesPayload(filteredProjects);
+    const fin = buildFinancialSummariesPayload(filteredProjects);
+
+    payload = {
+      exportedAt: new Date().toISOString(),
+      sourceMode,
+      scope: { yearFilter, storeFilter },
+      summaryCounts: {
+        projectsCount: projTask.length,
+        embeddedTaskSummariesCount: projTask.reduce((acc, p) => acc + p.taskSummaries.length, 0),
+        layoutUnitSummariesCount: layout.computedUnitSummariesCount,
+        unitImageDocsCount: imgs.length,
+      },
+      projectTaskSummaries: projTask,
+      financialSummaries: fin,
+      yearsAndConfigMeta: meta,
+      layoutUnitSummaries: layout,
+      unitImagesSummaries: imgs,
+    };
+    recordCount = projTask.length + layout.computedUnitSummariesCount + imgs.length;
+  }
+
+  const fileName = `taka_firestore_${category}_${scopeTag}_${dateTag}.json`;
+  triggerBrowserDownload(JSON.stringify(payload, null, 2), fileName, 'application/json');
+  return { fileName, recordCount };
+}
+
+
+================================================================================
+FILE: src/components/SettingTabParts/FirestoreSummarizedExportModal.tsx
+================================================================================
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import Draggable from 'react-draggable';
+import {
+  Download,
+  FileJson,
+  FileSpreadsheet,
+  Database,
+  Server,
+  HardDrive,
+  X,
+  GripHorizontal,
+  Layers,
+  DollarSign,
+  Calendar,
+  MapPin,
+  Image as ImageIcon,
+  CheckCircle2,
+  Loader2,
+} from 'lucide-react';
+import { useAppStore } from '../../store/useAppStore';
+import { cn } from '../../lib/utils';
+import { useOverlayStack } from '../../lib/zIndexManager';
+import {
+  SummaryExportCategory,
+  executeDownloadFirestoreSummaries,
+} from './firestoreSummarizedExportService';
+
+interface FirestoreSummarizedExportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+interface SummaryCategoryOption {
+  id: SummaryExportCategory;
+  title: string;
+  subtitle: string;
+  collectionBadge: string;
+  supportsCsv: boolean;
+  icon: React.ReactNode;
+}
+
+const SUMMARY_CATEGORIES: SummaryCategoryOption[] = [
+  {
+    id: 'all_summaries',
+    title: 'All Summarized Data Bundle (Master Summary)',
+    subtitle: 'Complete package of Project/Task Rollup Summaries, Financial Atomic Summaries, Years Metadata, Layout Unit Summaries, and Unit Image Summaries.',
+    collectionBadge: 'All Summary Collections',
+    supportsCsv: false,
+    icon: <Database className="w-4 h-4 text-blue-500" />,
+  },
+  {
+    id: 'project_task_summaries',
+    title: 'Project & Task Rollup Summaries',
+    subtitle: 'Embedded taskSummaries[], taskCount, computedTakStart/Compl/Opening, and plan/actual progress stored on taka_projects.',
+    collectionBadge: 'taka_projects.taskSummaries',
+    supportsCsv: true,
+    icon: <Layers className="w-4 h-4 text-indigo-500" />,
+  },
+  {
+    id: 'financial_summaries',
+    title: 'Financial & Budget Atomic Summaries',
+    subtitle: 'Aggregated financial metrics (totalBudget, totalApproved, totalActualPaid, totalForecastPaid, totalBalance, byStore, byYear).',
+    collectionBadge: 'taka_projects.financial',
+    supportsCsv: true,
+    icon: <DollarSign className="w-4 h-4 text-emerald-500" />,
+  },
+  {
+    id: 'layout_unit_summaries',
+    title: 'Layout & Picture Mapping Unit Summaries',
+    subtitle: 'Summarized unit mapping records, floor version counts, dynamic status rollups, and sales/profit efficiency metrics.',
+    collectionBadge: 'picture_mapping_config',
+    supportsCsv: true,
+    icon: <MapPin className="w-4 h-4 text-amber-500" />,
+  },
+  {
+    id: 'years_config_meta',
+    title: 'Fiscal Years Fingerprint & Config Metadata',
+    subtitle: 'Server synchronization timestamps per fiscal year (years_meta), config version counters, locations, parties, and exchange rates.',
+    collectionBadge: 'taka_config/years_meta',
+    supportsCsv: false,
+    icon: <Calendar className="w-4 h-4 text-purple-500" />,
+  },
+  {
+    id: 'unit_images_summaries',
+    title: 'Unit Attached Links & Images Summary',
+    subtitle: 'Cloud-synced unit image & link registries across HCM and HN stores.',
+    collectionBadge: 'taka_unit_images',
+    supportsCsv: false,
+    icon: <ImageIcon className="w-4 h-4 text-cyan-500" />,
+  },
+];
+
+export const FirestoreSummarizedExportModal: React.FC<FirestoreSummarizedExportModalProps> = ({
+  isOpen,
+  onClose,
+}) => {
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const projects = useAppStore((state) => state.projects);
+  const [selectedCategory, setSelectedCategory] = useState<SummaryExportCategory>('all_summaries');
+  const [sourceMode, setSourceMode] = useState<'firestore_server' | 'local_cache'>('firestore_server');
+  const [yearFilter, setYearFilter] = useState<string>('all');
+  const [storeFilter, setStoreFilter] = useState<string>('all');
+  const [busyFormat, setBusyFormat] = useState<'json' | 'csv' | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  const availableYears = useMemo(() => {
+    const set = new Set<string>(['2024', '2025', '2026', '2027']);
+    (projects || []).forEach((p) => {
+      if (p?.year && !p.isDeleted) set.add(String(p.year).trim());
+    });
+    return Array.from(set).sort();
+  }, [projects]);
+
+  const localStats = useMemo(() => {
+    const active = (projects || []).filter((p) => !p.isDeleted);
+    const totalSummaries = active.reduce(
+      (acc, p) => acc + (Array.isArray(p.taskSummaries) ? p.taskSummaries.length : 0),
+      0
+    );
+    const withFinancial = active.filter((p) => p.financial || p.budget || p.actual).length;
+    return {
+      projectsCount: active.length,
+      totalSummaries,
+      withFinancial,
+    };
+  }, [projects]);
+
+  const zInfo = useOverlayStack({
+    layer: 'MODAL_BASE',
+    isOpen,
+    onClose,
+    closeOnTabChange: true,
+  });
+
+  if (!isOpen) return null;
+
+  const activeCategoryObj =
+    SUMMARY_CATEGORIES.find((c) => c.id === selectedCategory) || SUMMARY_CATEGORIES[0];
+
+  const handleDownload = async (format: 'json' | 'csv', overrideCategory?: SummaryExportCategory) => {
+    const targetCategory = overrideCategory || selectedCategory;
+    setBusyFormat(format);
+    try {
+      const res = await executeDownloadFirestoreSummaries({
+        category: targetCategory,
+        sourceMode,
+        yearFilter,
+        storeFilter,
+        format,
+      });
+      useAppStore.getState().setToast({
+        title: 'Summary Data Downloaded',
+        message: `Exported ${res.recordCount} summarized records to ${res.fileName}.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      console.error('[FirestoreSummarizedExportModal] Download failed:', err);
+      useAppStore.getState().setToast({
+        title: 'Export Failed',
+        message: err?.message || 'Failed to download summarized data from Firestore.',
+        type: 'error',
+      });
+    } finally {
+      setBusyFormat(null);
+    }
+  };
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 ${zInfo.zClass} flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto animate-in fade-in duration-150`}
+      style={{ zIndex: zInfo.zValue || 180000 }}
+      onClick={onClose}
+    >
+      <Draggable
+        disabled={typeof window !== 'undefined' && window.innerWidth < 768}
+        handle=".modal-handle"
+        bounds="parent"
+        nodeRef={nodeRef}
+        cancel="button, input, select"
+      >
+        <div
+          ref={nodeRef}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white dark:bg-[#1e1e20] rounded-2xl shadow-2xl w-[96vw] max-w-3xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-[#333336] overflow-hidden"
+        >
+          {/* Draggable Header */}
+          <div className="modal-handle cursor-grab active:cursor-grabbing px-4 py-3.5 border-b border-slate-200 dark:border-[#333336] flex items-center justify-between bg-slate-50/90 dark:bg-[#18181a] select-none shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <GripHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
+              <div className="p-2 rounded-xl bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-[#8ab4f8] shrink-0">
+                <Download className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-base text-slate-900 dark:text-[#e3e3e3] truncate">
+                  Download Firestore Summarized Data
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  Export aggregated rollups, task summaries, financial metrics, and layout summaries
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors active:scale-95 cursor-pointer"
+              title="Close (Esc)"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="p-4 space-y-4 overflow-y-auto flex-1 min-h-0">
+            {/* Quick Summary Telemetry Bar */}
+            <div className="grid grid-cols-3 gap-2.5 bg-slate-50 dark:bg-[#161618] p-3 rounded-xl border border-slate-200/80 dark:border-[#2c2c2f]">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Active Projects
+                </span>
+                <span className="text-base font-extrabold font-mono text-slate-800 dark:text-slate-100">
+                  {localStats.projectsCount}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Embedded Task Summaries
+                </span>
+                <span className="text-base font-extrabold font-mono text-blue-600 dark:text-[#8ab4f8]">
+                  {localStats.totalSummaries}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Financial Rollup Records
+                </span>
+                <span className="text-base font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
+                  {localStats.withFinancial}
+                </span>
+              </div>
+            </div>
+
+            {/* Source Mode & Scope Filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
+                  Data Source
+                </label>
+                <div className="grid grid-cols-2 gap-1 bg-slate-100 dark:bg-[#252528] p-1 rounded-lg border border-slate-200 dark:border-[#38383c]">
+                  <button
+                    type="button"
+                    onClick={() => setSourceMode('firestore_server')}
+                    className={cn(
+                      'px-2 py-1.5 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer',
+                      sourceMode === 'firestore_server'
+                        ? 'bg-white dark:bg-[#1e1e20] text-blue-600 dark:text-[#8ab4f8] shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    )}
+                    title="Fetch fresh summarized data directly from Firestore Server"
+                  >
+                    <Server className="w-3.5 h-3.5" />
+                    <span>Firestore Live</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSourceMode('local_cache')}
+                    className={cn(
+                      'px-2 py-1.5 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer',
+                      sourceMode === 'local_cache'
+                        ? 'bg-white dark:bg-[#1e1e20] text-emerald-600 dark:text-emerald-400 shadow-xs'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    )}
+                    title="Export immediately from local Dexie/Zustand cache (0 Firestore Reads)"
+                  >
+                    <HardDrive className="w-3.5 h-3.5" />
+                    <span>0-Read Cache</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
+                  Fiscal Year Filter
+                </label>
+                <select
+                  value={yearFilter}
+                  onChange={(e) => setYearFilter(e.target.value)}
+                  className="w-full h-[36px] px-3 rounded-lg border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#252528] text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All Years</option>
+                  {availableYears.map((yr) => (
+                    <option key={yr} value={yr}>
+                      Year {yr}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
+                  Store Branch Filter
+                </label>
+                <select
+                  value={storeFilter}
+                  onChange={(e) => setStoreFilter(e.target.value)}
+                  className="w-full h-[36px] px-3 rounded-lg border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#252528] text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All Stores (HCM & HN)</option>
+                  <option value="HCM">HCM Store</option>
+                  <option value="HN">HN Store</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Category Selection List */}
+            <div className="space-y-2">
+              <div className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+                Select Summarized Dataset to Export
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {SUMMARY_CATEGORIES.map((cat) => {
+                  const isSelected = selectedCategory === cat.id;
+                  return (
+                    <div
+                      key={cat.id}
+                      onClick={() => setSelectedCategory(cat.id)}
+                      className={cn(
+                        'p-3 rounded-xl border transition-all cursor-pointer flex items-start justify-between gap-3 select-none',
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50/70 dark:bg-blue-950/30 ring-1 ring-blue-500'
+                          : 'border-slate-200 dark:border-[#333336] bg-white dark:bg-[#1a1a1d] hover:border-blue-300 dark:hover:border-blue-800'
+                      )}
+                    >
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                        <div className="mt-0.5 p-1.5 rounded-lg bg-slate-100 dark:bg-[#252528] shrink-0">
+                          {cat.icon}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                              {cat.title}
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-[#28282c] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-[#3a3a3e]">
+                              {cat.collectionBadge}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                            {cat.subtitle}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isSelected && <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-[#8ab4f8]" />}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="px-4 py-3 border-t border-slate-200 dark:border-[#333336] bg-slate-50/90 dark:bg-[#18181a] flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+            <div className="text-xs text-slate-500 dark:text-slate-400 truncate max-w-full sm:max-w-[45%]">
+              Selected: <strong className="text-slate-800 dark:text-slate-200">{activeCategoryObj.title}</strong>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-2 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-[#28282a] transition-colors active:scale-95 cursor-pointer"
+              >
+                Close
+              </button>
+
+              {activeCategoryObj.supportsCsv && (
+                <button
+                  type="button"
+                  disabled={busyFormat !== null}
+                  onClick={() => handleDownload('csv')}
+                  className="px-3.5 py-2 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation disabled:opacity-50 cursor-pointer"
+                >
+                  {busyFormat === 'csv' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="w-4 h-4" />
+                  )}
+                  <span>Download .CSV</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={busyFormat !== null}
+                onClick={() => handleDownload('json')}
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all active:scale-95 touch-manipulation disabled:opacity-50 cursor-pointer"
+              >
+                {busyFormat === 'json' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileJson className="w-4 h-4" />
+                )}
+                <span>Download .JSON</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Draggable>
+    </div>,
+    document.body
+  );
+};
+
+export default FirestoreSummarizedExportModal;
+
+
+================================================================================
+FILE: src/components/SettingTabParts/projectLinksImagesService.ts
+================================================================================
+import { collection, doc, getDocs } from 'firebase/firestore';
+import { setDoc } from '../../lib/firestoreWrites';
+import { db, APP_ID } from '../../lib/firebase';
+import { useAppStore } from '../../store/useAppStore';
+import { localDb } from '../../lib/localDb';
+import { Project, Task } from '../../types';
+import { removeUploadedImageEverywhere } from '../../lib/projectImageSync';
+import { extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../lib/utils';
+
+export type MediaPlacementType = 'comment_modular' | 'layout_picture';
+
+export interface ProjectMediaLinkItem {
+  key: string;
+  url: string;
+  projectId: string;
+  projectCode: string;
+  linkCodes: string;
+  unitCode: string;
+  year: string;
+  store: 'HCM' | 'HN' | string;
+  projectName: string;
+  location: string;
+  placements: MediaPlacementType[];
+  placementDetails: string[];
+  mediaType: 'image' | 'pdf_drive' | 'link';
+  storageHost: 'R2 Cloud' | 'Firebase Storage' | 'Google Drive' | 'External URL';
+  title: string;
+  createdAt: string;
+  authorName?: string;
+  commentSnippet?: string;
+  taskIds?: string[];
+  unitDocIds?: string[];
+}
+
+export interface RemoteUnitImagesDoc {
+  docId: string;
+  unitCode: string;
+  store: string;
+  images: Array<{ id?: string; url: string; title?: string; createdAt?: string; store?: string }>;
+  updatedAt?: string;
+}
+
+function normalizeStore(store?: string | null): string {
+  if (!store) return 'HCM';
+  const s = String(store).trim().toUpperCase();
+  if (s.includes('HN') || s.includes('HÀ NỘI') || s.includes('HA NOI') || s.includes('HANOI')) return 'HN';
+  if (s.includes('HCM') || s.includes('HỒ CHÍ MINH') || s.includes('HO CHI MINH') || s.includes('SAI GON') || s.includes('SG')) return 'HCM';
+  return s;
+}
+
+export function detectMediaType(url: string): 'image' | 'pdf_drive' | 'link' {
+  const lower = url.toLowerCase().trim();
+  if (
+    /\.(jpe?g|png|webp|gif|svg|bmp|avif)(\?.*)?$/i.test(lower) ||
+    lower.includes('hcm.taka-pm.org') ||
+    lower.includes('taka-pm-folder') ||
+    lower.includes('firebasestorage.googleapis.com')
+  ) {
+    return lower.includes('.pdf') ? 'pdf_drive' : 'image';
+  }
+  if (/\.pdf($|\?|#)/i.test(lower) || lower.includes('drive.google.com') || lower.includes('docs.google.com')) {
+    return 'pdf_drive';
+  }
+  return 'link';
+}
+
+export function detectStorageHost(url: string): 'R2 Cloud' | 'Firebase Storage' | 'Google Drive' | 'External URL' {
+  const lower = url.toLowerCase();
+  if (lower.includes('hcm.taka-pm.org') || lower.includes('taka-pm-folder') || lower.includes('r2.cloudflarestorage.com')) return 'R2 Cloud';
+  if (lower.includes('firebasestorage.googleapis.com')) return 'Firebase Storage';
+  if (lower.includes('drive.google.com') || lower.includes('docs.google.com')) return 'Google Drive';
+  return 'External URL';
+}
+
+function extractUrlsFromText(text?: string | null): string[] {
+  if (!text || typeof text !== 'string') return [];
+  const matches = text.match(/https?:\/\/[^\s)\]"'<>]+/g) || [];
+  return Array.from(new Set(matches.map((u) => u.trim()).filter(Boolean)));
+}
+
+export async function fetchAllCloudUnitImagesDocs(): Promise<RemoteUnitImagesDoc[]> {
+  try {
+    const snap = await getDocs(collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_unit_images'));
+    return snap.docs.map((d) => {
+      const data = d.data() as any;
+      const parts = d.id.split('_');
+      const fallbackStore = parts[0] || 'HCM';
+      const fallbackUnit = parts.slice(1).join('_') || d.id;
+      return {
+        docId: d.id,
+        unitCode: String(data.unitCode || fallbackUnit).trim(),
+        store: normalizeStore(data.store || fallbackStore),
+        images: Array.isArray(data.images) ? data.images : [],
+        updatedAt: data.updatedAt || '',
+      };
+    });
+  } catch (err) {
+    console.warn('[projectLinksImagesService] Failed to fetch cloud taka_unit_images:', err);
+    return [];
+  }
+}
+
+export function collectLocalUnitImagesDocs(): RemoteUnitImagesDoc[] {
+  const result: RemoteUnitImagesDoc[] = [];
+  if (typeof localStorage === 'undefined') return result;
+
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || !k.startsWith('taka_unit_images_')) continue;
+    try {
+      const rest = k.replace('taka_unit_images_', '');
+      const parts = rest.split('_');
+      const st = normalizeStore(parts[0] || 'HCM');
+      const unitCode = parts.slice(1).join('_').trim();
+      if (!unitCode) continue;
+      const parsed = JSON.parse(localStorage.getItem(k) || '[]');
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        result.push({ docId: `${st}_${unitCode}`, unitCode, store: st, images: parsed });
+      }
+    } catch {
+      // ignore malformed
+    }
+  }
+  return result;
+}
+
+export function buildProjectMediaLinksList(
+  projects: Project[],
+  tasks: Task[],
+  cloudUnitDocs: RemoteUnitImagesDoc[],
+  appUsers: Array<{ id: string; username?: string; name?: string }> = []
+): ProjectMediaLinkItem[] {
+  const activeProjects = (projects || []).filter((p) => !p.isDeleted);
+  const activeTasks = (tasks || []).filter((t) => !t.isDeleted);
+  const userMap = new Map<string, string>();
+  appUsers.forEach((u) => {
+    if (u?.id) userMap.set(u.id, u.username || u.name || u.id);
+  });
+
+  const itemMap = new Map<string, ProjectMediaLinkItem>();
+
+  const upsertItem = (params: {
+    url: string;
+    project?: Project;
+    unitCode?: string;
+    store?: string;
+    year?: string;
+    placement: MediaPlacementType;
+    detailLabel: string;
+    title?: string;
+    createdAt?: string;
+    authorName?: string;
+    commentSnippet?: string;
+    taskId?: string;
+    unitDocId?: string;
+  }) => {
+    const rawUrl = (params.url || '').trim();
+    if (!rawUrl) return;
+
+    const p = params.project;
+    const store = normalizeStore(p?.store || params.store || 'HCM');
+    const year = String(p?.year || params.year || 'All').trim();
+    const projectCode = String(p?.code || params.unitCode || 'UNLINKED').trim();
+    const projectId = String(p?.id || `unit_${store}_${projectCode}`);
+    const compositeKey = `${projectId}__${year}__${store}__${projectCode}__${rawUrl}`;
+
+    const existing = itemMap.get(compositeKey);
+    if (existing) {
+      if (!existing.placements.includes(params.placement)) existing.placements.push(params.placement);
+      if (params.detailLabel && !existing.placementDetails.includes(params.detailLabel)) {
+        existing.placementDetails.push(params.detailLabel);
+      }
+      if (params.authorName && !existing.authorName) existing.authorName = params.authorName;
+      if (params.commentSnippet && !existing.commentSnippet) existing.commentSnippet = params.commentSnippet;
+      if (params.createdAt && (!existing.createdAt || params.createdAt > existing.createdAt)) {
+        existing.createdAt = params.createdAt;
+      }
+      if (params.taskId) existing.taskIds = Array.from(new Set([...(existing.taskIds || []), params.taskId]));
+      if (params.unitDocId) existing.unitDocIds = Array.from(new Set([...(existing.unitDocIds || []), params.unitDocId]));
+      return;
+    }
+
+    itemMap.set(compositeKey, {
+      key: compositeKey,
+      url: rawUrl,
+      projectId,
+      projectCode,
+      linkCodes: String(p?.linkCodes || ''),
+      unitCode: String(params.unitCode || p?.code || ''),
+      year,
+      store,
+      projectName: String(p?.name || params.unitCode || ''),
+      location: String(p?.location || ''),
+      placements: [params.placement],
+      placementDetails: params.detailLabel ? [params.detailLabel] : [],
+      mediaType: detectMediaType(rawUrl),
+      storageHost: detectStorageHost(rawUrl),
+      title: params.title || `${projectCode} Media`,
+      createdAt: params.createdAt || p?.updatedAt || '',
+      authorName: params.authorName,
+      commentSnippet: params.commentSnippet,
+      taskIds: params.taskId ? [params.taskId] : [],
+      unitDocIds: params.unitDocId ? [params.unitDocId] : [],
+    });
+  };
+
+  // 1. Scan all Projects (Comments, imageLinks, imageUrl/thumbnail, taskSummaries)
+  activeProjects.forEach((p) => {
+    if (Array.isArray(p.comments)) {
+      p.comments.forEach((c) => {
+        const author = c.userName || userMap.get(c.userId) || c.userId || 'User';
+        const cleanSnippet = (c.text || '').replace(/https?:\/\/[^\s]+/g, '').trim();
+
+        (c.attachments || []).forEach((att) => {
+          if (att?.url) {
+            upsertItem({
+              url: att.url,
+              project: p,
+              placement: 'comment_modular',
+              detailLabel: `Project Comment Attachment (${author})`,
+              title: att.name || 'Comment Attachment',
+              createdAt: c.createdAt,
+              authorName: author,
+              commentSnippet: cleanSnippet || c.text,
+            });
+          }
+        });
+
+        extractUrlsFromText(c.text).forEach((url) => {
+          upsertItem({
+            url,
+            project: p,
+            placement: 'comment_modular',
+            detailLabel: `Project Comment Link (${author})`,
+            title: cleanSnippet ? cleanSnippet.slice(0, 48) : `Comment by ${author}`,
+            createdAt: c.createdAt,
+            authorName: author,
+            commentSnippet: cleanSnippet || c.text,
+          });
+        });
+      });
+    }
+
+    if (Array.isArray(p.imageLinks)) {
+      p.imageLinks.forEach((imgItem: any, idx: number) => {
+        const url = typeof imgItem === 'string' ? imgItem : imgItem?.url;
+        if (url && typeof url === 'string') {
+          upsertItem({
+            url,
+            project: p,
+            placement: 'layout_picture',
+            detailLabel: 'Layout Project ImageLinks',
+            title: (typeof imgItem === 'object' && imgItem?.title) || `Layout Link #${idx + 1}`,
+            createdAt: (typeof imgItem === 'object' && imgItem?.createdAt) || p.updatedAt,
+          });
+        }
+      });
+    }
+
+    (['imageUrl', 'thumbnail', 'photo', 'image'] as const).forEach((fieldKey) => {
+      const val = (p as any)[fieldKey];
+      if (val && typeof val === 'string' && val.trim().startsWith('http')) {
+        upsertItem({
+          url: val,
+          project: p,
+          placement: 'layout_picture',
+          detailLabel: `Project ${fieldKey}`,
+          title: `Project ${fieldKey}`,
+          createdAt: p.updatedAt,
+        });
+      }
+    });
+
+    if (Array.isArray(p.taskSummaries)) {
+      p.taskSummaries.forEach((ts) => {
+        const directUrl = ts.link || ts.imageUrl || ts.thumbnail;
+        if (directUrl && typeof directUrl === 'string') {
+          upsertItem({
+            url: directUrl,
+            project: p,
+            placement: 'layout_picture',
+            detailLabel: 'Task Summary Media',
+            title: ts.name || 'Task Summary Link',
+            createdAt: p.updatedAt,
+          });
+        }
+        extractUrlsFromText(ts.name).forEach((u) => {
+          upsertItem({
+            url: u,
+            project: p,
+            placement: 'layout_picture',
+            detailLabel: 'Task Summary Inline Link',
+            title: ts.name || 'Task Summary Link',
+            createdAt: p.updatedAt,
+          });
+        });
+      });
+    }
+  });
+
+  // 2. Scan Tasks for task.comments URLs (strictly matched by Rule 16.1 composite key)
+  const projectsById = new Map<string, Project>();
+  activeProjects.forEach((p) => {
+    if (p.id) projectsById.set(String(p.id), p);
+  });
+
+  activeTasks.forEach((t) => {
+    const ownerProj = t.projectId
+      ? projectsById.get(String(t.projectId))
+      : activeProjects.find(
+          (p) =>
+            String(p.code || '').trim().toLowerCase() === String(t.projectCode || '').trim().toLowerCase() &&
+            normalizeStore(p.store) === normalizeStore(t.projectStore) &&
+            String(p.year || '').trim() === String(t.projectYear || '').trim()
+        );
+
+    (t.comments || []).forEach((c) => {
+      const author = c.userName || userMap.get(c.userId) || c.userId || 'User';
+      const cleanSnippet = (c.text || '').replace(/https?:\/\/[^\s]+/g, '').trim();
+      (c.attachments || []).forEach((att) => {
+        if (att?.url) {
+          upsertItem({
+            url: att.url,
+            project: ownerProj,
+            unitCode: t.projectCode,
+            store: t.projectStore,
+            year: String(t.projectYear || ''),
+            placement: 'comment_modular',
+            detailLabel: `Task "${t.name}" Comment`,
+            title: att.name || t.name,
+            createdAt: c.createdAt,
+            authorName: author,
+            commentSnippet: cleanSnippet || c.text,
+            taskId: t.id,
+          });
+        }
+      });
+      extractUrlsFromText(c.text).forEach((url) => {
+        upsertItem({
+          url,
+          project: ownerProj,
+          unitCode: t.projectCode,
+          store: t.projectStore,
+          year: String(t.projectYear || ''),
+          placement: 'comment_modular',
+          detailLabel: `Task "${t.name}" Comment`,
+          title: t.name,
+          createdAt: c.createdAt,
+          authorName: author,
+          commentSnippet: cleanSnippet || c.text,
+          taskId: t.id,
+        });
+      });
+    });
+  });
+
+  // 3. Merge Local + Cloud `taka_unit_images` (Layout Picture Tooltip Gallery)
+  const mergedUnitDocs = new Map<string, RemoteUnitImagesDoc>();
+  collectLocalUnitImagesDocs().forEach((d) => mergedUnitDocs.set(d.docId, d));
+  (cloudUnitDocs || []).forEach((d) => {
+    const prev = mergedUnitDocs.get(d.docId);
+    if (!prev) {
+      mergedUnitDocs.set(d.docId, d);
+    } else {
+      const urlSet = new Set<string>();
+      const combined: any[] = [];
+      [...d.images, ...prev.images].forEach((img: any) => {
+        const u = typeof img === 'string' ? img : img?.url;
+        if (u && !urlSet.has(u)) {
+          urlSet.add(u);
+          combined.push(typeof img === 'string' ? { url: u } : img);
+        }
+      });
+      mergedUnitDocs.set(d.docId, { ...d, images: combined });
+    }
+  });
+
+  mergedUnitDocs.forEach((uDoc) => {
+    const uStore = normalizeStore(uDoc.store);
+    const uCodeLower = String(uDoc.unitCode || '').trim().toLowerCase();
+    if (!uCodeLower) return;
+
+    const matchedProjects = activeProjects.filter((p) => {
+      const pStore = normalizeStore(extractProjectMetadata(p).store || p.store);
+      if (pStore !== uStore) return false;
+      const pCodes = extractAllProjectCodes(p).map((c) => c.toLowerCase());
+      return pCodes.includes(uCodeLower) || projectMatchesUnitCode(pCodes, uCodeLower);
+    });
+
+    (uDoc.images || []).forEach((imgItem: any, idx: number) => {
+      const url = typeof imgItem === 'string' ? imgItem : imgItem?.url;
+      if (!url || typeof url !== 'string') return;
+      const title = (typeof imgItem === 'object' && imgItem?.title) || `Unit ${uDoc.unitCode} Link #${idx + 1}`;
+      const createdAt = (typeof imgItem === 'object' && imgItem?.createdAt) || uDoc.updatedAt || '';
+
+      if (matchedProjects.length > 0) {
+        matchedProjects.forEach((mp) => {
+          upsertItem({
+            url,
+            project: mp,
+            unitCode: uDoc.unitCode,
+            store: uStore,
+            placement: 'layout_picture',
+            detailLabel: `Layout Unit Gallery (${uDoc.unitCode})`,
+            title,
+            createdAt,
+            unitDocId: uDoc.docId,
+          });
+        });
+      } else {
+        upsertItem({
+          url,
+          unitCode: uDoc.unitCode,
+          store: uStore,
+          year: 'Layout Unit',
+          placement: 'layout_picture',
+          detailLabel: `Layout Unit Gallery (${uDoc.unitCode})`,
+          title,
+          createdAt,
+          unitDocId: uDoc.docId,
+        });
+      }
+    });
+  });
+
+  return Array.from(itemMap.values()).sort((a, b) => {
+    const yCmp = String(b.year).localeCompare(String(a.year));
+    if (yCmp !== 0) return yCmp;
+    const sCmp = a.store.localeCompare(b.store);
+    if (sCmp !== 0) return sCmp;
+    return a.projectCode.localeCompare(b.projectCode);
+  });
+}
+
+export async function deleteProjectMediaLinkItem(item: ProjectMediaLinkItem): Promise<void> {
+  const st = useAppStore.getState();
+  const targetProject = (st.projects || []).find(
+    (p) =>
+      String(p.id) === String(item.projectId) ||
+      (String(p.code).trim().toLowerCase() === String(item.projectCode).trim().toLowerCase() &&
+        normalizeStore(p.store) === normalizeStore(item.store) &&
+        String(p.year).trim() === String(item.year).trim())
+  );
+
+  await removeUploadedImageEverywhere(item.url, targetProject || null, item.unitCode || item.projectCode);
+
+  if (targetProject?.id) {
+    const freshProj = useAppStore.getState().projects.find((p) => p.id === targetProject.id);
+    if (freshProj) await localDb.projects.put(freshProj).catch(() => {});
+  }
+
+  if (item.unitDocIds && item.unitDocIds.length > 0) {
+    for (const docId of item.unitDocIds) {
+      try {
+        const lsKey = `taka_unit_images_${docId}`;
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(lsKey) : null;
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const next = parsed.filter((entry: any) => (typeof entry === 'string' ? entry : entry?.url) !== item.url);
+            if (next.length === 0) localStorage.removeItem(lsKey);
+            else localStorage.setItem(lsKey, JSON.stringify(next));
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  if (item.taskIds && item.taskIds.length > 0) {
+    const allTasks = useAppStore.getState().tasks || [];
+    const updatedTasks: Task[] = [];
+    for (const tid of item.taskIds) {
+      const t = allTasks.find((tk) => String(tk.id) === String(tid));
+      if (!t || !Array.isArray(t.comments)) continue;
+      const nextComments = t.comments
+        .map((c) => ({
+          ...c,
+          text: (c.text || '').replace(item.url, '').trim(),
+          attachments: Array.isArray(c.attachments) ? c.attachments.filter((a) => a.url !== item.url) : c.attachments,
+        }))
+        .filter((c) => (c.text && c.text.length > 0) || (Array.isArray(c.attachments) && c.attachments.length > 0));
+
+      const patchedTask: Task = { ...t, comments: nextComments, updatedAt: new Date().toISOString() };
+      updatedTasks.push(patchedTask);
+      await setDoc(
+        doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id),
+        { comments: nextComments, updatedAt: patchedTask.updatedAt },
+        { merge: true }
+      ).catch(() => {});
+      await localDb.tasks.put(patchedTask).catch(() => {});
+    }
+    if (updatedTasks.length > 0) useAppStore.getState().optimisticUpdateTasks(updatedTasks);
+  }
+}
+
+
+================================================================================
+FILE: src/components/SettingTabParts/ProjectLinksImagesRowItem.tsx
+================================================================================
+import React from 'react';
+import {
+  Link2,
+  MessageSquare,
+  MapPin,
+  Trash2,
+  ExternalLink,
+  Copy,
+  Check,
+  FileText,
+  Cloud,
+  Eye,
+  Loader2,
+} from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { ProjectMediaLinkItem } from './projectLinksImagesService';
+
+interface ProjectLinksImagesRowItemProps {
+  item: ProjectMediaLinkItem;
+  isChecked: boolean;
+  isDeleting: boolean;
+  isCopied: boolean;
+  canWrite: boolean;
+  onToggleSelect: (key: string) => void;
+  onPreview: (item: ProjectMediaLinkItem) => void;
+  onCopyUrl: (key: string, url: string) => void;
+  onDelete: (item: ProjectMediaLinkItem) => void;
+}
+
+export const ProjectLinksImagesRowItem: React.FC<ProjectLinksImagesRowItemProps> = React.memo(({
+  item,
+  isChecked,
+  isDeleting,
+  isCopied,
+  canWrite,
+  onToggleSelect,
+  onPreview,
+  onCopyUrl,
+  onDelete,
+}) => {
+  const isHCM = item.store.toUpperCase() === 'HCM';
+
+  return (
+    <tr
+      className={cn(
+        'hover:bg-slate-50/90 dark:hover:bg-[#242428] transition-colors',
+        isChecked && 'bg-blue-50/50 dark:bg-blue-950/20'
+      )}
+    >
+      <td className="p-2.5 text-center align-top">
+        <input
+          type="checkbox"
+          checked={isChecked}
+          onChange={() => onToggleSelect(item.key)}
+          className="rounded border-slate-300 cursor-pointer mt-1"
+        />
+      </td>
+
+      {/* Year / Store */}
+      <td className="p-2.5 align-top">
+        <div className="flex flex-col gap-1">
+          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-[#2a2a2e] text-slate-700 dark:text-slate-200 w-fit">
+            {item.year}
+          </span>
+          <span
+            className={cn(
+              'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-extrabold w-fit',
+              isHCM
+                ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-[#8ab4f8]'
+                : 'bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400'
+            )}
+          >
+            {item.store}
+          </span>
+        </div>
+      </td>
+
+      {/* Project Code & Name */}
+      <td className="p-2.5 align-top">
+        <div className="font-mono font-extrabold uppercase text-blue-700 dark:text-[#8ab4f8] text-xs break-all">
+          {item.projectCode}
+        </div>
+        {item.linkCodes && item.linkCodes !== item.projectCode && (
+          <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate">
+            Units: {item.linkCodes}
+          </div>
+        )}
+        <div className="font-medium text-slate-800 dark:text-slate-200 line-clamp-1 mt-0.5">
+          {item.projectName || '—'}
+        </div>
+        {item.location && (
+          <div className="text-[10px] text-slate-400 font-semibold">Floor: {item.location}</div>
+        )}
+      </td>
+
+      {/* Placement Badges */}
+      <td className="p-2.5 align-top">
+        <div className="flex flex-wrap gap-1 mb-1">
+          {item.placements.includes('comment_modular') && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60">
+              <MessageSquare className="w-3 h-3" />
+              Comment Modular
+            </span>
+          )}
+          {item.placements.includes('layout_picture') && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-cyan-100 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/60">
+              <MapPin className="w-3 h-3" />
+              Layout Picture
+            </span>
+          )}
+        </div>
+        <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-0.5">
+          {item.placementDetails.map((d, i) => (
+            <div key={i} className="truncate">
+              • {d}
+            </div>
+          ))}
+        </div>
+      </td>
+
+      {/* Media Preview & URL */}
+      <td className="p-2.5 align-top">
+        <div className="flex items-start gap-2.5">
+          {item.mediaType === 'image' ? (
+            <button
+              type="button"
+              onClick={() => onPreview(item)}
+              className="w-12 h-12 rounded-lg border border-slate-200 dark:border-[#38383c] overflow-hidden bg-slate-100 dark:bg-[#141416] shrink-0 group relative cursor-pointer"
+              title="Click to preview full image"
+            >
+              <img
+                src={item.url}
+                alt={item.title}
+                loading="lazy"
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+              />
+            </button>
+          ) : (
+            <div className="w-12 h-12 rounded-lg border border-slate-200 dark:border-[#38383c] bg-slate-50 dark:bg-[#252528] flex items-center justify-center shrink-0 text-slate-500">
+              {item.mediaType === 'pdf_drive' ? (
+                <FileText className="w-5 h-5 text-amber-500" />
+              ) : (
+                <Link2 className="w-5 h-5 text-blue-500" />
+              )}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-[#28282c] text-slate-600 dark:text-slate-300">
+                <Cloud className="w-2.5 h-2.5" />
+                {item.storageHost}
+              </span>
+              {item.authorName && (
+                <span className="text-[10px] font-semibold text-slate-500">by {item.authorName}</span>
+              )}
+            </div>
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block font-mono text-[11px] text-blue-600 dark:text-[#8ab4f8] hover:underline truncate mt-0.5"
+              title={item.url}
+            >
+              {item.url}
+            </a>
+            {item.commentSnippet && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5 italic">
+                "{item.commentSnippet}"
+              </p>
+            )}
+          </div>
+        </div>
+      </td>
+
+      {/* Actions */}
+      <td className="p-2.5 align-top text-right">
+        <div className="inline-flex items-center justify-end gap-1">
+          {item.mediaType === 'image' && (
+            <button
+              type="button"
+              onClick={() => onPreview(item)}
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-[#38383c] hover:bg-slate-100 dark:hover:bg-[#2c2c30] text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+              title="Preview Image"
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => onCopyUrl(item.key, item.url)}
+            className="p-1.5 rounded-lg border border-slate-200 dark:border-[#38383c] hover:bg-slate-100 dark:hover:bg-[#2c2c30] text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+            title="Copy URL"
+          >
+            {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 rounded-lg border border-slate-200 dark:border-[#38383c] hover:bg-slate-100 dark:hover:bg-[#2c2c30] text-slate-600 dark:text-slate-300 transition-colors"
+            title="Open Link in New Tab"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+          {canWrite && (
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={() => onDelete(item)}
+              className="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50/70 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 transition-colors active:scale-95 cursor-pointer"
+              title="Delete Link / Image from Project & Layout"
+            >
+              {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+});
+ProjectLinksImagesRowItem.displayName = 'ProjectLinksImagesRowItem';
+
+
+================================================================================
+FILE: src/components/SettingTabParts/ProjectLinksImagesManagerModal.tsx
+================================================================================
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import Draggable from 'react-draggable';
+import { Link2, Image as ImageIcon, Trash2, RefreshCw, Search, X, GripHorizontal, Loader2 } from 'lucide-react';
+import { useAppStore } from '../../store/useAppStore';
+import { cn } from '../../lib/utils';
+import { useOverlayStack } from '../../lib/zIndexManager';
+import {
+  ProjectMediaLinkItem,
+  RemoteUnitImagesDoc,
+  buildProjectMediaLinksList,
+  deleteProjectMediaLinkItem,
+  fetchAllCloudUnitImagesDocs,
+} from './projectLinksImagesService';
+import { ProjectLinksImagesRowItem } from './ProjectLinksImagesRowItem';
+
+interface ProjectLinksImagesManagerModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  canWrite: boolean;
+  onConfirmAction?: (
+    title: string,
+    message: string,
+    onConfirm: () => Promise<void> | void,
+    confirmStyle?: 'primary' | 'danger',
+    confirmText?: string
+  ) => void;
+}
+
+export const ProjectLinksImagesManagerModal: React.FC<ProjectLinksImagesManagerModalProps> = ({
+  isOpen,
+  onClose,
+  canWrite,
+  onConfirmAction,
+}) => {
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const projects = useAppStore((state) => state.projects);
+  const tasks = useAppStore((state) => state.tasks);
+  const appUsers = useAppStore((state) => state.appUsers);
+
+  const [cloudUnitDocs, setCloudUnitDocs] = useState<RemoteUnitImagesDoc[]>([]);
+  const [loadingCloud, setLoadingCloud] = useState(false);
+  const [yearFilter, setYearFilter] = useState<string>('all');
+  const [storeFilter, setStoreFilter] = useState<string>('all');
+  const [placementFilter, setPlacementFilter] = useState<'all' | 'comment_modular' | 'layout_picture' | 'both'>('all');
+  const [mediaTypeFilter, setMediaTypeFilter] = useState<'all' | 'image' | 'pdf_drive' | 'link'>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [previewItem, setPreviewItem] = useState<ProjectMediaLinkItem | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  const syncCloudDocs = useCallback(async () => {
+    setLoadingCloud(true);
+    try {
+      const docs = await fetchAllCloudUnitImagesDocs();
+      setCloudUnitDocs(docs);
+      setRefreshTick((t) => t + 1);
+    } finally {
+      setLoadingCloud(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) syncCloudDocs();
+  }, [isOpen, syncCloudDocs]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (previewItem) setPreviewItem(null);
+        else onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose, previewItem]);
+
+  const allItems = useMemo(() => {
+    void refreshTick;
+    return buildProjectMediaLinksList(projects, tasks, cloudUnitDocs, appUsers);
+  }, [projects, tasks, cloudUnitDocs, appUsers, refreshTick]);
+
+  const availableYears = useMemo(() => {
+    const s = new Set<string>(['2024', '2025', '2026', '2027']);
+    allItems.forEach((it) => { if (it.year) s.add(String(it.year)); });
+    return Array.from(s).sort();
+  }, [allItems]);
+
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return allItems.filter((item) => {
+      if (yearFilter !== 'all' && String(item.year) !== String(yearFilter)) return false;
+      if (storeFilter !== 'all' && item.store.toUpperCase() !== storeFilter.toUpperCase()) return false;
+      if (placementFilter === 'comment_modular' && !item.placements.includes('comment_modular')) return false;
+      if (placementFilter === 'layout_picture' && !item.placements.includes('layout_picture')) return false;
+      if (placementFilter === 'both' && !(item.placements.includes('comment_modular') && item.placements.includes('layout_picture'))) return false;
+      if (mediaTypeFilter !== 'all' && item.mediaType !== mediaTypeFilter) return false;
+      if (q) {
+        const hay = `${item.projectCode} ${item.linkCodes} ${item.unitCode} ${item.projectName} ${item.location} ${item.year} ${item.store} ${item.url} ${item.title} ${item.authorName || ''} ${item.commentSnippet || ''} ${item.placementDetails.join(' ')}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [allItems, yearFilter, storeFilter, placementFilter, mediaTypeFilter, searchQuery]);
+
+  const stats = useMemo(() => {
+    let commentCount = 0;
+    let layoutCount = 0;
+    let imageCount = 0;
+    filteredItems.forEach((it) => {
+      if (it.placements.includes('comment_modular')) commentCount++;
+      if (it.placements.includes('layout_picture')) layoutCount++;
+      if (it.mediaType === 'image') imageCount++;
+    });
+    return { total: filteredItems.length, commentCount, layoutCount, imageCount };
+  }, [filteredItems]);
+
+  const toggleSelectOne = useCallback((key: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAllFiltered = () => {
+    if (filteredItems.length === 0) return;
+    const allSelected = filteredItems.every((it) => selectedKeys.has(it.key));
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      filteredItems.forEach((it) => (allSelected ? next.delete(it.key) : next.add(it.key)));
+      return next;
+    });
+  };
+
+  const handleCopyUrl = useCallback((key: string, url: string) => {
+    navigator.clipboard?.writeText(url).catch(() => {});
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey((prev) => (prev === key ? null : prev)), 1500);
+  }, []);
+
+  const executeSingleDelete = useCallback(async (item: ProjectMediaLinkItem) => {
+    setDeletingKey(item.key);
+    try {
+      await deleteProjectMediaLinkItem(item);
+      setCloudUnitDocs((prev) =>
+        prev.map((d) => ({
+          ...d,
+          images: (d.images || []).filter((img: any) => (typeof img === 'string' ? img : img?.url) !== item.url),
+        }))
+      );
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(item.key);
+        return next;
+      });
+      setRefreshTick((t) => t + 1);
+      useAppStore.getState().setToast({
+        title: 'Link / Image Deleted',
+        message: `Removed from ${item.projectCode} (${item.store} • ${item.year}) across Comment & Layout.`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      useAppStore.getState().setToast({
+        title: 'Delete Failed',
+        message: err?.message || 'Failed to delete link/image.',
+        type: 'error',
+      });
+    } finally {
+      setDeletingKey(null);
+    }
+  }, []);
+
+  const handleRequestDeleteOne = useCallback(
+    (item: ProjectMediaLinkItem) => {
+      if (!canWrite) return;
+      const msg = `Delete this ${item.mediaType === 'image' ? 'image' : 'link'} from project [${item.year} • ${item.store} • ${item.projectCode}]? This will remove it from Comment Modular, Layout Picture Gallery, and cloud storage.`;
+      if (onConfirmAction) {
+        onConfirmAction('Delete Project Link / Image', msg, () => executeSingleDelete(item), 'danger', 'Delete');
+      } else {
+        executeSingleDelete(item);
+      }
+    },
+    [canWrite, onConfirmAction, executeSingleDelete]
+  );
+
+  const handleRequestBulkDelete = () => {
+    if (!canWrite || selectedKeys.size === 0) return;
+    const targets = filteredItems.filter((it) => selectedKeys.has(it.key));
+    if (targets.length === 0) return;
+    const msg = `Permanently delete ${targets.length} selected link(s) / image(s) across Comment Modular, Layout Picture, and cloud storage?`;
+    const runBulk = async () => {
+      setBulkDeleting(true);
+      try {
+        for (const item of targets) {
+          await deleteProjectMediaLinkItem(item);
+        }
+        const deletedUrls = new Set(targets.map((t) => t.url));
+        setCloudUnitDocs((prev) =>
+          prev.map((d) => ({
+            ...d,
+            images: (d.images || []).filter((img: any) => !deletedUrls.has(typeof img === 'string' ? img : img?.url)),
+          }))
+        );
+        setSelectedKeys(new Set());
+        setRefreshTick((t) => t + 1);
+        useAppStore.getState().setToast({
+          title: 'Bulk Delete Completed',
+          message: `Deleted ${targets.length} link(s) and image(s).`,
+          type: 'success',
+        });
+      } finally {
+        setBulkDeleting(false);
+      }
+    };
+
+    if (onConfirmAction) {
+      onConfirmAction(`Delete ${targets.length} Selected Items`, msg, runBulk, 'danger', 'Delete All');
+    } else {
+      runBulk();
+    }
+  };
+
+  const zInfo = useOverlayStack({ layer: 'MODAL_BASE', isOpen, onClose, closeOnTabChange: true });
+
+  if (!isOpen) return null;
+
+  const allFilteredSelected = filteredItems.length > 0 && filteredItems.every((it) => selectedKeys.has(it.key));
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 ${zInfo.zClass} flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 overflow-hidden pointer-events-auto animate-in fade-in duration-150`}
+      style={{ zIndex: zInfo.zValue || 180000 }}
+      onClick={onClose}
+    >
+      <Draggable
+        disabled={typeof window !== 'undefined' && window.innerWidth < 768}
+        handle=".modal-handle"
+        bounds="parent"
+        nodeRef={nodeRef}
+        cancel="button, input, select, a"
+      >
+        <div
+          ref={nodeRef}
+          onClick={(e) => e.stopPropagation()}
+          className="bg-white dark:bg-[#1e1e20] rounded-2xl shadow-2xl w-[98vw] max-w-6xl h-[88vh] flex flex-col border border-slate-200 dark:border-[#333336] overflow-hidden"
+        >
+          {/* Draggable Header */}
+          <div className="modal-handle cursor-grab active:cursor-grabbing px-4 py-3 border-b border-slate-200 dark:border-[#333336] flex items-center justify-between bg-slate-50/90 dark:bg-[#18181a] select-none shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <GripHorizontal className="w-4 h-4 text-slate-400 shrink-0" />
+              <div className="p-2 rounded-xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 shrink-0">
+                <Link2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-base text-slate-900 dark:text-[#e3e3e3] truncate">
+                  Project Links & Attached Images Manager
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                  Audit & delete links/images attached by (Year • Store • Project Code) in Comment Modular & Layout Picture
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={syncCloudDocs}
+                disabled={loadingCloud}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#38383c] bg-white dark:bg-[#252528] hover:bg-slate-50 dark:hover:bg-[#2f2f33] text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+                title="Refresh cloud unit image registries from Firestore"
+              >
+                <RefreshCw className={cn('w-3.5 h-3.5 text-blue-500', loadingCloud && 'animate-spin')} />
+                <span className="hidden sm:inline">Sync Cloud</span>
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors active:scale-95 cursor-pointer"
+                title="Close (Esc)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Filter & Telemetry Toolbar */}
+          <div className="p-3 border-b border-slate-200 dark:border-[#333336] bg-white dark:bg-[#1e1e20] space-y-2.5 shrink-0">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-[#161618] border border-slate-200/70 dark:border-[#2c2c2f] flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500 uppercase">Total Links</span>
+                <span className="text-sm font-extrabold font-mono text-slate-800 dark:text-slate-100">{stats.total}</span>
+              </div>
+              <div className="px-3 py-1.5 rounded-lg bg-purple-50/60 dark:bg-purple-950/20 border border-purple-200/70 dark:border-purple-900/40 flex items-center justify-between">
+                <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase">Comment Modular</span>
+                <span className="text-sm font-extrabold font-mono text-purple-700 dark:text-purple-300">{stats.commentCount}</span>
+              </div>
+              <div className="px-3 py-1.5 rounded-lg bg-cyan-50/60 dark:bg-cyan-950/20 border border-cyan-200/70 dark:border-cyan-900/40 flex items-center justify-between">
+                <span className="text-[11px] font-bold text-cyan-600 dark:text-cyan-400 uppercase">Layout Picture</span>
+                <span className="text-sm font-extrabold font-mono text-cyan-700 dark:text-cyan-300">{stats.layoutCount}</span>
+              </div>
+              <div className="px-3 py-1.5 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/40 flex items-center justify-between">
+                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Image Files</span>
+                <span className="text-sm font-extrabold font-mono text-emerald-700 dark:text-emerald-300">{stats.imageCount}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by Project Code, Unit, Name, URL, Comment, User..."
+                  className="w-full h-[34px] pl-8 pr-7 rounded-lg border border-slate-200 dark:border-[#444446] bg-slate-50 dark:bg-[#252528] text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <select
+                value={yearFilter}
+                onChange={(e) => setYearFilter(e.target.value)}
+                className="h-[34px] px-2.5 rounded-lg border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#252528] text-xs font-bold text-slate-700 dark:text-slate-200 outline-none"
+              >
+                <option value="all">All Years</option>
+                {availableYears.map((y) => (
+                  <option key={y} value={y}>
+                    Year: {y}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={storeFilter}
+                onChange={(e) => setStoreFilter(e.target.value)}
+                className="h-[34px] px-2.5 rounded-lg border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#252528] text-xs font-bold text-slate-700 dark:text-slate-200 outline-none"
+              >
+                <option value="all">All Stores</option>
+                <option value="HCM">HCM Store</option>
+                <option value="HN">HN Store</option>
+              </select>
+
+              <select
+                value={placementFilter}
+                onChange={(e) => setPlacementFilter(e.target.value as any)}
+                className="h-[34px] px-2.5 rounded-lg border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#252528] text-xs font-bold text-slate-700 dark:text-slate-200 outline-none"
+              >
+                <option value="all">All Locations (Comment & Layout)</option>
+                <option value="comment_modular">Comment Modular Only</option>
+                <option value="layout_picture">Layout Picture Only</option>
+                <option value="both">Attached in Both</option>
+              </select>
+
+              <select
+                value={mediaTypeFilter}
+                onChange={(e) => setMediaTypeFilter(e.target.value as any)}
+                className="h-[34px] px-2.5 rounded-lg border border-slate-200 dark:border-[#444446] bg-white dark:bg-[#252528] text-xs font-bold text-slate-700 dark:text-slate-200 outline-none"
+              >
+                <option value="all">All Media Types</option>
+                <option value="image">Images Only</option>
+                <option value="pdf_drive">PDF / Google Drive</option>
+                <option value="link">Web Links</option>
+              </select>
+
+              {canWrite && selectedKeys.size > 0 && (
+                <button
+                  type="button"
+                  disabled={bulkDeleting}
+                  onClick={handleRequestBulkDelete}
+                  className="h-[34px] px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all active:scale-95 cursor-pointer"
+                >
+                  {bulkDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  <span>Delete Selected ({selectedKeys.size})</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Table View */}
+          <div className="flex-1 overflow-auto min-h-0">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-[#161618] border-b border-slate-200 dark:border-[#333336] text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400">
+                <tr>
+                  <th className="p-2.5 w-9 text-center">
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAllFiltered}
+                      className="rounded border-slate-300 cursor-pointer"
+                    />
+                  </th>
+                  <th className="p-2.5 w-28">Year / Store</th>
+                  <th className="p-2.5 w-48">Project Code & Unit</th>
+                  <th className="p-2.5 w-56">Attached Location</th>
+                  <th className="p-2.5">Preview & Link / Comment Details</th>
+                  <th className="p-2.5 w-32 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-[#2a2a2d] text-xs">
+                {filteredItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-400 dark:text-slate-500">
+                      No attached links or images match the current filter criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredItems.map((item) => (
+                    <ProjectLinksImagesRowItem
+                      key={item.key}
+                      item={item}
+                      isChecked={selectedKeys.has(item.key)}
+                      isDeleting={deletingKey === item.key}
+                      isCopied={copiedKey === item.key}
+                      canWrite={canWrite}
+                      onToggleSelect={toggleSelectOne}
+                      onPreview={setPreviewItem}
+                      onCopyUrl={handleCopyUrl}
+                      onDelete={handleRequestDeleteOne}
+                    />
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Image Lightbox Overlay */}
+          {previewItem && (
+            <div
+              className="fixed inset-0 z-[200000] bg-black/80 flex items-center justify-center p-4"
+              onClick={() => setPreviewItem(null)}
+            >
+              <div
+                className="bg-white dark:bg-[#1e1e20] rounded-xl max-w-4xl max-h-[85vh] overflow-hidden border border-slate-200 dark:border-[#38383c] flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="px-4 py-2.5 border-b border-slate-200 dark:border-[#333336] flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ImageIcon className="w-4 h-4 text-blue-500 shrink-0" />
+                    <span className="font-mono font-bold text-xs text-blue-600 dark:text-[#8ab4f8]">
+                      [{previewItem.year} • {previewItem.store} • {previewItem.projectCode}]
+                    </span>
+                    <span className="text-xs text-slate-700 dark:text-slate-200 truncate">{previewItem.projectName}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewItem(null)}
+                    className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#2c2c30] text-slate-400"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="p-3 bg-slate-950 flex items-center justify-center max-h-[75vh] overflow-auto">
+                  <img src={previewItem.url} alt={previewItem.title} className="max-w-full max-h-[70vh] object-contain" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </Draggable>
+    </div>,
+    document.body
+  );
+};
+
+export default ProjectLinksImagesManagerModal;
+
