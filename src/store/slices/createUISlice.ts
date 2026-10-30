@@ -449,4 +449,6 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   setLayoutPaintCategory: (layoutPaintCategory) => set({ layoutPaintCategory }),
   zoomableImageSrc: null,
   setZoomableImageSrc: (zoomableImageSrc) => set({ zoomableImageSrc }),
+  isDetailEditMode: false,
+  setIsDetailEditMode: (isDetailEditMode) => set({ isDetailEditMode }),
 });

@@ -164,6 +164,8 @@ export interface UISlice {
   setLayoutPaintCategory: (cat: string) => void;
   zoomableImageSrc: string | null;
   setZoomableImageSrc: (src: string | null) => void;
+  isDetailEditMode: boolean;
+  setIsDetailEditMode: (v: boolean) => void;
 }
 
 export interface LayoutTooltipVisibility {

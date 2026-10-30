@@ -32,9 +32,8 @@ import {
   BackgroundSyncStatus,
 } from "../../lib/dynamicExportService";
 import { useDynamicRules } from "../../hooks/useDynamicRules";
-import { GroupHatchPatternPicker } from "./GroupHatchPatternPicker";
-import { GroupSymbolPicker } from "./GroupSymbolPicker";
-import { HatchPatternType, getHatchCssStyle } from "../../../LayoutTabParts/layoutPatternUtils";
+import { DynamicGroupCard } from "./DynamicHierarchyParts/DynamicGroupCard";
+import { HatchPatternType } from "../../../LayoutTabParts/layoutPatternUtils";
 
 interface DynamicHierarchyTabProps {
   units: UnitShape[];
@@ -905,239 +904,20 @@ function DynamicHierarchyTab({
                     ? (matchedUnitIdsByGroupId.get(group.id) || [])
                     : (activeVersion.groupMappings[group.id] || []);
                   return (
-                    <div
+                    <DynamicGroupCard
                       key={group.id}
-                      className="border border-slate-700/80 rounded-lg overflow-hidden bg-slate-900/80 hover:border-brand-500/50 transition-colors"
-                    >
-                      <div className="px-2.5 py-1.5 bg-slate-800/90 border-b border-slate-700/80 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                          <div className="relative flex items-center justify-center shrink-0">
-                            <ColorPicker
-                              color={group.color}
-                              onChange={(color) => updateGroupColor(group.id, color)}
-                              className="shrink-0"
-                            />
-                            {group.hatchPattern && group.hatchPattern !== 'none' && (
-                              <span
-                                className="absolute inset-0 rounded pointer-events-none"
-                                style={getHatchCssStyle(group.color, group.hatchPattern)}
-                              />
-                            )}
-                            {group.symbol && (
-                              <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-white pointer-events-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
-                                {group.symbol}
-                              </span>
-                            )}
-                          </div>
-                          <DebouncedOpacitySlider
-                            compact
-                            opacity={group.opacity ?? 0.6}
-                            onCommit={(val) => updateGroupOpacity(group.id, val)}
-                          />
-                          {/* Hatching Pattern Selector */}
-                          <GroupHatchPatternPicker
-                            color={group.color}
-                            pattern={group.hatchPattern || 'none'}
-                            onChange={(pat) => updateGroupHatchPattern(group.id, pat)}
-                          />
-                          {/* Symbol / Marker Selector */}
-                          <GroupSymbolPicker
-                            symbol={group.symbol || ''}
-                            onChange={(sym) => updateGroupSymbol(group.id, sym)}
-                          />
-                          <span 
-                            className="text-xs font-bold text-white ml-0.5 cursor-pointer hover:text-brand-400 transition-colors flex items-center gap-1 group/title truncate"
-                            onClick={(e) => renameGroup(group.id, e)}
-                          >
-                            {group.symbol && (
-                              <span className="text-amber-400 font-mono text-[10px] px-1 py-0.1 rounded bg-amber-950/60 border border-amber-800/80">
-                                {group.symbol}
-                              </span>
-                            )}
-                            <span className="truncate">{group.name}</span>
-                            <Edit2 size={9} className="opacity-0 group-hover/title:opacity-100 shrink-0" />
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-[10px] text-slate-300 bg-slate-700/80 px-1.5 py-0.5 rounded font-mono font-bold">
-                            {assignedUnits.length} Matches
-                          </span>
-                          <button
-                            onClick={(e) => deleteGroup(group.id, e)}
-                            className="p-0.5 text-slate-400 hover:text-red-400"
-                            title="Delete group"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="p-2.5 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] uppercase text-slate-500 font-bold">
-                            Conditions API
-                          </span>
-                          <button
-                            onClick={() => addRuleToGroup(group.id)}
-                            className="text-[9.5px] uppercase font-bold text-brand-400 hover:text-brand-300 flex items-center gap-0.5"
-                          >
-                            <Plus size={11} /> Add Rule
-                          </button>
-                        </div>
-
-                        {(!group.rules || group.rules.length === 0) && (
-                          <div className="text-[11px] text-slate-500 italic">
-                            No rules defined. Add a rule to dynamically assign units.
-                          </div>
-                        )}
-
-                        {group.rules &&
-                          group.rules.map((rule, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-center gap-1.5 bg-slate-950 p-1.5 rounded-md border border-slate-800"
-                            >
-                              <select
-                                className="bg-slate-900 text-slate-300 text-xs outline-none w-2/5 flex-shrink-0 px-1.5 py-0.5 rounded border border-slate-700"
-                                value={normalizeRuleField(rule.field)}
-                                onChange={(e) =>
-                                  updateRule(
-                                    group.id,
-                                    idx,
-                                    "field",
-                                    e.target.value,
-                                  )
-                                }
-                              >
-                                <optgroup label="Metrics">
-                                  <option value="sales">Sales</option>
-                                  <option value="salesByCp">Sales by CP</option>
-                                  <option value="salesByHcmcate">Sales by HCMcate</option>
-                                  <option value="margin">Margin</option>
-                                  <option value="marginByCp">Margin by CP</option>
-                                  <option value="profit">Profit</option>
-                                  <option value="profitByCp">Profit by CP</option>
-                                  <option value="profitByHcmcate">Profit by HCMcate</option>
-                                  <option value="hcmSalesEffi">HCM Sales Effi</option>
-                                  <option value="hcmMargin">HCM Margin</option>
-                                </optgroup>
-                                <optgroup label="Attributes">
-                                  <option value="unit">Unit</option>
-                                  <option value="year">Year</option>
-                                  <option value="size">Size (m²)</option>
-                                  <option value="floor">Floor</option>
-                                  <option value="classCode">Class Code</option>
-                                  <option value="vendorCode">Vendor Code</option>
-                                  <option value="brandCode">Brand Code</option>
-                                  <option value="brandName">Brand Name</option>
-                                  <option value="mdStatus">MD Status</option>
-                                  <option value="mdNotes">MD Notes</option>
-                                  <option value="task">Task</option>
-                                  <option value="projectStatus">Project Status</option>
-                                  <option value="actStatus">Act: Status</option>
-                                  <option value="startDate">Start Date</option>
-                                  <option value="endDate">End Date</option>
-                                  <option value="status">Status</option>
-                                  <option value="shopType">Shop Type</option>
-                                </optgroup>
-                                <optgroup label="App Data (Real-time)">
-                                  <option value="appTask">App: Task Summarize (Real-time)</option>
-                                  <option value="appProjectStatus">App: Status</option>
-                                  <option value="appProjectMdStatus">App: MD Status</option>
-                                  <option value="appProjectActStatus">App: Act Status</option>
-                                  <option value="appProjectDetail">App: Detail (Project)</option>
-                                  <option value="appProjectDescription">App: Description (Project)</option>
-                                  <option value="appProjectParty">App: Party</option>
-                                  <option value="appProjectBudget">App: Budget</option>
-                                  <option value="appProjectActual">App: Actual</option>
-                                  <option value="appProjectSizeM2">App: Size (m²)</option>
-                                  <option value="appProjectShopType">App: Shop Type</option>
-                                  <option value="appProjectCode">App: Project Code</option>
-                                  <option value="appProjectYear">App: Year</option>
-                                </optgroup>
-                              </select>
-
-                              <select
-                                className="bg-slate-900 text-slate-300 text-xs px-1.5 py-0.5 rounded border border-slate-700 outline-none shrink-0"
-                                value={rule.operator}
-                                onChange={(e) =>
-                                  updateRule(
-                                    group.id,
-                                    idx,
-                                    "operator",
-                                    e.target.value,
-                                  )
-                                }
-                              >
-                                <option value=">">&gt;</option>
-                                <option value="<">&lt;</option>
-                                <option value=">=">&gt;=</option>
-                                <option value="<=">&lt;=</option>
-                                <option value="=">=</option>
-                                <option value="contains">Contains</option>
-                                <option value="or">OR</option>
-                                <option value="exclude">Exclude</option>
-                              </select>
-
-                              <DebouncedRuleValueInput
-                                className="bg-transparent text-slate-200 text-xs flex-1 min-w-0 outline-none border-b border-slate-700 focus:border-brand-500 px-1 py-0.5"
-                                value={rule.value}
-                                onCommit={(val) =>
-                                  updateRule(
-                                    group.id,
-                                    idx,
-                                    "value",
-                                    val,
-                                  )
-                                }
-                                placeholder="Value..."
-                              />
-
-                              <button
-                                onClick={() => deleteRule(group.id, idx)}
-                                className="text-slate-500 hover:text-red-400 p-0.5 shrink-0"
-                              >
-                                <X size={12} />
-                              </button>
-                            </div>
-                          ))}
-
-                        {group.rules &&
-                          group.rules.length > 0 &&
-                          assignedUnits.length > 0 && (
-                            <div className="pt-1.5 mt-1 border-t border-slate-800/50">
-                              <span className="text-[9px] uppercase text-slate-500 font-bold mb-1 block">
-                                Matched Units ({assignedUnits.length})
-                              </span>
-                              <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto custom-scrollbar">
-                                {assignedUnits.map((uid) => {
-                                  const u = unitLookupMap.get(uid) || unitLookupMap.get(uid.toLowerCase());
-                                  return u ? (
-                                    <div
-                                      key={uid}
-                                      className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 flex items-center gap-1"
-                                    >
-                                      {u.location && (
-                                        <span className="text-[8px] px-1 py-0.1 rounded bg-purple-950/80 text-purple-300 font-bold border border-purple-800/40">
-                                          {u.location}
-                                        </span>
-                                      )}
-                                      <span className="font-semibold">{u.name}</span>
-                                    </div>
-                                  ) : (
-                                    <div
-                                      key={uid}
-                                      className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 flex items-center gap-1"
-                                    >
-                                      <span className="font-semibold">{uid}</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                      </div>
-                    </div>
+                      group={group}
+                      matchedUnits={assignedUnits}
+                      onUpdateGroupColor={updateGroupColor}
+                      onUpdateGroupOpacity={updateGroupOpacity}
+                      onUpdateGroupHatchPattern={updateGroupHatchPattern}
+                      onUpdateGroupSymbol={updateGroupSymbol}
+                      onRenameGroup={renameGroup}
+                      onDeleteGroup={deleteGroup}
+                      onAddRule={addRuleToGroup}
+                      onUpdateRule={updateRule}
+                      onDeleteRule={deleteRule}
+                    />
                   );
                 })}
               </div>

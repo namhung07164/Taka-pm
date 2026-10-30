@@ -22508,13 +22508,10 @@ export const DetailTableView = memo(function DetailTableView({
 }: DetailTableViewProps) {
   const isDraggingActive = draggingTaskIds.length > 0;
   const dragPointerYRef = useRef<number | null>(null);
-  const lockedDragRangeRef = useRef<{ minStart: number; maxEnd: number; baseStart: number; basePaddingTop: number } | null>(null);
-
   // Smooth 60fps upward & downward auto-scroll when dragging tasks near top sticky header or bottom edge
   useEffect(() => {
     if (!isDraggingActive) {
       dragPointerYRef.current = null;
-      lockedDragRangeRef.current = null;
       return;
     }
 
@@ -22525,12 +22522,12 @@ export const DetailTableView = memo(function DetailTableView({
       const container = tableContainerRef.current;
       if (!container) return;
       const rect = container.getBoundingClientRect();
-      // Allow drop effect even when hovering over sticky thead, project header, or slightly above/below the table
+      // Allow drop effect even when hovering over sticky thead, project header, or near table boundaries
       if (
-        e.clientX >= rect.left - 40 &&
-        e.clientX <= rect.right + 40 &&
-        e.clientY >= rect.top - 120 &&
-        e.clientY <= rect.bottom + 120
+        e.clientX >= rect.left - 60 &&
+        e.clientX <= rect.right + 60 &&
+        e.clientY >= rect.top - 200 &&
+        e.clientY <= rect.bottom + 200
       ) {
         e.preventDefault();
         if (e.dataTransfer) {
@@ -22544,23 +22541,22 @@ export const DetailTableView = memo(function DetailTableView({
       const clientY = dragPointerYRef.current;
       if (container && clientY !== null) {
         const rect = container.getBoundingClientRect();
-        // Only auto-scroll when cursor is pushed into the top 44px (sticky thead) or bottom 44px edge
-        const topZoneBottom = rect.top + 44;
-        const bottomZoneTop = rect.bottom - 44;
+        // Generous 80px scroll zone at top and bottom of table
+        const topEdge = rect.top + 80;
+        const bottomEdge = rect.bottom - 80;
 
-        if (clientY < topZoneBottom && clientY > rect.top - 120 && container.scrollTop > 0) {
-          const dist = topZoneBottom - clientY;
-          const intensity = Math.min(1, Math.max(0.15, dist / 80));
-          const delta = Math.round(3 + intensity * 14);
+        if (clientY < topEdge && container.scrollTop > 0) {
+          const dist = Math.max(1, topEdge - clientY);
+          const intensity = Math.min(1, dist / 100);
+          const delta = Math.round(4 + intensity * 24);
           container.scrollTop = Math.max(0, container.scrollTop - delta);
         } else if (
-          clientY > bottomZoneTop &&
-          clientY < rect.bottom + 120 &&
+          clientY > bottomEdge &&
           container.scrollTop < container.scrollHeight - container.clientHeight
         ) {
-          const dist = clientY - bottomZoneTop;
-          const intensity = Math.min(1, Math.max(0.15, dist / 80));
-          const delta = Math.round(3 + intensity * 14);
+          const dist = Math.max(1, clientY - bottomEdge);
+          const intensity = Math.min(1, dist / 100);
+          const delta = Math.round(4 + intensity * 24);
           container.scrollTop = Math.min(
             container.scrollHeight - container.clientHeight,
             container.scrollTop + delta
@@ -22579,58 +22575,11 @@ export const DetailTableView = memo(function DetailTableView({
     };
   }, [isDraggingActive, tableContainerRef]);
 
-  // Expand virtual slice monotonically during active drag so rows above the viewport never unmount/remount mid-drag (eliminating scroll height jumps)
-  const { effectiveStartIndex, effectiveEndIndex, effectivePaddingTop, effectivePaddingBottom } = useMemo(() => {
-    if (!isDraggingActive) {
-      lockedDragRangeRef.current = null;
-      return {
-        effectiveStartIndex: startIndex,
-        effectiveEndIndex: endIndex,
-        effectivePaddingTop: paddingTop,
-        effectivePaddingBottom: paddingBottom,
-      };
-    }
-
-    if (!lockedDragRangeRef.current) {
-      lockedDragRangeRef.current = {
-        minStart: startIndex,
-        maxEnd: endIndex,
-        baseStart: startIndex,
-        basePaddingTop: paddingTop,
-      };
-    }
-
-    const dragSet = new Set(draggingTaskIds);
-    let minIdx = Math.min(lockedDragRangeRef.current.minStart, startIndex);
-    let maxIdx = Math.max(lockedDragRangeRef.current.maxEnd, endIndex);
-
-    for (let i = 0; i < flatTableRows.length; i++) {
-      const r = flatTableRows[i];
-      if (r.type === 'task' && dragSet.has(r.task.id)) {
-        if (i < minIdx) minIdx = i;
-        if (i + 1 > maxIdx) maxIdx = i + 1;
-      }
-    }
-
-    lockedDragRangeRef.current.minStart = minIdx;
-    lockedDragRangeRef.current.maxEnd = maxIdx;
-
-    let removedTop = 0;
-    for (let i = minIdx; i < lockedDragRangeRef.current.baseStart; i++) {
-      removedTop += flatTableRows[i]?.type === 'project' ? 46 : 42;
-    }
-    let removedBottom = 0;
-    for (let i = endIndex; i < maxIdx; i++) {
-      removedBottom += flatTableRows[i]?.type === 'project' ? 46 : 42;
-    }
-
-    return {
-      effectiveStartIndex: minIdx,
-      effectiveEndIndex: maxIdx,
-      effectivePaddingTop: Math.max(0, lockedDragRangeRef.current.basePaddingTop - removedTop),
-      effectivePaddingBottom: Math.max(0, paddingBottom - removedBottom),
-    };
-  }, [isDraggingActive, draggingTaskIds, flatTableRows, startIndex, endIndex, paddingTop, paddingBottom]);
+  // Stable virtual slice to eliminate scroll jumps during active drag
+  const effectiveStartIndex = startIndex;
+  const effectiveEndIndex = endIndex;
+  const effectivePaddingTop = paddingTop;
+  const effectivePaddingBottom = paddingBottom;
 
   return (
     <div className="hidden xl:block flex-grow pb-16">
@@ -27906,6 +27855,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Project, Task, AppUser, AppRole, PermissionMatrix } from '../../types';
 import { getUserAllowedStores } from '../../lib/utils';
 import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { useAppStore } from '../../store/useAppStore';
 
 interface UseDetailOptionsParams {
   currentUser: AppUser;
@@ -27932,7 +27882,8 @@ export function useDetailOptions({
   const role = currentUser.role as AppRole;
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const hasWritePermission = (isAdmin || !!permissionMatrix[role]?.Write?.detail) && !isArchiveYear;
-  const [isEditMode, setIsEditMode] = useState(false);
+  const isEditMode = useAppStore(state => state.isDetailEditMode);
+  const setIsEditMode = useAppStore(state => state.setIsDetailEditMode);
   const canWrite = hasWritePermission && isEditMode;
 
   const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
@@ -46341,7 +46292,7 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
 
                   stage.scale({ x: newScale, y: newScale });
                   stage.position(newPos);
-                  stage.getLayers().forEach((l: any) => l.drawScene());
+                  stage.batchDraw();
 
                   touchStateRef.current.lastDist = curDist;
                   touchStateRef.current.lastCenter = curCenter;
@@ -46411,7 +46362,7 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
 
               currentStage.scale({ x: newScale, y: newScale });
               currentStage.position(newPos);
-              currentStage.getLayers().forEach((l: any) => l.drawScene());
+              currentStage.batchDraw();
 
               if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
               wheelTimeoutRef.current = setTimeout(() => {
@@ -61554,7 +61505,7 @@ export function useLayoutGestures({
         const nextY = currentStage.y() + currentVy * frameDt;
 
         currentStage.position({ x: nextX, y: nextY });
-        currentStage.getLayers().forEach((l: any) => l.drawScene());
+        currentStage.batchDraw();
 
         if (Math.hypot(currentVx, currentVy) > 0.02) {
           rafInertiaIdRef.current = requestAnimationFrame(step);
@@ -61640,7 +61591,7 @@ export function useLayoutGestures({
 
       curStage.scale({ x: nextScale, y: nextScale });
       curStage.position(nextPos);
-      curStage.getLayers().forEach((l: any) => l.drawScene());
+      curStage.batchDraw();
 
       rafZoomAnimIdRef.current = requestAnimationFrame(step);
     };
@@ -69569,9 +69520,8 @@ import {
   BackgroundSyncStatus,
 } from "../../lib/dynamicExportService";
 import { useDynamicRules } from "../../hooks/useDynamicRules";
-import { GroupHatchPatternPicker } from "./GroupHatchPatternPicker";
-import { GroupSymbolPicker } from "./GroupSymbolPicker";
-import { HatchPatternType, getHatchCssStyle } from "../../../LayoutTabParts/layoutPatternUtils";
+import { DynamicGroupCard } from "./DynamicHierarchyParts/DynamicGroupCard";
+import { HatchPatternType } from "../../../LayoutTabParts/layoutPatternUtils";
 
 interface DynamicHierarchyTabProps {
   units: UnitShape[];
@@ -70442,239 +70392,20 @@ function DynamicHierarchyTab({
                     ? (matchedUnitIdsByGroupId.get(group.id) || [])
                     : (activeVersion.groupMappings[group.id] || []);
                   return (
-                    <div
+                    <DynamicGroupCard
                       key={group.id}
-                      className="border border-slate-700/80 rounded-lg overflow-hidden bg-slate-900/80 hover:border-brand-500/50 transition-colors"
-                    >
-                      <div className="px-2.5 py-1.5 bg-slate-800/90 border-b border-slate-700/80 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                          <div className="relative flex items-center justify-center shrink-0">
-                            <ColorPicker
-                              color={group.color}
-                              onChange={(color) => updateGroupColor(group.id, color)}
-                              className="shrink-0"
-                            />
-                            {group.hatchPattern && group.hatchPattern !== 'none' && (
-                              <span
-                                className="absolute inset-0 rounded pointer-events-none"
-                                style={getHatchCssStyle(group.color, group.hatchPattern)}
-                              />
-                            )}
-                            {group.symbol && (
-                              <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-white pointer-events-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
-                                {group.symbol}
-                              </span>
-                            )}
-                          </div>
-                          <DebouncedOpacitySlider
-                            compact
-                            opacity={group.opacity ?? 0.6}
-                            onCommit={(val) => updateGroupOpacity(group.id, val)}
-                          />
-                          {/* Hatching Pattern Selector */}
-                          <GroupHatchPatternPicker
-                            color={group.color}
-                            pattern={group.hatchPattern || 'none'}
-                            onChange={(pat) => updateGroupHatchPattern(group.id, pat)}
-                          />
-                          {/* Symbol / Marker Selector */}
-                          <GroupSymbolPicker
-                            symbol={group.symbol || ''}
-                            onChange={(sym) => updateGroupSymbol(group.id, sym)}
-                          />
-                          <span 
-                            className="text-xs font-bold text-white ml-0.5 cursor-pointer hover:text-brand-400 transition-colors flex items-center gap-1 group/title truncate"
-                            onClick={(e) => renameGroup(group.id, e)}
-                          >
-                            {group.symbol && (
-                              <span className="text-amber-400 font-mono text-[10px] px-1 py-0.1 rounded bg-amber-950/60 border border-amber-800/80">
-                                {group.symbol}
-                              </span>
-                            )}
-                            <span className="truncate">{group.name}</span>
-                            <Edit2 size={9} className="opacity-0 group-hover/title:opacity-100 shrink-0" />
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <span className="text-[10px] text-slate-300 bg-slate-700/80 px-1.5 py-0.5 rounded font-mono font-bold">
-                            {assignedUnits.length} Matches
-                          </span>
-                          <button
-                            onClick={(e) => deleteGroup(group.id, e)}
-                            className="p-0.5 text-slate-400 hover:text-red-400"
-                            title="Delete group"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="p-2.5 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] uppercase text-slate-500 font-bold">
-                            Conditions API
-                          </span>
-                          <button
-                            onClick={() => addRuleToGroup(group.id)}
-                            className="text-[9.5px] uppercase font-bold text-brand-400 hover:text-brand-300 flex items-center gap-0.5"
-                          >
-                            <Plus size={11} /> Add Rule
-                          </button>
-                        </div>
-
-                        {(!group.rules || group.rules.length === 0) && (
-                          <div className="text-[11px] text-slate-500 italic">
-                            No rules defined. Add a rule to dynamically assign units.
-                          </div>
-                        )}
-
-                        {group.rules &&
-                          group.rules.map((rule, idx) => (
-                            <div
-                              key={idx}
-                              className="flex items-center gap-1.5 bg-slate-950 p-1.5 rounded-md border border-slate-800"
-                            >
-                              <select
-                                className="bg-slate-900 text-slate-300 text-xs outline-none w-2/5 flex-shrink-0 px-1.5 py-0.5 rounded border border-slate-700"
-                                value={normalizeRuleField(rule.field)}
-                                onChange={(e) =>
-                                  updateRule(
-                                    group.id,
-                                    idx,
-                                    "field",
-                                    e.target.value,
-                                  )
-                                }
-                              >
-                                <optgroup label="Metrics">
-                                  <option value="sales">Sales</option>
-                                  <option value="salesByCp">Sales by CP</option>
-                                  <option value="salesByHcmcate">Sales by HCMcate</option>
-                                  <option value="margin">Margin</option>
-                                  <option value="marginByCp">Margin by CP</option>
-                                  <option value="profit">Profit</option>
-                                  <option value="profitByCp">Profit by CP</option>
-                                  <option value="profitByHcmcate">Profit by HCMcate</option>
-                                  <option value="hcmSalesEffi">HCM Sales Effi</option>
-                                  <option value="hcmMargin">HCM Margin</option>
-                                </optgroup>
-                                <optgroup label="Attributes">
-                                  <option value="unit">Unit</option>
-                                  <option value="year">Year</option>
-                                  <option value="size">Size (m²)</option>
-                                  <option value="floor">Floor</option>
-                                  <option value="classCode">Class Code</option>
-                                  <option value="vendorCode">Vendor Code</option>
-                                  <option value="brandCode">Brand Code</option>
-                                  <option value="brandName">Brand Name</option>
-                                  <option value="mdStatus">MD Status</option>
-                                  <option value="mdNotes">MD Notes</option>
-                                  <option value="task">Task</option>
-                                  <option value="projectStatus">Project Status</option>
-                                  <option value="actStatus">Act: Status</option>
-                                  <option value="startDate">Start Date</option>
-                                  <option value="endDate">End Date</option>
-                                  <option value="status">Status</option>
-                                  <option value="shopType">Shop Type</option>
-                                </optgroup>
-                                <optgroup label="App Data (Real-time)">
-                                  <option value="appTask">App: Task Summarize (Real-time)</option>
-                                  <option value="appProjectStatus">App: Status</option>
-                                  <option value="appProjectMdStatus">App: MD Status</option>
-                                  <option value="appProjectActStatus">App: Act Status</option>
-                                  <option value="appProjectDetail">App: Detail (Project)</option>
-                                  <option value="appProjectDescription">App: Description (Project)</option>
-                                  <option value="appProjectParty">App: Party</option>
-                                  <option value="appProjectBudget">App: Budget</option>
-                                  <option value="appProjectActual">App: Actual</option>
-                                  <option value="appProjectSizeM2">App: Size (m²)</option>
-                                  <option value="appProjectShopType">App: Shop Type</option>
-                                  <option value="appProjectCode">App: Project Code</option>
-                                  <option value="appProjectYear">App: Year</option>
-                                </optgroup>
-                              </select>
-
-                              <select
-                                className="bg-slate-900 text-slate-300 text-xs px-1.5 py-0.5 rounded border border-slate-700 outline-none shrink-0"
-                                value={rule.operator}
-                                onChange={(e) =>
-                                  updateRule(
-                                    group.id,
-                                    idx,
-                                    "operator",
-                                    e.target.value,
-                                  )
-                                }
-                              >
-                                <option value=">">&gt;</option>
-                                <option value="<">&lt;</option>
-                                <option value=">=">&gt;=</option>
-                                <option value="<=">&lt;=</option>
-                                <option value="=">=</option>
-                                <option value="contains">Contains</option>
-                                <option value="or">OR</option>
-                                <option value="exclude">Exclude</option>
-                              </select>
-
-                              <DebouncedRuleValueInput
-                                className="bg-transparent text-slate-200 text-xs flex-1 min-w-0 outline-none border-b border-slate-700 focus:border-brand-500 px-1 py-0.5"
-                                value={rule.value}
-                                onCommit={(val) =>
-                                  updateRule(
-                                    group.id,
-                                    idx,
-                                    "value",
-                                    val,
-                                  )
-                                }
-                                placeholder="Value..."
-                              />
-
-                              <button
-                                onClick={() => deleteRule(group.id, idx)}
-                                className="text-slate-500 hover:text-red-400 p-0.5 shrink-0"
-                              >
-                                <X size={12} />
-                              </button>
-                            </div>
-                          ))}
-
-                        {group.rules &&
-                          group.rules.length > 0 &&
-                          assignedUnits.length > 0 && (
-                            <div className="pt-1.5 mt-1 border-t border-slate-800/50">
-                              <span className="text-[9px] uppercase text-slate-500 font-bold mb-1 block">
-                                Matched Units ({assignedUnits.length})
-                              </span>
-                              <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto custom-scrollbar">
-                                {assignedUnits.map((uid) => {
-                                  const u = unitLookupMap.get(uid) || unitLookupMap.get(uid.toLowerCase());
-                                  return u ? (
-                                    <div
-                                      key={uid}
-                                      className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 flex items-center gap-1"
-                                    >
-                                      {u.location && (
-                                        <span className="text-[8px] px-1 py-0.1 rounded bg-purple-950/80 text-purple-300 font-bold border border-purple-800/40">
-                                          {u.location}
-                                        </span>
-                                      )}
-                                      <span className="font-semibold">{u.name}</span>
-                                    </div>
-                                  ) : (
-                                    <div
-                                      key={uid}
-                                      className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 flex items-center gap-1"
-                                    >
-                                      <span className="font-semibold">{uid}</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                      </div>
-                    </div>
+                      group={group}
+                      matchedUnits={assignedUnits}
+                      onUpdateGroupColor={updateGroupColor}
+                      onUpdateGroupOpacity={updateGroupOpacity}
+                      onUpdateGroupHatchPattern={updateGroupHatchPattern}
+                      onUpdateGroupSymbol={updateGroupSymbol}
+                      onRenameGroup={renameGroup}
+                      onDeleteGroup={deleteGroup}
+                      onAddRule={addRuleToGroup}
+                      onUpdateRule={updateRule}
+                      onDeleteRule={deleteRule}
+                    />
                   );
                 })}
               </div>
@@ -71044,6 +70775,7 @@ import { useDynamicUnitSummary } from '../../lib/dynamicSummaryEngine';
 import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
 import { DebouncedSearchInput } from '../../../DebouncedSearchInput';
 import { getUnitEffectiveSizeM2, syncUnitSizeToMatchedProjects } from '../../../../lib/unitSizeResolver';
+import { EditTabInspector } from './EditTabParts/EditTabInspector';
 
 import { extractR2Key, resolveR2UrlToHttp } from '../../lib/r2Upload';
 import { deleteR2StorageFiles } from '../../../../lib/r2StorageUtils';
@@ -72019,7 +71751,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
         curStage.scale({ x: newScale, y: newScale });
         curStage.position(newPos);
-        curStage.getLayers().forEach((l: any) => l.drawScene());
+        curStage.batchDraw();
 
         if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
         wheelSyncTimerRef.current = setTimeout(() => {
@@ -72078,7 +71810,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
         x: localCenter.x - pointTo.x * newScale + dx,
         y: localCenter.y - pointTo.y * newScale + dy,
       });
-      st.getLayers().forEach((l: any) => l.drawScene());
+      st.batchDraw();
 
       pinchDistRef.current = dist;
       pinchCenterRef.current = newCenter;
@@ -73058,292 +72790,25 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       </div>
 
       {/* Settings / Inspector - Ultra Compact Width */}
-      <div className={cn(
-        "flex flex-col bg-slate-900/90 rounded-lg border border-slate-800/80 transition-all duration-300 relative shrink-0 overflow-hidden",
-        isInspectorCollapsed ? "w-7 p-1 items-center" : "w-44 sm:w-48 p-1.5 gap-1.5 glass"
-      )}>
-        {/* Toggle Collapse Button */}
-        <button 
-          onClick={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
-          className={cn(
-            "p-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
-            isInspectorCollapsed ? "w-5 h-5 flex items-center justify-center my-0.5" : "absolute right-1.5 top-1.5 z-30 border border-slate-700 bg-slate-900"
-          )}
-          title={isInspectorCollapsed ? "Mở rộng Inspector" : "Thu gọn Inspector để mở rộng Canvas"}
-        >
-          {isInspectorCollapsed ? <ChevronLeft size={11} className="rotate-180" /> : <ChevronRight size={11} />}
-        </button>
-
-        {isInspectorCollapsed ? (
-          <div className="flex flex-col items-center gap-2 mt-3 text-slate-400">
-            <span className="text-[8px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
-              INSPECTOR ({units.length})
-            </span>
-          </div>
-        ) : (
-          <div className="flex flex-col h-full overflow-hidden w-full gap-1.5">
-            <div className="space-y-1 border-b border-slate-800 pb-1.5">
-                <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-widest flex items-center justify-between pr-6">
-                  <span>Inspector</span>
-                  <span className="text-[8.5px] font-normal text-slate-500 font-mono">{units.length} units</span>
-                </h4>
-                <div className="relative">
-                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 z-10 pointer-events-none" size={11} />
-                    <DebouncedSearchInput 
-                      placeholder="Search units..."
-                      className="w-full bg-slate-950 border border-slate-800 rounded pl-6 py-0.5 text-[10px] text-slate-200 outline-none focus:border-brand-500 transition-all"
-                      value={librarySearchTerm}
-                      onChange={(val) => setLibrarySearchTerm(val)}
-                      debounceMs={250}
-                    />
-                </div>
-            </div>
-        
-        {selectedId ? (
-            <div className="space-y-2.5">
-                <div className="grid grid-cols-12 gap-1.5 items-end">
-                    <div className="col-span-8 space-y-0.5">
-                        <label className="text-[9px] uppercase text-slate-500 font-bold block">Unit Name</label>
-                        <SearchableSelect 
-                            value={selectedUnit?.name || ''}
-                            onChange={(val) => {
-                                const defaultExcelSize = summaryMap.get(val)?.size;
-                                const updatedUnits = units.map(u => {
-                                    if (u.id !== selectedId) return u;
-                                    const inheritedSize = getUnitEffectiveSizeM2(
-                                        { ...u, name: val },
-                                        activeVersion,
-                                        defaultExcelSize
-                                    );
-                                    const nextSize = (u.sizeM2 !== undefined && u.sizeM2 > 0)
-                                        ? u.sizeM2
-                                        : (inheritedSize > 0 ? inheritedSize : u.sizeM2);
-                                    return {
-                                        ...u,
-                                        name: val,
-                                        ...(nextSize !== undefined ? { sizeM2: nextSize, size: nextSize } : {}),
-                                    };
-                                });
-                                handleSetUnitsWithHistory(updatedUnits);
-                                syncUnitSizeToMatchedProjects({
-                                    unitId: selectedId,
-                                    unitName: val,
-                                    store: activeVersion?.store,
-                                    location: activeVersion?.location,
-                                    year: activeVersion?.year || effectiveYear,
-                                    updatedUnits,
-                                    activeVersionId,
-                                });
-                            }}
-                            options={masterUnitOptions}
-                        />
-                    </div>
-                    <div className="col-span-4 space-y-0.5">
-                        <label className="text-[9px] uppercase text-slate-500 font-bold block">Size (m²)</label>
-                        <UnitSizeInput
-                            unitId={selectedId}
-                            effectiveSize={getUnitEffectiveSizeM2(
-                                selectedUnit,
-                                activeVersion,
-                                selectedUnit?.name ? summaryMap.get(selectedUnit.name)?.size : undefined
-                            )}
-                            onCommit={(numVal) => {
-                                const updatedUnits = units.map(u =>
-                                    u.id === selectedId ? { ...u, sizeM2: numVal, size: numVal } : u
-                                );
-                                handleSetUnitsWithHistory(updatedUnits);
-                                if (activeVersionId && selectedUnit) {
-                                    const uNameKey = String(selectedUnit.name || '').trim().toUpperCase();
-                                    const updatedVersions = versions.map(v => {
-                                        if (v.id !== activeVersionId) return v;
-                                        const nextUnitSizes = { ...(v.unitSizes || {}) };
-                                        if (numVal !== undefined && numVal > 0) {
-                                            nextUnitSizes[selectedUnit.id] = numVal;
-                                            if (uNameKey) nextUnitSizes[uNameKey] = numVal;
-                                        } else {
-                                            delete nextUnitSizes[selectedUnit.id];
-                                            if (uNameKey) delete nextUnitSizes[uNameKey];
-                                        }
-                                        return {
-                                            ...v,
-                                            unitSizes: nextUnitSizes,
-                                            ...(Array.isArray(v.mapUnits) && v.mapUnits.length > 0
-                                                ? {
-                                                    mapUnits: v.mapUnits.map(vu =>
-                                                        (vu.id === selectedUnit.id || (uNameKey && String(vu.name || '').trim().toUpperCase() === uNameKey))
-                                                            ? { ...vu, sizeM2: numVal, size: numVal }
-                                                            : vu
-                                                    )
-                                                }
-                                                : {}),
-                                        };
-                                    });
-                                    setVersions(updatedVersions);
-                                    syncUnitSizeToMatchedProjects({
-                                        unitId: selectedUnit.id,
-                                        unitName: selectedUnit.name,
-                                        store: activeVersion?.store,
-                                        location: activeVersion?.location,
-                                        year: activeVersion?.year || effectiveYear,
-                                        updatedUnits,
-                                        updatedVersions,
-                                        activeVersionId,
-                                    });
-                                } else if (selectedUnit) {
-                                    syncUnitSizeToMatchedProjects({
-                                        unitId: selectedUnit.id,
-                                        unitName: selectedUnit.name,
-                                        store: activeVersion?.store,
-                                        location: activeVersion?.location,
-                                        year: activeVersion?.year || effectiveYear,
-                                        updatedUnits,
-                                        activeVersionId,
-                                    });
-                                }
-                            }}
-                        />
-                    </div>
-                </div>
-
-                <div className="flex items-center justify-between bg-slate-950 p-2 rounded-lg border border-slate-800">
-                    <div className="flex items-center gap-1.5">
-                        <div className={cn(
-                            "p-1.5 rounded-md",
-                            selectedUnit?.locked ? "bg-amber-500/10 text-amber-500" : "bg-slate-800 text-slate-400"
-                        )}>
-                            {selectedUnit?.locked ? <Lock size={13} /> : <Unlock size={13} />}
-                        </div>
-                        <span className="text-[10px] font-bold text-slate-300 uppercase">Lock Position</span>
-                    </div>
-                    <button
-                        onClick={() => {
-                            handleSetUnitsWithHistory(units.map(u => u.id === selectedId ? { ...u, locked: !u.locked } : u));
-                        }}
-                        className={cn(
-                            "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
-                            selectedUnit?.locked ? "bg-amber-500" : "bg-slate-700"
-                        )}
-                    >
-                        <span
-                            className={cn(
-                                "inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform",
-                                selectedUnit?.locked ? "translate-x-4.5" : "translate-x-1"
-                            )}
-                        />
-                    </button>
-                </div>
-            </div>
-        ) : (
-            <div className="text-center py-3 text-slate-500 text-xs italic">
-                Select a unit to edit properties
-            </div>
-        )}
-
-        <div className="mt-1 border-t border-slate-800 pt-1.5 flex-1 overflow-y-auto custom-scrollbar">
-            <div className="flex items-center justify-between mb-1">
-                <h4 className="text-[9px] font-bold text-slate-300 uppercase tracking-wider">Library ({filteredUnits.length}/{units.length})</h4>
-                <div className="flex items-center gap-1">
-                    <button 
-                        onClick={handleToggleAllVisibility}
-                        disabled={filteredUnits.length === 0 || !filteredUnits.some(u => !u.locked)}
-                        className="text-[8px] font-bold text-brand-400 hover:text-brand-300 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
-                        title="Toggle Visibility for Unlocked Filtered Units"
-                    >
-                        <Eye size={8} /> All
-                    </button>
-                    <button 
-                        onClick={handleToggleAllLock}
-                        disabled={filteredUnits.length === 0}
-                        className="text-[8px] font-bold text-amber-500 hover:text-amber-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
-                        title="Toggle Lock for Filtered Units"
-                    >
-                        {filteredUnits.length > 0 && filteredUnits.every(u => u.locked) ? <Unlock size={8} /> : <Lock size={8} />} All
-                    </button>
-                    <button 
-                        onClick={handleDeleteAll}
-                        disabled={filteredUnits.length === 0 || !filteredUnits.some(u => !u.locked)}
-                        className="text-[8px] font-bold text-red-500 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
-                        title="Delete All Unlocked Filtered Units"
-                    >
-                        <Trash2 size={8} /> All
-                    </button>
-                </div>
-            </div>
-            <div className="space-y-0.5">
-                {filteredUnits.length > 0 ? filteredUnits.map(unit => (
-                    <div 
-                        key={unit.id}
-                        className={cn(
-                            "flex items-center justify-between px-1.5 py-0.5 rounded border text-[10px] cursor-pointer transition-colors",
-                            selectedId === unit.id ? "bg-brand-900/20 border-brand-500/50 text-brand-300" : "bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800"
-                        )}
-                        onClick={() => {
-                            try {
-                                setActiveTool('select');
-                                setSelectedId(unit.id);
-                            } catch (err) {
-                                console.error("Defensive Check: Error selecting unit from library:", err, unit);
-                            }
-                        }}
-                    >
-                        <div className="flex items-center gap-1 min-w-0">
-                            <span className="truncate max-w-[75px] font-medium">{unit.name}</span>
-                            {(() => {
-                                const uSize = getUnitEffectiveSizeM2(
-                                    unit,
-                                    activeVersion,
-                                    unit.name ? summaryMap.get(unit.name)?.size : undefined
-                                );
-                                return uSize > 0 ? (
-                                    <span className="px-1 py-0.1 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-mono font-bold shrink-0">
-                                        {uSize}m²
-                                    </span>
-                                ) : null;
-                            })()}
-                        </div>
-                        <div className="flex items-center gap-0.5">
-                             <button 
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (!unit.locked) {
-                                        handleSetUnitsWithHistory(units.map(u => u.id === unit.id ? { ...u, visible: !u.visible } : u));
-                                    }
-                                }}
-                                disabled={unit.locked}
-                                className={cn(
-                                    "p-0.5 rounded transition-colors",
-                                    unit.visible ? "text-brand-400 hover:bg-brand-500/10" : "text-slate-600 hover:bg-slate-700",
-                                    unit.locked && "opacity-30 cursor-not-allowed"
-                                )}
-                                title={unit.locked ? "Unlock to toggle visibility" : (unit.visible ? "Hide Unit" : "Show Unit")}
-                             >
-                                {unit.visible ? <Eye size={10} /> : <EyeOff size={10} />}
-                             </button>
-                             <button 
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleSetUnitsWithHistory(units.map(u => u.id === unit.id ? { ...u, locked: !u.locked } : u));
-                                }}
-                                className={cn(
-                                    "p-0.5 rounded transition-colors",
-                                    unit.locked ? "text-amber-500 hover:bg-amber-500/10" : "text-slate-500 hover:bg-slate-700"
-                                )}
-                             >
-                                {unit.locked ? <Lock size={10} /> : <Unlock size={10} />}
-                             </button>
-                             <div className="w-2 h-2 rounded-xs flex-shrink-0 ml-0.5" style={{ backgroundColor: (unit.fill && unit.fill !== 'rgba(0, 0, 0, 0.001)' && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0')) ? unit.fill : '#3b82f6' }} />
-                        </div>
-                    </div>
-                )) : (
-                    <div className="text-center py-2 text-slate-600 text-[10px] italic">
-                        No units match your search
-                    </div>
-                )}
-            </div>
-        </div>
-          </div>
-        )}
-      </div>
+      <EditTabInspector
+        units={units}
+        selectedId={selectedId}
+        setSelectedId={setSelectedId}
+        selectedUnit={selectedUnit}
+        activeVersion={activeVersion}
+        activeVersionId={activeVersionId}
+        versions={versions}
+        setVersions={setVersions}
+        effectiveYear={effectiveYear}
+        summaryMap={summaryMap}
+        masterUnitOptions={masterUnitOptions}
+        handleSetUnitsWithHistory={handleSetUnitsWithHistory}
+        syncUnitSizeToMatchedProjects={syncUnitSizeToMatchedProjects}
+        setActiveTool={setActiveTool}
+        handleToggleAllVisibility={handleToggleAllVisibility}
+        handleToggleAllLock={handleToggleAllLock}
+        handleDeleteAll={handleDeleteAll}
+      />
 
       {/* Unit Naming Modal Overlay */}
       {isNamingModalOpen && typeof document !== 'undefined' && createPortal(
@@ -106151,21 +105616,15 @@ export function useDetailPredecessorSync({
 
 
 /* === FILE: src/hooks/useDetailTaskReorder.ts === */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Project, Task, TakaDeltaItem } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { db, APP_ID, writeBatch } from '../lib/firebase';
 import { doc } from 'firebase/firestore';
 import { recordBatchDeltas } from '../lib/deltaSyncService';
-import { 
-  sortTasksByPredecessorsAndDates, 
-  updatePredecessorsStrings, 
-  healAllTasksPredecessors, 
-  reorderAndCalculateTasks,
-  buildTaskNoMap,
-  getPredecessorCodeUpdates
-} from '../lib/ganttUtils';
+import { reorderAndCalculateTasks } from '../lib/ganttUtils';
 import { reorderTasksStateUnified } from '../lib/taskStateService';
+import { executeSortSubTasks, executeMoveTask } from '../components/DetailTabParts/detailTaskMoveService';
 
 interface UseDetailTaskReorderParams {
   tasks: Task[];
@@ -106189,7 +105648,7 @@ export function useDetailTaskReorder({
     [tasks]
   );
 
-  // Refs to keep drag callbacks 100% referentially stable and prevent stale closures across memoized DetailTaskRows
+  // Stable refs for 0ms callbacks and prevent stale closures
   const realTasksRef = useRef(realTasks);
   realTasksRef.current = realTasks;
 
@@ -106208,6 +105667,8 @@ export function useDetailTaskReorder({
   const dropPositionRef = useRef<'before' | 'after' | null>(dropPosition);
   dropPositionRef.current = dropPosition;
 
+  const dragOverRafRef = useRef<number | null>(null);
+
   const draggingTaskNames = useMemo(() => {
     if (draggingTaskIds.length === 0) return '';
     const dragSet = new Set(draggingTaskIds);
@@ -106215,232 +105676,11 @@ export function useDetailTaskReorder({
   }, [draggingTaskIds, realTasks]);
 
   const handleSortSubTasks = useCallback(async (p: Project, groupTasks: Task[]) => {
-    try {
-      const currentRealTasks = realTasksRef.current;
-      const currentProjects = projectsRef.current;
-      const realGroupTasks = groupTasks.filter(
-        (gt) => gt && !(gt as any)._isVirtualSummary && !String(gt.id || '').startsWith('ts_')
-      );
-      if (realGroupTasks.length === 0) return;
-
-      const pCodeLower = String(p.code || '').trim().toLowerCase();
-      const isTaskInScope = (t: Task) => {
-        if (!t || t.isDeleted) return false;
-        if (p.id && t.projectId === p.id) return true;
-        if (String(t.projectCode || '').trim().toLowerCase() === pCodeLower) return true;
-        if (pCodeLower && t.predecessor && t.predecessor.toLowerCase().includes(pCodeLower)) return true;
-        return false;
-      };
-
-      const scopedOldTasks = currentRealTasks.filter(isTaskInScope);
-      const scopedProjects = [p];
-      const oldTaskNoMap = buildTaskNoMap(scopedProjects, scopedOldTasks);
-      const sorted = sortTasksByPredecessorsAndDates(realGroupTasks, scopedProjects, scopedOldTasks);
-
-      const batch = writeBatch(db);
-      const updatesPerTask = new Map<string, any>();
-      const now = new Date().toISOString();
-      const groupTaskById = new Map(realGroupTasks.map(gt => [gt.id, gt]));
-
-      sorted.forEach((t, index) => {
-        const newCode = `${p.code}#${index + 1}`;
-        const origTask = groupTaskById.get(t.id) || t;
-        const parentChanged = t.parentTaskId !== origTask.parentTaskId;
-        if (t.orderIndex !== index || t.taskCodePhu !== newCode || parentChanged) {
-          updatesPerTask.set(t.id, { 
-            orderIndex: index, 
-            taskCodePhu: newCode,
-            ...(t.parentTaskId ? { parentTaskId: t.parentTaskId } : {}),
-            updatedAt: now 
-          });
-        }
-      });
-
-      const scopedUpdatedTasks = scopedOldTasks.map(t => {
-        const up = updatesPerTask.get(t.id);
-        return up ? { ...t, ...up } : t;
-      });
-
-      const newTaskNoMap = buildTaskNoMap(scopedProjects, scopedUpdatedTasks);
-      const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, scopedProjects, scopedUpdatedTasks);
-
-      const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, scopedUpdatedTasks, scopedProjects, oldTaskNoMap);
-      let scopedFinalTasks = scopedUpdatedTasks;
-      if (predUpdates.length > 0) {
-        const predMap = new Map(predUpdates.map(pu => [pu.id, pu]));
-        predUpdates.forEach(pu => {
-          const existingUpdates = updatesPerTask.get(pu.id) || {};
-          updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
-        });
-        scopedFinalTasks = scopedUpdatedTasks.map(t => {
-          const pu = predMap.get(t.id);
-          return pu ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t;
-        });
-      }
-
-      // Heal any remaining legacy or out-of-sync predecessors within scoped tasks
-      const healed = healAllTasksPredecessors(scopedFinalTasks, currentProjects);
-      if (healed.changedCount > 0) {
-        scopedFinalTasks = healed.updatedTasks;
-        healed.updatesToSave.forEach(u => {
-          const existingUpdates = updatesPerTask.get(u.id) || {};
-          updatesPerTask.set(u.id, {
-            ...existingUpdates,
-            ...(u.predecessor !== undefined ? { predecessor: u.predecessor } : {}),
-            ...(u.taskCodePhu !== undefined ? { taskCodePhu: u.taskCodePhu } : {}),
-            updatedAt: u.updatedAt,
-          });
-        });
-      }
-
-      const scopedFinalById = new Map(scopedFinalTasks.map(t => [t.id, t]));
-      const allUpdatedTasks = currentRealTasks.map(t => scopedFinalById.get(t.id) || t);
-
-      // Optimistic UI update in Zustand & sync project dates immediately (0ms)
-      reorderTasksStateUnified(allUpdatedTasks, { affectedProjectIds: [p.id] });
-
-      setTimeout(() => {
-        try {
-          updatesPerTask.forEach((updates, taskId) => {
-            const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
-            batch.set(tRef, updates, { merge: true });
-          });
-          batch.commit().catch(e => console.error("Batch commit failed", e));
-          const deltaItems: TakaDeltaItem[] = Array.from(updatesPerTask.entries()).map(([taskId, patch]) => ({
-            docId: taskId,
-            collectionName: 'taka_tasks',
-            action: 'update',
-            isPatch: true,
-            data: patch,
-            year: p.year ? String(p.year) : undefined,
-          }));
-          recordBatchDeltas(deltaItems, useAppStore.getState().currentUser?.email || 'reorder_tasks').catch(() => {});
-        } catch (error: any) {
-          console.error("Batch commit failed", error);
-          useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-        }
-      }, 0);
-
-      useAppStore.getState().setToast({
-        title: "Sắp xếp thành công",
-        message: "Đã đánh lại số thứ tự và tự động điền lại Predecessor theo Task code mới.",
-        type: "success"
-      });
-    } catch (error) {
-      console.error(error);
-    }
+    await executeSortSubTasks(p, groupTasks, realTasksRef.current, projectsRef.current);
   }, []);
 
   const handleMoveTask = useCallback(async (p: Project, groupTasks: Task[], index: number, direction: 'up' | 'down') => {
-    if ((direction === 'up' && index === 0) || (direction === 'down' && index === groupTasks.length - 1)) return;
-
-    try {
-      const currentRealTasks = realTasksRef.current;
-      const currentProjects = projectsRef.current;
-      const realGroupTasks = groupTasks.filter(
-        (gt) => gt && !(gt as any)._isVirtualSummary && !String(gt.id || '').startsWith('ts_')
-      );
-      if (realGroupTasks.length === 0) return;
-
-      const pCodeLower = String(p.code || '').trim().toLowerCase();
-      const isTaskInScope = (t: Task) => {
-        if (!t || t.isDeleted) return false;
-        if (p.id && t.projectId === p.id) return true;
-        if (String(t.projectCode || '').trim().toLowerCase() === pCodeLower) return true;
-        if (pCodeLower && t.predecessor && t.predecessor.toLowerCase().includes(pCodeLower)) return true;
-        return false;
-      };
-
-      const scopedOldTasks = currentRealTasks.filter(isTaskInScope);
-      const scopedProjects = [p];
-      const oldTaskNoMap = buildTaskNoMap(scopedProjects, scopedOldTasks);
-      const sorted = [...realGroupTasks];
-      const targetIndex = direction === 'up' ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= sorted.length) return;
-      const [movedTask] = sorted.splice(index, 1);
-      sorted.splice(targetIndex, 0, movedTask);
-
-      const batch = writeBatch(db);
-      const updatesPerTask = new Map<string, any>();
-      const now = new Date().toISOString();
-
-      sorted.forEach((t, newIdx) => {
-        const newCode = `${p.code}#${newIdx + 1}`;
-        if (t.orderIndex !== newIdx || t.taskCodePhu !== newCode) {
-          updatesPerTask.set(t.id, { 
-            orderIndex: newIdx, 
-            taskCodePhu: newCode, 
-            updatedAt: now 
-          });
-        }
-      });
-
-      const scopedUpdatedTasks = scopedOldTasks.map(t => {
-        const up = updatesPerTask.get(t.id);
-        return up ? { ...t, ...up } : t;
-      });
-
-      const newTaskNoMap = buildTaskNoMap(scopedProjects, scopedUpdatedTasks);
-      const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, scopedProjects, scopedUpdatedTasks);
-
-      const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, scopedUpdatedTasks, scopedProjects, oldTaskNoMap);
-      let scopedFinalTasks = scopedUpdatedTasks;
-      if (predUpdates.length > 0) {
-        const predMap = new Map(predUpdates.map(pu => [pu.id, pu]));
-        predUpdates.forEach(pu => {
-          const existingUpdates = updatesPerTask.get(pu.id) || {};
-          updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
-        });
-        scopedFinalTasks = scopedUpdatedTasks.map(t => {
-          const pu = predMap.get(t.id);
-          return pu ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t;
-        });
-      }
-
-      const healed = healAllTasksPredecessors(scopedFinalTasks, currentProjects);
-      if (healed.changedCount > 0) {
-        scopedFinalTasks = healed.updatedTasks;
-        healed.updatesToSave.forEach(u => {
-          const existingUpdates = updatesPerTask.get(u.id) || {};
-          updatesPerTask.set(u.id, {
-            ...existingUpdates,
-            ...(u.predecessor !== undefined ? { predecessor: u.predecessor } : {}),
-            ...(u.taskCodePhu !== undefined ? { taskCodePhu: u.taskCodePhu } : {}),
-            updatedAt: u.updatedAt,
-          });
-        });
-      }
-
-      const scopedFinalById = new Map(scopedFinalTasks.map(t => [t.id, t]));
-      const allUpdatedTasks = currentRealTasks.map(t => scopedFinalById.get(t.id) || t);
-
-      // Optimistic UI update in Zustand & sync project dates immediately (0ms)
-      reorderTasksStateUnified(allUpdatedTasks, { affectedProjectIds: [p.id] });
-
-      setTimeout(() => {
-        try {
-          updatesPerTask.forEach((updates, taskId) => {
-            const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
-            batch.set(tRef, updates, { merge: true });
-          });
-          batch.commit().catch(e => console.error("Batch commit failed", e));
-          const deltaItems: TakaDeltaItem[] = Array.from(updatesPerTask.entries()).map(([taskId, patch]) => ({
-            docId: taskId,
-            collectionName: 'taka_tasks',
-            action: 'update',
-            isPatch: true,
-            data: patch,
-            year: p.year ? String(p.year) : undefined,
-          }));
-          recordBatchDeltas(deltaItems, useAppStore.getState().currentUser?.email || 'move_task').catch(() => {});
-        } catch (error: any) {
-          console.error("Batch commit failed", error);
-          useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-        }
-      }, 0);
-    } catch (error) {
-      console.error(error);
-    }
+    await executeMoveTask(p, groupTasks, index, direction, realTasksRef.current, projectsRef.current);
   }, []);
 
   const handleDetailTaskDragStart = useCallback((e: React.DragEvent, taskId: string) => {
@@ -106461,20 +105701,20 @@ export function useDetailTaskReorder({
     try {
       const cell = (e.currentTarget as HTMLElement).querySelector("td");
       if (cell) e.dataTransfer.setDragImage(cell, 10, 10);
-    } catch (err) {}
+    } catch {}
   }, []);
 
   const handleDetailTaskDragOver = useCallback((e: React.DragEvent, taskId: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     if (draggingTaskIdsRef.current.includes(taskId)) return;
+
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const relY = e.clientY - rect.top;
     const midY = rect.height / 2;
 
     let pos: 'before' | 'after';
     if (dragOverTaskIdRef.current === taskId && dropPositionRef.current) {
-      // 4px hysteresis band around row midpoint to prevent rapid before/after oscillation
       if (dropPositionRef.current === 'before' && relY <= midY + 4) {
         pos = 'before';
       } else if (dropPositionRef.current === 'after' && relY >= midY - 4) {
@@ -106489,8 +105729,13 @@ export function useDetailTaskReorder({
     if (dragOverTaskIdRef.current !== taskId || dropPositionRef.current !== pos) {
       dragOverTaskIdRef.current = taskId;
       dropPositionRef.current = pos;
-      setDragOverTaskId(taskId);
-      setDropPosition(pos);
+      if (dragOverRafRef.current === null) {
+        dragOverRafRef.current = requestAnimationFrame(() => {
+          dragOverRafRef.current = null;
+          setDragOverTaskId(dragOverTaskIdRef.current);
+          setDropPosition(dropPositionRef.current);
+        });
+      }
     }
   }, []);
 
@@ -106498,13 +105743,8 @@ export function useDetailTaskReorder({
     const currentRow = e.currentTarget as HTMLElement;
     const related = e.relatedTarget as HTMLElement | null;
     if (related) {
-      if (currentRow.contains(related)) {
-        return;
-      }
-      // If moving directly onto another task row, let that row's onDragOver update state atomically without a null flash
-      if (related.closest && related.closest('tr[data-task-item="true"]')) {
-        return;
-      }
+      if (currentRow.contains(related)) return;
+      if (related.closest && related.closest('tr[data-task-item="true"]')) return;
     }
     if (dragOverTaskIdRef.current === taskId) {
       dragOverTaskIdRef.current = null;
@@ -106515,20 +105755,27 @@ export function useDetailTaskReorder({
   }, []);
 
   const handleDetailTaskDragEnd = useCallback((_e: React.DragEvent) => {
+    if (dragOverRafRef.current !== null) {
+      cancelAnimationFrame(dragOverRafRef.current);
+      dragOverRafRef.current = null;
+    }
     draggingTaskIdsRef.current = [];
     dragOverTaskIdRef.current = null;
     dropPositionRef.current = null;
     setDraggingTaskIds([]);
     setDragOverTaskId(null);
     setDropPosition(null);
-    // Note: Do NOT remove 'draggable' attribute from <tr> here so continuous drag-and-drop works seamlessly!
   }, []);
 
   const handleDetailTaskDrop = useCallback(async (e: React.DragEvent, targetTask: Task, targetProject: Project) => {
     e.preventDefault();
-    e.stopPropagation();
+    if (dragOverRafRef.current !== null) {
+      cancelAnimationFrame(dragOverRafRef.current);
+      dragOverRafRef.current = null;
+    }
+
     let position = dropPositionRef.current;
-    if (!position && e.currentTarget) {
+    if (!position) {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
       position = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after';
     }
@@ -106592,10 +105839,12 @@ export function useDetailTaskReorder({
         }
       }
 
-      // 0ms Optimistic local state update in Zustand & sync only affected project dates immediately
+      // 0ms Optimistic local state update in Zustand
       reorderTasksStateUnified(result.allUpdatedTasks, {
         affectedProjectIds: Array.from(affectedProjectIdsSet),
       });
+
+      // Clear selection so newly positioned tasks don't drag unintended items next
       setSelectedTaskIds(new Set());
 
       // Background Firestore commit & delta broadcast
@@ -144461,6 +143710,8 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
   setLayoutPaintCategory: (layoutPaintCategory) => set({ layoutPaintCategory }),
   zoomableImageSrc: null,
   setZoomableImageSrc: (zoomableImageSrc) => set({ zoomableImageSrc }),
+  isDetailEditMode: false,
+  setIsDetailEditMode: (isDetailEditMode) => set({ isDetailEditMode }),
 });
 
 
@@ -144667,6 +143918,8 @@ export interface UISlice {
   setLayoutPaintCategory: (cat: string) => void;
   zoomableImageSrc: string | null;
   setZoomableImageSrc: (src: string | null) => void;
+  isDetailEditMode: boolean;
+  setIsDetailEditMode: (v: boolean) => void;
 }
 
 export interface LayoutTooltipVisibility {
@@ -145431,4 +144684,1152 @@ export interface TakaDelta {
   expireAt?: any;
 }
 
+/* === FILE: src/components/DetailTabParts/detailTaskMoveService.ts === */
+import { Project, Task, TakaDeltaItem } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { db, APP_ID, writeBatch } from '../../lib/firebase';
+import { doc } from 'firebase/firestore';
+import { recordBatchDeltas } from '../../lib/deltaSyncService';
+import { 
+  sortTasksByPredecessorsAndDates, 
+  updatePredecessorsStrings, 
+  healAllTasksPredecessors, 
+  buildTaskNoMap,
+  getPredecessorCodeUpdates
+} from '../../lib/ganttUtils';
+import { reorderTasksStateUnified } from '../../lib/taskStateService';
+
+export async function executeSortSubTasks(
+  p: Project,
+  groupTasks: Task[],
+  realTasks: Task[],
+  projects: Project[]
+): Promise<void> {
+  try {
+    const realGroupTasks = groupTasks.filter(
+      (gt) => gt && !(gt as any)._isVirtualSummary && !String(gt.id || '').startsWith('ts_')
+    );
+    if (realGroupTasks.length === 0) return;
+
+    const pCodeLower = String(p.code || '').trim().toLowerCase();
+    const isTaskInScope = (t: Task) => {
+      if (!t || t.isDeleted) return false;
+      if (p.id && t.projectId === p.id) return true;
+      if (String(t.projectCode || '').trim().toLowerCase() === pCodeLower) return true;
+      if (pCodeLower && t.predecessor && t.predecessor.toLowerCase().includes(pCodeLower)) return true;
+      return false;
+    };
+
+    const scopedOldTasks = realTasks.filter(isTaskInScope);
+    const scopedProjects = [p];
+    const oldTaskNoMap = buildTaskNoMap(scopedProjects, scopedOldTasks);
+    const sorted = sortTasksByPredecessorsAndDates(realGroupTasks, scopedProjects, scopedOldTasks);
+
+    const batch = writeBatch(db);
+    const updatesPerTask = new Map<string, any>();
+    const now = new Date().toISOString();
+    const groupTaskById = new Map(realGroupTasks.map(gt => [gt.id, gt]));
+
+    sorted.forEach((t, index) => {
+      const newCode = `${p.code}#${index + 1}`;
+      const origTask = groupTaskById.get(t.id) || t;
+      const parentChanged = t.parentTaskId !== origTask.parentTaskId;
+      if (t.orderIndex !== index || t.taskCodePhu !== newCode || parentChanged) {
+        updatesPerTask.set(t.id, { 
+          orderIndex: index, 
+          taskCodePhu: newCode,
+          ...(t.parentTaskId ? { parentTaskId: t.parentTaskId } : {}),
+          updatedAt: now 
+        });
+      }
+    });
+
+    const scopedUpdatedTasks = scopedOldTasks.map(t => {
+      const up = updatesPerTask.get(t.id);
+      return up ? { ...t, ...up } : t;
+    });
+
+    const newTaskNoMap = buildTaskNoMap(scopedProjects, scopedUpdatedTasks);
+    const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, scopedProjects, scopedUpdatedTasks);
+
+    const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, scopedUpdatedTasks, scopedProjects, oldTaskNoMap);
+    let scopedFinalTasks = scopedUpdatedTasks;
+    if (predUpdates.length > 0) {
+      const predMap = new Map(predUpdates.map(pu => [pu.id, pu]));
+      predUpdates.forEach(pu => {
+        const existingUpdates = updatesPerTask.get(pu.id) || {};
+        updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+      });
+      scopedFinalTasks = scopedUpdatedTasks.map(t => {
+        const pu = predMap.get(t.id);
+        return pu ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t;
+      });
+    }
+
+    const healed = healAllTasksPredecessors(scopedFinalTasks, projects);
+    if (healed.changedCount > 0) {
+      scopedFinalTasks = healed.updatedTasks;
+      healed.updatesToSave.forEach(u => {
+        const existingUpdates = updatesPerTask.get(u.id) || {};
+        updatesPerTask.set(u.id, {
+          ...existingUpdates,
+          ...(u.predecessor !== undefined ? { predecessor: u.predecessor } : {}),
+          ...(u.taskCodePhu !== undefined ? { taskCodePhu: u.taskCodePhu } : {}),
+          updatedAt: u.updatedAt,
+        });
+      });
+    }
+
+    const scopedFinalById = new Map(scopedFinalTasks.map(t => [t.id, t]));
+    const allUpdatedTasks = realTasks.map(t => scopedFinalById.get(t.id) || t);
+
+    // 0ms Optimistic UI update in Zustand
+    reorderTasksStateUnified(allUpdatedTasks, { affectedProjectIds: [p.id] });
+
+    setTimeout(() => {
+      try {
+        updatesPerTask.forEach((updates, taskId) => {
+          const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
+          batch.set(tRef, updates, { merge: true });
+        });
+        batch.commit().catch(e => console.error("Batch commit failed", e));
+        const deltaItems: TakaDeltaItem[] = Array.from(updatesPerTask.entries()).map(([taskId, patch]) => ({
+          docId: taskId,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          isPatch: true,
+          data: patch,
+          year: p.year ? String(p.year) : undefined,
+        }));
+        recordBatchDeltas(deltaItems, useAppStore.getState().currentUser?.email || 'reorder_tasks').catch(() => {});
+      } catch (error: any) {
+        console.error("Batch commit failed", error);
+        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+      }
+    }, 0);
+
+    useAppStore.getState().setToast({
+      title: "Sorted Successfully",
+      message: "Subtasks sorted and predecessors re-indexed.",
+      type: "success"
+    });
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+export async function executeMoveTask(
+  p: Project,
+  groupTasks: Task[],
+  index: number,
+  direction: 'up' | 'down',
+  realTasks: Task[],
+  projects: Project[]
+): Promise<void> {
+  if ((direction === 'up' && index === 0) || (direction === 'down' && index === groupTasks.length - 1)) return;
+
+  try {
+    const realGroupTasks = groupTasks.filter(
+      (gt) => gt && !(gt as any)._isVirtualSummary && !String(gt.id || '').startsWith('ts_')
+    );
+    if (realGroupTasks.length === 0) return;
+
+    const pCodeLower = String(p.code || '').trim().toLowerCase();
+    const isTaskInScope = (t: Task) => {
+      if (!t || t.isDeleted) return false;
+      if (p.id && t.projectId === p.id) return true;
+      if (String(t.projectCode || '').trim().toLowerCase() === pCodeLower) return true;
+      if (pCodeLower && t.predecessor && t.predecessor.toLowerCase().includes(pCodeLower)) return true;
+      return false;
+    };
+
+    const scopedOldTasks = realTasks.filter(isTaskInScope);
+    const scopedProjects = [p];
+    const oldTaskNoMap = buildTaskNoMap(scopedProjects, scopedOldTasks);
+    const sorted = [...realGroupTasks];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= sorted.length) return;
+    const [movedTask] = sorted.splice(index, 1);
+    sorted.splice(targetIndex, 0, movedTask);
+
+    const batch = writeBatch(db);
+    const updatesPerTask = new Map<string, any>();
+    const now = new Date().toISOString();
+
+    sorted.forEach((t, newIdx) => {
+      const newCode = `${p.code}#${newIdx + 1}`;
+      if (t.orderIndex !== newIdx || t.taskCodePhu !== newCode) {
+        updatesPerTask.set(t.id, { 
+          orderIndex: newIdx, 
+          taskCodePhu: newCode, 
+          updatedAt: now 
+        });
+      }
+    });
+
+    const scopedUpdatedTasks = scopedOldTasks.map(t => {
+      const up = updatesPerTask.get(t.id);
+      return up ? { ...t, ...up } : t;
+    });
+
+    const newTaskNoMap = buildTaskNoMap(scopedProjects, scopedUpdatedTasks);
+    const oldCodeToNewCode = getPredecessorCodeUpdates(oldTaskNoMap, newTaskNoMap, scopedProjects, scopedUpdatedTasks);
+
+    const predUpdates = updatePredecessorsStrings(oldCodeToNewCode, scopedUpdatedTasks, scopedProjects, oldTaskNoMap);
+    let scopedFinalTasks = scopedUpdatedTasks;
+    if (predUpdates.length > 0) {
+      const predMap = new Map(predUpdates.map(pu => [pu.id, pu]));
+      predUpdates.forEach(pu => {
+        const existingUpdates = updatesPerTask.get(pu.id) || {};
+        updatesPerTask.set(pu.id, { ...existingUpdates, predecessor: pu.predecessor, updatedAt: pu.updatedAt });
+      });
+      scopedFinalTasks = scopedUpdatedTasks.map(t => {
+        const pu = predMap.get(t.id);
+        return pu ? { ...t, predecessor: pu.predecessor, updatedAt: pu.updatedAt } : t;
+      });
+    }
+
+    const healed = healAllTasksPredecessors(scopedFinalTasks, projects);
+    if (healed.changedCount > 0) {
+      scopedFinalTasks = healed.updatedTasks;
+      healed.updatesToSave.forEach(u => {
+        const existingUpdates = updatesPerTask.get(u.id) || {};
+        updatesPerTask.set(u.id, {
+          ...existingUpdates,
+          ...(u.predecessor !== undefined ? { predecessor: u.predecessor } : {}),
+          ...(u.taskCodePhu !== undefined ? { taskCodePhu: u.taskCodePhu } : {}),
+          updatedAt: u.updatedAt,
+        });
+      });
+    }
+
+    const scopedFinalById = new Map(scopedFinalTasks.map(t => [t.id, t]));
+    const allUpdatedTasks = realTasks.map(t => scopedFinalById.get(t.id) || t);
+
+    // 0ms Optimistic UI update in Zustand
+    reorderTasksStateUnified(allUpdatedTasks, { affectedProjectIds: [p.id] });
+
+    setTimeout(() => {
+      try {
+        updatesPerTask.forEach((updates, taskId) => {
+          const tRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_tasks", taskId);
+          batch.set(tRef, updates, { merge: true });
+        });
+        batch.commit().catch(e => console.error("Batch commit failed", e));
+        const deltaItems: TakaDeltaItem[] = Array.from(updatesPerTask.entries()).map(([taskId, patch]) => ({
+          docId: taskId,
+          collectionName: 'taka_tasks',
+          action: 'update',
+          isPatch: true,
+          data: patch,
+          year: p.year ? String(p.year) : undefined,
+        }));
+        recordBatchDeltas(deltaItems, useAppStore.getState().currentUser?.email || 'move_task').catch(() => {});
+      } catch (error: any) {
+        console.error("Batch commit failed", error);
+        useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
+      }
+    }, 0);
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+/* === FILE: src/components/PictureMapping/components/DataMapping/EditTabParts/InspectorInputs.tsx === */
+import React, { memo, useState, useMemo, useEffect, useRef } from 'react';
+import { Plus } from 'lucide-react';
+
+export const SearchableSelect = memo(function SearchableSelect({ 
+  options, 
+  value, 
+  onChange 
+}: { 
+  options: { value: string; label: string }[]; 
+  value: string; 
+  onChange: (val: string) => void; 
+}) {
+  const [searchTerm, setSearchTerm] = useState(value || '');
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setSearchTerm(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredOptions = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    return options.filter(opt => 
+      (opt.label || '').toLowerCase().includes(term) || (opt.value || '').toLowerCase().includes(term)
+    );
+  }, [options, searchTerm]);
+
+  const handleCommit = (valToCommit?: string) => {
+    const finalVal = (valToCommit !== undefined ? valToCommit : searchTerm).trim();
+    if (finalVal !== value) {
+      onChange(finalVal);
+    }
+    setIsOpen(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleCommit();
+    }
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative w-full">
+      <div className="relative">
+        <input 
+          type="text"
+          className="w-full bg-slate-950 border border-slate-800 rounded pl-2 pr-6 py-1 text-[11px] text-slate-200 outline-none focus:border-brand-500 transition-colors font-medium"
+          value={searchTerm}
+          onChange={(e) => {
+            setSearchTerm(e.target.value);
+            setIsOpen(true);
+          }}
+          onBlur={() => handleCommit()}
+          onFocus={() => setIsOpen(true)}
+          onKeyDown={handleKeyDown}
+          placeholder="Enter unit..."
+        />
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsOpen(prev => !prev);
+          }}
+          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+      </div>
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl max-h-52 overflow-y-auto custom-scrollbar">
+          {searchTerm.trim() && !options.some(o => (o.value || '').toLowerCase() === searchTerm.trim().toLowerCase()) && (
+            <div 
+              className="px-2.5 py-1.5 text-xs cursor-pointer transition-colors bg-brand-600/10 text-brand-300 hover:bg-brand-600/20 border-b border-slate-800 flex items-center gap-1.5 font-medium"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleCommit(searchTerm.trim());
+              }}
+            >
+              <Plus size={12} className="text-brand-400 shrink-0" />
+              <span>Create unit: <span className="text-white font-bold">"{searchTerm.trim()}"</span></span>
+            </div>
+          )}
+          {filteredOptions.length === 0 && !searchTerm.trim() ? (
+            <div className="px-2 py-1.5 text-xs text-slate-500 text-center italic">No matching suggestions</div>
+          ) : (
+            filteredOptions.map(opt => (
+              <div 
+                key={opt.value}
+                className={`px-2 py-1 text-xs cursor-pointer transition-colors flex items-center justify-between ${value === opt.value ? 'bg-brand-600/30 text-brand-300 font-medium' : 'text-slate-300 hover:bg-slate-800'}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setSearchTerm(opt.value);
+                  handleCommit(opt.value);
+                }}
+              >
+                <span className="truncate">{opt.label}</span>
+                {opt.value === value && <span className="text-[9px] uppercase bg-white/20 px-1 py-0.2 rounded text-white">Selected</span>}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
+export const UnitSizeInput = memo(function UnitSizeInput({
+  unitId,
+  effectiveSize,
+  onCommit,
+}: {
+  unitId: string;
+  effectiveSize: number;
+  onCommit: (numVal: number | undefined) => void;
+}) {
+  const [localVal, setLocalVal] = useState<string>(effectiveSize > 0 ? String(effectiveSize) : '');
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+  const isFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isFocusedRef.current) {
+      setLocalVal(effectiveSize > 0 ? String(effectiveSize) : '');
+    }
+  }, [effectiveSize, unitId]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    setLocalVal(raw);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      const parsed = parseFloat(raw);
+      onCommitRef.current(isNaN(parsed) || parsed <= 0 ? undefined : parsed);
+    }, 350);
+  };
+
+  const handleBlur = () => {
+    isFocusedRef.current = false;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    const parsed = parseFloat(localVal);
+    onCommitRef.current(isNaN(parsed) || parsed <= 0 ? undefined : parsed);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur();
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      step="0.01"
+      min="0"
+      placeholder="m²"
+      value={localVal}
+      onFocus={() => { isFocusedRef.current = true; }}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-[11px] text-slate-200 outline-none focus:border-brand-500 transition-colors font-mono"
+    />
+  );
+});
+
+/* === FILE: src/components/PictureMapping/components/DataMapping/EditTabParts/EditTabInspector.tsx === */
+import React, { memo, useState, useMemo } from 'react';
+import { UnitShape, MapVersion } from '../types';
+import { cn } from '../../../lib/utils';
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  Search, 
+  Lock, 
+  Unlock, 
+  Eye, 
+  EyeOff, 
+  Trash2 
+} from 'lucide-react';
+import { getUnitEffectiveSizeM2 } from '../../../../../lib/unitSizeResolver';
+import { SearchableSelect, UnitSizeInput } from './InspectorInputs';
+
+export interface EditTabInspectorProps {
+  units: UnitShape[];
+  selectedId: string | null;
+  setSelectedId: (id: string | null) => void;
+  selectedUnit: UnitShape | undefined;
+  activeVersion: MapVersion | undefined;
+  activeVersionId: string | null;
+  versions: MapVersion[];
+  setVersions: (v: MapVersion[]) => void;
+  effectiveYear: string;
+  summaryMap: Map<string, any>;
+  masterUnitOptions: { value: string; label: string }[];
+  handleSetUnitsWithHistory: (newUnits: UnitShape[]) => void;
+  syncUnitSizeToMatchedProjects: (params: any) => void;
+  setActiveTool: (tool: any) => void;
+  handleToggleAllVisibility: () => void;
+  handleToggleAllLock: () => void;
+  handleDeleteAll: () => void;
+}
+
+export const EditTabInspector = memo(function EditTabInspector({
+  units,
+  selectedId,
+  setSelectedId,
+  selectedUnit,
+  activeVersion,
+  activeVersionId,
+  versions,
+  setVersions,
+  effectiveYear,
+  summaryMap,
+  masterUnitOptions,
+  handleSetUnitsWithHistory,
+  syncUnitSizeToMatchedProjects,
+  setActiveTool,
+  handleToggleAllVisibility,
+  handleToggleAllLock,
+  handleDeleteAll,
+}: EditTabInspectorProps) {
+  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false);
+  const [librarySearchTerm, setLibrarySearchTerm] = useState('');
+
+  const filteredUnits = useMemo(() => {
+    if (!librarySearchTerm.trim()) return units;
+    const term = librarySearchTerm.trim().toLowerCase();
+    return units.filter(u => (u.name || '').toLowerCase().includes(term));
+  }, [units, librarySearchTerm]);
+
+  return (
+    <div className={cn(
+      "flex flex-col bg-slate-900/90 rounded-lg border border-slate-800/80 transition-all duration-300 relative shrink-0 overflow-hidden",
+      isInspectorCollapsed ? "w-7 p-1 items-center" : "w-44 sm:w-48 p-1.5 gap-1.5 glass"
+    )}>
+      {/* Toggle Collapse Button */}
+      <button 
+        onClick={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
+        className={cn(
+          "p-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
+          isInspectorCollapsed ? "w-5 h-5 flex items-center justify-center my-0.5" : "absolute right-1.5 top-1.5 z-30 border border-slate-700 bg-slate-900"
+        )}
+        title={isInspectorCollapsed ? "Mở rộng Inspector" : "Thu gọn Inspector để mở rộng Canvas"}
+      >
+        {isInspectorCollapsed ? <ChevronLeft size={11} className="rotate-180" /> : <ChevronRight size={11} />}
+      </button>
+
+      {isInspectorCollapsed ? (
+        <div className="flex flex-col items-center gap-2 mt-3 text-slate-400">
+          <span className="text-[8px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
+            INSPECTOR ({units.length})
+          </span>
+        </div>
+      ) : (
+        <div className="flex flex-col h-full overflow-hidden w-full gap-1.5">
+          <div className="space-y-1 border-b border-slate-800 pb-1.5">
+            <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-widest flex items-center justify-between pr-6">
+              <span>Inspector</span>
+              <span className="text-[8.5px] font-normal text-slate-500 font-mono">{units.length} units</span>
+            </h4>
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 z-10 pointer-events-none" size={11} />
+              <input 
+                placeholder="Search units..."
+                className="w-full bg-slate-950 border border-slate-800 rounded pl-6 py-0.5 text-[10px] text-slate-200 outline-none focus:border-brand-500 transition-all"
+                value={librarySearchTerm}
+                onChange={(e) => setLibrarySearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+      
+          {selectedId ? (
+            <div className="space-y-2.5">
+              <div className="grid grid-cols-12 gap-1.5 items-end">
+                <div className="col-span-8 space-y-0.5">
+                  <label className="text-[9px] uppercase text-slate-500 font-bold block">Unit Name</label>
+                  <SearchableSelect 
+                    value={selectedUnit?.name || ''}
+                    onChange={(val) => {
+                      const defaultExcelSize = summaryMap.get(val)?.size;
+                      const updatedUnits = units.map(u => {
+                        if (u.id !== selectedId) return u;
+                        const inheritedSize = getUnitEffectiveSizeM2(
+                          { ...u, name: val },
+                          activeVersion,
+                          defaultExcelSize
+                        );
+                        const nextSize = (u.sizeM2 !== undefined && u.sizeM2 > 0)
+                          ? u.sizeM2
+                          : (inheritedSize > 0 ? inheritedSize : u.sizeM2);
+                        return {
+                          ...u,
+                          name: val,
+                          ...(nextSize !== undefined ? { sizeM2: nextSize, size: nextSize } : {}),
+                        };
+                      });
+                      handleSetUnitsWithHistory(updatedUnits);
+                      syncUnitSizeToMatchedProjects({
+                        unitId: selectedId,
+                        unitName: val,
+                        store: activeVersion?.store,
+                        location: activeVersion?.location,
+                        year: activeVersion?.year || effectiveYear,
+                        updatedUnits,
+                        activeVersionId,
+                      });
+                    }}
+                    options={masterUnitOptions}
+                  />
+                </div>
+                <div className="col-span-4 space-y-0.5">
+                  <label className="text-[9px] uppercase text-slate-500 font-bold block">Size (m²)</label>
+                  <UnitSizeInput
+                    unitId={selectedId}
+                    effectiveSize={getUnitEffectiveSizeM2(
+                      selectedUnit,
+                      activeVersion,
+                      selectedUnit?.name ? summaryMap.get(selectedUnit.name)?.size : undefined
+                    )}
+                    onCommit={(numVal) => {
+                      const updatedUnits = units.map(u =>
+                        u.id === selectedId ? { ...u, sizeM2: numVal, size: numVal } : u
+                      );
+                      handleSetUnitsWithHistory(updatedUnits);
+                      if (activeVersionId && selectedUnit) {
+                        const uNameKey = String(selectedUnit.name || '').trim().toUpperCase();
+                        const updatedVersions = versions.map(v => {
+                          if (v.id !== activeVersionId) return v;
+                          const nextUnitSizes = { ...(v.unitSizes || {}) };
+                          if (numVal !== undefined && numVal > 0) {
+                            nextUnitSizes[selectedUnit.id] = numVal;
+                            if (uNameKey) nextUnitSizes[uNameKey] = numVal;
+                          } else {
+                            delete nextUnitSizes[selectedUnit.id];
+                            if (uNameKey) delete nextUnitSizes[uNameKey];
+                          }
+                          return {
+                            ...v,
+                            unitSizes: nextUnitSizes,
+                            ...(Array.isArray(v.mapUnits) && v.mapUnits.length > 0
+                              ? {
+                                mapUnits: v.mapUnits.map(vu =>
+                                  (vu.id === selectedUnit.id || (uNameKey && String(vu.name || '').trim().toUpperCase() === uNameKey))
+                                    ? { ...vu, sizeM2: numVal, size: numVal }
+                                    : vu
+                                )
+                              }
+                              : {}),
+                          };
+                        });
+                        setVersions(updatedVersions);
+                        syncUnitSizeToMatchedProjects({
+                          unitId: selectedUnit.id,
+                          unitName: selectedUnit.name,
+                          store: activeVersion?.store,
+                          location: activeVersion?.location,
+                          year: activeVersion?.year || effectiveYear,
+                          updatedUnits,
+                          updatedVersions,
+                          activeVersionId,
+                        });
+                      } else if (selectedUnit) {
+                        syncUnitSizeToMatchedProjects({
+                          unitId: selectedUnit.id,
+                          unitName: selectedUnit.name,
+                          store: activeVersion?.store,
+                          location: activeVersion?.location,
+                          year: activeVersion?.year || effectiveYear,
+                          updatedUnits,
+                          activeVersionId,
+                        });
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between bg-slate-950 p-2 rounded-lg border border-slate-800">
+                <div className="flex items-center gap-1.5">
+                  <div className={cn(
+                    "p-1.5 rounded-md",
+                    selectedUnit?.locked ? "bg-amber-500/10 text-amber-500" : "bg-slate-800 text-slate-400"
+                  )}>
+                    {selectedUnit?.locked ? <Lock size={13} /> : <Unlock size={13} />}
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-300 uppercase">Lock Position</span>
+                </div>
+                <button
+                  onClick={() => {
+                    handleSetUnitsWithHistory(units.map(u => u.id === selectedId ? { ...u, locked: !u.locked } : u));
+                  }}
+                  className={cn(
+                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
+                    selectedUnit?.locked ? "bg-amber-500" : "bg-slate-700"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform",
+                      selectedUnit?.locked ? "translate-x-4.5" : "translate-x-1"
+                    )}
+                  />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-3 text-slate-500 text-xs italic">
+              Select a unit to edit properties
+            </div>
+          )}
+
+          <div className="mt-1 border-t border-slate-800 pt-1.5 flex-1 overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between mb-1">
+              <h4 className="text-[9px] font-bold text-slate-300 uppercase tracking-wider">Library ({filteredUnits.length}/{units.length})</h4>
+              <div className="flex items-center gap-1">
+                <button 
+                  onClick={handleToggleAllVisibility}
+                  disabled={filteredUnits.length === 0 || !filteredUnits.some(u => !u.locked)}
+                  className="text-[8px] font-bold text-brand-400 hover:text-brand-300 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
+                  title="Toggle Visibility for Unlocked Filtered Units"
+                >
+                  <Eye size={8} /> All
+                </button>
+                <button 
+                  onClick={handleToggleAllLock}
+                  disabled={filteredUnits.length === 0}
+                  className="text-[8px] font-bold text-amber-500 hover:text-amber-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
+                  title="Toggle Lock for Filtered Units"
+                >
+                  {filteredUnits.length > 0 && filteredUnits.every(u => u.locked) ? <Unlock size={8} /> : <Lock size={8} />} All
+                </button>
+                <button 
+                  onClick={handleDeleteAll}
+                  disabled={filteredUnits.length === 0 || !filteredUnits.some(u => !u.locked)}
+                  className="text-[8px] font-bold text-red-500 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
+                  title="Delete All Unlocked Filtered Units"
+                >
+                  <Trash2 size={8} /> All
+                </button>
+              </div>
+            </div>
+            <div className="space-y-0.5">
+              {filteredUnits.length > 0 ? filteredUnits.map(unit => (
+                <div 
+                  key={unit.id}
+                  className={cn(
+                    "flex items-center justify-between px-1.5 py-0.5 rounded border text-[10px] cursor-pointer transition-colors",
+                    selectedId === unit.id ? "bg-brand-900/20 border-brand-500/50 text-brand-300" : "bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800"
+                  )}
+                  onClick={() => {
+                    try {
+                      setActiveTool('select');
+                      setSelectedId(unit.id);
+                    } catch (err) {
+                      console.error("Error selecting unit:", err, unit);
+                    }
+                  }}
+                >
+                  <div className="flex items-center gap-1 min-w-0">
+                    <span className="truncate max-w-[75px] font-medium">{unit.name}</span>
+                    {(() => {
+                      const uSize = getUnitEffectiveSizeM2(
+                        unit,
+                        activeVersion,
+                        unit.name ? summaryMap.get(unit.name)?.size : undefined
+                      );
+                      return uSize > 0 ? (
+                        <span className="px-1 py-0.1 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-mono font-bold shrink-0">
+                          {uSize}m²
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!unit.locked) {
+                          handleSetUnitsWithHistory(units.map(u => u.id === unit.id ? { ...u, visible: !u.visible } : u));
+                        }
+                      }}
+                      disabled={unit.locked}
+                      className={cn(
+                        "p-0.5 rounded transition-colors",
+                        unit.visible ? "text-brand-400 hover:bg-brand-500/10" : "text-slate-600 hover:bg-slate-700",
+                        unit.locked && "opacity-30 cursor-not-allowed"
+                      )}
+                      title={unit.locked ? "Unlock to toggle visibility" : (unit.visible ? "Hide Unit" : "Show Unit")}
+                    >
+                      {unit.visible ? <Eye size={10} /> : <EyeOff size={10} />}
+                    </button>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSetUnitsWithHistory(units.map(u => u.id === unit.id ? { ...u, locked: !u.locked } : u));
+                      }}
+                      className={cn(
+                        "p-0.5 rounded transition-colors",
+                        unit.locked ? "text-amber-500 hover:bg-amber-500/10" : "text-slate-500 hover:bg-slate-700"
+                      )}
+                    >
+                      {unit.locked ? <Lock size={10} /> : <Unlock size={10} />}
+                    </button>
+                    <div className="w-2 h-2 rounded-xs flex-shrink-0 ml-0.5" style={{ backgroundColor: (unit.fill && unit.fill !== 'rgba(0, 0, 0, 0.001)' && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0')) ? unit.fill : '#3b82f6' }} />
+                  </div>
+                </div>
+              )) : (
+                <div className="text-center py-2 text-slate-600 text-[10px] italic">
+                  No units match your search
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+/* === FILE: src/components/PictureMapping/components/DataMapping/DynamicHierarchyParts/DynamicRuleRow.tsx === */
+import React, { memo, useState, useEffect, useRef } from 'react';
+import { GroupRule } from '../types';
+import { X } from 'lucide-react';
+
+export const normalizeRuleField = (f: string) => {
+  if (f === "appStatus" || f === "app: status") return "appProjectStatus";
+  if (f === "appTask" || f === "app: task" || f === "app: task summarize" || f === "app: task summaries" || f === "app: tasks" || f === "taskSummaries" || f === "taskSummarize") return "appTask";
+  if (f === "appYear" || f === "app: year") return "appProjectYear";
+  if (f === "appCode" || f === "app: project code") return "appProjectCode";
+  if (f === "appFloor" || f === "app: floor") return "appProjectFloor";
+  if (f === "appMdStatus" || f === "app: md status" || f === "app:md status") return "appProjectMdStatus";
+  if (f === "appActStatus" || f === "app: act status" || f === "app:act status") return "appProjectActStatus";
+  if (f === "appDetail" || f === "app: detail (project)") return "appProjectDetail";
+  if (f === "appDescription" || f === "app: description (project)" || f === "description (project)") return "appProjectDescription";
+  if (f === "appParty" || f === "app: party") return "appProjectParty";
+  if (f === "appBudget" || f === "app: budget") return "appProjectBudget";
+  if (f === "appActual" || f === "app: actual" || f === "app: act") return "appProjectActual";
+  if (f === "appSize" || f === "app: size" || f === "app: size (m2)" || f === "app: size (m²)") return "appProjectSizeM2";
+  if (f === "appShopType" || f === "app: shop type") return "appProjectShopType";
+  return f;
+};
+
+interface DynamicRuleRowProps {
+  groupId: string;
+  ruleIndex: number;
+  rule: GroupRule;
+  onUpdateRule: (groupId: string, ruleIndex: number, attr: keyof GroupRule, value: string) => void;
+  onDeleteRule: (groupId: string, ruleIndex: number) => void;
+}
+
+export const DynamicRuleRow = memo(function DynamicRuleRow({
+  groupId,
+  ruleIndex,
+  rule,
+  onUpdateRule,
+  onDeleteRule,
+}: DynamicRuleRowProps) {
+  const [localField, setLocalField] = useState(normalizeRuleField(rule.field));
+  const [localOp, setLocalOp] = useState(rule.operator);
+  const [localVal, setLocalVal] = useState(rule.value);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    setLocalField(normalizeRuleField(rule.field));
+  }, [rule.field]);
+
+  useEffect(() => {
+    setLocalOp(rule.operator);
+  }, [rule.operator]);
+
+  useEffect(() => {
+    setLocalVal(rule.value);
+  }, [rule.value]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleFieldChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setLocalField(val);
+    onUpdateRule(groupId, ruleIndex, 'field', val);
+  };
+
+  const handleOpChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = e.target.value;
+    setLocalOp(val);
+    onUpdateRule(groupId, ruleIndex, 'operator', val);
+  };
+
+  const handleValChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setLocalVal(val);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      onUpdateRule(groupId, ruleIndex, 'value', val);
+    }, 250);
+  };
+
+  const handleValBlur = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    onUpdateRule(groupId, ruleIndex, 'value', localVal);
+  };
+
+  const handleValKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.currentTarget.blur();
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 bg-slate-950 p-1.5 rounded-md border border-slate-800">
+      <select
+        className="bg-slate-900 text-slate-300 text-xs outline-none w-2/5 flex-shrink-0 px-1.5 py-0.5 rounded border border-slate-700 font-medium"
+        value={localField}
+        onChange={handleFieldChange}
+      >
+        <optgroup label="Metrics">
+          <option value="sales">Sales</option>
+          <option value="salesByCp">Sales by CP</option>
+          <option value="salesByHcmcate">Sales by HCMcate</option>
+          <option value="margin">Margin</option>
+          <option value="marginByCp">Margin by CP</option>
+          <option value="profit">Profit</option>
+          <option value="profitByCp">Profit by CP</option>
+          <option value="profitByHcmcate">Profit by HCMcate</option>
+          <option value="hcmSalesEffi">HCM Sales Effi</option>
+          <option value="hcmMargin">HCM Margin</option>
+        </optgroup>
+        <optgroup label="Attributes">
+          <option value="unit">Unit</option>
+          <option value="year">Year</option>
+          <option value="size">Size (m²)</option>
+          <option value="floor">Floor</option>
+          <option value="classCode">Class Code</option>
+          <option value="vendorCode">Vendor Code</option>
+          <option value="brandCode">Brand Code</option>
+          <option value="brandName">Brand Name</option>
+          <option value="mdStatus">MD Status</option>
+          <option value="mdNotes">MD Notes</option>
+          <option value="task">Task</option>
+          <option value="projectStatus">Project Status</option>
+          <option value="actStatus">Act: Status</option>
+          <option value="startDate">Start Date</option>
+          <option value="endDate">End Date</option>
+          <option value="status">Status</option>
+          <option value="shopType">Shop Type</option>
+        </optgroup>
+        <optgroup label="App Data (Real-time)">
+          <option value="appTask">App: Task Summarize (Real-time)</option>
+          <option value="appProjectStatus">App: Status</option>
+          <option value="appProjectMdStatus">App: MD Status</option>
+          <option value="appProjectActStatus">App: Act Status</option>
+          <option value="appProjectDetail">App: Detail (Project)</option>
+          <option value="appProjectDescription">App: Description (Project)</option>
+          <option value="appProjectParty">App: Party</option>
+          <option value="appProjectBudget">App: Budget</option>
+          <option value="appProjectActual">App: Actual</option>
+          <option value="appProjectSizeM2">App: Size (m²)</option>
+          <option value="appProjectShopType">App: Shop Type</option>
+          <option value="appProjectCode">App: Project Code</option>
+          <option value="appProjectYear">App: Year</option>
+        </optgroup>
+      </select>
+
+      <select
+        className="bg-slate-900 text-slate-300 text-xs px-1.5 py-0.5 rounded border border-slate-700 outline-none shrink-0"
+        value={localOp}
+        onChange={handleOpChange}
+      >
+        <option value=">">&gt;</option>
+        <option value="<">&lt;</option>
+        <option value=">=">&gt;=</option>
+        <option value="<=">&lt;=</option>
+        <option value="=">=</option>
+        <option value="contains">Contains</option>
+        <option value="or">OR</option>
+        <option value="exclude">Exclude</option>
+      </select>
+
+      <input
+        type="text"
+        className="bg-transparent text-slate-200 text-xs flex-1 min-w-0 outline-none border-b border-slate-700 focus:border-brand-500 px-1 py-0.5"
+        value={localVal}
+        onChange={handleValChange}
+        onBlur={handleValBlur}
+        onKeyDown={handleValKeyDown}
+        placeholder="Value..."
+      />
+
+      <button
+        onClick={() => onDeleteRule(groupId, ruleIndex)}
+        className="text-slate-500 hover:text-red-400 p-0.5 shrink-0 transition-colors"
+        title="Delete Rule"
+      >
+        <X size={12} />
+      </button>
+    </div>
+  );
+});
+
+/* === FILE: src/components/PictureMapping/components/DataMapping/DynamicHierarchyParts/DynamicGroupCard.tsx === */
+import React, { memo } from 'react';
+import { Group, GroupRule } from '../types';
+import { ColorPicker } from '../../ColorPicker';
+import { GroupHatchPatternPicker } from '../GroupHatchPatternPicker';
+import { GroupSymbolPicker } from '../GroupSymbolPicker';
+import { HatchPatternType, getHatchCssStyle } from '../../../../LayoutTabParts/layoutPatternUtils';
+import { DynamicRuleRow } from './DynamicRuleRow';
+import { Plus, Trash2, Edit2 } from 'lucide-react';
+
+interface DynamicGroupCardProps {
+  group: Group;
+  matchedUnits: string[];
+  totalAreaM2?: number;
+  onUpdateGroupColor: (groupId: string, color: string) => void;
+  onUpdateGroupOpacity: (groupId: string, opacity: number) => void;
+  onUpdateGroupHatchPattern: (groupId: string, pattern: HatchPatternType) => void;
+  onUpdateGroupSymbol: (groupId: string, symbol: string) => void;
+  onRenameGroup: (groupId: string, e: React.MouseEvent) => void;
+  onDeleteGroup: (groupId: string, e?: React.MouseEvent) => void;
+  onAddRule: (groupId: string) => void;
+  onUpdateRule: (groupId: string, ruleIndex: number, attr: keyof GroupRule, value: string) => void;
+  onDeleteRule: (groupId: string, ruleIndex: number) => void;
+}
+
+export const DynamicGroupCard = memo(function DynamicGroupCard({
+  group,
+  matchedUnits,
+  totalAreaM2,
+  onUpdateGroupColor,
+  onUpdateGroupOpacity,
+  onUpdateGroupHatchPattern,
+  onUpdateGroupSymbol,
+  onRenameGroup,
+  onDeleteGroup,
+  onAddRule,
+  onUpdateRule,
+  onDeleteRule,
+}: DynamicGroupCardProps) {
+  return (
+    <div className="border border-slate-700/80 rounded-lg overflow-hidden bg-slate-900/80 hover:border-brand-500/50 transition-colors">
+      <div className="px-2.5 py-1.5 bg-slate-800/90 border-b border-slate-700/80 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+          <div className="relative flex items-center justify-center shrink-0">
+            <ColorPicker
+              color={group.color}
+              onChange={(color) => onUpdateGroupColor(group.id, color)}
+              className="shrink-0"
+            />
+            {group.hatchPattern && group.hatchPattern !== 'none' && (
+              <span
+                className="absolute inset-0 rounded pointer-events-none"
+                style={getHatchCssStyle(group.color, group.hatchPattern)}
+              />
+            )}
+            {group.symbol && (
+              <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-white pointer-events-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
+                {group.symbol}
+              </span>
+            )}
+          </div>
+
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={group.opacity ?? 0.6}
+            title={`Opacity: ${group.opacity ?? 0.6}`}
+            onChange={(e) => onUpdateGroupOpacity(group.id, parseFloat(e.target.value))}
+            className="w-10 h-1 accent-brand-500 shrink-0 cursor-pointer"
+          />
+
+          <GroupHatchPatternPicker
+            color={group.color}
+            pattern={group.hatchPattern || 'none'}
+            onChange={(pat) => onUpdateGroupHatchPattern(group.id, pat)}
+          />
+
+          <GroupSymbolPicker
+            symbol={group.symbol || ''}
+            onChange={(sym) => onUpdateGroupSymbol(group.id, sym)}
+          />
+
+          <span 
+            className="text-xs font-bold text-white ml-0.5 cursor-pointer hover:text-brand-400 transition-colors flex items-center gap-1 group/title truncate"
+            onClick={(e) => onRenameGroup(group.id, e)}
+          >
+            {group.symbol && (
+              <span className="text-amber-400 font-mono text-[10px] px-1 py-0.1 rounded bg-amber-950/60 border border-amber-800/80">
+                {group.symbol}
+              </span>
+            )}
+            <span className="truncate">{group.name}</span>
+            <Edit2 size={10} className="text-slate-500 group-hover/title:text-brand-400 shrink-0" />
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-950 text-brand-400 border border-slate-700">
+            {matchedUnits.length} units
+            {totalAreaM2 !== undefined && totalAreaM2 > 0 && ` • ${totalAreaM2.toFixed(1)}m²`}
+          </span>
+          <button
+            onClick={(e) => onDeleteGroup(group.id, e)}
+            className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-slate-700/50 transition-colors"
+            title="Delete Group"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+
+      <div className="p-2.5 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+            Matching Rules ({group.rules?.length || 0})
+          </span>
+          <button
+            onClick={() => onAddRule(group.id)}
+            className="text-[9.5px] uppercase font-bold text-brand-400 hover:text-brand-300 flex items-center gap-0.5 transition-colors"
+          >
+            <Plus size={11} /> Add Rule
+          </button>
+        </div>
+
+        {(!group.rules || group.rules.length === 0) ? (
+          <div className="text-[11px] text-slate-500 italic py-1">
+            No rules defined. Add a rule to dynamically assign units.
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {group.rules.map((rule, idx) => (
+              <DynamicRuleRow
+                key={idx}
+                groupId={group.id}
+                ruleIndex={idx}
+                rule={rule}
+                onUpdateRule={onUpdateRule}
+                onDeleteRule={onDeleteRule}
+              />
+            ))}
+          </div>
+        )}
+
+        {group.rules && group.rules.length > 0 && matchedUnits.length > 0 && (
+          <div className="pt-1.5 mt-1 border-t border-slate-800/50">
+            <span className="text-[9px] uppercase text-slate-500 font-bold mb-1 block">
+              Matched Units ({matchedUnits.length})
+            </span>
+            <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto custom-scrollbar">
+              {matchedUnits.map((uId) => (
+                <span
+                  key={uId}
+                  className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[9.5px] font-mono text-slate-300"
+                >
+                  {uId}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
 

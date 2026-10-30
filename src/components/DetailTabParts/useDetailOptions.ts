@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Project, Task, AppUser, AppRole, PermissionMatrix } from '../../types';
 import { getUserAllowedStores } from '../../lib/utils';
 import { useLocationOptions } from '../../hooks/useLocationOptions';
+import { useAppStore } from '../../store/useAppStore';
 
 interface UseDetailOptionsParams {
   currentUser: AppUser;
@@ -28,7 +29,8 @@ export function useDetailOptions({
   const role = currentUser.role as AppRole;
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const hasWritePermission = (isAdmin || !!permissionMatrix[role]?.Write?.detail) && !isArchiveYear;
-  const [isEditMode, setIsEditMode] = useState(false);
+  const isEditMode = useAppStore(state => state.isDetailEditMode);
+  const setIsEditMode = useAppStore(state => state.setIsDetailEditMode);
   const canWrite = hasWritePermission && isEditMode;
 
   const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);

@@ -511,21 +511,23 @@ export function useDynamicRules(
   useEffect(() => {
     if (!autoEvaluate || !versions || !setVersions || versions.length === 0) return;
 
-    // Fast-path evaluation in memory
-    const { nextVersions, hasChanges } = calculateNextVersions(versions);
+    const timer = setTimeout(() => {
+      // Fast-path evaluation in memory
+      const { nextVersions, hasChanges } = calculateNextVersions(versions);
 
-    if (hasChanges) {
-      const serialized = JSON.stringify(
-        nextVersions.map((v) => ({ id: v.id, m: v.groupMappings }))
-      );
-      if (serialized !== prevEvaluatedRef.current) {
-        prevEvaluatedRef.current = serialized;
-        setVersions(nextVersions);
-
-        // Note: Dynamic rules calculate groupMappings and display colors without corrupting base units
-        onDirtyChange?.();
+      if (hasChanges) {
+        const serialized = JSON.stringify(
+          nextVersions.map((v) => ({ id: v.id, m: v.groupMappings }))
+        );
+        if (serialized !== prevEvaluatedRef.current) {
+          prevEvaluatedRef.current = serialized;
+          setVersions(nextVersions);
+          onDirtyChange?.();
+        }
       }
-    }
+    }, 150);
+
+    return () => clearTimeout(timer);
   }, [
     autoEvaluate,
     versions,

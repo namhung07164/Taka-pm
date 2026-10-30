@@ -300,7 +300,7 @@ export function useLayoutGestures({
         const nextY = currentStage.y() + currentVy * frameDt;
 
         currentStage.position({ x: nextX, y: nextY });
-        currentStage.getLayers().forEach((l: any) => l.drawScene());
+        currentStage.batchDraw();
 
         if (Math.hypot(currentVx, currentVy) > 0.02) {
           rafInertiaIdRef.current = requestAnimationFrame(step);
@@ -386,7 +386,7 @@ export function useLayoutGestures({
 
       curStage.scale({ x: nextScale, y: nextScale });
       curStage.position(nextPos);
-      curStage.getLayers().forEach((l: any) => l.drawScene());
+      curStage.batchDraw();
 
       rafZoomAnimIdRef.current = requestAnimationFrame(step);
     };
