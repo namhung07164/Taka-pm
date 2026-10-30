@@ -412,8 +412,8 @@ body.print-preview-active .print\:overflow-hidden {
   -moz-appearance: textfield;
 }
 
-/* Force exact heights for Gantt table rows to prevent html2canvas drift */
-.project-row, .project-row td, .project-row th {
+/* Force exact heights for table rows to prevent html2canvas drift */
+tr.project-row, tr.project-row td, tr.project-row th {
     height: 40px !important;
     max-height: 40px !important;
     min-height: 40px !important;
@@ -423,7 +423,7 @@ body.print-preview-active .print\:overflow-hidden {
     line-height: 40px !important;
 }
 
-.task-row, .task-row td, .task-row th {
+tr.task-row, tr.task-row td, tr.task-row th {
     height: 32px !important;
     max-height: 32px !important;
     min-height: 32px !important;

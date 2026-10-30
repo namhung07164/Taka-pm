@@ -8,6 +8,9 @@ interface AppPrintStylesProps {
   isPrintPreview: boolean;
   printWidth: number;
   printHeight: number;
+  printScaleMode?: string;
+  measuredContentWidth?: number;
+  measuredContentHeight?: number;
 }
 
 export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
@@ -19,16 +22,48 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
     isPrintPreview,
     printWidth,
     printHeight,
+    printScaleMode = "fit-page",
+    measuredContentWidth = 0,
+    measuredContentHeight = 0,
   }) => {
     const isLayout = activeTab === "layout";
+    const scaleRatio = Math.max(0.1, (printScale || 100) / 100);
+    const compMarginRight =
+      !isLayout && scaleRatio < 1 && measuredContentWidth > 0
+        ? -Math.round(measuredContentWidth * (1 - scaleRatio))
+        : 0;
+    const compMarginBottom =
+      !isLayout && scaleRatio < 1 && measuredContentHeight > 0
+        ? -Math.round(measuredContentHeight * (1 - scaleRatio))
+        : 0;
+
+    const isSinglePageFit =
+      printScaleMode === "fit-page" || printScaleMode === "fill-page";
+    const isFitCols = printScaleMode === "fit-cols";
+
+    const paperWidthRule = isLayout
+      ? "width: 100% !important; min-width: 100%;"
+      : isSinglePageFit || isFitCols
+      ? `width: ${printWidth}mm !important; min-width: ${printWidth}mm !important; max-width: ${printWidth}mm !important;`
+      : `width: max-content !important; min-width: ${printWidth}mm;`;
+
+    const paperHeightRule = isLayout
+      ? "height: 100% !important; min-height: 85vh;"
+      : isSinglePageFit
+      ? `height: ${printHeight}mm !important; min-height: ${printHeight}mm !important;`
+      : `height: max-content !important; min-height: ${printHeight}mm;`;
+
     return (
       <style>{`
         /* Global print overrides for crisp enterprise contrast & unclipped tables */
         @media print, screen {
           html:not(.dark) .print-preview-content-active {
              --tw-text-opacity: 1;
+             -webkit-font-smoothing: antialiased;
+             text-rendering: geometricPrecision;
           }
           html:not(.dark) .print-preview-content-active .border-slate-200,
+          html:not(.dark) .print-preview-content-active .border-slate-100,
           html:not(.dark) .print-preview-content-active .border-b,
           html:not(.dark) .print-preview-content-active .border-r {
              border-color: #475569 !important;
@@ -62,20 +97,24 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
           .print-preview-content-active .lg\\:hidden {
              display: none !important;
           }
-          /* Unclip scrollable table & dashboard containers so 100% of rows/columns render */
+          /* Unclip scrollable table & Gantt containers so 100% of rows/columns render */
           .print-preview-content-active .overflow-auto,
           .print-preview-content-active .overflow-y-auto,
           .print-preview-content-active .overflow-x-auto,
+          .print-preview-content-active .overflow-x-hidden,
+          .print-preview-content-active .overflow-y-hidden,
           .print-preview-content-active .overflow-hidden {
              overflow: visible !important;
              max-height: none !important;
              height: auto !important;
           }
+          .print-preview-content-active [data-print-header="true"],
           .print-preview-content-active thead,
           .print-preview-content-active tr.sticky,
           .print-preview-content-active th.sticky,
           .print-preview-content-active td.sticky {
              position: static !important;
+             top: 0 !important;
           }
           ` : ""}
         }
@@ -85,9 +124,9 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
             margin: ${isLayout ? '5mm !important' : '8mm !important'};
           }
           .print-content-wrapper {
-            transform: ${isLayout ? 'none' : `scale(${printScale / 100})`};
+            transform: ${isLayout ? 'none' : `scale(${scaleRatio})`};
             transform-origin: top left;
-            width: ${isLayout ? '100% !important' : `${100 / (printScale / 100)}% !important`};
+            width: ${isLayout ? '100% !important' : `${100 / scaleRatio}% !important`};
             height: ${isLayout ? '100% !important' : 'auto !important'};
             overflow: visible !important;
           }
@@ -113,16 +152,14 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
               background-color: #94a3b8 !important;
             }
             .print-preview-container {
-              padding-top: ${isLayout ? '50px !important' : '100px !important'};
-              padding-bottom: ${isLayout ? '20px !important' : '60px !important'};
+              padding-top: ${isLayout ? '50px !important' : '72px !important'};
+              padding-bottom: ${isLayout ? '20px !important' : '48px !important'};
               background-color: transparent !important;
               overflow: auto !important;
             }
             .print-paper {
-              width: ${isLayout ? '100% !important' : 'max-content !important'};
-              height: ${isLayout ? '100% !important' : 'max-content !important'};
-              min-width: ${isLayout ? '100%' : `${printWidth}mm`};
-              min-height: ${isLayout ? '85vh' : `${printHeight}mm`};
+              ${paperWidthRule}
+              ${paperHeightRule}
               background-color: white !important;
               margin: 0 auto;
               box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
@@ -131,10 +168,13 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
               overflow: hidden;
               display: flex;
               flex-direction: column;
+              box-sizing: border-box !important;
             }
             .print-preview-content-active {
-              transform: ${isLayout ? 'none' : `scale(${printScale / 100})`};
+              transform: ${isLayout ? 'none' : `scale(${scaleRatio})`};
               transform-origin: top left;
+              margin-right: ${compMarginRight}px !important;
+              margin-bottom: ${compMarginBottom}px !important;
               width: ${isLayout ? '100% !important' : 'max-content !important'};
               height: ${isLayout ? '100% !important' : 'max-content !important'};
               background-color: transparent !important;
@@ -142,7 +182,7 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
               box-shadow: none !important;
               border-radius: 0 !important;
               padding: 0 !important;
-              flex-grow: 1 !important;
+              flex-grow: 0 !important;
             }
           }
         ` : ""}
@@ -150,4 +190,3 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
     );
   }
 );
-

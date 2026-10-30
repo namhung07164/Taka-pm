@@ -224,6 +224,7 @@ export default function App() {
     printHeight,
     printFilterContext,
     printScale,
+    measuredContentSize,
     ganttPrintPages,
     handleExportToExcel,
     handlePrintToPDF,
@@ -246,6 +247,9 @@ export default function App() {
         isPrintPreview={isPrintPreview}
         printWidth={printWidth}
         printHeight={printHeight}
+        printScaleMode={printScaleMode}
+        measuredContentWidth={measuredContentSize.width}
+        measuredContentHeight={measuredContentSize.height}
       />
 
       {isPrintPreview && (

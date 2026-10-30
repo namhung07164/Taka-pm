@@ -236,6 +236,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   return (
     <div
       id={`gantt-task-row-${t.id}`}
+      data-print-row="true"
       draggable={isEditMode && !isParentTask}
       onDragStart={(e) => {
         if (!isEditMode || isParentTask) {

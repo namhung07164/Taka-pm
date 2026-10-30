@@ -70,7 +70,7 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
     activeTab,
     printOrientation,
     printPaperSize,
-    printDpi = 150,
+    printDpi = 300,
     printScaleMode = "fit-page",
     printScale = 100,
     printFilterHeader,
@@ -107,7 +107,7 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
   if (pages.length === 0) return;
 
   const { jsPDF } = await import('jspdf');
-  const pdf = new jsPDF({ orientation, unit: 'mm', format });
+  const pdf = new jsPDF({ orientation, unit: 'mm', format, compress: true });
 
   const pdfPageWidth = pdf.internal.pageSize.getWidth();
   const pdfPageHeight = pdf.internal.pageSize.getHeight();
@@ -129,11 +129,25 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
     const dashedOverlay = wrapper.querySelector('.hide-on-actual-print') as HTMLElement;
     if (dashedOverlay) dashedOverlay.style.display = 'none';
 
-    const originalTransform = wrapper.style.transform;
-    const originalWidth = wrapper.style.width;
-    const originalHeight = wrapper.style.height;
-    const originalPosition = wrapper.style.position;
-    const originalOverflow = wrapper.style.overflow;
+    const origPageStyles = {
+      width: page.style.width,
+      minWidth: page.style.minWidth,
+      maxWidth: page.style.maxWidth,
+      height: page.style.height,
+      minHeight: page.style.minHeight,
+      maxHeight: page.style.maxHeight,
+      overflow: page.style.overflow,
+    };
+
+    const origWrapperStyles = {
+      transform: wrapper.style.transform,
+      width: wrapper.style.width,
+      height: wrapper.style.height,
+      position: wrapper.style.position,
+      overflow: wrapper.style.overflow,
+      marginRight: wrapper.style.marginRight,
+      marginBottom: wrapper.style.marginBottom,
+    };
 
     const hiddenElements: { el: HTMLElement; display: string }[] = [];
     const elementsToHide = wrapper.querySelectorAll('.hide-on-actual-print, .print\\:hidden');
@@ -142,8 +156,36 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       el.style.display = 'none';
     });
 
-    // Unscale to measure natural dimension accurately
+    // Reset scroll offsets on any internal scroll containers so header & timeline align at 0
+    const savedScrolls: { el: HTMLElement; left: number; top: number; overflowX: string; overflowY: string }[] = [];
+    const scrollContainers = wrapper.querySelectorAll('[data-print-header="true"], .overflow-auto, .overflow-x-auto, .overflow-x-hidden');
+    scrollContainers.forEach((node) => {
+      const el = node as HTMLElement;
+      savedScrolls.push({
+        el,
+        left: el.scrollLeft,
+        top: el.scrollTop,
+        overflowX: el.style.overflowX,
+        overflowY: el.style.overflowY,
+      });
+      if (el.scrollLeft !== 0) el.scrollLeft = 0;
+      if (el.scrollTop !== 0) el.scrollTop = 0;
+      el.style.overflowX = 'visible';
+      el.style.overflowY = 'visible';
+    });
+
+    // Unconstrain page & wrapper to measure natural unscaled dimensions accurately
+    page.style.width = 'max-content';
+    page.style.minWidth = '0px';
+    page.style.maxWidth = 'none';
+    page.style.height = 'max-content';
+    page.style.minHeight = '0px';
+    page.style.maxHeight = 'none';
+    page.style.overflow = 'visible';
+
     wrapper.style.transform = 'none';
+    wrapper.style.marginRight = '0px';
+    wrapper.style.marginBottom = '0px';
     wrapper.style.width = 'max-content';
     wrapper.style.height = 'max-content';
     wrapper.style.position = 'static';
@@ -176,45 +218,91 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
       pageBreaks,
     } = gridMetrics;
 
-    // Calculate optimal pixelRatio for requested DPI without memory bloat
-    const desiredDpi = Math.max(96, Math.min(300, printDpi || 150));
-    let effectivePixelRatio = desiredDpi / 96;
+    // Calculate true physical page pixel ratio for requested DPI (compensating for downscale when fitting wide Gantt charts)
+    const desiredDpi = Math.max(96, Math.min(300, printDpi || 300));
+    const physicalPageTargetPxW = (targetWidthMm / 25.4) * desiredDpi;
+    const scaleCompensatedRatio = physicalPageTargetPxW / Math.max(100, usableWidthPx);
+    let effectivePixelRatio = Math.max(desiredDpi / 96, scaleCompensatedRatio);
 
-    // Safety cap: max 6,500,000 pixels on master canvas to guarantee instant rendering & 0 lag
-    const MAX_CANVAS_PIXELS = 6_500_000;
-    const requestedPixels = naturalWidth * effectivePixelRatio * naturalHeight * effectivePixelRatio;
-    if (requestedPixels > MAX_CANVAS_PIXELS) {
-      effectivePixelRatio = Math.sqrt(MAX_CANVAS_PIXELS / (naturalWidth * naturalHeight));
+    // High-DPI canvas budget (up to 28MP for 300 DPI Ultra Sharp mode)
+    const maxCanvasPixels =
+      desiredDpi >= 300 ? 28_000_000 : desiredDpi >= 200 ? 18_000_000 : 10_000_000;
+    const maxAllowedRatio = desiredDpi >= 300 ? 3.8 : desiredDpi >= 200 ? 2.8 : 2.0;
+
+    const requestedPixels =
+      naturalWidth * effectivePixelRatio * (naturalHeight * effectivePixelRatio);
+    if (requestedPixels > maxCanvasPixels) {
+      effectivePixelRatio = Math.sqrt(maxCanvasPixels / (naturalWidth * naturalHeight));
     }
-    effectivePixelRatio = Math.max(0.65, Math.min(2.0, effectivePixelRatio));
+    // Ensure neither canvas dimension exceeds hardware texture limit (11,500px)
+    const maxSidePx = 11_500;
+    if (naturalWidth * effectivePixelRatio > maxSidePx) {
+      effectivePixelRatio = maxSidePx / naturalWidth;
+    }
+    if (naturalHeight * effectivePixelRatio > maxSidePx) {
+      effectivePixelRatio = Math.min(effectivePixelRatio, maxSidePx / naturalHeight);
+    }
+    effectivePixelRatio = Math.max(1.0, Math.min(maxAllowedRatio, effectivePixelRatio));
 
     const htmlToImage = await import('html-to-image');
-    const canvas = await htmlToImage.toCanvas(wrapper, {
+    const buildCanvasOptions = (skipFontsFlag: boolean) => ({
       width: naturalWidth,
       height: naturalHeight,
       style: {
         transform: 'none',
+        marginRight: '0px',
+        marginBottom: '0px',
         width: `${naturalWidth}px`,
         height: `${naturalHeight}px`,
-      },
+        WebkitFontSmoothing: 'antialiased',
+        textRendering: 'geometricPrecision',
+      } as any,
       pixelRatio: effectivePixelRatio,
       backgroundColor: isDark ? '#1e1e20' : '#ffffff',
-      skipFonts: true,
+      skipFonts: skipFontsFlag,
       cacheBust: false,
-      filter: (node) => {
-        if (node.classList && (node.classList.contains('hide-on-actual-print') || node.classList.contains('print:hidden'))) {
+      filter: (node: any) => {
+        if (
+          node.classList &&
+          (node.classList.contains('hide-on-actual-print') ||
+            node.classList.contains('print:hidden'))
+        ) {
           return false;
         }
         return true;
       },
     });
 
-    // Restore wrapper DOM style immediately
-    wrapper.style.transform = originalTransform;
-    wrapper.style.width = originalWidth;
-    wrapper.style.height = originalHeight;
-    wrapper.style.position = originalPosition;
-    wrapper.style.overflow = originalOverflow;
+    let canvas: HTMLCanvasElement;
+    try {
+      canvas = await htmlToImage.toCanvas(wrapper, buildCanvasOptions(false));
+    } catch {
+      canvas = await htmlToImage.toCanvas(wrapper, buildCanvasOptions(true));
+    }
+
+    // Restore wrapper, page & scroll DOM styles immediately
+    wrapper.style.transform = origWrapperStyles.transform;
+    wrapper.style.width = origWrapperStyles.width;
+    wrapper.style.height = origWrapperStyles.height;
+    wrapper.style.position = origWrapperStyles.position;
+    wrapper.style.overflow = origWrapperStyles.overflow;
+    wrapper.style.marginRight = origWrapperStyles.marginRight;
+    wrapper.style.marginBottom = origWrapperStyles.marginBottom;
+
+    page.style.width = origPageStyles.width;
+    page.style.minWidth = origPageStyles.minWidth;
+    page.style.maxWidth = origPageStyles.maxWidth;
+    page.style.height = origPageStyles.height;
+    page.style.minHeight = origPageStyles.minHeight;
+    page.style.maxHeight = origPageStyles.maxHeight;
+    page.style.overflow = origPageStyles.overflow;
+
+    savedScrolls.forEach(({ el, left, top, overflowX, overflowY }) => {
+      el.style.overflowX = overflowX;
+      el.style.overflowY = overflowY;
+      if (left !== 0) el.scrollLeft = left;
+      if (top !== 0) el.scrollTop = top;
+    });
 
     if (dashedOverlay) dashedOverlay.style.display = '';
     hiddenElements.forEach(({ el, display }) => {
@@ -225,7 +313,11 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
     const headerSrcY = Math.max(0, Math.floor(headerTopPx * effectivePixelRatio));
     const headerSrcH = Math.min(canvas.height - headerSrcY, Math.ceil(headerHeight * effectivePixelRatio));
 
-    // Per-page canvas tile slicing
+    // Per-page canvas tile slicing with lossless PNG for >= 200 DPI (zero JPEG text blur)
+    const useLosslessPng = desiredDpi >= 200;
+    const tileMime = useLosslessPng ? 'image/png' : 'image/jpeg';
+    const tileFormat = useLosslessPng ? 'PNG' : 'JPEG';
+
     const tileCanvas = document.createElement('canvas');
     const tileCtx = tileCanvas.getContext('2d', { alpha: false });
     const headerTileCanvas = document.createElement('canvas');
@@ -264,12 +356,16 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
         if (srcW > 0 && srcH > 0 && tileCtx) {
           tileCanvas.width = srcW;
           tileCanvas.height = srcH;
+          tileCtx.imageSmoothingEnabled = true;
+          tileCtx.imageSmoothingQuality = 'high';
           tileCtx.fillStyle = isDark ? '#1e1e20' : '#ffffff';
           tileCtx.fillRect(0, 0, srcW, srcH);
           tileCtx.drawImage(canvas, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
 
-          const tileDataUrl = tileCanvas.toDataURL('image/jpeg', 0.88);
-          pdf.addImage(tileDataUrl, 'JPEG', sideMargin, pb.actualPdfStartY, slicePdfW, slicePdfH, undefined, 'FAST');
+          const tileDataUrl = useLosslessPng
+            ? tileCanvas.toDataURL('image/png')
+            : tileCanvas.toDataURL(tileMime, 0.94);
+          pdf.addImage(tileDataUrl, tileFormat, sideMargin, pb.actualPdfStartY, slicePdfW, slicePdfH, undefined, 'FAST');
         }
 
         // Add repeated header on subsequent vertical pages (r > 0), horizontally sliced to match column c
@@ -277,6 +373,8 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
           try {
             headerTileCanvas.width = srcW;
             headerTileCanvas.height = headerSrcH;
+            headerTileCtx.imageSmoothingEnabled = true;
+            headerTileCtx.imageSmoothingQuality = 'high';
             headerTileCtx.fillStyle = isDark ? '#1e1e20' : '#ffffff';
             headerTileCtx.fillRect(0, 0, srcW, headerSrcH);
             headerTileCtx.drawImage(
@@ -290,8 +388,10 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
               srcW,
               headerSrcH
             );
-            const hDataUrl = headerTileCanvas.toDataURL('image/jpeg', 0.88);
-            pdf.addImage(hDataUrl, 'JPEG', sideMargin, topMargin, slicePdfW, headerPdfHeight, undefined, 'FAST');
+            const hDataUrl = useLosslessPng
+              ? headerTileCanvas.toDataURL('image/png')
+              : headerTileCanvas.toDataURL(tileMime, 0.94);
+            pdf.addImage(hDataUrl, tileFormat, sideMargin, topMargin, slicePdfW, headerPdfHeight, undefined, 'FAST');
           } catch (err) {
             console.warn('Header slice failed:', err);
           }
@@ -352,4 +452,3 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
 
   pdf.save(`export_${activeTab}_${Date.now()}.pdf`);
 }
-

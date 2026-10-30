@@ -58,6 +58,10 @@ export function GanttTaskLeftColumns({
   const shiftClickedRef = useRef(false);
   const isParentTask = hasChildren || childCount > 0 || Boolean((t as any).isModularParent);
 
+  const isPrintPreview = useAppStore((state) => state.isPrintPreview);
+  const isExportingPDF = useAppStore((state) => state.isExportingPDF);
+  const isPrintMode = Boolean(isPrintPreview || isExportingPDF);
+
   return (
     <div className="flex items-center w-full h-full overflow-hidden">
       {/* Selection Checkbox & Drag Handle & Hide Button - ONLY in Edit Mode */}
@@ -117,7 +121,7 @@ export function GanttTaskLeftColumns({
           )}
         </div>
       ) : (
-        <div className="w-10 px-1 py-1 flex items-center justify-center shrink-0 border-r border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-400 dark:text-slate-500 font-semibold select-none">
+        <div className="w-10 px-1 py-1 flex items-center justify-center shrink-0 border-r border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-500 dark:text-slate-500 font-bold select-none">
           {taskIndex !== undefined ? taskIndex + 1 : (t.orderIndex !== undefined ? t.orderIndex + 1 : '#')}
         </div>
       )}
@@ -144,7 +148,7 @@ export function GanttTaskLeftColumns({
           </button>
         )}
 
-        {(isChild || Boolean(t.parentTaskId)) && handleUnlinkModularTasks && (
+        {(isChild || Boolean(t.parentTaskId)) && handleUnlinkModularTasks && !isPrintMode && (
           <button
             type="button"
             onClick={(e) => {
@@ -167,7 +171,8 @@ export function GanttTaskLeftColumns({
             }
           }}
           className={cn(
-            "flex items-center gap-1.5 truncate flex-1 min-w-0 p-0.5 rounded transition-colors group/tname overflow-hidden",
+            "flex items-center gap-1.5 flex-1 min-w-0 p-0.5 rounded transition-colors group/tname overflow-hidden",
+            !isPrintMode && "truncate",
             !isEditMode ? "cursor-pointer hover:bg-slate-100 dark:hover:bg-[#333336]" : ""
           )}
           title={isEditMode ? (isParentTask ? `Parent task (${t.name}) - Dragging disabled` : `Click and drag row to reorder task (${t.name})`) : `Click to view task in Task Detail (${t.name})`}
@@ -180,7 +185,13 @@ export function GanttTaskLeftColumns({
             )
           )}
 
-          <span className="text-xs text-slate-900 dark:text-slate-100 truncate font-semibold flex-1 min-w-0 group-hover/tname:text-blue-600 dark:group-hover/tname:text-[#8ab4f8]" title={t.name}>
+          <span
+            className={cn(
+              "text-xs text-slate-900 dark:text-slate-100 font-semibold flex-1 min-w-0 group-hover/tname:text-blue-600 dark:group-hover/tname:text-[#8ab4f8]",
+              isPrintMode ? "text-[11px] leading-[1.15] line-clamp-2 whitespace-normal break-words font-bold" : "truncate"
+            )}
+            title={t.name}
+          >
             {t.name || '(Unnamed Task)'}
           </span>
 

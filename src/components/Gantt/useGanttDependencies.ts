@@ -246,7 +246,7 @@ export function useGanttDependencies({
     const taskPosMap = new Map<string, { xStart: number; xEnd: number; yCenter: number; t: Task }>();
     const visibleTasks: Task[] = [];
     let currentY = paddingTop;
-    const timelineLeft = sideWidth + (showStart ? startColWidth : 0) + (showFinish ? finishColWidth : 0) + (showParty ? partyColWidth : 0) + (showDuration ? durationColWidth : 0) + (showPredecessor ? predecessorColWidth : 0);
+    const timelineLeft = sideWidth;
 
     visibleGanttRows.forEach((row) => {
       // GanttProjectRow is 48px, GanttTaskRow is 40px

@@ -48,7 +48,7 @@ export const AppGanttPrintPagesView: React.FC<AppGanttPrintPagesViewProps> = mem
     onRenderCallback,
   }) => {
     return (
-      <div className="flex flex-col gap-8 w-full items-center bg-slate-300 dark:bg-slate-800 p-8 print:p-0 print:bg-transparent">
+      <div className="flex flex-col gap-8 w-full items-center bg-slate-300 dark:bg-slate-800 p-4 sm:p-8 print:p-0 print:bg-transparent overflow-x-auto">
         {ganttPrintPages.map((pageData, idx) => (
           <div
             key={idx}
@@ -57,13 +57,13 @@ export const AppGanttPrintPagesView: React.FC<AppGanttPrintPagesViewProps> = mem
           >
             {printWatermark !== "none" && (
               <div
-                className="absolute inset-0 pointer-events-none flex items-center justify-center z-[150] overflow-hidden"
-                style={{ opacity: 0.15 }}
+                className="absolute inset-0 pointer-events-none flex items-center justify-center z-[150] overflow-hidden hide-on-actual-print"
+                style={{ opacity: 0.12 }}
               >
                 <span
-                  className="font-black text-slate-500 uppercase tracking-widest text-center"
+                  className="font-black text-slate-500 uppercase tracking-widest text-center select-none"
                   style={{
-                    fontSize: printOrientation === "landscape" ? "12vw" : "15vw",
+                    fontSize: printOrientation === "landscape" ? "48pt" : "36pt",
                     transform: "rotate(-45deg)",
                   }}
                 >
@@ -72,12 +72,12 @@ export const AppGanttPrintPagesView: React.FC<AppGanttPrintPagesViewProps> = mem
               </div>
             )}
             {printDate && (
-              <div className="absolute bottom-4 left-4 text-xs font-mono text-slate-500 z-[90]">
+              <div className="absolute bottom-2.5 left-4 text-[10px] font-mono text-slate-500 z-[90] hide-on-actual-print">
                 Printed on: {new Date().toLocaleString()} - Page {idx + 1}
               </div>
             )}
             {printFilterHeader && (
-              <div className="w-full px-4 pt-3 pb-1 bg-white dark:bg-[#1e1e20] shrink-0">
+              <div className="w-full px-1 pt-0.5 pb-1.5 bg-white dark:bg-[#1e1e20] shrink-0 hide-on-actual-print">
                 <PrintFilterHeader
                   context={printFilterContext}
                   pageIndex={idx}
@@ -85,7 +85,7 @@ export const AppGanttPrintPagesView: React.FC<AppGanttPrintPagesViewProps> = mem
                 />
               </div>
             )}
-            <div className="w-full flex-grow flex flex-col bg-white dark:bg-[#1e1e20] p-0 print-content-wrapper print-preview-content-active relative overflow-hidden">
+            <div className="w-full flex-grow flex flex-col bg-white dark:bg-[#1e1e20] p-0 print-content-wrapper print-preview-content-active relative overflow-visible">
               {isPrintPreview && (
                 <Suspense fallback={null}>
                   <PrintPreviewOverlay

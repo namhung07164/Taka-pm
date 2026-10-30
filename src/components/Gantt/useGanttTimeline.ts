@@ -45,28 +45,16 @@ export function useGanttTimeline({
 
   // Timeline Units, StartDate, EndDate, TotalDays
   const { timeUnits, startDate, endDate, totalDays } = useMemo(() => {
-    if (printDateRangeOverride) {
-      const s = new Date(printDateRangeOverride.start);
-      s.setHours(0, 0, 0, 0);
-      const e = new Date(printDateRangeOverride.end);
-      e.setHours(0, 0, 0, 0);
-      const diffDays = Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      
-      const units: TimeUnit[] = [];
-      let curr = new Date(s);
-      while (curr <= e) {
-        units.push({
-          date: new Date(curr),
-          label: `${curr.getDate()}/${curr.getMonth() + 1}`,
-          days: 1
-        });
-        curr.setDate(curr.getDate() + 1);
-      }
-      return { timeUnits: units, startDate: s, endDate: e, totalDays: Math.max(diffDays, 1) };
-    }
-
-    let start = filterStartDate ? parseDateTime(filterStartDate) : null;
-    let end = filterEndDate ? parseDateTime(filterEndDate) : null;
+    let start = printDateRangeOverride?.start
+      ? new Date(printDateRangeOverride.start)
+      : filterStartDate
+      ? parseDateTime(filterStartDate)
+      : null;
+    let end = printDateRangeOverride?.end
+      ? new Date(printDateRangeOverride.end)
+      : filterEndDate
+      ? parseDateTime(filterEndDate)
+      : null;
 
     if (!start || !end) {
       let minFound: Date | null = null;

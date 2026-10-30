@@ -245,15 +245,34 @@ export const GanttBar = React.memo(function GanttBar({
           />
         )}
 
-        {/* Bar Label text */}
-        {!isMilestone && widthPx > 30 && (
-          <div className="px-2 w-full flex items-center justify-between text-[11px] font-bold text-white drop-shadow-xs truncate pointer-events-none">
-            <span className="truncate">{label}</span>
-            {actProgress > 0 && widthPx > 70 && (
-              <span className="text-[10px] font-mono opacity-90 pl-1">{actProgress}%</span>
-            )}
-          </div>
-        )}
+        {/* Bar Label text: Inside when wide enough, or crisp external label right next to narrow bars */}
+        {!isMilestone && (() => {
+          const minFitWidth = Math.max(58, (label?.length || 0) * 5.8 + (actProgress > 0 ? 34 : 14));
+          const fitsInside = widthPx >= minFitWidth;
+          if (fitsInside) {
+            return (
+              <div className="px-2 w-full flex items-center justify-between text-[11px] font-bold text-white drop-shadow-xs truncate pointer-events-none">
+                <span className="truncate">{label}</span>
+                {actProgress > 0 && widthPx > 70 && (
+                  <span className="text-[10px] font-mono opacity-95 pl-1">{actProgress}%</span>
+                )}
+              </div>
+            );
+          }
+          return (
+            <div
+              className="absolute top-1/2 -translate-y-1/2 flex items-center gap-1 whitespace-nowrap pointer-events-none z-20 px-1 py-0.5 rounded bg-white/90 dark:bg-[#1e1e20]/90 text-[10px] font-bold text-slate-800 dark:text-slate-200 leading-none shadow-2xs"
+              style={{ left: `${widthPx + 4}px` }}
+            >
+              <span>{label}</span>
+              {actProgress > 0 && (
+                <span className="text-[9px] font-mono text-blue-700 dark:text-blue-400">
+                  ({actProgress}%)
+                </span>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Floating Date Drag Indicator Badge */}

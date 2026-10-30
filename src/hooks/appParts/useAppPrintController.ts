@@ -369,19 +369,25 @@ export function useAppPrintController({
     }
 
     if (printScaleMode === "fit-cols") {
-      const scale = Math.round((targetWidthPx / contentW) * 100);
-      return Math.max(10, Math.min(scale, 100));
+      const scale = (targetWidthPx / contentW) * 100;
+      return Math.max(10, Math.min(Number(scale.toFixed(2)), 100));
     }
 
     if (printScaleMode === "fit-rows") {
-      const scale = Math.round((targetHeightPx / contentH) * 100);
-      return Math.max(10, Math.min(scale, 100));
+      const scale = (targetHeightPx / contentH) * 100;
+      return Math.max(10, Math.min(Number(scale.toFixed(2)), 100));
     }
 
-    if (printScaleMode === "fit-page" || printScaleMode === "fill-page") {
-      const scaleCols = Math.round((targetWidthPx / contentW) * 100);
-      const scaleRows = Math.round((targetHeightPx / contentH) * 100);
-      return Math.max(10, Math.min(scaleCols, scaleRows, 100));
+    if (printScaleMode === "fit-page") {
+      const scaleCols = (targetWidthPx / contentW) * 100;
+      const scaleRows = (targetHeightPx / contentH) * 100;
+      return Math.max(10, Math.min(Number(Math.min(scaleCols, scaleRows).toFixed(2)), 100));
+    }
+
+    if (printScaleMode === "fill-page") {
+      const scaleCols = (targetWidthPx / contentW) * 100;
+      const scaleRows = (targetHeightPx / contentH) * 100;
+      return Math.max(10, Math.min(Number(Math.min(scaleCols, scaleRows).toFixed(2)), 200));
     }
 
     return 100;
@@ -476,6 +482,7 @@ export function useAppPrintController({
     printHeight,
     printFilterContext,
     printScale,
+    measuredContentSize,
     ganttPrintPages,
     handleExportToExcel,
     handlePrintToPDF,

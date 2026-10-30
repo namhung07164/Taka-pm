@@ -18,6 +18,7 @@ import { GanttToolbar } from './Gantt/GanttToolbar';
 import { GanttTableView } from './Gantt/GanttTableView';
 import { useGanttFocus } from './Gantt/useGanttFocus';
 import { getBarColor } from './Gantt/GanttUtils';
+import { useGanttPrintDimensions } from './Gantt/useGanttPrintDimensions';
 
 const TaskModularModal = lazyWithRetry(
   () => import('./TaskModularModal').then(m => ({ default: m.TaskModularModal })),
@@ -44,14 +45,11 @@ export function GanttTab({
   const ganttTabFocusTaskId = useAppStore(state => state.ganttTabFocusTaskId);
   const setGanttTabFocusTaskId = useAppStore(state => state.setGanttTabFocusTaskId);
   const ganttTabFilterProjectId = useAppStore(state => state.ganttTabFilterProjectId);
-  const setGanttTabFilterProjectId = useAppStore(state => state.setGanttTabFilterProjectId);
   const expandedProjects = useAppStore(state => state.expandedProjectIds);
   const toggleProjectExpansion = useAppStore(state => state.toggleProjectExpansion);
 
   useEffect(() => {
-    if (!isTasksRequested) {
-      setIsTasksRequested(true);
-    }
+    if (!isTasksRequested) setIsTasksRequested(true);
   }, [isTasksRequested, setIsTasksRequested]);
 
   const [confirmModal, setConfirmModal] = useState<{
@@ -59,167 +57,76 @@ export function GanttTab({
     title: string;
     message: string;
     onConfirm: () => Promise<void>;
-  }>({
-    isOpen: false,
-    title: '',
-    message: '',
-    onConfirm: async () => {}
-  });
+  }>({ isOpen: false, title: '', message: '', onConfirm: async () => {} });
 
   const {
-    filterStartDate,
-    setFilterStartDate,
-    filterEndDate,
-    setFilterEndDate,
-    tempStartDate,
-    setTempStartDate,
-    tempEndDate,
-    setTempEndDate,
-    sideWidth,
-    setSideWidth,
-    visibleColumns,
-    handleToggleColumn,
+    filterStartDate, setFilterStartDate, filterEndDate, setFilterEndDate,
+    tempStartDate, setTempStartDate, tempEndDate, setTempEndDate,
+    sideWidth, setSideWidth, visibleColumns, handleToggleColumn,
   } = useGanttLayoutState(currentUser?.id);
 
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
   // 1. Projects Filter & Search
   const {
-    globalYearFilter,
-    setGlobalYearFilter,
-    effectiveStore,
-    setGlobalStoreFilter,
-    globalLocationFilter,
-    setGlobalLocationFilter,
-    filterProjectStatus,
-    onStatusFilterChange,
-    searchTerm,
-    setSearchTerm,
-    deferredSearchTerm,
-    uniqueYears,
-    uniqueStores,
-    locationOptions,
-    getGroupTasksForProject,
-    paginatedProjects
-  } = useGanttProjectsFilter({
-    projects,
-    tasks,
-    delegationGroups,
-    currentUser
-  });
+    globalYearFilter, setGlobalYearFilter, effectiveStore, setGlobalStoreFilter,
+    globalLocationFilter, setGlobalLocationFilter, filterProjectStatus, onStatusFilterChange,
+    searchTerm, setSearchTerm, deferredSearchTerm, uniqueYears, uniqueStores,
+    locationOptions, getGroupTasksForProject, paginatedProjects
+  } = useGanttProjectsFilter({ projects, tasks, delegationGroups, currentUser });
 
   // 2. Timeline and Date Offset Calculations
   const {
-    viewMode,
-    setViewMode,
-    dayWidth,
-    setDayWidth,
-    isWidthChanged,
-    setIsWidthChanged,
-    scaleInput,
-    setScaleInput,
-    saveDayWidth,
-    customToday,
-    setCustomToday,
-    isDraggingToday,
-    setIsDraggingToday,
-    timeUnits,
-    startDate,
-    totalDays,
-    getDateFromOffsetPx,
-    handleTodayClick,
-    topScrollRef,
-    mainScrollRef,
-    handleTopScroll,
-    handleMainScroll
+    viewMode, setViewMode, dayWidth, setDayWidth, isWidthChanged, setIsWidthChanged,
+    scaleInput, setScaleInput, saveDayWidth, customToday, setCustomToday,
+    isDraggingToday, setIsDraggingToday, timeUnits, startDate, totalDays,
+    getDateFromOffsetPx, handleTodayClick, topScrollRef, mainScrollRef,
+    handleTopScroll, handleMainScroll
   } = useGanttTimeline({
-    filterStartDate,
-    filterEndDate,
-    printDateRangeOverride,
-    paginatedProjects,
-    tasks,
-    getGroupTasksForProject,
-    globalYearFilter
+    filterStartDate, filterEndDate, printDateRangeOverride,
+    paginatedProjects, tasks, getGroupTasksForProject, globalYearFilter
   });
 
   // 3. Batch Operations & Selection
   const {
-    selectedTaskIds,
-    setSelectedTaskIds,
-    selectedProjectIds,
-    setSelectedProjectIds,
-    selectedTaskSet,
-    selectedProjectSet,
-    isAllSelected,
-    handleToggleSelectAll,
-    handleTaskCheckboxChange,
-    handleDeleteSelected,
-    handleSetTextColor,
-    handleSetBaselineSelected,
-    handleToggleRealtimeUpdate,
-    handleTogglePin,
-    handleGroupModularTasks,
-    handleUnlinkModularTasks,
-    isTaskModularModalOpen,
-    setIsTaskModularModalOpen,
-    expandedModularTasks,
-    setExpandedModularTasks,
-    expandedModularSet,
-    toggleModularParent,
-    sumMode,
-    setSumMode,
-    computedSum,
-    isHighlightDelegationOn,
-    setIsHighlightDelegationOn,
-    isEditMode,
-    setIsEditMode,
-    isHideMode,
-    setIsHideMode,
-    hiddenRows,
-    setHiddenRows,
-    hiddenRowsSet,
-    toggleHideRow,
-    getRowVisibilityClass
+    selectedTaskIds, setSelectedTaskIds, selectedProjectIds, setSelectedProjectIds,
+    selectedTaskSet, selectedProjectSet, isAllSelected, handleToggleSelectAll,
+    handleTaskCheckboxChange, handleDeleteSelected, handleSetTextColor,
+    handleSetBaselineSelected, handleToggleRealtimeUpdate, handleTogglePin,
+    handleGroupModularTasks, handleUnlinkModularTasks, isTaskModularModalOpen,
+    setIsTaskModularModalOpen, expandedModularTasks, setExpandedModularTasks,
+    expandedModularSet, toggleModularParent, sumMode, setSumMode, computedSum,
+    isHighlightDelegationOn, setIsHighlightDelegationOn, isEditMode, setIsEditMode,
+    isHideMode, setIsHideMode, hiddenRows, setHiddenRows, hiddenRowsSet,
+    toggleHideRow, getRowVisibilityClass
   } = useGanttBatchOps({
-    tasks,
-    projects,
-    paginatedProjects,
-    currentUser,
-    getGroupTasksForProject,
-    setConfirmModal
+    tasks, projects, paginatedProjects, currentUser, getGroupTasksForProject, setConfirmModal
   });
 
   // 4. Virtualization Engine
   const {
-    flatGanttRows,
-    visibleGanttRows,
-    paddingTop,
-    paddingBottom,
-    handleCombinedMainScroll
+    flatGanttRows, visibleGanttRows, paddingTop, paddingBottom, handleCombinedMainScroll
   } = useGanttVirtualization({
-    paginatedProjects,
-    expandedProjects,
-    expandedModularSet,
-    hiddenRowsSet,
-    getGroupTasksForProject,
-    tableContainerRef,
-    handleMainScroll,
-    deferredSearchTerm
+    paginatedProjects, expandedProjects, expandedModularSet, hiddenRowsSet,
+    getGroupTasksForProject, tableContainerRef, handleMainScroll, deferredSearchTerm
   });
 
-  // 5. Dependencies and Tooltips
-  const {
-    activeTooltip,
-    setActiveTooltip,
-    dependencyLines
-  } = useGanttDependencies({
-    tasks,
-    projects,
-    delegationGroups,
-    visibleGanttRows,
-    startDate,
-    dayWidth,
+  // 5. Dynamic Column Width Resizing & Print Aspect-Ratio Auto-Calibration
+  const { colWidths, startResizingColumn } = useGanttColumnResize();
+  const { effectiveSideWidth, effectiveDayWidth } = useGanttPrintDimensions({
     sideWidth,
+    dayWidth,
+    totalDays,
+    visibleGanttRows,
+    visibleColumns,
+    colWidths,
+  });
+
+  // 6. Dependencies and Tooltips
+  const { activeTooltip, setActiveTooltip, dependencyLines } = useGanttDependencies({
+    tasks, projects, delegationGroups, visibleGanttRows, startDate,
+    dayWidth: effectiveDayWidth,
+    sideWidth: effectiveSideWidth,
     paddingTop,
     showStart: visibleColumns.includes('start'),
     showFinish: visibleColumns.includes('finish'),
@@ -228,30 +135,15 @@ export function GanttTab({
     showPredecessor: visibleColumns.includes('predecessor')
   });
 
-  // 6. Drag & Drop Task Reordering
+  // 7. Drag & Drop Task Reordering
   const {
-    dragOverTaskId,
-    dropPosition,
-    draggingTaskIds,
-    handleTaskDragStart,
-    handleTaskDragOver,
-    handleContainerDragOver,
-    handleTaskDragLeave,
-    handleTaskDrop,
-    handleTaskDragEnd
-  } = useGanttDragReorder({
-    tasks,
-    projects,
-    mainScrollRef
-  });
+    dragOverTaskId, dropPosition, draggingTaskIds, handleTaskDragStart,
+    handleTaskDragOver, handleContainerDragOver, handleTaskDragLeave,
+    handleTaskDrop, handleTaskDragEnd
+  } = useGanttDragReorder({ tasks, projects, mainScrollRef });
 
-  // 7. PDF / PNG Export
-  const { isExporting, handleExportToPDF } = useGanttExport({
-    tableRef: tableContainerRef
-  });
-
-  // 8. Dynamic Column Width Resizing
-  const { colWidths, startResizingColumn } = useGanttColumnResize();
+  // 8. PDF / PNG Export
+  const { isExporting, handleExportToPDF } = useGanttExport({ tableRef: tableContainerRef });
 
   // Resizing side width
   const startResizingSide = useCallback((e: React.MouseEvent) => {
@@ -398,8 +290,8 @@ export function GanttTab({
         paddingTop={paddingTop}
         paddingBottom={paddingBottom}
         totalDays={totalDays}
-        dayWidth={dayWidth}
-        sideWidth={sideWidth}
+        dayWidth={effectiveDayWidth}
+        sideWidth={effectiveSideWidth}
         setSideWidth={setSideWidth}
         startResizingSide={startResizingSide}
         colWidths={colWidths}
