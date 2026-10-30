@@ -1,10 +1,12 @@
 import React, { forwardRef, memo, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '../../../lib/LanguageContext';
-import { AppUser, Task } from '../../../types';
-import { storage, googleSignIn, getAccessToken } from '../../../lib/firebase';
+import { AppUser, Task, Project } from '../../../types';
+import { storage } from '../../../lib/firebase';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Paperclip, AtSign, Hash, Send, Loader2 } from 'lucide-react';
 import { recordMention, getMentionFrequencies } from '../../TaskModalParts/chat/chatSharedUtils';
+import { uploadPictureToTakaFolder } from '../../../lib/r2StorageUtils';
+import { syncUploadedImageToProjectAndUnit } from '../../../lib/projectImageSync';
 
 export interface ProjectChatInputHandle {
   insertTaskTag: (tagName: string) => void;
@@ -14,11 +16,12 @@ export interface ProjectChatInputProps {
   onSend: (text: string, mentions: string[]) => void;
   appUsers: AppUser[];
   projectTasks: Task[];
+  project?: Project;
 }
 
 export const ProjectChatInput = React.memo(
   React.forwardRef<ProjectChatInputHandle, ProjectChatInputProps>(function ProjectChatInput(
-    { onSend, appUsers, projectTasks },
+    { onSend, appUsers, projectTasks, project },
     ref
   ) {
     const { t } = useLanguage();
@@ -46,63 +49,42 @@ export const ProjectChatInput = React.memo(
 
       setIsUploading(true);
       try {
-        let accessToken = await getAccessToken();
-        if (!accessToken) {
-          const result = await googleSignIn();
-          if (result) accessToken = result.accessToken;
-        }
+        let uploadedUrl = '';
+        const isImage = file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|heic|heif|svg)$/i.test(file.name);
 
-        let downloadURL = '';
-        try {
-          const storageReference = storageRef(storage, `comments/${Date.now()}_${file.name}`);
-          const uploadTask = await uploadBytesResumable(storageReference, file);
-          downloadURL = await getDownloadURL(uploadTask.ref);
-        } catch (err) {
-          console.error('Firebase Storage upload failed:', err);
-        }
-
-        let driveUrl = '';
-        if (accessToken) {
-          try {
-            const res1 = await fetch('https://www.googleapis.com/drive/v3/files', {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ name: file.name, mimeType: file.type }),
-            });
-            const data1 = await res1.json();
-            const fileId = data1.id;
-
-            await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-              method: 'PATCH',
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': file.type,
-              },
-              body: file,
-            });
-
-            await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ role: 'reader', type: 'anyone' }),
-            });
-
-            driveUrl = `https://drive.google.com/file/d/${fileId}/view`;
-          } catch (err) {
-            console.error('Drive upload failed:', err);
+        if (isImage) {
+          // 1. Upload to Cloudflare R2 (same folder Taka-Pm-folder/ and WebP compression as Layout Tab)
+          const r2Res = await uploadPictureToTakaFolder(file, project?.code, project?.store);
+          if (r2Res.success && r2Res.publicUrl) {
+            uploadedUrl = r2Res.publicUrl;
+            // 2. Automatically sync to project.imageLinks and taka_unit_images so it appears in the Layout Tooltip gallery
+            await syncUploadedImageToProjectAndUnit(uploadedUrl, file.name, project);
+          } else {
+            console.warn('[ProjectChatInput] R2 upload failed, attempting fallback:', r2Res.error);
           }
         }
 
-        const finalUrl = [downloadURL, driveUrl].filter(Boolean).join(' ');
-        if (!finalUrl) throw new Error('Upload failed');
-        setCommentText((prev) => (prev ? `${prev} ${finalUrl} ` : `${finalUrl} `));
+        // 3. Fallback to Firebase Storage if not an image or if R2 was not configured
+        if (!uploadedUrl) {
+          try {
+            const storageReference = storageRef(storage, `comments/${Date.now()}_${file.name}`);
+            const uploadTask = await uploadBytesResumable(storageReference, file);
+            uploadedUrl = await getDownloadURL(uploadTask.ref);
+            if (isImage && uploadedUrl) {
+              await syncUploadedImageToProjectAndUnit(uploadedUrl, file.name, project);
+            }
+          } catch (err) {
+            console.error('Firebase Storage upload failed:', err);
+          }
+        }
+
+        if (!uploadedUrl) {
+          throw new Error('Upload failed');
+        }
+
+        setCommentText((prev) => (prev ? `${prev} ${uploadedUrl} ` : `${uploadedUrl} `));
         if (fileInputRef.current) fileInputRef.current.value = '';
+        setTimeout(() => inputRef.current?.focus(), 50);
       } catch (error) {
         console.error('Upload error', error);
       } finally {

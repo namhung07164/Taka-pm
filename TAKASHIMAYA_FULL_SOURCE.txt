@@ -49791,38 +49791,21 @@ export function useTooltipImages({
         const newImage = (targetProj as any).image === urlToDelete ? '' : (targetProj as any).image;
 
         const updatedProject: Project = {
-          ...targetProj,
-          taskSummaries: filteredSummaries,
-          imageUrl: newImageUrl,
-          thumbnail: newThumbnail,
-          photo: newPhoto,
-          image: newImage,
-          imageLinks: updatedImageLinks,
+          ...targetProj, taskSummaries: filteredSummaries,
+          imageUrl: newImageUrl, thumbnail: newThumbnail, photo: newPhoto, image: newImage, imageLinks: updatedImageLinks,
         } as Project;
 
-        useAppStore.getState().setProjects(
-          allProjects.map(proj => proj.id === targetProj.id ? updatedProject : proj)
-        );
+        useAppStore.getState().setProjects(allProjects.map(proj => proj.id === targetProj.id ? updatedProject : proj));
 
         if (targetProj.id) {
-          const firestoreUpdate: Record<string, any> = {
-            taskSummaries: filteredSummaries,
-            imageLinks: updatedImageLinks,
-            updatedAt: new Date().toISOString(),
-          };
+          const firestoreUpdate: Record<string, any> = { taskSummaries: filteredSummaries, imageLinks: updatedImageLinks, updatedAt: new Date().toISOString() };
           if (targetProj.imageUrl === urlToDelete) firestoreUpdate.imageUrl = deleteField();
           if (targetProj.thumbnail === urlToDelete) firestoreUpdate.thumbnail = deleteField();
           if ((targetProj as any).photo === urlToDelete) firestoreUpdate.photo = deleteField();
           if ((targetProj as any).image === urlToDelete) firestoreUpdate.image = deleteField();
 
           setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), firestoreUpdate, { merge: true }).catch(console.error);
-          recordDelta({
-            docId: targetProj.id,
-            collectionName: 'taka_projects',
-            action: 'update',
-            data: firestoreUpdate,
-            year: String(targetProj.year || '')
-          }).catch(console.error);
+          recordDelta({ docId: targetProj.id, collectionName: 'taka_projects', action: 'update', data: firestoreUpdate, year: String(targetProj.year || '') }).catch(console.error);
         }
       }
     } catch (err) {
@@ -49944,19 +49927,28 @@ export function useTooltipImages({
       });
     }
 
-    // 6. Project comments attachments
+    // 6. Project comments attachments & image URLs in comment text
     if (isProjMatchingStore && targetP?.comments && Array.isArray(targetP.comments)) {
       targetP.comments.forEach((c, cIdx) => {
         if (c.attachments && Array.isArray(c.attachments)) {
           c.attachments.forEach((att, aIdx) => {
             if (att.url && !seenUrls.has(att.url)) {
               seenUrls.add(att.url);
-              list.push({
-                id: `comm_${cIdx}_${aIdx}`,
-                url: att.url,
-                title: att.name || `Attachment ${list.length + 1}`,
-                source: `Comment by ${c.userName || 'User'}`,
-              });
+              list.push({ id: `comm_${cIdx}_${aIdx}`, url: att.url, title: att.name || `Attachment ${list.length + 1}`, source: `Comment by ${c.userName || 'User'}` });
+            }
+          });
+        }
+        if (c.text && typeof c.text === 'string') {
+          const matchedUrls = c.text.match(/(https?:\/\/[^\s]+)/g) || [];
+          matchedUrls.forEach((rawUrl, uIdx) => {
+            const url = rawUrl.trim();
+            const isImg = url.match(/\.(jpe?g|png|webp|gif|svg|bmp)(\?.*)?$/i) ||
+              url.includes('hcm.taka-pm.org') ||
+              url.includes('drive.google.com/file') ||
+              url.includes('firebasestorage.googleapis.com');
+            if (isImg && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              list.push({ id: `comm_txt_${c.id || cIdx}_${uIdx}`, url, title: `Comment Photo (${c.userName || 'User'})`, source: `Comment by ${c.userName || 'User'}` });
             }
           });
         }
@@ -49982,7 +49974,6 @@ export function useTooltipImages({
     handleCopyLink,
   };
 }
-
 FILE: src/components/LayoutTabParts/TooltipParts/useTooltipPosition.ts
 ================================================================================
 import React, { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
@@ -73301,7 +73292,6 @@ export type { ProjectModalProps } from './ProjectModalParts/projectModalTypes';
 
 ================================================================================
 FILE: src/components/ProjectModal/ProjectChat.tsx
-================================================================================
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useLanguage } from '../../lib/LanguageContext';
 import { Project, Task, AppUser, DelegationGroup, TaskComment } from '../../types';
@@ -73461,22 +73451,21 @@ export const ProjectChat = React.memo(function ProjectChat({
         onSend={handleSendFromInput}
         appUsers={appUsers}
         projectTasks={projectTasks}
+        project={project}
       />
     </div>
   );
 });
-
-
-================================================================================
 FILE: src/components/ProjectModal/chat/ProjectChatInput.tsx
-================================================================================
 import React, { forwardRef, memo, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useLanguage } from '../../../lib/LanguageContext';
-import { AppUser, Task } from '../../../types';
-import { storage, googleSignIn, getAccessToken } from '../../../lib/firebase';
+import { AppUser, Task, Project } from '../../../types';
+import { storage } from '../../../lib/firebase';
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Paperclip, AtSign, Hash, Send, Loader2 } from 'lucide-react';
 import { recordMention, getMentionFrequencies } from '../../TaskModalParts/chat/chatSharedUtils';
+import { uploadPictureToTakaFolder } from '../../../lib/r2StorageUtils';
+import { syncUploadedImageToProjectAndUnit } from '../../../lib/projectImageSync';
 
 export interface ProjectChatInputHandle {
   insertTaskTag: (tagName: string) => void;
@@ -73486,11 +73475,12 @@ export interface ProjectChatInputProps {
   onSend: (text: string, mentions: string[]) => void;
   appUsers: AppUser[];
   projectTasks: Task[];
+  project?: Project;
 }
 
 export const ProjectChatInput = React.memo(
   React.forwardRef<ProjectChatInputHandle, ProjectChatInputProps>(function ProjectChatInput(
-    { onSend, appUsers, projectTasks },
+    { onSend, appUsers, projectTasks, project },
     ref
   ) {
     const { t } = useLanguage();
@@ -73518,63 +73508,42 @@ export const ProjectChatInput = React.memo(
 
       setIsUploading(true);
       try {
-        let accessToken = await getAccessToken();
-        if (!accessToken) {
-          const result = await googleSignIn();
-          if (result) accessToken = result.accessToken;
-        }
+        let uploadedUrl = '';
+        const isImage = file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|heic|heif|svg)$/i.test(file.name);
 
-        let downloadURL = '';
-        try {
-          const storageReference = storageRef(storage, `comments/${Date.now()}_${file.name}`);
-          const uploadTask = await uploadBytesResumable(storageReference, file);
-          downloadURL = await getDownloadURL(uploadTask.ref);
-        } catch (err) {
-          console.error('Firebase Storage upload failed:', err);
-        }
-
-        let driveUrl = '';
-        if (accessToken) {
-          try {
-            const res1 = await fetch('https://www.googleapis.com/drive/v3/files', {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ name: file.name, mimeType: file.type }),
-            });
-            const data1 = await res1.json();
-            const fileId = data1.id;
-
-            await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
-              method: 'PATCH',
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': file.type,
-              },
-              body: file,
-            });
-
-            await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
-              method: 'POST',
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ role: 'reader', type: 'anyone' }),
-            });
-
-            driveUrl = `https://drive.google.com/file/d/${fileId}/view`;
-          } catch (err) {
-            console.error('Drive upload failed:', err);
+        if (isImage) {
+          // 1. Upload to Cloudflare R2 (same folder Taka-Pm-folder/ and WebP compression as Layout Tab)
+          const r2Res = await uploadPictureToTakaFolder(file, project?.code, project?.store);
+          if (r2Res.success && r2Res.publicUrl) {
+            uploadedUrl = r2Res.publicUrl;
+            // 2. Automatically sync to project.imageLinks and taka_unit_images so it appears in the Layout Tooltip gallery
+            await syncUploadedImageToProjectAndUnit(uploadedUrl, file.name, project);
+          } else {
+            console.warn('[ProjectChatInput] R2 upload failed, attempting fallback:', r2Res.error);
           }
         }
 
-        const finalUrl = [downloadURL, driveUrl].filter(Boolean).join(' ');
-        if (!finalUrl) throw new Error('Upload failed');
-        setCommentText((prev) => (prev ? `${prev} ${finalUrl} ` : `${finalUrl} `));
+        // 3. Fallback to Firebase Storage if not an image or if R2 was not configured
+        if (!uploadedUrl) {
+          try {
+            const storageReference = storageRef(storage, `comments/${Date.now()}_${file.name}`);
+            const uploadTask = await uploadBytesResumable(storageReference, file);
+            uploadedUrl = await getDownloadURL(uploadTask.ref);
+            if (isImage && uploadedUrl) {
+              await syncUploadedImageToProjectAndUnit(uploadedUrl, file.name, project);
+            }
+          } catch (err) {
+            console.error('Firebase Storage upload failed:', err);
+          }
+        }
+
+        if (!uploadedUrl) {
+          throw new Error('Upload failed');
+        }
+
+        setCommentText((prev) => (prev ? `${prev} ${uploadedUrl} ` : `${uploadedUrl} `));
         if (fileInputRef.current) fileInputRef.current.value = '';
+        setTimeout(() => inputRef.current?.focus(), 50);
       } catch (error) {
         console.error('Upload error', error);
       } finally {
@@ -73781,9 +73750,6 @@ export const ProjectChatInput = React.memo(
     );
   })
 );
-
-
-================================================================================
 FILE: src/components/ProjectModal/chat/ProjectCommentItem.tsx
 ================================================================================
 import React, { FC } from 'react';
@@ -181060,3 +181026,155 @@ export const FaqManualExplorer: React.FC<FaqManualExplorerProps> = React.memo(({
 
 FaqManualExplorer.displayName = 'FaqManualExplorer';
 
+
+FILE: src/lib/projectImageSync.ts
+import { doc } from 'firebase/firestore';
+import { setDoc } from './firestoreWrites';
+import { db, APP_ID } from './firebase';
+import { useAppStore } from '../store/useAppStore';
+import { Project } from '../types';
+import { recordDelta } from './deltaSyncService';
+
+function normalizeStore(store?: string | null): string {
+  if (!store) return 'HCM';
+  const s = String(store).trim().toUpperCase();
+  if (s.includes('HN') || s.includes('HÀ NỘI') || s.includes('HA NOI') || s.includes('HANOI')) return 'HN';
+  if (s.includes('HCM') || s.includes('HỒ CHÍ MINH') || s.includes('HO CHI MINH') || s.includes('SAI GON') || s.includes('SG')) return 'HCM';
+  return s;
+}
+
+/**
+ * Registers an uploaded image (from Project Comments or Project Modal) into:
+ * 1. project.imageLinks and project.imageUrl / thumbnail
+ * 2. taka_unit_images collection (for cross-device real-time sync with Layout Tab Tooltip)
+ * 3. LocalStorage cache for instant 0ms display
+ * 4. CustomEvent 'taka_unit_images_changed' to notify open tooltips immediately
+ */
+export async function syncUploadedImageToProjectAndUnit(
+  url: string,
+  fileName: string,
+  project?: Project | null
+): Promise<void> {
+  if (!url || !url.trim()) return;
+  const trimmedUrl = url.trim();
+
+  const store = normalizeStore(project?.store);
+  const primaryCode = String(project?.code || '').trim();
+
+  const newImgEntry = {
+    id: `img_${Date.now()}`,
+    url: trimmedUrl,
+    title: fileName || (primaryCode ? `${primaryCode} Photo` : 'Project Photo'),
+    createdAt: new Date().toISOString(),
+    store,
+  };
+
+  // 1. Gather all unit codes associated with this project (including linkCodes)
+  const codesToUpdate = new Set<string>();
+  if (primaryCode) codesToUpdate.add(primaryCode);
+
+  if (project?.linkCodes) {
+    String(project.linkCodes)
+      .split(/[,;\s]+/)
+      .map((c) => c.trim())
+      .filter(Boolean)
+      .forEach((c) => codesToUpdate.add(c));
+  }
+
+  // 2. Update taka_unit_images for each unit code (LocalStorage + Firestore)
+  for (const unitCode of Array.from(codesToUpdate)) {
+    const activeUnitStorageKey = `taka_unit_images_${store}_${unitCode}`;
+    const unitImagesDocKey = `${store}_${unitCode}`;
+
+    let currentList: any[] = [];
+    try {
+      const saved = localStorage.getItem(activeUnitStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) currentList = parsed;
+      }
+    } catch {
+      currentList = [];
+    }
+
+    const alreadyHas = currentList.some((item) =>
+      typeof item === 'string' ? item === trimmedUrl : item?.url === trimmedUrl
+    );
+    const updatedImages = alreadyHas ? currentList : [newImgEntry, ...currentList];
+
+    try {
+      localStorage.setItem(activeUnitStorageKey, JSON.stringify(updatedImages));
+    } catch {}
+
+    try {
+      const unitImagesDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_unit_images', unitImagesDocKey);
+      setDoc(
+        unitImagesDocRef,
+        {
+          unitCode,
+          store,
+          images: updatedImages,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      ).catch((err) => console.warn('[projectImageSync] Error saving unit images doc:', err));
+    } catch (e) {
+      console.warn('[projectImageSync] Failed to push to taka_unit_images:', e);
+    }
+  }
+
+  // 3. Dispatch UI event so Layout Unit Tooltip immediately updates in 0ms
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('taka_unit_images_changed'));
+  }
+
+  // 4. Update the Project document in Zustand + Firestore + Delta
+  if (project && project.id) {
+    try {
+      const allProjects = useAppStore.getState().projects;
+      const targetProj = allProjects.find((p) => p.id === project.id) || project;
+
+      const existingLinks: any[] = Array.isArray(targetProj.imageLinks) ? targetProj.imageLinks : [];
+      const hasLink = existingLinks.some((l) =>
+        typeof l === 'string' ? l === trimmedUrl : l?.url === trimmedUrl
+      );
+      const updatedImageLinks = hasLink ? existingLinks : [newImgEntry, ...existingLinks];
+
+      const nowIso = new Date().toISOString();
+      const updatedProject: Project = {
+        ...targetProj,
+        imageUrl: targetProj.imageUrl || trimmedUrl,
+        thumbnail: targetProj.thumbnail || trimmedUrl,
+        imageLinks: updatedImageLinks,
+        updatedAt: nowIso,
+      };
+
+      // Zustand Optimistic Update (0ms)
+      useAppStore
+        .getState()
+        .setProjects(allProjects.map((p) => (p.id === project.id ? updatedProject : p)));
+
+      // Firestore Update
+      const projDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', project.id);
+      const updateData = {
+        imageUrl: updatedProject.imageUrl,
+        thumbnail: updatedProject.thumbnail,
+        imageLinks: updatedImageLinks,
+        updatedAt: nowIso,
+      };
+
+      await setDoc(projDocRef, updateData, { merge: true });
+
+      // Record Delta for multi-device sync
+      await recordDelta({
+        docId: project.id,
+        collectionName: 'taka_projects',
+        action: 'update',
+        data: updateData,
+        year: String(project.year || ''),
+      }).catch(console.error);
+    } catch (err) {
+      console.error('[projectImageSync] Failed to update project imageLinks:', err);
+    }
+  }
+}

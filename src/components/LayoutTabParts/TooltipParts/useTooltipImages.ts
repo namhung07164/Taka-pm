@@ -291,38 +291,21 @@ export function useTooltipImages({
         const newImage = (targetProj as any).image === urlToDelete ? '' : (targetProj as any).image;
 
         const updatedProject: Project = {
-          ...targetProj,
-          taskSummaries: filteredSummaries,
-          imageUrl: newImageUrl,
-          thumbnail: newThumbnail,
-          photo: newPhoto,
-          image: newImage,
-          imageLinks: updatedImageLinks,
+          ...targetProj, taskSummaries: filteredSummaries,
+          imageUrl: newImageUrl, thumbnail: newThumbnail, photo: newPhoto, image: newImage, imageLinks: updatedImageLinks,
         } as Project;
 
-        useAppStore.getState().setProjects(
-          allProjects.map(proj => proj.id === targetProj.id ? updatedProject : proj)
-        );
+        useAppStore.getState().setProjects(allProjects.map(proj => proj.id === targetProj.id ? updatedProject : proj));
 
         if (targetProj.id) {
-          const firestoreUpdate: Record<string, any> = {
-            taskSummaries: filteredSummaries,
-            imageLinks: updatedImageLinks,
-            updatedAt: new Date().toISOString(),
-          };
+          const firestoreUpdate: Record<string, any> = { taskSummaries: filteredSummaries, imageLinks: updatedImageLinks, updatedAt: new Date().toISOString() };
           if (targetProj.imageUrl === urlToDelete) firestoreUpdate.imageUrl = deleteField();
           if (targetProj.thumbnail === urlToDelete) firestoreUpdate.thumbnail = deleteField();
           if ((targetProj as any).photo === urlToDelete) firestoreUpdate.photo = deleteField();
           if ((targetProj as any).image === urlToDelete) firestoreUpdate.image = deleteField();
 
           setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), firestoreUpdate, { merge: true }).catch(console.error);
-          recordDelta({
-            docId: targetProj.id,
-            collectionName: 'taka_projects',
-            action: 'update',
-            data: firestoreUpdate,
-            year: String(targetProj.year || '')
-          }).catch(console.error);
+          recordDelta({ docId: targetProj.id, collectionName: 'taka_projects', action: 'update', data: firestoreUpdate, year: String(targetProj.year || '') }).catch(console.error);
         }
       }
     } catch (err) {
@@ -444,19 +427,28 @@ export function useTooltipImages({
       });
     }
 
-    // 6. Project comments attachments
+    // 6. Project comments attachments & image URLs in comment text
     if (isProjMatchingStore && targetP?.comments && Array.isArray(targetP.comments)) {
       targetP.comments.forEach((c, cIdx) => {
         if (c.attachments && Array.isArray(c.attachments)) {
           c.attachments.forEach((att, aIdx) => {
             if (att.url && !seenUrls.has(att.url)) {
               seenUrls.add(att.url);
-              list.push({
-                id: `comm_${cIdx}_${aIdx}`,
-                url: att.url,
-                title: att.name || `Attachment ${list.length + 1}`,
-                source: `Comment by ${c.userName || 'User'}`,
-              });
+              list.push({ id: `comm_${cIdx}_${aIdx}`, url: att.url, title: att.name || `Attachment ${list.length + 1}`, source: `Comment by ${c.userName || 'User'}` });
+            }
+          });
+        }
+        if (c.text && typeof c.text === 'string') {
+          const matchedUrls = c.text.match(/(https?:\/\/[^\s]+)/g) || [];
+          matchedUrls.forEach((rawUrl, uIdx) => {
+            const url = rawUrl.trim();
+            const isImg = url.match(/\.(jpe?g|png|webp|gif|svg|bmp)(\?.*)?$/i) ||
+              url.includes('hcm.taka-pm.org') ||
+              url.includes('drive.google.com/file') ||
+              url.includes('firebasestorage.googleapis.com');
+            if (isImg && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              list.push({ id: `comm_txt_${c.id || cIdx}_${uIdx}`, url, title: `Comment Photo (${c.userName || 'User'})`, source: `Comment by ${c.userName || 'User'}` });
             }
           });
         }

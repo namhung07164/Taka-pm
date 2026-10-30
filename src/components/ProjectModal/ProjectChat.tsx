@@ -157,6 +157,7 @@ export const ProjectChat = React.memo(function ProjectChat({
         onSend={handleSendFromInput}
         appUsers={appUsers}
         projectTasks={projectTasks}
+        project={project}
       />
     </div>
   );
