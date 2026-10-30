@@ -374,8 +374,8 @@ export function useGanttProjectsFilter({
       // Check fixedProjectCode
       if (fixedProjectCode && fixedProjectCode.trim()) {
         const fix = fixedProjectCode.trim().toLowerCase();
-        const pCode = (p.code || '').trim().toLowerCase();
-        const matchesFix = pCode === fix || pCode.includes(fix) || String(p.id).toLowerCase() === fix;
+        const pName = (p.name || '').trim().toLowerCase();
+        const matchesFix = pCode === fix || pCode.includes(fix) || pName.includes(fix) || String(p.id).toLowerCase() === fix;
         if (!matchesFix) return false;
       }
 

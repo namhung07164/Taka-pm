@@ -65,12 +65,18 @@ export function useGanttPrintDimensions({
 
     // Ensure enough width for full Project / Task title and task names without ellipsis truncation
     const singleLineChars = Math.min(maxNameLen, 50);
-    const nameColW = Math.max(280, Math.min(370, Math.round(singleLineChars * 6.3 + 48)));
+    const nameColW = Math.max(295, Math.min(380, Math.round(singleLineChars * 6.4 + 52)));
     const minPrintSideWidth = 40 + nameColW + extraColsW;
-    const effectiveSideWidth = Math.max(sideWidth, minPrintSideWidth);
+    const effectiveSideWidth = Math.round(Math.max(sideWidth, minPrintSideWidth));
 
     const minDayWidth =
-      viewMode === 'weekly' ? 5.5 : viewMode === 'quarterly' ? 0.55 : 1.55;
+      viewMode === 'weekly'
+        ? 5.8
+        : viewMode === 'quarterly'
+        ? 0.65
+        : printOrientation === 'landscape'
+        ? 1.9
+        : 1.7;
 
     const paperDims =
       printPaperSize === 'A2'
@@ -95,13 +101,13 @@ export function useGanttPrintDimensions({
         targetWidthPx,
         effectiveHeightPx * (targetWidthMm / targetHeightMm)
       );
-      const idealTimelineWidthPx = Math.max(380, idealTotalWidthPx - effectiveSideWidth);
+      const idealTimelineWidthPx = Math.max(420, idealTotalWidthPx - effectiveSideWidth);
       const aspectMatchedDayWidth = idealTimelineWidthPx / Math.max(1, totalDays);
       effectiveDayWidth = Number(
         Math.max(minDayWidth, Math.min(18, aspectMatchedDayWidth)).toFixed(2)
       );
     } else if (printScaleMode === 'fit-cols') {
-      const minTimelineW = Math.max(380, targetWidthPx - effectiveSideWidth);
+      const minTimelineW = Math.max(420, targetWidthPx - effectiveSideWidth);
       const fitColsDayWidth = minTimelineW / Math.max(1, totalDays);
       effectiveDayWidth = Number(
         Math.max(dayWidth, minDayWidth, Math.min(14, fitColsDayWidth)).toFixed(2)

@@ -112,13 +112,17 @@ export function useBudgetFilterSort({
   }, [searchTerm, treeData, globalYearFilter, effectiveStore, globalLocationFilter, setGlobalLocationFilter]);
 
   const filterNode = (node: any): boolean => {
+    const hasSearch = Boolean(deferredSearchTerm.trim());
+
     if (fixedProjectCode && fixedProjectCode.trim()) {
       const fix = fixedProjectCode.trim().toLowerCase();
       const nodeCode = (node.code || '').trim().toLowerCase();
-      const matchesParentFix = nodeCode === fix || nodeCode.includes(fix) || String(node.id || '').toLowerCase() === fix;
+      const nodeName = (node.name || '').trim().toLowerCase();
+      const matchesParentFix = nodeCode === fix || nodeCode.includes(fix) || nodeName.includes(fix) || String(node.id || '').toLowerCase() === fix;
       const matchesChildFix = node.children && node.children.some((c: any) => {
         const cCode = (c.code || '').trim().toLowerCase();
-        return cCode === fix || cCode.includes(fix) || String(c.id || '').toLowerCase() === fix;
+        const cName = (c.name || '').trim().toLowerCase();
+        return cCode === fix || cCode.includes(fix) || cName.includes(fix) || String(c.id || '').toLowerCase() === fix;
       });
       if (!matchesParentFix && !matchesChildFix) return false;
     }
@@ -132,7 +136,7 @@ export function useBudgetFilterSort({
       return false;
     }
 
-    const matchesLocation = globalLocationFilter.length === 0 || (node.location && globalLocationFilter.includes(node.location));
+    const matchesLocation = globalLocationFilter.length === 0 || (node.location && globalLocationFilter.includes(node.location)) || hasSearch;
     
     const hasBudget = (node.totalBudget || 0) !== 0;
     const hasActForc = (node.totalActual || 0) !== 0;
@@ -150,7 +154,7 @@ export function useBudgetFilterSort({
         const cMatchesYear = globalYearFilter === 'all' || !cYear || cYear === String(globalYearFilter).trim();
         const cStore = child.store ? String(child.store).toUpperCase().trim() : (node.store ? String(node.store).toUpperCase().trim() : '');
         const cMatchesStore = effectiveStore === 'all' || !cStore || cStore === effectiveStore.toUpperCase().trim();
-        const cMatchesLocation = globalLocationFilter.length === 0 || (!child.location) || globalLocationFilter.includes(child.location);
+        const cMatchesLocation = globalLocationFilter.length === 0 || (!child.location) || globalLocationFilter.includes(child.location) || hasSearch;
         
         const cHasBudget = (child.budget || 0) !== 0;
         const cHasActForc = (child.totalActual || 0) !== 0;
@@ -164,7 +168,7 @@ export function useBudgetFilterSort({
 
       const hasMultiChildren = node.children.length >= 2;
 
-      if (!deferredSearchTerm.trim()) {
+      if (!hasSearch) {
         node.filteredChildren = validChildren.map((c: any) => ({ ...c, isSearchMatch: false }));
         return baseParentMatch || validChildren.length > 0;
       }
@@ -174,7 +178,8 @@ export function useBudgetFilterSort({
         const matchesSearch = isChildMatchSearch(child, deferredSearchTerm);
         const matchesFix = fixedProjectCode && fixedProjectCode.trim() ? (
           (child.code || '').trim().toLowerCase() === fixedProjectCode.trim().toLowerCase() ||
-          (child.code || '').trim().toLowerCase().includes(fixedProjectCode.trim().toLowerCase())
+          (child.code || '').trim().toLowerCase().includes(fixedProjectCode.trim().toLowerCase()) ||
+          (child.name || '').trim().toLowerCase().includes(fixedProjectCode.trim().toLowerCase())
         ) : false;
         if (matchesSearch || matchesFix) {
           matchingChildIds.add(child.id);
@@ -211,7 +216,8 @@ export function useBudgetFilterSort({
       }
     } else {
       node.filteredChildren = [];
-      return baseParentMatch && parentMatchesSearch;
+      const searchMatch = !hasSearch || isParentMatchSearch(node, deferredSearchTerm);
+      return baseParentMatch && searchMatch;
     }
   };
 

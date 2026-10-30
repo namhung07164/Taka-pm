@@ -89,7 +89,7 @@ export function GanttToolbarDateFilter({
         </button>
 
         {isDateFilterOpen && (
-          <div className="absolute top-full left-0 mt-1.5 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-3 z-50 flex flex-col gap-2.5 w-64 animate-in fade-in zoom-in-95 text-slate-800 dark:text-slate-100">
+          <div className="absolute top-full left-0 mt-1.5 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-3 z-[120] flex flex-col gap-2.5 w-64 animate-in fade-in zoom-in-95 text-slate-800 dark:text-slate-100">
             <div className="flex items-center justify-between font-bold text-xs text-slate-900 dark:text-slate-200">
               <span>{t('Filter Timeline Range')}</span>
               <button

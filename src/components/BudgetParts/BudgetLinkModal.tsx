@@ -101,7 +101,7 @@ export function BudgetLinkModal({
         const pStore = String(p.store || '').trim().toUpperCase();
         if (pStore && pStore !== modalStoreFilter.toUpperCase()) return false;
       }
-      if (modalLocationFilter !== 'all') {
+      if (modalLocationFilter !== 'all' && !term) {
         if (p.location !== modalLocationFilter) return false;
       }
       if (!term) return true;
@@ -146,7 +146,8 @@ export function BudgetLinkModal({
         if (pStore && pStore !== targetStore) return false;
       }
 
-      if (modalLocationFilter !== 'all') {
+      const isLinkedToCurrent = Boolean(parentCode && p.parentId && String(p.parentId).trim().toUpperCase() === parentCode);
+      if (modalLocationFilter !== 'all' && !isLinkedToCurrent && !term) {
         if (p.location !== modalLocationFilter) return false;
       }
 

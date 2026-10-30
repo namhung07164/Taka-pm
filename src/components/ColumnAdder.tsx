@@ -53,7 +53,12 @@ export function ColumnAdder({
       )}
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-1.5 w-56 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-xl z-50 p-2 flex flex-col gap-1.5 animate-in fade-in zoom-in-95 text-slate-800 dark:text-[#e3e3e3]">
+        <div
+          className={cn(
+            "absolute top-full mt-1.5 w-56 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl z-[120] p-2 flex flex-col gap-1.5 animate-in fade-in zoom-in-95 text-slate-800 dark:text-[#e3e3e3]",
+            isHeader ? "right-0" : "left-0"
+          )}
+        >
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-2 py-1 border-b border-slate-100 dark:border-[#333336] flex items-center justify-between">
             <span>{t('Toggle Columns')}</span>
             <span className="text-[10px] font-mono">{visibleColumns.length}/{availableColumns.length}</span>

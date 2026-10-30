@@ -185,8 +185,8 @@ export function useDetailData({
         const fix = fixedProjectCode.trim().toLowerCase();
         const pCode = (p.code || '').trim().toLowerCase();
         const rawLink = Array.isArray(p.linkCodes) ? p.linkCodes : typeof p.linkCodes === 'string' ? [p.linkCodes] : [];
-        const pLinkCodes = rawLink.map((c: any) => String(c).trim().toLowerCase());
-        const matchesFix = pCode === fix || pCode.includes(fix) || pLinkCodes.includes(fix) || String(p.id).toLowerCase() === fix;
+        const pName = (p.name || '').trim().toLowerCase();
+        const matchesFix = pCode === fix || pCode.includes(fix) || pName.includes(fix) || pLinkCodes.includes(fix) || String(p.id).toLowerCase() === fix;
         if (!matchesFix) return false;
       }
 

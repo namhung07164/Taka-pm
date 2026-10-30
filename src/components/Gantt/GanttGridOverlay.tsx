@@ -14,23 +14,33 @@ export const GanttGridOverlay: React.FC<GanttGridOverlayProps> = React.memo(({
   timeUnits,
   dayWidth,
 }) => {
-  const actualLeft = leftOffset !== undefined ? leftOffset : sideWidth;
+  const actualLeft = Math.round(leftOffset !== undefined ? leftOffset : sideWidth);
+  let cumulativeDays = 0;
+
   return (
     <div
       className="absolute top-0 bottom-0 pointer-events-none z-10 flex"
       style={{ left: actualLeft }}
     >
-      {timeUnits.map((unit) => (
-        <div
-          key={unit.date.getTime()}
-          className="border-r border-slate-100 dark:border-[#333336] shrink-0 h-full"
-          style={{
-            width: `${unit.days * dayWidth}px`,
-            minWidth: `${unit.days * dayWidth}px`,
-            maxWidth: `${unit.days * dayWidth}px`,
-          }}
-        />
-      ))}
+      {timeUnits.map((unit) => {
+        const daysBefore = cumulativeDays;
+        cumulativeDays += unit.days;
+        const startPx = Math.round(daysBefore * dayWidth);
+        const endPx = Math.round(cumulativeDays * dayWidth);
+        const width = Math.max(1, endPx - startPx);
+
+        return (
+          <div
+            key={unit.date.getTime()}
+            className="border-r border-slate-100 dark:border-[#333336] shrink-0 h-full box-border"
+            style={{
+              width: `${width}px`,
+              minWidth: `${width}px`,
+              maxWidth: `${width}px`,
+            }}
+          />
+        );
+      })}
     </div>
   );
 }, (prev, next) => {

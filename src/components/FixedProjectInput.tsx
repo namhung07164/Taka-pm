@@ -97,21 +97,28 @@ export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({
     });
 
     const uniqueList = Array.from(uniqueMap.values());
-    if (!term) return uniqueList.slice(0, 30);
+    if (!term) return uniqueList.slice(0, 40);
 
     return uniqueList.filter(p => {
       const code = String(p.code || '').toLowerCase();
       const name = String(p.name || '').toLowerCase();
       const store = String(p.store || '').toLowerCase();
-      return code.includes(term) || name.includes(term) || store.includes(term);
-    }).slice(0, 30);
+      const location = String(p.location || '').toLowerCase();
+      return code.includes(term) || name.includes(term) || store.includes(term) || location.includes(term);
+    }).slice(0, 40);
   }, [projects, inputVal, yearFilter, storeFilter, locationFilter, statusFilter]);
 
-  const handleApplyFix = (codeToFix: string) => {
-    const cleanCode = codeToFix.trim().toUpperCase();
-    if (!cleanCode) return;
-    setFixedProjectCode(cleanCode);
-    setInputVal(cleanCode);
+  const handleApplyFix = (codeOrName: string) => {
+    const clean = codeOrName.trim();
+    if (!clean) return;
+    // Check if input directly matches a candidate project by name or code
+    const matched = candidateProjects.find(
+      p => String(p.code || '').trim().toLowerCase() === clean.toLowerCase() ||
+           String(p.name || '').trim().toLowerCase() === clean.toLowerCase()
+    );
+    const effectiveFix = matched ? (matched.code || matched.name || clean) : clean;
+    setFixedProjectCode(effectiveFix.trim().toUpperCase());
+    setInputVal(effectiveFix.trim().toUpperCase());
     setIsOpenDropdown(false);
   };
 
@@ -127,7 +134,7 @@ export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({
     return (
       <div className={cn("inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-100 dark:bg-amber-950/60 border-2 border-amber-500 text-amber-900 dark:text-amber-200 rounded-lg text-xs font-bold shadow-xs shrink-0 select-none animate-in fade-in duration-150", className)}>
         <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-        <span className="font-extrabold uppercase tracking-wide">Fix: {fixedProjectCode}</span>
+        <span className="font-extrabold uppercase tracking-wide truncate max-w-[180px]">Fix: {fixedProjectCode}</span>
         <button
           type="button"
           onClick={handleClearFix}
@@ -141,7 +148,7 @@ export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({
   }
 
   return (
-    <div className={cn("relative inline-block min-w-[130px] sm:min-w-[150px]", className)} ref={dropdownRef}>
+    <div className={cn("relative inline-block min-w-[140px] sm:min-w-[170px]", className)} ref={dropdownRef}>
       <div className="relative flex items-center">
         <Pin className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 absolute left-2.5 pointer-events-none" />
         <input
@@ -160,7 +167,7 @@ export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({
               setIsOpenDropdown(false);
             }
           }}
-          placeholder="Fix Project Code..."
+          placeholder="Fix Project Code / Name..."
           className="w-full pl-8 pr-7 py-1.5 bg-white dark:bg-[#1e1e20] border border-amber-300 dark:border-amber-700/80 text-slate-900 dark:text-[#e3e3e3] text-xs font-semibold rounded-lg focus:ring-2 focus:ring-amber-500 outline-none shadow-xs placeholder:text-slate-400 dark:placeholder:text-slate-500"
         />
         {inputVal.trim() ? (
@@ -178,21 +185,47 @@ export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({
       </div>
 
       {isOpenDropdown && candidateProjects.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 z-[9999] bg-white dark:bg-[#252528] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl max-h-56 overflow-y-auto p-1 text-xs select-none animate-in fade-in duration-100">
-          <div className="px-2 py-1 text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 border-b border-slate-100 dark:border-[#333336]">
-            Select Project to Fix
+        <div className="absolute top-full left-0 mt-1 z-[9999] bg-white dark:bg-[#252528] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl max-h-64 overflow-y-auto p-1.5 text-xs select-none animate-in fade-in duration-100 min-w-[280px] sm:min-w-[340px] max-w-[90vw]">
+          <div className="px-2 py-1 text-[10px] uppercase font-bold text-amber-600 dark:text-amber-400 border-b border-slate-100 dark:border-[#333336] flex items-center justify-between">
+            <span>Select Project to Fix</span>
+            <span className="text-[9px] text-slate-400 font-normal">Code or Name</span>
           </div>
-          {candidateProjects.map((p) => (
-            <button
-              key={`${p.code}_${p.id}`}
-              type="button"
-              onClick={() => handleApplyFix(p.code)}
-              className="w-full text-left px-2.5 py-1.5 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg flex items-center justify-between gap-2 cursor-pointer transition-colors active:scale-98"
-            >
-              <span className="font-mono font-bold text-blue-700 dark:text-blue-400 uppercase">{p.code}</span>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[100px]">{p.name || p.store}</span>
-            </button>
-          ))}
+          {candidateProjects.map((p) => {
+            const pStore = String(p.store || '').toLowerCase();
+            return (
+              <button
+                key={`${p.code}_${p.id}`}
+                type="button"
+                onClick={() => handleApplyFix(p.code)}
+                className="w-full text-left px-2 py-1.5 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg flex flex-col gap-0.5 cursor-pointer transition-colors active:scale-98"
+              >
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {p.store && (
+                    <span className={cn(
+                      "px-1 py-0.2 text-[9px] font-black rounded uppercase border",
+                      pStore === 'hcm'
+                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                        : 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                    )}>
+                      {p.store}
+                    </span>
+                  )}
+                  <span className="font-mono font-black text-xs text-blue-700 dark:text-[#8ab4f8] uppercase">{p.code}</span>
+                  {p.year && <span className="text-[10px] text-slate-400 font-medium">• {p.year}</span>}
+                  {p.location && (
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                      {p.location}
+                    </span>
+                  )}
+                </div>
+                {p.name && (
+                  <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 truncate">
+                    {p.name}
+                  </div>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

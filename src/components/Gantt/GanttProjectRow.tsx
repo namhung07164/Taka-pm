@@ -148,166 +148,168 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
     >
       <div
         className={cn(
-          "print-sticky-x sticky left-0 z-30 border-r border-slate-200 dark:border-[#444446] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] flex items-center shrink-0 overflow-hidden",
+          "print-sticky-x sticky left-0 z-30 border-r border-slate-200 dark:border-[#444446] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] print:shadow-none flex items-stretch h-full shrink-0 overflow-hidden box-border",
           "bg-white dark:bg-[#1e1e20] group-hover:bg-slate-50 dark:group-hover:bg-[#28282a]"
         )}
         style={{ width: sideWidth, minWidth: sideWidth, maxWidth: sideWidth }}
       >
+        {/* Leftmost # / Expand Column (w-10 to align vertical border with Header & Task rows) */}
+        <div className="w-10 px-0.5 h-full flex items-center justify-center gap-0.5 shrink-0 border-r border-slate-200 dark:border-slate-800 box-border">
+          {isEditMode && (() => {
+            const pKey = String(p.id || p.no);
+            const pCodeNorm = String(p.code || '').trim().toLowerCase();
+            const pYearNorm = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+            const pStoreNorm = p.store ? String(p.store).trim().toLowerCase() : '';
+            const allStoreTasks = useAppStore.getState().tasks || [];
+
+            const taskMap = new Map<string, Task>();
+            (projectTasks || []).forEach(t => { if (t && t.id && !t.isDeleted) taskMap.set(t.id, t); });
+
+            allStoreTasks.forEach(t => {
+              if (!t || !t.id || t.isDeleted) return;
+              if (p.id && String(t.projectId) === String(p.id)) {
+                taskMap.set(t.id, t);
+                return;
+              }
+              if (t.projectCode) {
+                const codes = String(t.projectCode).trim().toLowerCase().split(/[,;/]+/).map(s => s.trim());
+                if (codes.includes(pCodeNorm)) {
+                  if (pYearNorm && t.projectYear && String(t.projectYear).trim() !== pYearNorm) return;
+                  if (pStoreNorm && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStoreNorm) return;
+                  taskMap.set(t.id, t);
+                }
+              }
+            });
+
+            const parentIdSet = new Set(Array.from(taskMap.keys()));
+            const parentCodeSet = new Set(
+              Array.from(taskMap.values())
+                .map(t => t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '')
+                .filter(Boolean)
+            );
+
+            allStoreTasks.forEach(t => {
+              if (!t || !t.id || t.isDeleted || taskMap.has(String(t.id))) return;
+              const rawParent = t.parentTaskId || (t as any).parentId;
+              if (rawParent) {
+                const rawStr = String(rawParent).trim().toLowerCase();
+                if (parentIdSet.has(String(rawParent)) || parentCodeSet.has(rawStr)) {
+                  taskMap.set(String(t.id), t);
+                }
+              }
+            });
+
+            const allProjectTasks = Array.from(taskMap.values());
+            const pTaskIds = allProjectTasks.map(t => String(t.id)).filter(Boolean);
+            const sTaskSet = selectedTaskSet || new Set((selectedTaskIds || []).map(String));
+            const isAllTasksSelected = pTaskIds.length > 0 && pTaskIds.every(id => sTaskSet.has(id));
+            const isSomeTasksSelected = !isAllTasksSelected && pTaskIds.some(id => sTaskSet.has(id));
+            const isChecked = pTaskIds.length > 0 ? isAllTasksSelected : Boolean(selectedProjectSet?.has(pKey) || selectedProjectSet?.has(String(p.no)) || (p.id && selectedProjectSet?.has(String(p.id))));
+
+            return (
+              <label
+                className="flex items-center justify-center p-0.5 shrink-0 cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  ref={(el) => {
+                    if (el) el.indeterminate = isSomeTasksSelected;
+                  }}
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => {
+                    const willCheck = pTaskIds.length > 0 ? !isAllTasksSelected : !isChecked;
+                    const currentProjectIds = (selectedProjectIds || []).map(String);
+                    const canonicalProjKey = String(p.id || pKey);
+                    const projectKeys = [pKey, String(p.id), String(p.no)].filter(Boolean).map(String);
+
+                    if (willCheck) {
+                      if (setSelectedProjectIds) {
+                        setSelectedProjectIds(Array.from(new Set([...currentProjectIds, canonicalProjKey])));
+                      }
+                      if (setSelectedTaskIds) {
+                        setSelectedTaskIds((prev: any) => Array.from(new Set([...(prev || []).map(String), ...pTaskIds])));
+                      }
+                    } else {
+                      if (setSelectedProjectIds) {
+                        const removeSet = new Set(projectKeys);
+                        setSelectedProjectIds(currentProjectIds.filter(id => !removeSet.has(id)));
+                      }
+                      if (setSelectedTaskIds) {
+                        const pTaskSet = new Set(pTaskIds);
+                        setSelectedTaskIds((prev: any) => (prev || []).map(String).filter((id: string) => !pTaskSet.has(id)));
+                      }
+                    }
+                  }}
+                  className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 bg-white cursor-pointer active:scale-95 transition-all touch-manipulation"
+                />
+              </label>
+            );
+          })()}
+          <div className="flex flex-col items-center justify-center gap-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (canToggle && handleToggle) {
+                  handleToggle(p.id!);
+                }
+              }}
+              disabled={!canToggle}
+              className={cn(
+                "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation",
+                !canToggle
+                  ? "opacity-30 cursor-not-allowed text-slate-400 dark:text-slate-600"
+                  : isExpanded
+                  ? "text-slate-600 dark:text-[#c3c3c3] bg-slate-100 dark:bg-[#28282a] hover:bg-slate-200 dark:hover:bg-[#333336] cursor-pointer"
+                  : "text-slate-500 dark:text-[#a3a3a3] hover:bg-slate-100 dark:hover:bg-[#28282a] cursor-pointer"
+              )}
+              title={
+                !canToggle
+                  ? "Project has no tasks"
+                  : isExpanded
+                  ? "Collapse this project"
+                  : `Expand this project (${effectiveTaskCount} tasks)`
+              }
+            >
+              {isExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5 pointer-events-none" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5 pointer-events-none" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={handleToggleProjectModular}
+              disabled={!hasModularTasks}
+              className={cn(
+                "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation print:hidden hide-on-actual-print",
+                !hasModularTasks
+                  ? "opacity-25 cursor-not-allowed bg-slate-100 dark:bg-[#28282a] text-slate-400 dark:text-slate-600"
+                  : isProjectModularExpanded
+                  ? "bg-purple-600 hover:bg-purple-700 text-white dark:bg-purple-600 dark:hover:bg-purple-500 shadow-xs ring-1 ring-purple-400/50 cursor-pointer"
+                  : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/60 dark:hover:bg-purple-900/90 dark:text-purple-200 border border-purple-300 dark:border-purple-600/70 cursor-pointer"
+              )}
+              title={
+                !hasModularTasks
+                  ? "Project has no modular tasks"
+                  : isProjectModularExpanded
+                  ? "Collapse modular tasks of this project"
+                  : "Expand modular tasks of this project"
+              }
+            >
+              {isProjectModularExpanded ? (
+                <ChevronDown className="w-3.5 h-3.5 pointer-events-none" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5 pointer-events-none" />
+              )}
+            </button>
+          </div>
+        </div>
+
         {/* Project Name Column */}
         <div className="flex-1 min-w-0 p-1.5 flex items-center overflow-hidden">
           <div className="flex items-center gap-1 w-full relative min-w-0">
-            {isEditMode && (() => {
-              const pKey = String(p.id || p.no);
-              const pCodeNorm = String(p.code || '').trim().toLowerCase();
-              const pYearNorm = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-              const pStoreNorm = p.store ? String(p.store).trim().toLowerCase() : '';
-              const allStoreTasks = useAppStore.getState().tasks || [];
-
-              // 1. Gather all tasks directly associated with this project
-              const taskMap = new Map<string, Task>();
-              (projectTasks || []).forEach(t => { if (t && t.id && !t.isDeleted) taskMap.set(t.id, t); });
-
-              allStoreTasks.forEach(t => {
-                if (!t || !t.id || t.isDeleted) return;
-                if (p.id && String(t.projectId) === String(p.id)) {
-                  taskMap.set(t.id, t);
-                  return;
-                }
-                if (t.projectCode) {
-                  const codes = String(t.projectCode).trim().toLowerCase().split(/[,;/]+/).map(s => s.trim());
-                  if (codes.includes(pCodeNorm)) {
-                    if (pYearNorm && t.projectYear && String(t.projectYear).trim() !== pYearNorm) return;
-                    if (pStoreNorm && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStoreNorm) return;
-                    taskMap.set(t.id, t);
-                  }
-                }
-              });
-
-              // 2. Also include any subtasks whose parent belongs to this project
-              const parentIdSet = new Set(Array.from(taskMap.keys()));
-              const parentCodeSet = new Set(
-                Array.from(taskMap.values())
-                  .map(t => t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '')
-                  .filter(Boolean)
-              );
-
-              allStoreTasks.forEach(t => {
-                if (!t || !t.id || t.isDeleted || taskMap.has(String(t.id))) return;
-                const rawParent = t.parentTaskId || (t as any).parentId;
-                if (rawParent) {
-                  const rawStr = String(rawParent).trim().toLowerCase();
-                  if (parentIdSet.has(String(rawParent)) || parentCodeSet.has(rawStr)) {
-                    taskMap.set(String(t.id), t);
-                  }
-                }
-              });
-
-              const allProjectTasks = Array.from(taskMap.values());
-              const pTaskIds = allProjectTasks.map(t => String(t.id)).filter(Boolean);
-              const sTaskSet = selectedTaskSet || new Set((selectedTaskIds || []).map(String));
-              const isAllTasksSelected = pTaskIds.length > 0 && pTaskIds.every(id => sTaskSet.has(id));
-              const isSomeTasksSelected = !isAllTasksSelected && pTaskIds.some(id => sTaskSet.has(id));
-              const isChecked = pTaskIds.length > 0 ? isAllTasksSelected : Boolean(selectedProjectSet?.has(pKey) || selectedProjectSet?.has(String(p.no)) || (p.id && selectedProjectSet?.has(String(p.id))));
-
-              return (
-                <label
-                  className="flex items-center justify-center p-1 shrink-0 cursor-pointer"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <input
-                    ref={(el) => {
-                      if (el) el.indeterminate = isSomeTasksSelected;
-                    }}
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => {
-                      const willCheck = pTaskIds.length > 0 ? !isAllTasksSelected : !isChecked;
-                      const currentProjectIds = (selectedProjectIds || []).map(String);
-                      const canonicalProjKey = String(p.id || pKey);
-                      const projectKeys = [pKey, String(p.id), String(p.no)].filter(Boolean).map(String);
-
-                      if (willCheck) {
-                        if (setSelectedProjectIds) {
-                          setSelectedProjectIds(Array.from(new Set([...currentProjectIds, canonicalProjKey])));
-                        }
-                        if (setSelectedTaskIds) {
-                          setSelectedTaskIds((prev: any) => Array.from(new Set([...(prev || []).map(String), ...pTaskIds])));
-                        }
-                      } else {
-                        if (setSelectedProjectIds) {
-                          const removeSet = new Set(projectKeys);
-                          setSelectedProjectIds(currentProjectIds.filter(id => !removeSet.has(id)));
-                        }
-                        if (setSelectedTaskIds) {
-                          const pTaskSet = new Set(pTaskIds);
-                          setSelectedTaskIds((prev: any) => (prev || []).map(String).filter((id: string) => !pTaskSet.has(id)));
-                        }
-                      }
-                    }}
-                    className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 bg-white cursor-pointer active:scale-95 transition-all touch-manipulation"
-                  />
-                </label>
-              );
-            })()}
-            <div className="flex flex-col items-center justify-center gap-0.5 shrink-0">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (canToggle && handleToggle) {
-                    handleToggle(p.id!);
-                  }
-                }}
-                disabled={!canToggle}
-                className={cn(
-                  "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation",
-                  !canToggle
-                    ? "opacity-30 cursor-not-allowed text-slate-400 dark:text-slate-600"
-                    : isExpanded
-                    ? "text-slate-600 dark:text-[#c3c3c3] bg-slate-100 dark:bg-[#28282a] hover:bg-slate-200 dark:hover:bg-[#333336] cursor-pointer"
-                    : "text-slate-500 dark:text-[#a3a3a3] hover:bg-slate-100 dark:hover:bg-[#28282a] cursor-pointer"
-                )}
-                title={
-                  !canToggle
-                    ? "Project has no tasks"
-                    : isExpanded
-                    ? "Collapse this project"
-                    : `Expand this project (${effectiveTaskCount} tasks)`
-                }
-              >
-                {isExpanded ? (
-                  <ChevronDown className="w-3.5 h-3.5 pointer-events-none" />
-                ) : (
-                  <ChevronRight className="w-3.5 h-3.5 pointer-events-none" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={handleToggleProjectModular}
-                disabled={!hasModularTasks}
-                className={cn(
-                  "p-0.5 rounded shrink-0 active:scale-90 transition-all touch-manipulation",
-                  !hasModularTasks
-                    ? "opacity-25 cursor-not-allowed bg-slate-100 dark:bg-[#28282a] text-slate-400 dark:text-slate-600"
-                    : isProjectModularExpanded
-                    ? "bg-purple-600 hover:bg-purple-700 text-white dark:bg-purple-600 dark:hover:bg-purple-500 shadow-xs ring-1 ring-purple-400/50 cursor-pointer"
-                    : "bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/60 dark:hover:bg-purple-900/90 dark:text-purple-200 border border-purple-300 dark:border-purple-600/70 cursor-pointer"
-                )}
-                title={
-                  !hasModularTasks
-                    ? "Project has no modular tasks"
-                    : isProjectModularExpanded
-                    ? "Collapse modular tasks of this project"
-                    : "Expand modular tasks of this project"
-                }
-              >
-                {isProjectModularExpanded ? (
-                  <ChevronDown className="w-3.5 h-3.5 pointer-events-none" />
-                ) : (
-                  <ChevronRight className="w-3.5 h-3.5 pointer-events-none" />
-                )}
-              </button>
-            </div>
             <button
               type="button"
               onClick={(e) => {

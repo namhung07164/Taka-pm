@@ -11,6 +11,7 @@ export const SECONDARY_ACTIVE_YEARS = ['2028', '2029', '2030'];
 export const ARCHIVED_YEARS = ['2022', '2023'];
 
 export {
+  normalizeSearchDashes,
   matchesAdvancedSearch,
   stripSearchAccents,
   normalizeCompactSearchCode,

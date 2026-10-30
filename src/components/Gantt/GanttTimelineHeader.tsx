@@ -24,19 +24,24 @@ export const GanttTimelineHeader: React.FC<GanttTimelineHeaderProps> = React.mem
   let cumulativeDays = 0;
 
   return (
-    <div className="flex h-full cursor-grab active:cursor-grabbing" title="Click & Drag to Pan, Drag between months to resize">
+    <div
+      className="flex h-10 min-h-[40px] items-stretch cursor-grab active:cursor-grabbing"
+      title="Click & Drag to Pan, Drag between months to resize"
+    >
       {timeUnits.map((unit) => {
-        const width = unit.days * dayWidth;
         const daysBefore = cumulativeDays;
         cumulativeDays += unit.days;
-        const isCompact = width < 44;
-        const isUltraCompact = width < 32;
+        const startPx = Math.round(daysBefore * dayWidth);
+        const endPx = Math.round(cumulativeDays * dayWidth);
+        const width = Math.max(1, endPx - startPx);
+        const isCompact = width < 52;
+        const isUltraCompact = width < 36;
 
         return (
           <div
             key={unit.date.getTime()}
-            className={`relative flex flex-col justify-center items-center border-r border-slate-200 dark:border-slate-800 text-center shrink-0 py-1 overflow-hidden ${
-              isCompact ? 'px-0' : 'px-1'
+            className={`relative h-full flex flex-col justify-center items-center border-r border-slate-200 dark:border-slate-800 text-center shrink-0 overflow-hidden box-border ${
+              isCompact ? 'px-0' : 'px-0.5'
             }`}
             style={{
               width: `${width}px`,
@@ -45,24 +50,24 @@ export const GanttTimelineHeader: React.FC<GanttTimelineHeaderProps> = React.mem
             }}
           >
             <div
-              className={`font-bold text-slate-800 dark:text-[#e3e3e3] whitespace-nowrap leading-tight pointer-events-none ${
+              className={`font-bold text-slate-800 dark:text-[#e3e3e3] whitespace-nowrap leading-none pointer-events-none ${
                 isUltraCompact
-                  ? 'text-[9px] tracking-tighter'
+                  ? 'text-[9.5px] tracking-tighter'
                   : isCompact
-                  ? 'text-[10px] tracking-tight'
-                  : 'text-xs truncate'
+                  ? 'text-[10.5px] tracking-tight'
+                  : 'text-xs'
               }`}
             >
               {unit.labelPrimary || unit.label}
             </div>
             {unit.labelSecondary && (
               <div
-                className={`text-slate-500 dark:text-[#838383] font-semibold whitespace-nowrap leading-tight pointer-events-none ${
+                className={`text-slate-500 dark:text-[#838383] font-semibold whitespace-nowrap leading-none mt-0.5 pointer-events-none ${
                   isUltraCompact
                     ? 'text-[8px] tracking-tighter'
                     : isCompact
                     ? 'text-[9px] tracking-tight'
-                    : 'text-[10px] truncate'
+                    : 'text-[10px]'
                 }`}
               >
                 {unit.labelSecondary}

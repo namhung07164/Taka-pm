@@ -221,11 +221,9 @@ export function useBudgetData({
     const parentCode = String(selectedParentProject.code || '').trim().toUpperCase();
     const parentYear = selectedParentProject.year ? String(selectedParentProject.year).trim() : '';
     const parentStore = String(selectedParentProject.store || '').trim().toUpperCase();
-
     return projects.filter(p => {
       if (!p.parentId || String(p.parentId).trim().toUpperCase() !== parentCode) return false;
-      const cYear = p.year ? String(p.year).trim() : '';
-      const cStore = String(p.store || '').trim().toUpperCase();
+      const cYear = p.year ? String(p.year).trim() : '', cStore = String(p.store || '').trim().toUpperCase();
       if (parentYear && cYear && cYear !== parentYear) return false;
       if (parentStore && cStore && cStore !== parentStore) return false;
       return true;

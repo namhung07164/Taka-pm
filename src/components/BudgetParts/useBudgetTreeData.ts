@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { Project, Cost } from '../../types';
 import { calculateParentBudgetRollup } from '../../lib/financialService';
 import { BudgetTreeNode } from './budgetTypes';
+import { normalizeSearchDashes } from '../../lib/utils';
 
 interface UseBudgetTreeDataParams {
   projects: Project[];
@@ -11,6 +12,7 @@ interface UseBudgetTreeDataParams {
 export function buildBudgetTreeData(projects: Project[], costs: Cost[]): BudgetTreeNode[] {
   const projectMap = new Map<string, any>();
   const codeToProjects = new Map<string, any[]>();
+  const normCode = (c: any) => normalizeSearchDashes(String(c || '')).trim().toUpperCase();
 
     projects.forEach(p => {
       const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
@@ -53,7 +55,7 @@ export function buildBudgetTreeData(projects: Project[], costs: Cost[]): BudgetT
 
       projectMap.set(key, pData);
 
-      const codeKey = String(p.code).trim().toUpperCase();
+      const codeKey = normCode(p.code);
       if (!codeToProjects.has(codeKey)) {
         codeToProjects.set(codeKey, []);
       }
@@ -72,21 +74,24 @@ export function buildBudgetTreeData(projects: Project[], costs: Cost[]): BudgetT
 
     projects.forEach(p => {
       if (p.parentId && String(p.parentId).trim()) {
-        const parentCode = String(p.parentId).trim().toUpperCase();
+        const parentCode = normCode(p.parentId);
         const candidateParents = codeToProjects.get(parentCode);
         if (candidateParents && candidateParents.length > 0) {
           let childYear = getProjectYear(p);
           let childStore = getProjectStore(p);
 
-          // If child year/store missing, inherit from candidate parent if unambiguous
-          if (!childYear && candidateParents.length === 1) {
-            childYear = getProjectYear(candidateParents[0]);
-          }
-          if (!childStore && candidateParents.length === 1) {
-            childStore = getProjectStore(candidateParents[0]);
-          }
+          const matchedParent = candidateParents.find(cand => {
+            const candStore = getProjectStore(cand);
+            const candYear = getProjectYear(cand);
+            const matchStore = !childStore || !candStore || childStore === candStore;
+            const matchYear = !childYear || !candYear || childYear === candYear;
+            return matchStore && matchYear;
+          }) || candidateParents[0];
 
-          const scopedKey = `${parentCode}_${childYear}_${childStore}`;
+          const parentScopedYear = getProjectYear(matchedParent);
+          const parentScopedStore = getProjectStore(matchedParent);
+          const scopedKey = `${parentCode}_${parentScopedYear}_${parentScopedStore}`;
+
           if (!parentToChildrenMap.has(scopedKey)) {
             parentToChildrenMap.set(scopedKey, []);
           }
@@ -99,18 +104,19 @@ export function buildBudgetTreeData(projects: Project[], costs: Cost[]): BudgetT
     });
 
     const roots: BudgetTreeNode[] = [];
+    const attachedChildIds = new Set<string>();
 
     projects.forEach(p => {
       const pId = p.id || `${p.code}-${p.year}-${p.store}-${p.no}`;
 
-      // If project is linked as child of another project, it is only a child, not a root parent
+      // If project is linked as child of another project, skip it if already attached
       if (linkedChildIds.has(pId)) {
         return;
       }
 
       const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
       const pData = projectMap.get(key) || p;
-      const parentCode = String(p.code).trim().toUpperCase();
+      const parentCode = normCode(p.code);
       const pYear = getProjectYear(p);
       const pStore = getProjectStore(p);
       const scopedKey = `${parentCode}_${pYear}_${pStore}`;
@@ -178,6 +184,11 @@ export function buildBudgetTreeData(projects: Project[], costs: Cost[]): BudgetT
         };
       });
 
+      linkedProjects.forEach(c => {
+        attachedChildIds.add(c.id);
+        if (c.project?.id) attachedChildIds.add(c.project.id);
+      });
+
       const allChildren = [selfChild, ...linkedProjects];
 
       // Roll-up sums for Parent Node (Budget Mẹ) utilizing central financialService
@@ -199,6 +210,32 @@ export function buildBudgetTreeData(projects: Project[], costs: Cost[]): BudgetT
       };
 
       roots.push(parentNode);
+    });
+
+    // Safety net: Any linked child that was NOT attached to any active parent remains visible as a root project
+    projects.forEach(p => {
+      const pId = p.id || `${p.code}-${p.year}-${p.store}-${p.no}`;
+      if (linkedChildIds.has(pId) && !attachedChildIds.has(pId) && (!p.id || !attachedChildIds.has(p.id))) {
+        const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '')}_${String(p.store || '')}`;
+        const pData = projectMap.get(key) || p;
+        const b = pData.ownBudget ?? 0;
+        const a = pData.ownActual ?? 0;
+        const sf = pData.ownSupportingFee ?? 0;
+        roots.push({
+          ...pData,
+          id: pId,
+          isParentNode: false,
+          isSelf: false,
+          totalBudget: b,
+          totalActual: a,
+          totalSupportingFee: sf,
+          ownSupportingFee: sf,
+          hasForc: pData.hasForc,
+          remaining: b - a + sf,
+          children: [],
+          project: p,
+        });
+      }
     });
 
     return roots;

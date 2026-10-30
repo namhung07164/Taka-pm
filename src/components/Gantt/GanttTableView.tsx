@@ -69,76 +69,19 @@ interface GanttTableViewProps {
 }
 
 export function GanttTableView({
-  tableContainerRef,
-  mainScrollRef,
-  topScrollRef,
-  handleCombinedMainScroll,
-  handleTopScroll,
-  flatGanttRows = [],
-  visibleGanttRows,
-  paddingTop,
-  paddingBottom,
-  totalDays,
-  dayWidth,
-  sideWidth,
-  startResizingSide,
-  colWidths,
-  startResizingColumn,
-  timeUnits,
-  startDate,
-  customToday,
-  setCustomToday,
-  isDraggingToday,
-  setIsDraggingToday,
-  getDateFromOffsetPx,
-  activeTooltip,
-  setActiveTooltip,
-  getBarColor,
-  visibleColumns,
-  handleToggleColumn,
-  projects,
-  tasks,
-  delegationGroups,
-  currentUser,
-  canWrite,
-  isEditMode,
-  isHideMode,
-  toggleHideRow,
-  getRowVisibilityClass,
-  selectedTaskSet,
-  selectedTaskIds,
-  setSelectedTaskIds,
-  selectedProjectSet,
-  selectedProjectIds = [],
-  setSelectedProjectIds,
-  handleTaskCheckboxChange,
-  handleToggleSelectAll,
-  isAllSelected,
-  toggleProjectExpansion,
-  toggleModularParent,
-  handleGroupModularTasks,
-  handleUnlinkModularTasks,
-  handleTogglePin,
-  initialFocusTaskId,
-  ganttTabFocusTaskId,
-  draggingTaskIds,
-  handleTaskDragStart,
-  handleTaskDragOver,
-  handleContainerDragOver,
-  handleTaskDragLeave,
-  handleTaskDrop,
-  handleTaskDragEnd,
-  dragOverTaskId,
-  dropPosition,
-  dependencyLines,
-  computedSum,
-  isExporting,
-  onNavigateToTaskDetail,
-  onNavigateToLayout,
-  paginatedProjects,
-  expandedModularTasks = [],
-  setExpandedModularTasks,
-  getGroupTasksForProject
+  tableContainerRef, mainScrollRef, topScrollRef, handleCombinedMainScroll, handleTopScroll,
+  flatGanttRows = [], visibleGanttRows, paddingTop, paddingBottom, totalDays, dayWidth, sideWidth,
+  startResizingSide, colWidths, startResizingColumn, timeUnits, startDate, customToday, setCustomToday,
+  isDraggingToday, setIsDraggingToday, getDateFromOffsetPx, activeTooltip, setActiveTooltip, getBarColor,
+  visibleColumns, handleToggleColumn, projects, tasks, delegationGroups, currentUser, canWrite,
+  isEditMode, isHideMode, toggleHideRow, getRowVisibilityClass, selectedTaskSet, selectedTaskIds,
+  setSelectedTaskIds, selectedProjectSet, selectedProjectIds = [], setSelectedProjectIds,
+  handleTaskCheckboxChange, handleToggleSelectAll, isAllSelected, toggleProjectExpansion,
+  toggleModularParent, handleGroupModularTasks, handleUnlinkModularTasks, handleTogglePin,
+  initialFocusTaskId, ganttTabFocusTaskId, draggingTaskIds, handleTaskDragStart, handleTaskDragOver,
+  handleContainerDragOver, handleTaskDragLeave, handleTaskDrop, handleTaskDragEnd, dragOverTaskId,
+  dropPosition, dependencyLines, computedSum, isExporting, onNavigateToTaskDetail, onNavigateToLayout,
+  paginatedProjects, expandedModularTasks = [], setExpandedModularTasks, getGroupTasksForProject
 }: GanttTableViewProps) {
   const { t } = useLanguage();
   const expandedProjects = useAppStore((state) => state.expandedProjectIds);
@@ -149,53 +92,39 @@ export function GanttTableView({
 
   const handleToggleExpandAll = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isAllExpanded) {
-      setExpandedProjectIds([]);
-    } else {
-      setExpandedProjectIds(currentProjects.map((p) => p.id!).filter(Boolean) as string[]);
-    }
+    setExpandedProjectIds(isAllExpanded ? [] : (currentProjects.map((p) => p.id!).filter(Boolean) as string[]));
   };
 
   // Find all modular parent task IDs for currently displayed/searched projects
   const currentModularParentIds = useMemo(() => {
     const parentIdSet = new Set<string>();
-
     currentProjects.forEach((p) => {
       const pTasks = getGroupTasksForProject ? getGroupTasksForProject(p) : [];
       if (!pTasks || pTasks.length === 0) return;
-
       const projectTaskById = new Map<string, Task>();
       const projectTaskByCode = new Map<string, Task>();
       pTasks.forEach((t) => {
         if (t.id) projectTaskById.set(String(t.id), t);
-        if (t.taskCodePhu) {
-          projectTaskByCode.set(String(t.taskCodePhu).trim().toLowerCase(), t);
-        }
+        if (t.taskCodePhu) projectTaskByCode.set(String(t.taskCodePhu).trim().toLowerCase(), t);
       });
-
       pTasks.forEach((t) => {
         const rawParentId = t.parentTaskId || (t as any).parentId;
         if (rawParentId) {
           const parentKey = String(rawParentId).trim().toLowerCase();
           const matchedParent = projectTaskById.get(String(rawParentId)) || projectTaskByCode.get(parentKey);
-          const effectiveParentId = matchedParent ? String(matchedParent.id) : String(rawParentId);
-          parentIdSet.add(effectiveParentId);
+          parentIdSet.add(matchedParent ? String(matchedParent.id) : String(rawParentId));
         }
       });
     });
-
     return Array.from(parentIdSet);
   }, [currentProjects, getGroupTasksForProject]);
 
   const hasModularTasks = currentModularParentIds.length > 0;
-  const isAnyModularExpanded =
-    hasModularTasks &&
-    currentModularParentIds.some((id) => expandedModularTasks.includes(id));
+  const isAnyModularExpanded = hasModularTasks && currentModularParentIds.some((id) => expandedModularTasks.includes(id));
 
   const handleToggleExpandAllModular = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!hasModularTasks || !setExpandedModularTasks) return;
-
     if (isAnyModularExpanded) {
       const toRemove = new Set(currentModularParentIds);
       setExpandedModularTasks((prev) => {
@@ -213,27 +142,33 @@ export function GanttTableView({
   };
 
   const showStart = visibleColumns.includes('start'), showFinish = visibleColumns.includes('finish'), showParty = visibleColumns.includes('party'), showDuration = visibleColumns.includes('duration'), showPredecessor = visibleColumns.includes('predecessor');
-  const startColWidth = colWidths?.start ?? 85; const finishColWidth = colWidths?.finish ?? 85; const partyColWidth = colWidths?.party ?? 80; const durationColWidth = colWidths?.duration ?? 60; const predecessorColWidth = colWidths?.predecessor ?? 90;
+  const startColWidth = colWidths?.start ?? 85, finishColWidth = colWidths?.finish ?? 85, partyColWidth = colWidths?.party ?? 80, durationColWidth = colWidths?.duration ?? 60, predecessorColWidth = colWidths?.predecessor ?? 90;
 
-  const taskCodeMap = useMemo(() => {
-    return computeAllTaskCodes(projects, tasks);
-  }, [projects, tasks]);
+  const taskCodeMap = useMemo(() => computeAllTaskCodes(projects, tasks), [projects, tasks]);
 
   const delegationGroupByTaskId = useMemo(() => {
     const map = new Map<string, any>();
     (delegationGroups || []).forEach(g => {
       if (g.taskId) map.set(g.taskId, g);
       if (g.parentTaskId) map.set(g.parentTaskId, g);
-      if (g.subTasks) {
-        g.subTasks.forEach((st: any) => {
-          if (st.taskId) map.set(st.taskId, g);
-        });
-      }
+      if (g.subTasks) g.subTasks.forEach((st: any) => { if (st.taskId) map.set(st.taskId, g); });
     });
     return map;
   }, [delegationGroups]);
 
-  const totalTimelineWidth = totalDays * dayWidth;
+  const isPrintPreview = useAppStore((state) => state.isPrintPreview);
+  const isExportingPDF = useAppStore((state) => state.isExportingPDF);
+  const isPrintMode = Boolean(isPrintPreview || isExportingPDF);
+
+  const totalUnitDays = useMemo(() => {
+    if (!timeUnits || timeUnits.length === 0) return totalDays;
+    let sum = 0;
+    for (let i = 0; i < timeUnits.length; i++) sum += timeUnits[i].days;
+    return sum > 0 ? sum : totalDays;
+  }, [timeUnits, totalDays]);
+
+  const totalTimelineWidth = Math.round(totalUnitDays * dayWidth);
+  const totalChartWidth = Math.round(sideWidth + totalTimelineWidth);
 
   const { isPanning, handlePointerDown, handleStartMonthResize } = useGanttZoomAndPan({ mainScrollRef, topScrollRef, sideWidth });
 
@@ -289,6 +224,7 @@ export function GanttTableView({
     <div
       ref={tableContainerRef}
       onDragOver={handleContainerDragOver}
+      style={isPrintMode ? { width: `${totalChartWidth}px`, minWidth: `${totalChartWidth}px` } : undefined}
       className={cn(
         "flex-grow flex flex-col bg-white dark:bg-[#1e1e20] relative min-h-0 select-none w-full min-w-0",
         isExporting && "overflow-hidden"
@@ -300,7 +236,11 @@ export function GanttTableView({
         data-print-header="true"
         onScroll={handleTopScroll}
         onPointerDown={handlePointerDown}
-        style={{ position: '-webkit-sticky' as any, top: `${stickyOffset}px` }}
+        style={
+          isPrintMode
+            ? { width: `${totalChartWidth}px`, minWidth: `${totalChartWidth}px` }
+            : { position: '-webkit-sticky' as any, top: `${stickyOffset}px` }
+        }
         className="sticky top-[86px] sm:top-[48px] z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-[#18181a]/95 backdrop-blur-md flex shrink-0 shadow-xs"
       >
         <GanttLeftHeader
@@ -318,7 +258,10 @@ export function GanttTableView({
           handleToggleColumn={handleToggleColumn}
           startResizingColumn={startResizingColumn}
         />
-        <div className="flex-1 shrink-0 overflow-visible" style={{ width: `${totalTimelineWidth}px` }}>
+        <div
+          className="shrink-0 overflow-visible"
+          style={{ width: `${totalTimelineWidth}px`, minWidth: `${totalTimelineWidth}px` }}
+        >
           <GanttTimelineHeader timeUnits={timeUnits} dayWidth={dayWidth} onStartMonthResize={handleStartMonthResize} />
         </div>
       </div>
@@ -333,6 +276,7 @@ export function GanttTableView({
             setActiveTooltip(null);
           }
         }}
+        style={isPrintMode ? { width: `${totalChartWidth}px`, minWidth: `${totalChartWidth}px` } : undefined}
         className={cn(
           "flex-grow overflow-auto relative z-10 flex min-h-0 w-full max-w-full min-w-0 rounded-b-xl",
           isPanning ? "cursor-grabbing select-none" : "cursor-grab"
@@ -347,9 +291,10 @@ export function GanttTableView({
 
         {/* Rows Virtual Container */}
         <div
-          className="flex flex-col relative w-full"
+          className="flex flex-col relative"
           style={{
-            minWidth: `${sideWidth + totalTimelineWidth}px`,
+            width: `${totalChartWidth}px`,
+            minWidth: `${totalChartWidth}px`,
             paddingTop: `${paddingTop}px`,
             paddingBottom: `${paddingBottom}px`
           }}

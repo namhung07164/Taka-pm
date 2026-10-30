@@ -227,7 +227,7 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
     // High-DPI canvas budget (up to 28MP for 300 DPI Ultra Sharp mode)
     const maxCanvasPixels =
       desiredDpi >= 300 ? 28_000_000 : desiredDpi >= 200 ? 18_000_000 : 10_000_000;
-    const maxAllowedRatio = desiredDpi >= 300 ? 3.8 : desiredDpi >= 200 ? 2.8 : 2.0;
+    const maxAllowedRatio = desiredDpi >= 300 ? 4.0 : desiredDpi >= 200 ? 3.0 : 2.0;
 
     const requestedPixels =
       naturalWidth * effectivePixelRatio * (naturalHeight * effectivePixelRatio);
@@ -242,7 +242,9 @@ export async function exportToPdf(options: ExportToPdfOptions): Promise<void> {
     if (naturalHeight * effectivePixelRatio > maxSidePx) {
       effectivePixelRatio = Math.min(effectivePixelRatio, maxSidePx / naturalHeight);
     }
-    effectivePixelRatio = Math.max(1.0, Math.min(maxAllowedRatio, effectivePixelRatio));
+    // Snap pixelRatio to clean 0.5x steps (2.0, 2.5, 3.0, 3.5, 4.0) so 1px vertical cell borders never suffer from irrational sub-pixel Moiré aliasing
+    const snappedRatio = Math.floor(Math.min(maxAllowedRatio, effectivePixelRatio) * 2) / 2;
+    effectivePixelRatio = Math.max(1.0, snappedRatio);
 
     const htmlToImage = await import('html-to-image');
     const buildCanvasOptions = (skipFontsFlag: boolean) => ({

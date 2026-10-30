@@ -51,10 +51,10 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
 
   return (
     <div
-      className="sticky left-0 z-30 bg-slate-100 dark:bg-[#28282b] flex items-center border-r border-slate-300 dark:border-slate-700 font-bold text-xs text-slate-900 dark:text-[#c3c3c3] shrink-0"
-      style={{ width: `${sideWidth}px` }}
+      className="sticky left-0 z-30 bg-slate-100 dark:bg-[#28282b] flex items-stretch h-10 min-h-[40px] border-r border-slate-300 dark:border-slate-700 font-bold text-xs text-slate-900 dark:text-[#c3c3c3] shrink-0 box-border"
+      style={{ width: `${sideWidth}px`, minWidth: `${sideWidth}px`, maxWidth: `${sideWidth}px` }}
     >
-      <div className="w-10 px-1 py-2 text-center border-r border-slate-200 dark:border-slate-800 shrink-0">
+      <div className="w-10 px-1 h-full flex items-center justify-center text-center border-r border-slate-200 dark:border-slate-800 shrink-0 box-border">
         {isEditMode ? (
           <input
             type="checkbox"
@@ -67,8 +67,8 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
           <span>#</span>
         )}
       </div>
-      <div className="flex-1 min-w-[140px] px-2 py-1 border-r border-slate-200 dark:border-slate-800 truncate flex items-center gap-1.5">
-        <div className="flex flex-col items-center justify-center gap-0.5 shrink-0">
+      <div className="flex-1 min-w-[140px] px-2 h-full flex items-center gap-1.5 overflow-hidden box-border">
+        <div className="flex flex-col items-center justify-center gap-0.5 shrink-0 print:hidden hide-on-actual-print">
           <button
             type="button"
             onClick={handleToggleExpandAll}
@@ -108,14 +108,14 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
             )}
           </button>
         </div>
-        <span className="truncate">{t('Project / Task')}</span>
+        <span className="truncate whitespace-nowrap">{t('Project / Task')}</span>
       </div>
       {showStart && (
         <div
-          className="relative px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col shrink-0"
+          className="relative px-1.5 h-full text-center border-l border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-center gap-1 group/col shrink-0 box-border"
           style={{ width: `${startColWidth}px`, minWidth: `${startColWidth}px`, maxWidth: `${startColWidth}px` }}
         >
-          <span className="truncate flex-1">{t('Start')}</span>
+          <span className="truncate flex-1 text-center">{t('Start')}</span>
           {handleToggleColumn && (
             <button
               type="button"
@@ -123,7 +123,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
                 e.stopPropagation();
                 handleToggleColumn("start");
               }}
-              className="opacity-0 group-hover/col:opacity-70 hover:!opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer shrink-0"
+              className="opacity-0 group-hover/col:opacity-70 hover:!opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer shrink-0 print:hidden hide-on-actual-print"
               title="Hide Start column"
             >
               <EyeOff className="w-3 h-3" />
@@ -132,7 +132,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
           {startResizingColumn && (
             <div
               onMouseDown={(e) => startResizingColumn('start', e)}
-              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20"
+              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20 print:hidden hide-on-actual-print"
               title="Drag to resize column"
             />
           )}
@@ -140,10 +140,10 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
       )}
       {showFinish && (
         <div
-          className="relative px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col shrink-0"
+          className="relative px-1.5 h-full text-center border-l border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-center gap-1 group/col shrink-0 box-border"
           style={{ width: `${finishColWidth}px`, minWidth: `${finishColWidth}px`, maxWidth: `${finishColWidth}px` }}
         >
-          <span className="truncate flex-1">{t('Finish')}</span>
+          <span className="truncate flex-1 text-center">{t('Finish')}</span>
           {handleToggleColumn && (
             <button
               type="button"
@@ -151,7 +151,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
                 e.stopPropagation();
                 handleToggleColumn("finish");
               }}
-              className="opacity-0 group-hover/col:opacity-70 hover:!opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer shrink-0"
+              className="opacity-0 group-hover/col:opacity-70 hover:!opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer shrink-0 print:hidden hide-on-actual-print"
               title="Hide Finish column"
             >
               <EyeOff className="w-3 h-3" />
@@ -160,7 +160,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
           {startResizingColumn && (
             <div
               onMouseDown={(e) => startResizingColumn('finish', e)}
-              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20"
+              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20 print:hidden hide-on-actual-print"
               title="Drag to resize column"
             />
           )}
@@ -168,10 +168,10 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
       )}
       {showParty && (
         <div
-          className="relative px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col shrink-0"
+          className="relative px-1.5 h-full text-center border-l border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-center gap-1 group/col shrink-0 box-border"
           style={{ width: `${partyColWidth}px`, minWidth: `${partyColWidth}px`, maxWidth: `${partyColWidth}px` }}
         >
-          <span className="truncate flex-1">{t('Party')}</span>
+          <span className="truncate flex-1 text-center">{t('Party')}</span>
           {handleToggleColumn && (
             <button
               type="button"
@@ -179,7 +179,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
                 e.stopPropagation();
                 handleToggleColumn("party");
               }}
-              className="opacity-0 group-hover/col:opacity-70 hover:!opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer shrink-0"
+              className="opacity-0 group-hover/col:opacity-70 hover:!opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer shrink-0 print:hidden hide-on-actual-print"
               title="Hide Party column"
             >
               <EyeOff className="w-3 h-3" />
@@ -188,7 +188,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
           {startResizingColumn && (
             <div
               onMouseDown={(e) => startResizingColumn('party', e)}
-              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20"
+              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20 print:hidden hide-on-actual-print"
               title="Drag to resize column"
             />
           )}
@@ -196,10 +196,10 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
       )}
       {showDuration && (
         <div
-          className="relative px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col shrink-0"
+          className="relative px-1.5 h-full text-center border-l border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-center gap-1 group/col shrink-0 box-border"
           style={{ width: `${durationColWidth}px`, minWidth: `${durationColWidth}px`, maxWidth: `${durationColWidth}px` }}
         >
-          <span className="truncate flex-1">{t('Duration')}</span>
+          <span className="truncate flex-1 text-center">{t('Duration')}</span>
           {handleToggleColumn && (
             <button
               type="button"
@@ -207,7 +207,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
                 e.stopPropagation();
                 handleToggleColumn("duration");
               }}
-              className="opacity-0 group-hover/col:opacity-70 hover:!opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer shrink-0"
+              className="opacity-0 group-hover/col:opacity-70 hover:!opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer shrink-0 print:hidden hide-on-actual-print"
               title="Hide Duration column"
             >
               <EyeOff className="w-3 h-3" />
@@ -216,7 +216,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
           {startResizingColumn && (
             <div
               onMouseDown={(e) => startResizingColumn('duration', e)}
-              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20"
+              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20 print:hidden hide-on-actual-print"
               title="Drag to resize column"
             />
           )}
@@ -224,10 +224,10 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
       )}
       {showPredecessor && (
         <div
-          className="relative px-1.5 py-2 text-center border-r border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-between gap-1 group/col shrink-0"
+          className="relative px-1.5 h-full text-center border-l border-slate-200 dark:border-slate-800 truncate text-[11px] font-bold flex items-center justify-center gap-1 group/col shrink-0 box-border"
           style={{ width: `${predecessorColWidth}px`, minWidth: `${predecessorColWidth}px`, maxWidth: `${predecessorColWidth}px` }}
         >
-          <span className="truncate flex-1">{t('Pred')}</span>
+          <span className="truncate flex-1 text-center">{t('Pred')}</span>
           {handleToggleColumn && (
             <button
               type="button"
@@ -235,7 +235,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
                 e.stopPropagation();
                 handleToggleColumn("predecessor");
               }}
-              className="opacity-0 group-hover/col:opacity-70 hover:!opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer shrink-0"
+              className="opacity-0 group-hover/col:opacity-70 hover:!opacity-100 p-0.5 rounded text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer shrink-0 print:hidden hide-on-actual-print"
               title="Hide Predecessor column"
             >
               <EyeOff className="w-3 h-3" />
@@ -244,7 +244,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
           {startResizingColumn && (
             <div
               onMouseDown={(e) => startResizingColumn('predecessor', e)}
-              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20"
+              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors z-20 print:hidden hide-on-actual-print"
               title="Drag to resize column"
             />
           )}

@@ -62,30 +62,35 @@ export const AppPrintStyles: React.FC<AppPrintStylesProps> = React.memo(
              -webkit-font-smoothing: antialiased;
              text-rendering: geometricPrecision;
           }
+          html:not(.dark) .print-preview-content-active .border-slate-300,
           html:not(.dark) .print-preview-content-active .border-slate-200,
-          html:not(.dark) .print-preview-content-active .border-slate-100,
-          html:not(.dark) .print-preview-content-active .border-b,
-          html:not(.dark) .print-preview-content-active .border-r {
-             border-color: #475569 !important;
+          html:not(.dark) .print-preview-content-active [data-print-header="true"] {
+             border-color: #64748b !important;
+          }
+          html:not(.dark) .print-preview-content-active .border-slate-100 {
+             border-color: #cbd5e1 !important;
+          }
+          html:not(.dark) .print-preview-content-active .print-sticky-x {
+             box-shadow: none !important;
           }
           html:not(.dark) .print-preview-content-active .text-slate-500,
           html:not(.dark) .print-preview-content-active .text-slate-600 {
-             color: #1e293b !important;
+             color: #334155 !important;
              font-weight: 700 !important;
           }
           html:not(.dark) .print-preview-content-active .text-slate-700,
           html:not(.dark) .print-preview-content-active .text-slate-800,
           html:not(.dark) .print-preview-content-active .text-slate-900 {
-             color: #000000 !important;
-             font-weight: 800 !important;
+             color: #0f172a !important;
+             font-weight: 700 !important;
           }
           html:not(.dark) .print-preview-content-active .bg-slate-100 {
-             background-color: #e2e8f0 !important;
+             background-color: #f1f5f9 !important;
           }
           html:not(.dark) .print-preview-content-active table,
           html:not(.dark) .print-preview-content-active th,
           html:not(.dark) .print-preview-content-active td {
-             border-color: #334155 !important;
+             border-color: #475569 !important;
           }
           ${!isLayout ? `
           /* Ensure desktop table/canvas views are always used for print/PDF even on tablet/mobile viewports */
