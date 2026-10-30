@@ -340,12 +340,17 @@ export function useLayoutAggregates({
   const prevVisibleUnitsKeyRef = useRef<string>('');
 
   const visibleUnits = useMemo(() => {
+    // For typical floor plans (<= 400 units), keeping all Konva nodes mounted avoids React/Konva mount-unmount churn during zoom & pan
+    if (displayedUnits.length <= 400) {
+      return displayedUnits;
+    }
+
     const scale = stageScale || 1;
     const vpW = dimensions.width || 800;
     const vpH = dimensions.height || 600;
 
     let filtered = displayedUnits;
-    if (scale > 0.35 && displayedUnits.length > 40) {
+    if (scale > 0.35) {
       const bufferPadding = Math.max(150, 300 / scale);
       const minWorldX = (-stagePos.x / scale) - bufferPadding;
       const maxWorldX = ((vpW - stagePos.x) / scale) + bufferPadding;

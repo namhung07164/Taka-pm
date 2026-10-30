@@ -45,7 +45,8 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
 }) => {
   const isDarkMode = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
   const isLegendColorOn = layoutTooltipVisibility?.legendColor !== false;
-  const currentZoom = stageScale || 1;
+  // Quantize zoom into discrete 0.5x LOD buckets so minor zoom changes do not trigger Canvas2D text re-measurement across all units
+  const quantizedZoom = Math.max(0.5, Math.min(2.5, Math.round((stageScale || 1) * 2) / 2));
 
   return (
     <>
@@ -114,9 +115,6 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
 
             let unitStroke: string | undefined = undefined;
             let unitStrokeWidth = 0;
-            let unitShadowColor: string | undefined = undefined;
-            let unitShadowBlur = 0;
-            let unitShadowOpacity = 0;
 
             if (isFocused) {
               unitStroke = '#f59e0b';
@@ -127,9 +125,6 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
                   // User rule: "nếu unit/ project nào có diện tích thì thêm viền màu chính status đó bao xung quanh"
                   unitStroke = statusColor;
                   unitStrokeWidth = 3.5;
-                  unitShadowColor = statusColor;
-                  unitShadowBlur = 5;
-                  unitShadowOpacity = 0.75;
                 } else {
                   // User rule: "ko thì ko có"
                   unitStroke = undefined;
@@ -165,9 +160,8 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
               opacity: displayOpacity,
               stroke: unitStrokeWidth > 0 ? unitStroke : undefined,
               strokeWidth: unitStrokeWidth,
-              shadowColor: unitShadowBlur > 0 ? unitShadowColor : undefined,
-              shadowBlur: unitShadowBlur,
-              shadowOpacity: unitShadowOpacity,
+              shadowEnabled: false,
+              shadowForStrokeEnabled: false,
               strokeScaleEnabled: false,
               perfectDrawEnabled: false,
               x: unit.x || 0,
@@ -180,17 +174,17 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
               onTap: (e: any) => onTapUnit(unit, e, false),
             };
 
-            // Calculated font size for optimal legibility
+            // Calculated font size for optimal legibility using quantized LOD zoom bucket
             const unitW = unit.textWidth || 100;
             const unitH = unit.textHeight || 30;
             const baseFont = Math.max(10, Math.min(18, Math.round(Math.min(unitW, unitH * 2.2) / 5.5)));
-            const dynamicFontSize = Math.max(9, Math.min(22, baseFont / Math.max(0.65, Math.min(currentZoom, 1.8))));
+            const dynamicFontSize = Math.max(9, Math.min(22, Math.round(baseFont / Math.max(0.65, Math.min(quantizedZoom, 1.8)))));
 
-            const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
-            const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, stageScale || 1))));
+            const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, quantizedZoom))));
+            const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, quantizedZoom))));
 
             // Distinct, easily recognizable Interactive Image Button dimensions
-            const imgBtnH = Math.max(11.5, Math.min(20, 14.5 / Math.sqrt(Math.max(0.45, stageScale || 1))));
+            const imgBtnH = Math.max(11.5, Math.min(20, 14.5 / Math.sqrt(Math.max(0.45, quantizedZoom))));
             const imgBtnW = imgBtnH * 1.26;
             const imgIconScale = (imgBtnH * 0.78) / 24;
 

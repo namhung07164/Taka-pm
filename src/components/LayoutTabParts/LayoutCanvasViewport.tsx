@@ -229,7 +229,7 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
 
                   stage.scale({ x: newScale, y: newScale });
                   stage.position(newPos);
-                  stage.batchDraw();
+                  stage.getLayers().forEach((l: any) => l.drawScene());
 
                   touchStateRef.current.lastDist = curDist;
                   touchStateRef.current.lastCenter = curCenter;
@@ -250,6 +250,7 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
           const stage = stageRef.current;
           if (stage) {
             stage.draggable(true);
+            stage.batchDraw();
             setStageScale(stage.scaleX());
             setStagePos({ x: stage.x(), y: stage.y() });
           }
@@ -298,10 +299,11 @@ export const LayoutCanvasViewport: React.FC<LayoutCanvasViewportProps> = React.m
 
               currentStage.scale({ x: newScale, y: newScale });
               currentStage.position(newPos);
-              currentStage.batchDraw();
+              currentStage.getLayers().forEach((l: any) => l.drawScene());
 
               if (wheelTimeoutRef.current) clearTimeout(wheelTimeoutRef.current);
               wheelTimeoutRef.current = setTimeout(() => {
+                currentStage.batchDraw();
                 setStageScale(currentStage.scaleX());
                 setStagePos({ x: currentStage.x(), y: currentStage.y() });
                 isInteractingRef.current = false;

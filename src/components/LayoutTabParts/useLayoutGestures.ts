@@ -55,11 +55,19 @@ export function useLayoutGestures({
   });
   const rafInertiaIdRef = useRef<number | null>(null);
 
+  const rafZoomAnimIdRef = useRef<number | null>(null);
+  const targetZoomScaleRef = useRef<number | null>(null);
+
   const stopInertia = useCallback(() => {
     if (rafInertiaIdRef.current !== null) {
       cancelAnimationFrame(rafInertiaIdRef.current);
       rafInertiaIdRef.current = null;
     }
+    if (rafZoomAnimIdRef.current !== null) {
+      cancelAnimationFrame(rafZoomAnimIdRef.current);
+      rafZoomAnimIdRef.current = null;
+    }
+    targetZoomScaleRef.current = null;
   }, []);
 
   // Cleanup timers & RAFs on unmount
@@ -69,6 +77,7 @@ export function useLayoutGestures({
       if (rafWheelIdRef.current !== null) cancelAnimationFrame(rafWheelIdRef.current);
       if (rafInertiaIdRef.current !== null) cancelAnimationFrame(rafInertiaIdRef.current);
       if (rafTouchIdRef.current !== null) cancelAnimationFrame(rafTouchIdRef.current);
+      if (rafZoomAnimIdRef.current !== null) cancelAnimationFrame(rafZoomAnimIdRef.current);
     };
   }, []);
 
@@ -291,12 +300,13 @@ export function useLayoutGestures({
         const nextY = currentStage.y() + currentVy * frameDt;
 
         currentStage.position({ x: nextX, y: nextY });
-        currentStage.batchDraw();
+        currentStage.getLayers().forEach((l: any) => l.drawScene());
 
         if (Math.hypot(currentVx, currentVy) > 0.02) {
           rafInertiaIdRef.current = requestAnimationFrame(step);
         } else {
           rafInertiaIdRef.current = null;
+          currentStage.batchDraw();
           setStagePos({ x: currentStage.x(), y: currentStage.y() });
           isInteractingRef.current = false;
         }
@@ -304,66 +314,93 @@ export function useLayoutGestures({
 
       rafInertiaIdRef.current = requestAnimationFrame(step);
     } else {
+      stage.batchDraw();
       setStagePos({ x: stage.x(), y: stage.y() });
       isInteractingRef.current = false;
     }
   }, [stageRef, setStagePos]);
 
-  const handleZoomIn = useCallback(() => {
+  const animateZoomByFactor = useCallback((factor: number) => {
     const stage = stageRef.current;
     if (!stage) return;
-    const oldScale = stage.scaleX();
-    const newScale = Math.min(oldScale * 1.3, 20);
-    const center = { x: dimensions.width / 2, y: dimensions.height / 2 };
-    const mousePointTo = {
-      x: (center.x - stage.x()) / oldScale,
-      y: (center.y - stage.y()) / oldScale,
-    };
-    const newPos = {
-      x: center.x - mousePointTo.x * newScale,
-      y: center.y - mousePointTo.y * newScale,
-    };
-    stage.to({
-      scaleX: newScale,
-      scaleY: newScale,
-      x: newPos.x,
-      y: newPos.y,
-      duration: 0.18,
-      easing: Konva.Easings.EaseOut,
-      onFinish: () => {
-        setStageScale(newScale);
-        setStagePos(newPos);
+    if (rafInertiaIdRef.current !== null) {
+      cancelAnimationFrame(rafInertiaIdRef.current);
+      rafInertiaIdRef.current = null;
+    }
+
+    isInteractingRef.current = true;
+    setHoverInfo(null);
+
+    const baseScale = targetZoomScaleRef.current ?? stage.scaleX();
+    const targetScale = Math.max(0.04, Math.min(baseScale * factor, 20));
+    targetZoomScaleRef.current = targetScale;
+
+    const center = { x: ( stage.width() || dimensions.width ) / 2, y: ( stage.height() || dimensions.height ) / 2 };
+
+    if (rafZoomAnimIdRef.current !== null) {
+      // Animation loop is already running and will smoothly converge toward the updated targetZoomScaleRef
+      return;
+    }
+
+    const step = () => {
+      const curStage = stageRef.current;
+      const goalScale = targetZoomScaleRef.current;
+      if (!curStage || goalScale === null) {
+        rafZoomAnimIdRef.current = null;
+        isInteractingRef.current = false;
+        return;
       }
-    });
-  }, [dimensions.width, dimensions.height, stageRef, setStageScale, setStagePos]);
+
+      const curScale = curStage.scaleX();
+      const diff = goalScale - curScale;
+
+      if (Math.abs(diff) / Math.max(0.04, curScale) < 0.008) {
+        const worldPt = {
+          x: (center.x - curStage.x()) / curScale,
+          y: (center.y - curStage.y()) / curScale,
+        };
+        const finalPos = {
+          x: center.x - worldPt.x * goalScale,
+          y: center.y - worldPt.y * goalScale,
+        };
+        curStage.scale({ x: goalScale, y: goalScale });
+        curStage.position(finalPos);
+        curStage.batchDraw();
+        rafZoomAnimIdRef.current = null;
+        targetZoomScaleRef.current = null;
+        setStageScale(goalScale);
+        setStagePos(finalPos);
+        isInteractingRef.current = false;
+        return;
+      }
+
+      const nextScale = curScale + diff * 0.35;
+      const worldPt = {
+        x: (center.x - curStage.x()) / curScale,
+        y: (center.y - curStage.y()) / curScale,
+      };
+      const nextPos = {
+        x: center.x - worldPt.x * nextScale,
+        y: center.y - worldPt.y * nextScale,
+      };
+
+      curStage.scale({ x: nextScale, y: nextScale });
+      curStage.position(nextPos);
+      curStage.getLayers().forEach((l: any) => l.drawScene());
+
+      rafZoomAnimIdRef.current = requestAnimationFrame(step);
+    };
+
+    rafZoomAnimIdRef.current = requestAnimationFrame(step);
+  }, [dimensions.width, dimensions.height, stageRef, setStageScale, setStagePos, setHoverInfo]);
+
+  const handleZoomIn = useCallback(() => {
+    animateZoomByFactor(1.3);
+  }, [animateZoomByFactor]);
 
   const handleZoomOut = useCallback(() => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const oldScale = stage.scaleX();
-    const newScale = Math.max(oldScale / 1.3, 0.04);
-    const center = { x: dimensions.width / 2, y: dimensions.height / 2 };
-    const mousePointTo = {
-      x: (center.x - stage.x()) / oldScale,
-      y: (center.y - stage.y()) / oldScale,
-    };
-    const newPos = {
-      x: center.x - mousePointTo.x * newScale,
-      y: center.y - mousePointTo.y * newScale,
-    };
-    stage.to({
-      scaleX: newScale,
-      scaleY: newScale,
-      x: newPos.x,
-      y: newPos.y,
-      duration: 0.18,
-      easing: Konva.Easings.EaseOut,
-      onFinish: () => {
-        setStageScale(newScale);
-        setStagePos(newPos);
-      }
-    });
-  }, [dimensions.width, dimensions.height, stageRef, setStageScale, setStagePos]);
+    animateZoomByFactor(1 / 1.3);
+  }, [animateZoomByFactor]);
 
   return {
     isInteractingRef,

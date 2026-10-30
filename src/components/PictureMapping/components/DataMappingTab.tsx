@@ -113,8 +113,38 @@ export default React.memo(function DataMappingTab() {
     }
   }, [location, userAllowedLocations, setLocation]);
 
+  const prevUnitsCacheRef = React.useRef<{
+    store: string;
+    mapUnitsRef: any;
+    partitionUnitRefs: any[];
+    result: any[];
+  } | null>(null);
+
   const allStoreUnits = React.useMemo(() => {
-    return getAllStoreUnits(store);
+    const partitionUnitRefs: any[] = [];
+    for (const key in storeLocationData) {
+      if (key.startsWith(`${store}_`)) {
+        partitionUnitRefs.push(key, storeLocationData[key]?.mapUnits);
+      }
+    }
+    const prev = prevUnitsCacheRef.current;
+    if (
+      prev &&
+      prev.store === store &&
+      prev.mapUnitsRef === mapUnits &&
+      prev.partitionUnitRefs.length === partitionUnitRefs.length &&
+      prev.partitionUnitRefs.every((val, idx) => val === partitionUnitRefs[idx])
+    ) {
+      return prev.result;
+    }
+    const nextResult = getAllStoreUnits(store);
+    prevUnitsCacheRef.current = {
+      store,
+      mapUnitsRef: mapUnits,
+      partitionUnitRefs,
+      result: nextResult,
+    };
+    return nextResult;
   }, [store, mapUnits, storeLocationData, getAllStoreUnits]);
 
   const allStoreVersions = React.useMemo(() => {
@@ -122,12 +152,15 @@ export default React.memo(function DataMappingTab() {
   }, [store, mapVersions, storeLocationData, getAllStoreVersions]);
 
   // Pre-cache all floor maps into IndexedDB for instant switching
+  const preloadedUrlsKeyRef = React.useRef<string>('');
   React.useEffect(() => {
     if (allStoreVersions.length > 0) {
       const urls = allStoreVersions
         .map(v => v?.backgroundUrl)
         .filter((u): u is string => typeof u === 'string' && u.length > 0 && !u.startsWith('r2://'));
-      if (urls.length > 0) {
+      const key = urls.join('|');
+      if (urls.length > 0 && key !== preloadedUrlsKeyRef.current) {
+        preloadedUrlsKeyRef.current = key;
         preloadFloorImages(urls);
       }
     }

@@ -149,6 +149,88 @@ function SearchableSelect({
     );
 }
 
+const UnitSizeInput = memo(({
+  unitId,
+  effectiveSize,
+  onCommit,
+}: {
+  unitId: string;
+  effectiveSize: number;
+  onCommit: (numVal: number | undefined) => void;
+}) => {
+  const [localVal, setLocalVal] = useState<string>(effectiveSize > 0 ? String(effectiveSize) : '');
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+  const isFocusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!isFocusedRef.current) {
+      setLocalVal(effectiveSize > 0 ? String(effectiveSize) : '');
+    }
+  }, [unitId, effectiveSize]);
+
+  useEffect(() => {
+    setLocalVal(effectiveSize > 0 ? String(effectiveSize) : '');
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unitId]);
+
+  const parseSize = (raw: string): number | undefined => {
+    const trimmed = raw.trim();
+    if (trimmed === '') return undefined;
+    const parsed = parseFloat(trimmed);
+    return !isNaN(parsed) && parsed >= 0 ? parsed : undefined;
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const next = e.target.value;
+    setLocalVal(next);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      onCommitRef.current(parseSize(next));
+    }, 300);
+  };
+
+  const handleBlur = () => {
+    isFocusedRef.current = false;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+      onCommitRef.current(parseSize(localVal));
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      onCommitRef.current(parseSize(localVal));
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      step="any"
+      min="0"
+      placeholder="m²"
+      value={localVal}
+      onFocus={() => { isFocusedRef.current = true; }}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-white font-mono outline-none focus:border-brand-500 transition-colors"
+    />
+  );
+});
+
 function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setActiveVersionId }: EditTabProps) {
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const effectiveYear = globalYearFilter && globalYearFilter !== 'all' ? globalYearFilter : new Date().getFullYear().toString();
@@ -164,6 +246,11 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
     return Array.from(map.values()).sort((a, b) => a.unit.localeCompare(b.unit));
   }, [summaryData]);
 
+  const masterUnitOptions = React.useMemo(
+    () => masterUnits.map(u => ({ value: u.unit, label: `${u.unit} (F${u.floor})` })),
+    [masterUnits]
+  );
+
   const summaryMap = React.useMemo(() => {
     const map = new Map();
     summaryData.forEach(u => map.set(u.unit, u));
@@ -172,17 +259,18 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
   const activeVersion = versions.find(v => v.id === activeVersionId);
 
-  // Dynamic Event-Driven Unit Summary Engine
-  const { summaryMap: dynamicSummaryMap, summaryList: dynamicSummaryList } = useDynamicUnitSummary({
-    units,
+  const [isSummaryTableOpen, setIsSummaryTableOpen] = useState(false);
+  const summaryModalRef = useRef<HTMLDivElement>(null);
+
+  // Dynamic Event-Driven Unit Summary Engine (Lazy-evaluated ONLY when Summary Table Modal is open)
+  const emptyUnitsRef = useRef<UnitShape[]>([]);
+  const { summaryList: dynamicSummaryList } = useDynamicUnitSummary({
+    units: isSummaryTableOpen ? units : emptyUnitsRef.current,
     activeVersion,
     store: (activeVersion?.store as any) || 'HCM',
     location: activeVersion?.location || 'B1',
     year: String(effectiveYear),
   });
-
-  const [isSummaryTableOpen, setIsSummaryTableOpen] = useState(false);
-  const summaryModalRef = useRef<HTMLDivElement>(null);
 
   const [localImageUrl, setLocalImageUrl] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
@@ -731,49 +819,73 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
     }
   };
 
+  const drawRafRef = useRef<number | null>(null);
+  const wheelRafRef = useRef<number | null>(null);
+  const wheelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingWheelDeltaRef = useRef<number>(0);
+  const lastWheelPointerRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (drawRafRef.current !== null) cancelAnimationFrame(drawRafRef.current);
+      if (wheelRafRef.current !== null) cancelAnimationFrame(wheelRafRef.current);
+      if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
+    };
+  }, []);
+
   const handleMouseMove = (e: any) => {
     if (!isDrawing || !newShape) return;
-    const pos = e.target.getStage().getRelativePointerPosition();
+    const stage = e.target.getStage();
+    const pos = stage?.getRelativePointerPosition();
+    if (!pos) return;
     const currX = snapToGrid(pos.x);
     const currY = snapToGrid(pos.y);
+    const isShift = Boolean(e.evt?.shiftKey);
 
-    if (newShape.type === 'rect') {
-      setNewShape({
-        ...newShape,
-        width: currX - (newShape.x || 0),
-        height: currY - (newShape.y || 0),
+    if (drawRafRef.current !== null) cancelAnimationFrame(drawRafRef.current);
+    drawRafRef.current = requestAnimationFrame(() => {
+      drawRafRef.current = null;
+      setNewShape(prev => {
+        if (!prev) return prev;
+        if (prev.type === 'rect') {
+          return {
+            ...prev,
+            width: currX - (prev.x || 0),
+            height: currY - (prev.y || 0),
+          };
+        } else if (prev.type === 'circle') {
+          const dx = currX - (prev.x || 0);
+          const dy = currY - (prev.y || 0);
+          return {
+            ...prev,
+            radius: Math.sqrt(dx * dx + dy * dy),
+          };
+        } else if (prev.type === 'polygon') {
+          let finalX = currX;
+          let finalY = currY;
+          const pts = prev.points || [];
+          if (pts.length >= 4 && isShift) {
+            const prevX = pts[pts.length - 4];
+            const prevY = pts[pts.length - 3];
+            if (Math.abs(finalX - prevX) > Math.abs(finalY - prevY)) {
+              finalY = prevY;
+            } else {
+              finalX = prevX;
+            }
+          }
+          if (pts.length >= 2) {
+            const newPts = [...pts];
+            newPts[newPts.length - 2] = finalX;
+            newPts[newPts.length - 1] = finalY;
+            return {
+              ...prev,
+              points: newPts,
+            };
+          }
+        }
+        return prev;
       });
-    } else if (newShape.type === 'circle') {
-      const dx = currX - (newShape.x || 0);
-      const dy = currY - (newShape.y || 0);
-      setNewShape({
-        ...newShape,
-        radius: Math.sqrt(dx * dx + dy * dy),
-      });
-    } else if (newShape.type === 'polygon') {
-      const isShift = e.evt.shiftKey;
-      let finalX = currX;
-      let finalY = currY;
-      const pts = newShape.points || [];
-      if (pts.length >= 4 && isShift) {
-         const prevX = pts[pts.length - 4];
-         const prevY = pts[pts.length - 3];
-         if (Math.abs(finalX - prevX) > Math.abs(finalY - prevY)) {
-             finalY = prevY;
-         } else {
-             finalX = prevX;
-         }
-      }
-      if (pts.length >= 2) {
-         const newPts = [...pts];
-         newPts[newPts.length - 2] = finalX;
-         newPts[newPts.length - 1] = finalY;
-         setNewShape({
-           ...newShape,
-           points: newPts
-        });
-      }
-    }
+    });
   };
 
   const handleMouseUp = () => {
@@ -818,13 +930,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
     if (activeTool === 'polygon' && isDrawing && newShape) {
       setIsDrawing(false);
       if (newShape.points && newShape.points.length >= 8) {
-        // Find the actual final points (removing trailing temp/duplicate points from double click)
         const pts = newShape.points;
-        let finalPoints = pts;
-        // Double click can add 1 or 2 extra points, let's just make sure we strip the temporary moving cursor point
-        // and optionally any point that is identically equal to the previous.
-        // For simplicity, we just strip the very last point since we know it's the moving cursor. 
-        finalPoints = pts.slice(0, pts.length - 2); 
+        const finalPoints = pts.slice(0, pts.length - 2);
 
         openNamingModal().then(name => {
           if (name) {
@@ -847,25 +954,50 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   const handleWheel = (e: any) => {
     e.evt.preventDefault();
     const stage = e.target.getStage();
-    const oldScale = stage.scaleX();
+    if (!stage) return;
     const pointer = stage.getPointerPosition();
-
     if (!pointer) return;
 
-    const mousePointTo = {
-      x: (pointer.x - stage.x()) / oldScale,
-      y: (pointer.y - stage.y()) / oldScale,
-    };
+    lastWheelPointerRef.current = pointer;
+    pendingWheelDeltaRef.current += e.evt.deltaY;
 
-    // Smooth dampened zoom speed for desktop mouse wheels
-    const deltaY = e.evt.deltaY;
-    const zoomFactor = Math.exp(-deltaY * 0.0008);
-    const newScale = Math.max(0.05, Math.min(10, oldScale * zoomFactor));
-    setScale(newScale);
-    setPosition({
-      x: pointer.x - mousePointTo.x * newScale,
-      y: pointer.y - mousePointTo.y * newScale,
-    });
+    if (wheelRafRef.current === null) {
+      wheelRafRef.current = requestAnimationFrame(() => {
+        wheelRafRef.current = null;
+        const curStage = stageRef.current;
+        const ptr = lastWheelPointerRef.current;
+        if (!curStage || !ptr) return;
+
+        const deltaY = pendingWheelDeltaRef.current;
+        pendingWheelDeltaRef.current = 0;
+
+        const oldScale = curStage.scaleX();
+        const zoomFactor = Math.exp(-deltaY * 0.0008);
+        const newScale = Math.max(0.05, Math.min(10, oldScale * zoomFactor));
+
+        const mousePointTo = {
+          x: (ptr.x - curStage.x()) / oldScale,
+          y: (ptr.y - curStage.y()) / oldScale,
+        };
+        const newPos = {
+          x: ptr.x - mousePointTo.x * newScale,
+          y: ptr.y - mousePointTo.y * newScale,
+        };
+
+        curStage.scale({ x: newScale, y: newScale });
+        curStage.position(newPos);
+        curStage.getLayers().forEach((l: any) => l.drawScene());
+
+        if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
+        wheelSyncTimerRef.current = setTimeout(() => {
+          wheelSyncTimerRef.current = null;
+          if (!stageRef.current) return;
+          stageRef.current.batchDraw();
+          setScale(stageRef.current.scaleX());
+          setPosition({ x: stageRef.current.x(), y: stageRef.current.y() });
+        }, 120);
+      });
+    }
   };
 
   useEffect(() => {
@@ -1332,7 +1464,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                     <Building size={16} className="text-emerald-400" />
                     <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Dynamic Summary</span>
                     <span className="px-1.5 py-0.2 text-[9px] font-mono rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
-                        {dynamicSummaryList.length}
+                        {isSummaryTableOpen ? dynamicSummaryList.length : units.length}
                     </span>
                 </button>
 
@@ -1491,6 +1623,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                           scaleX={imageScale}
                           scaleY={imageScale}
                           rotation={bgRotation}
+                          perfectDrawEnabled={false}
                           draggable={activeTool === 'edit-bg' && alignStep === 'none'}
                           listening={isLocked || activeTool === 'edit-bg'} 
                           onDragEnd={(e) => {
@@ -1500,27 +1633,27 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                           }}
                         />}
                         {alignPts.bg1 && (
-                            <Group x={alignPts.bg1.x} y={alignPts.bg1.y}>
-                                <Line points={[-10, 0, 10, 0]} stroke="#f59e0b" strokeWidth={2} />
-                                <Line points={[0, -10, 0, 10]} stroke="#f59e0b" strokeWidth={2} />
-                                <Circle radius={3} fill="#f59e0b" />
-                                <Text text="Point 1" x={8} y={8} fill="#f59e0b" fontSize={14} fontStyle="bold" shadowColor="black" shadowBlur={4} shadowOffset={{x:1,y:1}} />
+                            <Group x={alignPts.bg1.x} y={alignPts.bg1.y} listening={false}>
+                                <Line points={[-10, 0, 10, 0]} stroke="#f59e0b" strokeWidth={2} listening={false} perfectDrawEnabled={false} />
+                                <Line points={[0, -10, 0, 10]} stroke="#f59e0b" strokeWidth={2} listening={false} perfectDrawEnabled={false} />
+                                <Circle radius={3} fill="#f59e0b" listening={false} perfectDrawEnabled={false} />
+                                <Text text="Point 1" x={8} y={8} fill="#f59e0b" fontSize={14} fontStyle="bold" listening={false} perfectDrawEnabled={false} />
                             </Group>
                         )}
                         {alignPts.bg2 && (
-                            <Group x={alignPts.bg2.x} y={alignPts.bg2.y}>
-                                <Line points={[-10, 0, 10, 0]} stroke="#f59e0b" strokeWidth={2} />
-                                <Line points={[0, -10, 0, 10]} stroke="#f59e0b" strokeWidth={2} />
-                                <Circle radius={3} fill="#f59e0b" />
-                                <Text text="Point 2" x={8} y={8} fill="#f59e0b" fontSize={14} fontStyle="bold" shadowColor="black" shadowBlur={4} shadowOffset={{x:1,y:1}} />
+                            <Group x={alignPts.bg2.x} y={alignPts.bg2.y} listening={false}>
+                                <Line points={[-10, 0, 10, 0]} stroke="#f59e0b" strokeWidth={2} listening={false} perfectDrawEnabled={false} />
+                                <Line points={[0, -10, 0, 10]} stroke="#f59e0b" strokeWidth={2} listening={false} perfectDrawEnabled={false} />
+                                <Circle radius={3} fill="#f59e0b" listening={false} perfectDrawEnabled={false} />
+                                <Text text="Point 2" x={8} y={8} fill="#f59e0b" fontSize={14} fontStyle="bold" listening={false} perfectDrawEnabled={false} />
                             </Group>
                         )}
                         {alignPts.target1 && (
-                            <Group x={alignPts.target1.x} y={alignPts.target1.y}>
-                                <Line points={[-10, 0, 10, 0]} stroke="#10b981" strokeWidth={2} />
-                                <Line points={[0, -10, 0, 10]} stroke="#10b981" strokeWidth={2} />
-                                <Circle radius={3} fill="#10b981" />
-                                <Text text="Target 1a" x={8} y={8} fill="#10b981" fontSize={14} fontStyle="bold" shadowColor="black" shadowBlur={4} shadowOffset={{x:1,y:1}} />
+                            <Group x={alignPts.target1.x} y={alignPts.target1.y} listening={false}>
+                                <Line points={[-10, 0, 10, 0]} stroke="#10b981" strokeWidth={2} listening={false} perfectDrawEnabled={false} />
+                                <Line points={[0, -10, 0, 10]} stroke="#10b981" strokeWidth={2} listening={false} perfectDrawEnabled={false} />
+                                <Circle radius={3} fill="#10b981" listening={false} perfectDrawEnabled={false} />
+                                <Text text="Target 1a" x={8} y={8} fill="#10b981" fontSize={14} fontStyle="bold" listening={false} perfectDrawEnabled={false} />
                             </Group>
                         )}
                         {magneticGrid && (
@@ -1530,11 +1663,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                 fillPatternRepeat="repeat"
                                 fillPatternScale={{ x: 1/scale, y: 1/scale }}
                                 listening={false}
+                                perfectDrawEnabled={false}
                                 opacity={0.3}
                             />
                         )}
                         {units.map((unit) => {
                             const editFill = (unit.fill && unit.fill !== 'rgba(0, 0, 0, 0.001)' && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0')) ? unit.fill : '#3b82f6';
+                            const isUnitSelected = selectedId === unit.id;
                             return (
                             <React.Fragment key={unit.id}>
                                 {unit.visible && unit.type === 'rect' && (
@@ -1547,10 +1682,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                         fill={editFill}
                                         opacity={unit.opacity ?? 0.5}
                                         rotation={unit.rotation || 0}
-                                        stroke={selectedId === unit.id ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
-                                        strokeWidth={selectedId === unit.id ? 3 : 2}
-                                        shadowBlur={selectedId === unit.id ? 10 : 0}
+                                        stroke={isUnitSelected ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
+                                        strokeWidth={isUnitSelected ? 3 : 2}
+                                        shadowEnabled={isUnitSelected}
+                                        shadowBlur={isUnitSelected ? 10 : 0}
                                         shadowColor="#3b82f6"
+                                        shadowForStrokeEnabled={false}
+                                        perfectDrawEnabled={false}
                                         draggable={activeTool === 'select' && !unit.locked}
                                         onClick={() => {
                                             try {
@@ -1597,10 +1735,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                         fill={editFill}
                                         opacity={unit.opacity ?? 0.5}
                                         rotation={unit.rotation || 0}
-                                        stroke={selectedId === unit.id ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
-                                        strokeWidth={selectedId === unit.id ? 3 : 2}
-                                        shadowBlur={selectedId === unit.id ? 10 : 0}
+                                        stroke={isUnitSelected ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
+                                        strokeWidth={isUnitSelected ? 3 : 2}
+                                        shadowEnabled={isUnitSelected}
+                                        shadowBlur={isUnitSelected ? 10 : 0}
                                         shadowColor="#3b82f6"
+                                        shadowForStrokeEnabled={false}
+                                        perfectDrawEnabled={false}
                                         draggable={activeTool === 'select' && !unit.locked}
                                         onClick={() => {
                                             try {
@@ -1645,10 +1786,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                         fill={editFill}
                                         opacity={unit.opacity ?? 0.5}
                                         rotation={unit.rotation || 0}
-                                        stroke={selectedId === unit.id ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
-                                        strokeWidth={selectedId === unit.id ? 3 : 2}
-                                        shadowBlur={selectedId === unit.id ? 10 : 0}
+                                        stroke={isUnitSelected ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
+                                        strokeWidth={isUnitSelected ? 3 : 2}
+                                        shadowEnabled={isUnitSelected}
+                                        shadowBlur={isUnitSelected ? 10 : 0}
                                         shadowColor="#3b82f6"
+                                        shadowForStrokeEnabled={false}
+                                        perfectDrawEnabled={false}
                                         closed
                                         draggable={activeTool === 'select' && !unit.locked}
                                         onClick={() => {
@@ -1695,38 +1839,52 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                     const uInfo = summaryMap.get(unit.name);
                                     const sizeLabel = uInfo?.size ? `${unit.name}\n${uInfo.size} SQM` : unit.name;
                                     
-                                    const xCoords = unit.points && unit.points.length >= 2 ? unit.points.filter((_, i) => i % 2 === 0) : [];
-                                    const yCoords = unit.points && unit.points.length >= 2 ? unit.points.filter((_, i) => i % 2 === 1) : [];
+                                    let minPtX = Infinity;
+                                    let maxPtX = -Infinity;
+                                    let minPtY = Infinity;
+                                    let maxPtY = -Infinity;
+                                    if (unit.points && unit.points.length >= 2) {
+                                        for (let i = 0; i < unit.points.length; i += 2) {
+                                            const px = unit.points[i];
+                                            const py = unit.points[i + 1];
+                                            if (px < minPtX) minPtX = px;
+                                            if (px > maxPtX) maxPtX = px;
+                                            if (py < minPtY) minPtY = py;
+                                            if (py > maxPtY) maxPtY = py;
+                                        }
+                                    }
+                                    const hasPts = minPtX !== Infinity;
                                     
                                     const textX = unit.type === 'rect' 
                                         ? (unit.x || 0) 
                                         : (unit.type === 'circle' 
                                             ? (unit.x || 0) - (unit.radius || 0) 
-                                            : (xCoords.length > 0 ? (unit.x || 0) + Math.min(...xCoords) : (unit.x || 0)));
+                                            : (hasPts ? (unit.x || 0) + minPtX : (unit.x || 0)));
                                             
                                     const textY = unit.type === 'rect' 
                                         ? (unit.y || 0) 
                                         : (unit.type === 'circle' 
                                             ? (unit.y || 0) - (unit.radius || 0) 
-                                            : (yCoords.length > 0 ? (unit.y || 0) + Math.min(...yCoords) : (unit.y || 0)));
+                                            : (hasPts ? (unit.y || 0) + minPtY : (unit.y || 0)));
                                             
                                     const textWidth = unit.type === 'rect' 
                                         ? Math.max(10, Math.abs(unit.width || 50)) 
                                         : (unit.type === 'circle' 
                                             ? Math.max(10, (unit.radius || 20) * 2) 
-                                            : (xCoords.length > 0 ? Math.max(20, Math.max(...xCoords) - Math.min(...xCoords)) : 100));
+                                            : (hasPts ? Math.max(20, maxPtX - minPtX) : 100));
                                             
                                     const textHeight = unit.type === 'rect' 
                                         ? Math.max(10, Math.abs(unit.height || 30)) 
                                         : (unit.type === 'circle' 
                                             ? Math.max(10, (unit.radius || 20) * 2) 
-                                            : (yCoords.length > 0 ? Math.max(20, Math.max(...yCoords) - Math.min(...yCoords)) : 30));
+                                            : (hasPts ? Math.max(20, maxPtY - minPtY) : 30));
                                             
+                                    const quantizedScale = Math.max(0.5, Math.round((scale || 1) * 4) / 4);
                                     const calcFontSize = unit.type === 'rect' 
                                         ? Math.max(9, Math.min(Math.abs(unit.width || 50), Math.abs(unit.height || 50)) * 0.2) 
                                         : (unit.type === 'circle' 
                                             ? Math.max(9, (unit.radius || 20) * 0.4) 
-                                            : Math.max(9, 12 / (scale || 1)));
+                                            : Math.max(9, 12 / quantizedScale));
 
                                     return (
                                         <Text
@@ -1741,9 +1899,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                             fontSize={calcFontSize}
                                             fill="#ffffff"
                                             fontStyle="bold"
-                                            shadowColor="black"
-                                            shadowBlur={2}
-                                            shadowOpacity={1}
+                                            perfectDrawEnabled={false}
                                             listening={false}
                                         />
                                     );
@@ -1760,6 +1916,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                fill="rgba(59, 130, 246, 0.4)"
                                stroke="#3b82f6"
                                strokeDasharray={[4, 4]}
+                               listening={false}
+                               perfectDrawEnabled={false}
                            /> 
                         )}
                         {isDrawing && newShape && newShape.type === 'circle' && (
@@ -1770,6 +1928,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                fill="rgba(59, 130, 246, 0.4)"
                                stroke="#3b82f6"
                                strokeDasharray={[4, 4]}
+                               listening={false}
+                               perfectDrawEnabled={false}
                            /> 
                         )}
                         {isDrawing && newShape && newShape.type === 'polygon' && (
@@ -1779,17 +1939,9 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                stroke="#3b82f6"
                                strokeDasharray={[4, 4]}
                                closed={false}
+                               listening={false}
+                               perfectDrawEnabled={false}
                            /> 
-                        )}
-                        {magneticGrid && (
-                            <Rect
-                                x={-10000} y={-10000} width={20000} height={20000}
-                                fillPatternImage={createGridPattern(gridSize) as any}
-                                fillPatternRepeat="repeat"
-                                fillPatternScale={{ x: 1/scale, y: 1/scale }}
-                                listening={false}
-                                opacity={0.3}
-                            />
                         )}
                         <Transformer 
                             ref={trRef} 
@@ -1884,28 +2036,19 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                     activeVersionId,
                                 });
                             }}
-                            options={masterUnits.map(u => ({ value: u.unit, label: `${u.unit} (F${u.floor})` }))}
+                            options={masterUnitOptions}
                         />
                     </div>
                     <div className="col-span-4 space-y-1">
                         <label className="text-[10px] uppercase text-slate-500 font-bold block">Size (m²)</label>
-                        <input
-                            type="number"
-                            step="any"
-                            min="0"
-                            placeholder="m²"
-                            value={(() => {
-                                const eff = getUnitEffectiveSizeM2(
-                                    selectedUnit,
-                                    activeVersion,
-                                    selectedUnit?.name ? summaryMap.get(selectedUnit.name)?.size : undefined
-                                );
-                                return eff > 0 ? eff : '';
-                            })()}
-                            onChange={(e) => {
-                                const raw = e.target.value.trim();
-                                const parsed = raw === '' ? undefined : parseFloat(raw);
-                                const numVal = parsed !== undefined && !isNaN(parsed) && parsed >= 0 ? parsed : undefined;
+                        <UnitSizeInput
+                            unitId={selectedId}
+                            effectiveSize={getUnitEffectiveSizeM2(
+                                selectedUnit,
+                                activeVersion,
+                                selectedUnit?.name ? summaryMap.get(selectedUnit.name)?.size : undefined
+                            )}
+                            onCommit={(numVal) => {
                                 const updatedUnits = units.map(u =>
                                     u.id === selectedId ? { ...u, sizeM2: numVal, size: numVal } : u
                                 );
@@ -1959,7 +2102,6 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                     });
                                 }
                             }}
-                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-sm text-white font-mono outline-none focus:border-brand-500 transition-colors"
                         />
                     </div>
                 </div>

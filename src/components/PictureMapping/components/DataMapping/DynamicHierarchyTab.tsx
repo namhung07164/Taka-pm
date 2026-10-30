@@ -67,6 +67,130 @@ const normalizeRuleField = (f: string) => {
   return f;
 };
 
+const DebouncedRuleValueInput = memo(({
+  value,
+  disabled,
+  placeholder,
+  className,
+  onCommit,
+}: {
+  value: string;
+  disabled?: boolean;
+  placeholder?: string;
+  className?: string;
+  onCommit: (val: string) => void;
+}) => {
+  const [localVal, setLocalVal] = useState(value);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+
+  useEffect(() => {
+    setLocalVal(value);
+  }, [value]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const next = e.target.value;
+    setLocalVal(next);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      onCommitRef.current(next);
+    }, 280);
+  };
+
+  const handleBlur = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+      onCommitRef.current(localVal);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      onCommitRef.current(localVal);
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      disabled={disabled}
+      placeholder={placeholder}
+      value={localVal}
+      onChange={handleChange}
+      onBlur={handleBlur}
+      onKeyDown={handleKeyDown}
+      className={className}
+    />
+  );
+});
+
+const DebouncedOpacitySlider = memo(({
+  opacity,
+  onCommit,
+}: {
+  opacity: number;
+  onCommit: (val: number) => void;
+}) => {
+  const [localOpacity, setLocalOpacity] = useState(opacity);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+
+  useEffect(() => {
+    setLocalOpacity(opacity);
+  }, [opacity]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    setLocalOpacity(val);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      onCommitRef.current(val);
+    }, 150);
+  };
+
+  return (
+    <div
+      className="flex items-center space-x-1.5 bg-white dark:bg-[#1a1d24] px-2 py-1 rounded border border-slate-200 dark:border-slate-700"
+      title="Color Opacity"
+    >
+      <span className="text-[11px] font-medium text-slate-400">Opacity</span>
+      <input
+        type="range"
+        min="0.1"
+        max="1"
+        step="0.05"
+        value={localOpacity}
+        onChange={handleChange}
+        className="w-16 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+      />
+      <span className="text-[11px] font-mono text-slate-600 dark:text-slate-300 w-7 text-right">
+        {Math.round(localOpacity * 100)}%
+      </span>
+    </div>
+  );
+});
+
 function DynamicHierarchyTab({
   units,
   setUnits,

@@ -1,4 +1,4 @@
-import React, { Dispatch, SetStateAction, memo } from 'react';
+import React, { Dispatch, SetStateAction, memo, useEffect, useMemo, useRef } from 'react';
 import { Project, Task } from '../../types';
 import { DetailTableRow, SortConfig } from './detailTypes';
 import { DetailTableHeader } from './DetailTableHeader';
@@ -128,11 +128,138 @@ export const DetailTableView = memo(function DetailTableView({
   visibleCount,
   setVisibleCount
 }: DetailTableViewProps) {
+  const isDraggingActive = draggingTaskIds.length > 0;
+  const dragPointerYRef = useRef<number | null>(null);
+
+  // Smooth 60fps upward & downward auto-scroll when dragging tasks near top (including over sticky header or above container) or bottom
+  useEffect(() => {
+    if (!isDraggingActive) {
+      dragPointerYRef.current = null;
+      return;
+    }
+
+    let rafId: number | null = null;
+
+    const handleWindowDragOver = (e: DragEvent) => {
+      dragPointerYRef.current = e.clientY;
+      const container = tableContainerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      // Allow drop effect even when hovering over sticky thead, project header, or slightly above/below the table
+      if (
+        e.clientX >= rect.left - 40 &&
+        e.clientX <= rect.right + 40 &&
+        e.clientY >= rect.top - 140 &&
+        e.clientY <= rect.bottom + 140
+      ) {
+        e.preventDefault();
+        if (e.dataTransfer) {
+          e.dataTransfer.dropEffect = 'move';
+        }
+      }
+    };
+
+    const autoScrollStep = () => {
+      const container = tableContainerRef.current;
+      const clientY = dragPointerYRef.current;
+      if (container && clientY !== null) {
+        const rect = container.getBoundingClientRect();
+        // Top trigger zone: 105px inside top of scroll container (covers sticky thead + top rows) up to 150px above container
+        const topZoneBottom = rect.top + 105;
+        const bottomZoneTop = rect.bottom - 90;
+
+        if (clientY < topZoneBottom && clientY > rect.top - 150 && container.scrollTop > 0) {
+          const dist = topZoneBottom - clientY;
+          const intensity = Math.min(1, Math.max(0.15, dist / 110));
+          const delta = Math.round(4 + intensity * 20);
+          container.scrollTop = Math.max(0, container.scrollTop - delta);
+        } else if (
+          clientY > bottomZoneTop &&
+          clientY < rect.bottom + 150 &&
+          container.scrollTop < container.scrollHeight - container.clientHeight
+        ) {
+          const dist = clientY - bottomZoneTop;
+          const intensity = Math.min(1, Math.max(0.15, dist / 110));
+          const delta = Math.round(4 + intensity * 20);
+          container.scrollTop = Math.min(
+            container.scrollHeight - container.clientHeight,
+            container.scrollTop + delta
+          );
+        }
+      }
+      rafId = requestAnimationFrame(autoScrollStep);
+    };
+
+    window.addEventListener('dragover', handleWindowDragOver, { capture: true });
+    rafId = requestAnimationFrame(autoScrollStep);
+
+    return () => {
+      window.removeEventListener('dragover', handleWindowDragOver, { capture: true });
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [isDraggingActive, tableContainerRef]);
+
+  // Expand virtual slice if a dragged row is outside [startIndex, endIndex] so the browser never unmounts the active draggable <tr> mid-drag
+  const { effectiveStartIndex, effectiveEndIndex, effectivePaddingTop, effectivePaddingBottom } = useMemo(() => {
+    if (!isDraggingActive) {
+      return {
+        effectiveStartIndex: startIndex,
+        effectiveEndIndex: endIndex,
+        effectivePaddingTop: paddingTop,
+        effectivePaddingBottom: paddingBottom,
+      };
+    }
+    const dragSet = new Set(draggingTaskIds);
+    let minIdx = startIndex;
+    let maxIdx = endIndex;
+    for (let i = 0; i < flatTableRows.length; i++) {
+      const r = flatTableRows[i];
+      if (r.type === 'task' && dragSet.has(r.task.id)) {
+        if (i < minIdx) minIdx = i;
+        if (i + 1 > maxIdx) maxIdx = i + 1;
+      }
+    }
+    if (minIdx === startIndex && maxIdx === endIndex) {
+      return {
+        effectiveStartIndex: startIndex,
+        effectiveEndIndex: endIndex,
+        effectivePaddingTop: paddingTop,
+        effectivePaddingBottom: paddingBottom,
+      };
+    }
+    let removedTop = 0;
+    for (let i = minIdx; i < startIndex; i++) {
+      removedTop += flatTableRows[i]?.type === 'project' ? 46 : 42;
+    }
+    let removedBottom = 0;
+    for (let i = endIndex; i < maxIdx; i++) {
+      removedBottom += flatTableRows[i]?.type === 'project' ? 46 : 42;
+    }
+    return {
+      effectiveStartIndex: minIdx,
+      effectiveEndIndex: maxIdx,
+      effectivePaddingTop: Math.max(0, paddingTop - removedTop),
+      effectivePaddingBottom: Math.max(0, paddingBottom - removedBottom),
+    };
+  }, [isDraggingActive, draggingTaskIds, flatTableRows, startIndex, endIndex, paddingTop, paddingBottom]);
+
   return (
     <div className="hidden xl:block flex-grow pb-16">
       <div 
         ref={tableContainerRef}
         onScroll={handleTableScroll}
+        onDragOver={isDraggingActive ? (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        } : undefined}
+        onDrop={isDraggingActive ? (e) => {
+          if (dragOverTaskId) {
+            const targetRow = flatTableRows.find(r => r.type === 'task' && r.task.id === dragOverTaskId);
+            if (targetRow && targetRow.type === 'task') {
+              handleDetailTaskDrop(e, targetRow.task, targetRow.project);
+            }
+          }
+        } : undefined}
         className="overflow-auto [overflow-anchor:none] border border-slate-200 dark:border-[#444446] rounded-xl shadow-xs bg-white dark:bg-[#1e1e20]"
         style={{ height: "calc(100vh - 210px)", minHeight: "520px", overflowAnchor: "none" }}
       >
@@ -166,12 +293,12 @@ export const DetailTableView = memo(function DetailTableView({
             totalChildTasksCount={totalChildTasksCount}
           />
           <tbody>
-            {paddingTop > 0 && (
-              <tr style={{ height: `${paddingTop}px`, overflowAnchor: 'none' }} className="[overflow-anchor:none] pointer-events-none select-none">
-                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none', height: `${paddingTop}px` }} />
+            {effectivePaddingTop > 0 && (
+              <tr style={{ height: `${effectivePaddingTop}px`, overflowAnchor: 'none' }} className="[overflow-anchor:none] pointer-events-none select-none">
+                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none', height: `${effectivePaddingTop}px` }} />
               </tr>
             )}
-            {flatTableRows.slice(startIndex, endIndex).map((item) => {
+            {flatTableRows.slice(effectiveStartIndex, effectiveEndIndex).map((item) => {
               if (item.type === "project") {
                 const groupTasks = item.groupTasks;
                 const isAllTasksSelected = groupTasks.length > 0 && groupTasks.every(t => selectedTaskIds.has(t.id));
@@ -236,9 +363,9 @@ export const DetailTableView = memo(function DetailTableView({
                 />
               );
             })}
-            {paddingBottom > 0 && (
-              <tr style={{ height: `${paddingBottom}px`, overflowAnchor: 'none' }} className="[overflow-anchor:none] pointer-events-none select-none">
-                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none', height: `${paddingBottom}px` }} />
+            {effectivePaddingBottom > 0 && (
+              <tr style={{ height: `${effectivePaddingBottom}px`, overflowAnchor: 'none' }} className="[overflow-anchor:none] pointer-events-none select-none">
+                <td colSpan={effectiveVisibleColumns.length} style={{ padding: 0, border: 'none', height: `${effectivePaddingBottom}px` }} />
               </tr>
             )}
             {visibleCount < filteredProjects.length && (
