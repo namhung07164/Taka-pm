@@ -690,28 +690,133 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     };
   }, [activeVersion?.id]);
 
+  const wheelRafRef = useRef<number | null>(null);
+  const wheelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingWheelDeltaRef = useRef<number>(0);
+  const lastWheelPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const pinchDistRef = useRef<number>(0);
+  const pinchCenterRef = useRef<{ x: number; y: number } | null>(null);
+  const pinchRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (wheelRafRef.current !== null) cancelAnimationFrame(wheelRafRef.current);
+      if (pinchRafRef.current !== null) cancelAnimationFrame(pinchRafRef.current);
+      if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
+    };
+  }, []);
+
   const handleWheel = (e: any) => {
     e.evt.preventDefault();
     const stage = e.target.getStage();
-    const oldScale = stage.scaleX();
+    if (!stage) return;
     const pointer = stage.getPointerPosition();
-
     if (!pointer) return;
 
-    const mousePointTo = {
-      x: (pointer.x - stage.x()) / oldScale,
-      y: (pointer.y - stage.y()) / oldScale,
-    };
+    lastWheelPointerRef.current = pointer;
+    pendingWheelDeltaRef.current += e.evt.deltaY;
 
-    // Smooth dampened zoom speed for desktop mouse wheels
-    const deltaY = e.evt.deltaY;
-    const zoomFactor = Math.exp(-deltaY * 0.0008);
-    const newScale = Math.max(0.05, Math.min(10, oldScale * zoomFactor));
-    setScale(newScale);
-    setPosition({
-      x: pointer.x - mousePointTo.x * newScale,
-      y: pointer.y - mousePointTo.y * newScale,
+    if (wheelRafRef.current === null) {
+      wheelRafRef.current = requestAnimationFrame(() => {
+        wheelRafRef.current = null;
+        const curStage = stageRef.current;
+        const ptr = lastWheelPointerRef.current;
+        if (!curStage || !ptr) return;
+
+        const deltaY = pendingWheelDeltaRef.current;
+        pendingWheelDeltaRef.current = 0;
+
+        const oldScale = curStage.scaleX();
+        const zoomFactor = Math.exp(-deltaY * 0.0008);
+        const newScale = Math.max(0.05, Math.min(10, oldScale * zoomFactor));
+
+        const mousePointTo = {
+          x: (ptr.x - curStage.x()) / oldScale,
+          y: (ptr.y - curStage.y()) / oldScale,
+        };
+        const newPos = {
+          x: ptr.x - mousePointTo.x * newScale,
+          y: ptr.y - mousePointTo.y * newScale,
+        };
+
+        curStage.scale({ x: newScale, y: newScale });
+        curStage.position(newPos);
+        curStage.getLayers().forEach((l: any) => l.drawScene());
+
+        if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
+        wheelSyncTimerRef.current = setTimeout(() => {
+          wheelSyncTimerRef.current = null;
+          if (!stageRef.current) return;
+          stageRef.current.batchDraw();
+          setScale(stageRef.current.scaleX());
+          setPosition({ x: stageRef.current.x(), y: stageRef.current.y() });
+        }, 120);
+      });
+    }
+  };
+
+  const handleTouchMove = (e: any) => {
+    const touch1 = e.evt.touches?.[0];
+    const touch2 = e.evt.touches?.[1];
+    if (!touch1 || !touch2) return;
+    e.evt.preventDefault();
+
+    const curStage = stageRef.current;
+    if (!curStage) return;
+    if (curStage.isDragging()) curStage.stopDrag();
+
+    const p1 = { x: touch1.clientX, y: touch1.clientY };
+    const p2 = { x: touch2.clientX, y: touch2.clientY };
+    const newCenter = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+    if (!pinchDistRef.current || !pinchCenterRef.current) {
+      pinchDistRef.current = dist;
+      pinchCenterRef.current = newCenter;
+      return;
+    }
+
+    if (pinchRafRef.current !== null) return;
+    pinchRafRef.current = requestAnimationFrame(() => {
+      pinchRafRef.current = null;
+      const st = stageRef.current;
+      const lastCenter = pinchCenterRef.current;
+      const lastDist = pinchDistRef.current;
+      if (!st || !lastCenter || !lastDist) return;
+
+      const rect = st.container().getBoundingClientRect();
+      const localCenter = { x: newCenter.x - rect.left, y: newCenter.y - rect.top };
+      const oldScale = st.scaleX();
+      const pointTo = {
+        x: (localCenter.x - st.x()) / oldScale,
+        y: (localCenter.y - st.y()) / oldScale,
+      };
+      const newScale = Math.max(0.05, Math.min(10, oldScale * (dist / lastDist)));
+      const dx = newCenter.x - lastCenter.x;
+      const dy = newCenter.y - lastCenter.y;
+
+      st.scale({ x: newScale, y: newScale });
+      st.position({
+        x: localCenter.x - pointTo.x * newScale + dx,
+        y: localCenter.y - pointTo.y * newScale + dy,
+      });
+      st.getLayers().forEach((l: any) => l.drawScene());
+
+      pinchDistRef.current = dist;
+      pinchCenterRef.current = newCenter;
     });
+  };
+
+  const handleTouchEnd = () => {
+    if (pinchDistRef.current !== 0) {
+      pinchDistRef.current = 0;
+      pinchCenterRef.current = null;
+      if (stageRef.current) {
+        stageRef.current.batchDraw();
+        setScale(stageRef.current.scaleX());
+        setPosition({ x: stageRef.current.x(), y: stageRef.current.y() });
+      }
+    }
   };
 
   if (!activeVersion) {
@@ -892,6 +997,13 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
             width={canvasSize.width} 
             height={canvasSize.height}
             onWheel={handleWheel}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onDragEnd={(e) => {
+              if (e.target === stageRef.current) {
+                setPosition({ x: e.target.x(), y: e.target.y() });
+              }
+            }}
             scaleX={scale}
             scaleY={scale}
             x={position.x}
@@ -902,6 +1014,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
               {image && <KonvaImage 
                 image={image} 
                 listening={false} 
+                perfectDrawEnabled={false}
                 x={activeVersion?.imagePos?.x || 0}
                 y={activeVersion?.imagePos?.y || 0}
                 scaleX={activeVersion?.imageScale || 1}
@@ -969,10 +1082,12 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                         width={bbox.width}
                         height={bbox.height}
                         rotation={unit.rotation || 0}
+                        listening={false}
                       >
                         {(() => {
                           const lines = unit.sizeLabelLines || [];
-                          const fontSize = Math.max(7, Math.min(18, 10 / scale));
+                          const quantizedScale = Math.max(0.3, Math.round(scale * 4) / 4);
+                          const fontSize = Math.max(7, Math.min(18, 10 / quantizedScale));
                           const lineHeight = fontSize * 1.2;
                           const totalHeight = lines.length * lineHeight;
                           const startY = (bbox.height - totalHeight) / 2;

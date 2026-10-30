@@ -167,11 +167,17 @@ export function useGanttZoomAndPan({
 
       if (!isDraggingRef.current || !mainScrollRef.current) return;
 
-      const dx = e.clientX - dragStartRef.current.x;
-      const dy = e.clientY - dragStartRef.current.y;
-
-      mainScrollRef.current.scrollLeft = dragStartRef.current.scrollLeft - dx;
-      mainScrollRef.current.scrollTop = dragStartRef.current.scrollTop - dy;
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      if (rafIdRef.current !== null) return;
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        if (!isDraggingRef.current || !mainScrollRef.current) return;
+        const dx = clientX - dragStartRef.current.x;
+        const dy = clientY - dragStartRef.current.y;
+        mainScrollRef.current.scrollLeft = dragStartRef.current.scrollLeft - dx;
+        mainScrollRef.current.scrollTop = dragStartRef.current.scrollTop - dy;
+      });
     };
 
     const handlePointerUp = () => {
@@ -186,11 +192,15 @@ export function useGanttZoomAndPan({
       }
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
+        if (rafIdRef.current !== null) {
+          cancelAnimationFrame(rafIdRef.current);
+          rafIdRef.current = null;
+        }
         setIsPanning(false);
       }
     };
 
-    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
     window.addEventListener('pointerup', handlePointerUp);
     window.addEventListener('pointercancel', handlePointerUp);
 

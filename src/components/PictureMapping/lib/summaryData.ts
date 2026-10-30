@@ -34,37 +34,45 @@ export interface SummaryDataItem extends UnitInfo {
   hcmMargin: number;
 }
 
+interface SummaryCacheEntry {
+  unitInfo: any; classInfo: any; actualClassInfo: any; salesData: any;
+  profitData: any; subFeesData: any; mdStatusData: any; projectStatusData: any;
+  projectLinkData: any; basePlan: any; unitsData: any;
+  appProjects: any; appTasks: any; appDelegations: any;
+  store?: string; location?: string; year?: string;
+  result: SummaryDataItem[];
+}
+const _summaryCacheRing: SummaryCacheEntry[] = [];
+
 export function calculateSummaryData({
-  unitInfo,
-  classInfo,
-  actualClassInfo,
-  sales: salesData,
-  profits: profitData,
-  subFees: subFeesData,
-  mdStatus: mdStatusData,
-  projectStatus: projectStatusData,
-  projectLink: projectLinkData,
-  basePlan,
-  units: unitsData,
-  store,
-  location,
-  year,
+  unitInfo, classInfo, actualClassInfo, sales: salesData, profits: profitData,
+  subFees: subFeesData, mdStatus: mdStatusData, projectStatus: projectStatusData,
+  projectLink: projectLinkData, basePlan, units: unitsData, store, location, year,
 }: {
-  unitInfo?: any[];
-  classInfo?: any[];
-  actualClassInfo?: any[];
-  sales?: any[];
-  profits?: any[];
-  subFees?: any[];
-  mdStatus?: any[];
-  projectStatus?: any[];
-  projectLink?: any[];
-  basePlan?: any[];
-  units?: any[];
-  store?: string;
-  location?: string;
-  year?: string;
+  unitInfo?: any[]; classInfo?: any[]; actualClassInfo?: any[]; sales?: any[];
+  profits?: any[]; subFees?: any[]; mdStatus?: any[]; projectStatus?: any[];
+  projectLink?: any[]; basePlan?: any[]; units?: any[];
+  store?: string; location?: string; year?: string;
 }): SummaryDataItem[] {
+  const appState = useAppStore.getState();
+  const appProjects = appState.projects || [];
+  const appTasks = appState.tasks || [];
+  const appDelegations = appState.delegationGroups || [];
+
+  for (let i = 0; i < _summaryCacheRing.length; i++) {
+    const c = _summaryCacheRing[i];
+    if (
+      c.unitInfo === unitInfo && c.classInfo === classInfo && c.actualClassInfo === actualClassInfo &&
+      c.salesData === salesData && c.profitData === profitData && c.subFeesData === subFeesData &&
+      c.mdStatusData === mdStatusData && c.projectStatusData === projectStatusData &&
+      c.projectLinkData === projectLinkData && c.basePlan === basePlan && c.unitsData === unitsData &&
+      c.appProjects === appProjects && c.appTasks === appTasks && c.appDelegations === appDelegations &&
+      c.store === store && c.location === location && c.year === year
+    ) {
+      return c.result;
+    }
+  }
+
   // 1. Build Index Maps for fast lookup
   const normalize = (s: any) => String(s || "").toLowerCase().trim();
 
@@ -171,13 +179,13 @@ export function calculateSummaryData({
     if (unit) unitsMap.set(unit, u);
   });
 
-  const appProjects = useAppStore.getState().projects || [];
-  const appTasks = useAppStore.getState().tasks || [];
-  const appDelegations = useAppStore.getState().delegationGroups || [];
-  const enrichedAppProjects = enrichProjects(appProjects, appTasks).filter(p => {
-    const pMeta = extractProjectMetadata(p);
-    return projectMatchesScope(pMeta, { store, location, year });
-  });
+  const enrichedAppProjects = enrichProjects(appProjects, appTasks, appDelegations)
+    .filter(p => projectMatchesScope(extractProjectMetadata(p), { store, location, year }))
+    .map(p => ({
+      project: p,
+      pCode: String(p.code || '').trim().toLowerCase(),
+      pCodes: extractAllProjectCodes(p).map(c => c.toLowerCase()),
+    }));
 
   const storeAndLocFilteredUnitInfo = (unitInfo || []).filter((unit) => {
     if (store && store !== 'all') {
@@ -208,32 +216,22 @@ export function calculateSummaryData({
   const filteredUnitInfo =
     yearFilteredUnitInfo.length > 0 ? yearFilteredUnitInfo : storeAndLocFilteredUnitInfo;
 
-  return filteredUnitInfo.map((unit) => {
+  const validSales = (salesData || []).filter(
+    (s) => s && (s.vendorCode || s.brandCode || s.brandName || s.classCode)
+  );
+
+  const result = filteredUnitInfo.map((unit) => {
     let salesAmount = 0;
     let salesByCpAmount = 0;
 
-    const matches = (salesData || []).filter((s) => {
-      if (!s?.vendorCode && !s?.brandCode && !s?.brandName && !s?.classCode)
-        return false;
-      let isMatch = true;
-      if (s?.vendorCode) {
-        if (unit.vendorCode !== s.vendorCode) isMatch = false;
-      }
-      if (s?.brandCode) {
-        if (unit.brandCode !== s.brandCode) isMatch = false;
-      }
-      if (s?.brandName) {
-        if (unit.brandName !== s.brandName) isMatch = false;
-      }
-      if (s?.classCode && unit.classCode) {
-        if (unit.classCode !== s.classCode) isMatch = false;
-      }
-      return isMatch;
-    });
-
-    if (matches.length > 0) {
-      salesAmount = matches.reduce((sum, s) => sum + (Number(s?.sales) || 0), 0);
-      salesByCpAmount = matches.reduce((sum, s) => sum + (Number(s?.salesByCp) || 0), 0);
+    for (let i = 0; i < validSales.length; i++) {
+      const s = validSales[i];
+      if (s.vendorCode && unit.vendorCode !== s.vendorCode) continue;
+      if (s.brandCode && unit.brandCode !== s.brandCode) continue;
+      if (s.brandName && unit.brandName !== s.brandName) continue;
+      if (s.classCode && unit.classCode && unit.classCode !== s.classCode) continue;
+      salesAmount += Number(s.sales) || 0;
+      salesByCpAmount += Number(s.salesByCp) || 0;
     }
 
     let profitAmount = 0;
@@ -261,19 +259,18 @@ export function calculateSummaryData({
     const targetLinkCode = String(projectLinkMatch?.code || projectLinkMatch?.projectCode || projectLinkMatch?.project || '').trim().toLowerCase();
     
     if (targetLinkCode && enrichedAppProjects.length > 0) {
-      linkedAppProject = enrichedAppProjects.find((p: any) => {
-        const pCode = String(p.code || '').trim().toLowerCase();
-        const pCodes = extractAllProjectCodes(p).map(c => c.toLowerCase());
-        return pCode === targetLinkCode || pCodes.includes(targetLinkCode) || projectMatchesUnitCode(pCodes, targetLinkCode);
-      });
+      const found = enrichedAppProjects.find(({ pCode, pCodes }) =>
+        pCode === targetLinkCode || pCodes.includes(targetLinkCode) || projectMatchesUnitCode(pCodes, targetLinkCode)
+      );
+      if (found) linkedAppProject = found.project;
     }
 
     if (!linkedAppProject && enrichedAppProjects.length > 0) {
       const uKey = String(unit.unit || '').trim().toLowerCase();
-      linkedAppProject = enrichedAppProjects.find((p: any) => {
-        const pCodes = extractAllProjectCodes(p).map(c => c.toLowerCase());
-        return pCodes.includes(uKey) || projectMatchesUnitCode(pCodes, uKey);
-      });
+      const found = enrichedAppProjects.find(({ pCodes }) =>
+        pCodes.includes(uKey) || projectMatchesUnitCode(pCodes, uKey)
+      );
+      if (found) linkedAppProject = found.project;
     }
 
     const appStatusFromProject = linkedAppProject
@@ -398,6 +395,15 @@ export function calculateSummaryData({
       hcmMargin,
     };
   });
+
+  if (_summaryCacheRing.length >= 8) _summaryCacheRing.shift();
+  _summaryCacheRing.push({
+    unitInfo, classInfo, actualClassInfo, salesData, profitData, subFeesData,
+    mdStatusData, projectStatusData, projectLinkData, basePlan, unitsData,
+    appProjects, appTasks, appDelegations, store, location, year, result,
+  });
+
+  return result;
 }
 
 export function useSummaryData(scope?: { store?: string; location?: string; year?: string }) {
@@ -409,52 +415,23 @@ export function useSummaryData(scope?: { store?: string; location?: string; year
   const targetLocation = scope?.location || (globalLocationFilter[0] && globalLocationFilter[0] !== 'ALL' ? globalLocationFilter[0] : undefined);
   const targetYear = scope?.year || (globalYearFilter !== 'all' ? globalYearFilter : undefined);
 
-  const { 
-    unitInfo,
-    classInfo,
-    actualClassInfo,
-    sales: salesData,
-    profits: profitData,
-    subFees: subFeesData,
-    mdStatus: mdStatusData,
-    projectStatus: projectStatusData,
-    projectLink: projectLinkData,
-    basePlan,
-    units: unitsData,
-   } = useDataStore(useShallow(state => ({
-    unitInfo: state.unitInfo,
-    classInfo: state.classInfo,
-    actualClassInfo: state.actualClassInfo,
-    sales: state.sales,
-    profits: state.profits,
-    subFees: state.subFees,
-    mdStatus: state.mdStatus,
-    projectStatus: state.projectStatus,
-    projectLink: state.projectLink,
-    basePlan: state.basePlan,
-    units: state.units,
+  const {
+    unitInfo, classInfo, actualClassInfo, sales: salesData, profits: profitData,
+    subFees: subFeesData, mdStatus: mdStatusData, projectStatus: projectStatusData,
+    projectLink: projectLinkData, basePlan, units: unitsData,
+  } = useDataStore(useShallow(state => ({
+    unitInfo: state.unitInfo, classInfo: state.classInfo, actualClassInfo: state.actualClassInfo,
+    sales: state.sales, profits: state.profits, subFees: state.subFees,
+    mdStatus: state.mdStatus, projectStatus: state.projectStatus, projectLink: state.projectLink,
+    basePlan: state.basePlan, units: state.units,
   })));
 
-  const summaryData = useMemo(() => {
-    return calculateSummaryData({
-      unitInfo,
-      classInfo,
-      actualClassInfo,
-      sales: salesData,
-      profits: profitData,
-      subFees: subFeesData,
-      mdStatus: mdStatusData,
-      projectStatus: projectStatusData,
-      projectLink: projectLinkData,
-      basePlan,
-      units: unitsData,
-      store: targetStore,
-      location: targetLocation,
-      year: targetYear,
-    });
-  }, [unitInfo, classInfo, actualClassInfo, salesData, profitData, subFeesData, mdStatusData, projectStatusData, projectLinkData, basePlan, unitsData, targetStore, targetLocation, targetYear]);
-
-  return summaryData;
+  return useMemo(() => calculateSummaryData({
+    unitInfo, classInfo, actualClassInfo, sales: salesData, profits: profitData,
+    subFees: subFeesData, mdStatus: mdStatusData, projectStatus: projectStatusData,
+    projectLink: projectLinkData, basePlan, units: unitsData,
+    store: targetStore, location: targetLocation, year: targetYear,
+  }), [unitInfo, classInfo, actualClassInfo, salesData, profitData, subFeesData, mdStatusData, projectStatusData, projectLinkData, basePlan, unitsData, targetStore, targetLocation, targetYear]);
 }
 
 export const formatMoney = (val: any) => val ? Number(val).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '0';

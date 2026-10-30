@@ -19,15 +19,20 @@ import { extractAllProjectCodes } from "./projectCodeAndScopeUtils";
 import { rollupTaskSummaries } from "../taskRollupHelpers";
 import { useDataStore } from "../../components/PictureMapping/DataContext";
 
-// Module-level cache for zero-cost multi-component calls to enrichProjects
+// Module-level 8-slot ring buffer cache for zero-cost multi-component calls to enrichProjects
+// Prevents cache thrashing when different hooks pass rawTasks vs deduplicated baseTasks
 const EMPTY_DELEGATION_GROUPS: DelegationGroup[] = [];
-let _lastProjectsRef: Project[] | null = null;
-let _lastTasksRef: Task[] | null = null;
-let _lastDelegationRef: DelegationGroup[] | null = null;
-let _lastMapUnitsRef: any = null;
-let _lastMapVersionsRef: any = null;
-let _lastStoreLocationDataRef: any = null;
-let _lastEnrichedResult: Project[] | null = null;
+interface EnrichGlobalCacheSlot {
+  projectsRef: Project[];
+  tasksRef: Task[];
+  delegationRef: DelegationGroup[];
+  mapUnitsRef: any;
+  mapVersionsRef: any;
+  storeLocationDataRef: any;
+  result: Project[];
+}
+const ENRICH_CACHE_MAX = 8;
+const _enrichCacheRing: EnrichGlobalCacheSlot[] = [];
 
 interface PerProjectEnrichCacheEntry {
   projectTasks: Task[];
@@ -59,16 +64,18 @@ export function enrichProjects(
     delegationGroups && delegationGroups.length > 0 ? delegationGroups : EMPTY_DELEGATION_GROUPS;
   const dataState = useDataStore.getState();
 
-  if (
-    _lastProjectsRef === projects &&
-    _lastTasksRef === tasks &&
-    _lastDelegationRef === normDelegations &&
-    _lastMapUnitsRef === dataState.mapUnits &&
-    _lastMapVersionsRef === dataState.mapVersions &&
-    _lastStoreLocationDataRef === dataState.storeLocationData &&
-    _lastEnrichedResult
-  ) {
-    return _lastEnrichedResult;
+  for (let i = 0; i < _enrichCacheRing.length; i++) {
+    const slot = _enrichCacheRing[i];
+    if (
+      slot.projectsRef === projects &&
+      slot.tasksRef === tasks &&
+      slot.delegationRef === normDelegations &&
+      slot.mapUnitsRef === dataState.mapUnits &&
+      slot.mapVersionsRef === dataState.mapVersions &&
+      slot.storeLocationDataRef === dataState.storeLocationData
+    ) {
+      return slot.result;
+    }
   }
 
   const tasksByProjectId = new Map<string, Task[]>();
@@ -435,7 +442,7 @@ export function enrichProjects(
       taskCount,
     };
 
-    _perProjectEnrichCache.set(p, {
+    const cacheVal: PerProjectEnrichCacheEntry = {
       projectTasks,
       candidateDelegations,
       isHydrated,
@@ -443,26 +450,15 @@ export function enrichProjects(
       mapVersionsRef: dataState.mapVersions,
       storeLocationDataRef: dataState.storeLocationData,
       enriched,
-    });
-    _perProjectEnrichCache.set(enriched, {
-      projectTasks,
-      candidateDelegations,
-      isHydrated,
-      mapUnitsRef: dataState.mapUnits,
-      mapVersionsRef: dataState.mapVersions,
-      storeLocationDataRef: dataState.storeLocationData,
-      enriched,
-    });
+    };
+    _perProjectEnrichCache.set(p, cacheVal);
+    _perProjectEnrichCache.set(enriched, cacheVal);
 
     return enriched;
   });
 
   const statusPriority: Record<string, number> = {
-    'On process': 1,
-    'Handover': 2,
-    'Upcoming': 3,
-    'Completed': 4,
-    'Canceled': 5
+    'On process': 1, 'Handover': 2, 'Upcoming': 3, 'Completed': 4, 'Canceled': 5
   };
 
   const today = new Date();
@@ -475,47 +471,41 @@ export function enrichProjects(
     const ep = enrichedProjects[i];
     if ((ep.computedStatus || 'Upcoming') === 'On process') {
       const parsed = parseDateTime(ep.computedTakCompl || ep.computedOpening || ep.opening || '9999-12-31');
-      if (parsed) {
-        onProcessFinishDiffMap.set(ep, Math.abs(parsed.getTime() - todayTime));
-      }
+      if (parsed) onProcessFinishDiffMap.set(ep, Math.abs(parsed.getTime() - todayTime));
     }
   }
 
   enrichedProjects.sort((a, b) => {
     const statusA = a.computedStatus || 'Upcoming';
     const statusB = b.computedStatus || 'Upcoming';
-
     const priorityA = statusPriority[statusA] || 99;
     const priorityB = statusPriority[statusB] || 99;
-
-    if (priorityA !== priorityB) {
-      return priorityA - priorityB;
-    }
+    if (priorityA !== priorityB) return priorityA - priorityB;
 
     if (statusA === 'On process') {
       const diffA = onProcessFinishDiffMap.get(a);
       const diffB = onProcessFinishDiffMap.get(b);
-      if (diffA !== undefined && diffB !== undefined && diffA !== diffB) {
-        return diffA - diffB;
-      }
+      if (diffA !== undefined && diffB !== undefined && diffA !== diffB) return diffA - diffB;
     }
 
     const startA = a.computedTakStart || '9999-12-31';
     const startB = b.computedTakStart || '9999-12-31';
-
     if (startA < startB) return -1;
     if (startA > startB) return 1;
 
     return String(a.code || '').localeCompare(String(b.code || '')) || String(a.year || '').localeCompare(String(b.year || ''));
   });
 
-  _lastProjectsRef = projects;
-  _lastTasksRef = tasks;
-  _lastDelegationRef = normDelegations;
-  _lastMapUnitsRef = dataState.mapUnits;
-  _lastMapVersionsRef = dataState.mapVersions;
-  _lastStoreLocationDataRef = dataState.storeLocationData;
-  _lastEnrichedResult = enrichedProjects;
+  if (_enrichCacheRing.length >= ENRICH_CACHE_MAX) _enrichCacheRing.shift();
+  _enrichCacheRing.push({
+    projectsRef: projects,
+    tasksRef: tasks,
+    delegationRef: normDelegations,
+    mapUnitsRef: dataState.mapUnits,
+    mapVersionsRef: dataState.mapVersions,
+    storeLocationDataRef: dataState.storeLocationData,
+    result: enrichedProjects,
+  });
 
   return enrichedProjects;
 }

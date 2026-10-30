@@ -821,14 +821,18 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
   const drawRafRef = useRef<number | null>(null);
   const wheelRafRef = useRef<number | null>(null);
+  const pinchRafRef = useRef<number | null>(null);
   const wheelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingWheelDeltaRef = useRef<number>(0);
   const lastWheelPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const pinchDistRef = useRef<number>(0);
+  const pinchCenterRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     return () => {
       if (drawRafRef.current !== null) cancelAnimationFrame(drawRafRef.current);
       if (wheelRafRef.current !== null) cancelAnimationFrame(wheelRafRef.current);
+      if (pinchRafRef.current !== null) cancelAnimationFrame(pinchRafRef.current);
       if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
     };
   }, []);
@@ -997,6 +1001,70 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
           setPosition({ x: stageRef.current.x(), y: stageRef.current.y() });
         }, 120);
       });
+    }
+  };
+
+  const handleTouchMove = (e: any) => {
+    const touch1 = e.evt.touches?.[0];
+    const touch2 = e.evt.touches?.[1];
+    if (!touch1 || !touch2) return;
+    e.evt.preventDefault();
+
+    const curStage = stageRef.current;
+    if (!curStage) return;
+    if (curStage.isDragging()) curStage.stopDrag();
+
+    const p1 = { x: touch1.clientX, y: touch1.clientY };
+    const p2 = { x: touch2.clientX, y: touch2.clientY };
+    const newCenter = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+    if (!pinchDistRef.current || !pinchCenterRef.current) {
+      pinchDistRef.current = dist;
+      pinchCenterRef.current = newCenter;
+      return;
+    }
+
+    if (pinchRafRef.current !== null) return;
+    pinchRafRef.current = requestAnimationFrame(() => {
+      pinchRafRef.current = null;
+      const st = stageRef.current;
+      const lastCenter = pinchCenterRef.current;
+      const lastDist = pinchDistRef.current;
+      if (!st || !lastCenter || !lastDist) return;
+
+      const rect = st.container().getBoundingClientRect();
+      const localCenter = { x: newCenter.x - rect.left, y: newCenter.y - rect.top };
+      const oldScale = st.scaleX();
+      const pointTo = {
+        x: (localCenter.x - st.x()) / oldScale,
+        y: (localCenter.y - st.y()) / oldScale,
+      };
+      const newScale = Math.max(0.05, Math.min(10, oldScale * (dist / lastDist)));
+      const dx = newCenter.x - lastCenter.x;
+      const dy = newCenter.y - lastCenter.y;
+
+      st.scale({ x: newScale, y: newScale });
+      st.position({
+        x: localCenter.x - pointTo.x * newScale + dx,
+        y: localCenter.y - pointTo.y * newScale + dy,
+      });
+      st.getLayers().forEach((l: any) => l.drawScene());
+
+      pinchDistRef.current = dist;
+      pinchCenterRef.current = newCenter;
+    });
+  };
+
+  const handleTouchEnd = () => {
+    if (pinchDistRef.current !== 0) {
+      pinchDistRef.current = 0;
+      pinchCenterRef.current = null;
+      if (stageRef.current) {
+        stageRef.current.batchDraw();
+        setScale(stageRef.current.scaleX());
+        setPosition({ x: stageRef.current.x(), y: stageRef.current.y() });
+      }
     }
   };
 
@@ -1601,6 +1669,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                     onMouseUp={handleMouseUp}
                     onDblClick={handleDoubleClick}
                     onWheel={handleWheel}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
                     scaleX={scale}
                     scaleY={scale}
                     x={position.x}

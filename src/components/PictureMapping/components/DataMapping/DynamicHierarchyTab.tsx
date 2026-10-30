@@ -140,9 +140,11 @@ const DebouncedRuleValueInput = memo(({
 const DebouncedOpacitySlider = memo(({
   opacity,
   onCommit,
+  compact,
 }: {
   opacity: number;
   onCommit: (val: number) => void;
+  compact?: boolean;
 }) => {
   const [localOpacity, setLocalOpacity] = useState(opacity);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -168,6 +170,21 @@ const DebouncedOpacitySlider = memo(({
       onCommitRef.current(val);
     }, 150);
   };
+
+  if (compact) {
+    return (
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.1"
+        value={localOpacity}
+        title={`Opacity: ${localOpacity}`}
+        onChange={handleChange}
+        className="w-10 h-1 accent-brand-500 shrink-0 cursor-pointer"
+      />
+    );
+  }
 
   return (
     <div
@@ -201,10 +218,8 @@ function DynamicHierarchyTab({
   store: propStore,
   location: propLocation,
 }: DynamicHierarchyTabProps) {
-  const summaryData = useSummaryData();
   const projects = useAppStore(state => state.projects);
   const tasks = useAppStore(state => state.tasks);
-  const delegationGroups = useAppStore(state => state.delegationGroups);
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
 
@@ -332,323 +347,31 @@ function DynamicHierarchyTab({
     year: String(effectiveYear),
   });
 
-  const unitNamesStr = useMemo(() => JSON.stringify(units.map(u => ({ id: u.id, name: u.name, location: u.location }))), [units]);
-
-  // Pre-compute aggregated data for unit evaluation
-  const enrichedProjects = useMemo(() => enrichProjects(projects, tasks, delegationGroups), [projects, tasks, delegationGroups]);
-
-  const aggregatedData = useMemo(() => {
-    const dataMap: Record<string, any> = {};
-
-    // Pre-index tasks by project code
-    const tasksByCodeMap = new Map<string, any[]>();
-    tasks.forEach((t) => {
-      if (!t || !t.name || !t.projectCode) return;
-      const rawCode = String(t.projectCode).trim().toLowerCase();
-      const codeParts = rawCode.split(/[+;,/]/).map((c) => c.trim()).filter(Boolean);
-      codeParts.forEach((c) => {
-        let list = tasksByCodeMap.get(c);
-        if (!list) {
-          list = [];
-          tasksByCodeMap.set(c, list);
-        }
-        list.push(t);
-      });
-    });
-
-    // Initialize with mapped shapes
-    const parsedUnits = JSON.parse(unitNamesStr);
-    parsedUnits.forEach((u: any) => {
-      const uName = (u.name || '').toLowerCase();
-      if (!uName) return;
-      dataMap[uName] = {
-        name: u.name || '',
-        id: u.id,
-        unit: u.name || '',
-        year: String(effectiveYear),
-        store: u.store || store || 'HCM',
-        location: u.location || location || 'L1',
-        floor: u.location || location || '',
-        hasAppProject: false,
-        size: 0,
-        sales: 0,
-        salesByCp: 0,
-        salesByHcmcate: 0,
-        profit: 0,
-        profitByCp: 0,
-        profitByHcmcate: 0,
-        margin: 0,
-        marginByCp: 0,
-        hcmSalesEffi: 0,
-        hcmMargin: 0,
-        mdStatus: "",
-        task: "",
-        projectStatus: "",
-        actStatus: "",
-        startDate: "",
-        endDate: "",
-        status: "",
-        vendorCode: "",
-        brandCode: "",
-        brandName: "",
-        classCode: "",
-        appProjectStatus: "",
-        appProjectBudget: 0,
-        appProjectActual: 0,
-        appProjectCode: "",
-        appProjectYear: "",
-        appProjectMdStatus: "",
-        appMdStatus: "",
-        appProjectActStatus: "",
-        appActStatus: "",
-        appProjectDetail: "",
-        appDetail: "",
-        appProjectDescription: "",
-        appDescription: "",
-        appProjectParty: "",
-        appParty: "",
-      };
-    });
-
-    summaryData.forEach((sumData) => {
-      const key = sumData.unit?.toLowerCase();
-      if (key && dataMap[key]) {
-        dataMap[key].size = sumData.size || 0;
-        dataMap[key].sales = sumData.salesAmount || 0;
-        dataMap[key].salesByCp = sumData.salesByCp || 0;
-        dataMap[key].salesByHcmcate = sumData.salesByHcmcate || 0;
-        dataMap[key].profit = sumData.profitAmount || 0;
-        dataMap[key].profitByCp = sumData.profitByCp || 0;
-        dataMap[key].profitByHcmcate = sumData.profitByHcmcate || 0;
-        dataMap[key].margin = sumData.margin || 0;
-        dataMap[key].marginByCp = sumData.marginByCp || 0;
-        dataMap[key].hcmSalesEffi = sumData.hcmSalesEffi || 0;
-        dataMap[key].hcmMargin = sumData.hcmMargin || 0;
-        dataMap[key].mdStatus = sumData.mdStatus || "";
-        dataMap[key].vendorCode = sumData.vendorCode || "";
-        dataMap[key].brandCode = sumData.brandCode || "";
-        dataMap[key].brandName = sumData.brandName || "";
-        dataMap[key].classCode = sumData.classCode || "";
-        dataMap[key].floor = dataMap[key].floor || (sumData as any).floor || "";
+  // Pre-index summaryList by matchedGroupId and units by id/name for O(1) group card rendering
+  const matchedUnitIdsByGroupId = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (let i = 0; i < summaryList.length; i++) {
+      const item = summaryList[i];
+      if (!item.matchedGroupId) continue;
+      let list = map.get(item.matchedGroupId);
+      if (!list) {
+        list = [];
+        map.set(item.matchedGroupId, list);
       }
-    });
+      list.push(item.unitId);
+    }
+    return map;
+  }, [summaryList]);
 
-    // Merge real Project data synchronized strictly by effectiveYear, location and store
-    enrichedProjects.forEach((p) => {
-      if (!p.code && !p.linkCodes) return;
-
-      const pMeta = extractProjectMetadata(p);
-      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) return;
-
-      const pCodes = extractAllProjectCodes(p);
-      const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
-      const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
-      const detailStr = p.detail || '';
-      const descStr = p.detail || (p as any).description || '';
-      const partyStr = p.party || (p as any).contractor || '';
-      const mdStatusStr = p.mdStatus || '';
-
-      // Match tasks for this project
-      const matchedTaskSet = new Set<any>();
-      pCodes.forEach((c) => {
-        const list = tasksByCodeMap.get(c);
-        if (list) list.forEach((t) => matchedTaskSet.add(t));
-      });
-      if (p.code) {
-        const list = tasksByCodeMap.get(String(p.code).trim().toLowerCase());
-        if (list) list.forEach((t) => matchedTaskSet.add(t));
-      }
-
-      const now = new Date();
-      let activeTaskNames: string[] = [];
-      const allMatchedTasks = Array.from(matchedTaskSet);
-      if (allMatchedTasks.length > 0) {
-        const activeTasks = allMatchedTasks.filter((t: any) => {
-          if (!t.start || !t.finish) return false;
-          const start = new Date(t.start);
-          const finish = new Date(t.finish);
-          return now >= start && now <= finish;
-        });
-        activeTaskNames = activeTasks.map((t: any) => t.name);
-      } else if (p.taskSummaries && p.taskSummaries.length > 0) {
-        const activeTasks = p.taskSummaries.filter((t: any) => {
-          if (!t.start || !t.finish) return false;
-          const start = new Date(t.start);
-          const finish = new Date(t.finish);
-          return now >= start && now <= finish;
-        });
-        activeTaskNames = activeTasks.map((t: any) => t.name);
-      }
-      const taskSummaryStr = activeTaskNames.length > 0 
-        ? activeTaskNames.join('; ')
-        : (allMatchedTasks.map((t: any) => t.name).join('; ') || (p.taskSummaries?.map((t: any) => t.name).join('; ') || ''));
-
-      const targetUnitKeys = new Set<string>();
-      Object.keys(dataMap).forEach(uKey => {
-        const uEntry = dataMap[uKey];
-        if (!uEntry) return;
-        const uStore = (uEntry.store || store || '').toUpperCase().trim();
-        const uLoc = (uEntry.location || location || '').toUpperCase().trim();
-        const uYr = String(uEntry.year || effectiveYear || '').trim();
-
-        if (pMeta.store && uStore && pMeta.store !== uStore) return;
-        const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
-        if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
-        if (pMeta.year && uYr && pMeta.year !== uYr) return;
-
-        const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
-        if (isExactCode || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
-          targetUnitKeys.add(uKey);
-        }
-      });
-
-      targetUnitKeys.forEach(code => {
-         if (dataMap[code]) {
-            dataMap[code].hasAppProject = true;
-            dataMap[code].appProjectStatus = status;
-            dataMap[code].task = taskSummaryStr;
-            dataMap[code].appProjectBudget = p.budget || 0;
-            dataMap[code].appProjectActual = p.actual || 0;
-            dataMap[code].appProjectCode = String(p.code || code);
-            dataMap[code].appProjectYear = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
-            dataMap[code].year = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
-
-            dataMap[code].appProjectMdStatus = mdStatusStr;
-            dataMap[code].appMdStatus = mdStatusStr;
-
-            dataMap[code].appProjectActStatus = actStatus;
-            dataMap[code].appActStatus = actStatus;
-
-            dataMap[code].appProjectDetail = detailStr;
-            dataMap[code].appDetail = detailStr;
-
-            dataMap[code].appProjectDescription = descStr;
-            dataMap[code].appDescription = descStr;
-
-            dataMap[code].appProjectParty = partyStr;
-            dataMap[code].appParty = partyStr;
-         }
-      });
-    });
-
-    return dataMap;
-  }, [unitNamesStr, summaryData, enrichedProjects, tasks, store, location, effectiveYear, delegationGroups]);
-
-  // Evaluates rules for a given group against a unit shape
-  const matchRules = (unit: UnitShape, rules: GroupRule[] | undefined) => {
-    if (!rules || rules.length === 0) return false;
-    const uName = (unit.name || '').toLowerCase();
-    const data = uName ? aggregatedData[uName] : null;
-    if (!data) return false;
-
-    // Must pass all rules (AND condition)
-    return rules.every((rule) => {
-      let val = data[rule.field];
-      const f = String(rule.field || '').toLowerCase().trim();
-
-      // 1. Explicit App Data / Real-time Project checks (Strictly from App Projects & Live Task Summaries - ZERO Excel)
-      if (f === 'appprojectstatus' || f === 'appstatus' || f === 'app: status' || f === 'status' || f === 'projectstatus') {
-        val = data.hasAppProject ? (data.appProjectStatus || '') : '';
-      } else if (f === 'apptask' || f === 'app: task' || f === 'app: task summarize' || f === 'app: task summaries' || f === 'app: tasks' || f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
-        val = data.hasAppProject ? (data.task || '') : '';
-      } else if (f === 'appprojectyear' || f === 'appyear' || f === 'app: year') {
-        val = data.hasAppProject ? (data.appProjectYear || '') : '';
-      } else if (f === 'appprojectcode' || f === 'appcode' || f === 'app: project code') {
-        val = data.hasAppProject ? (data.appProjectCode || '') : '';
-      } else if (f === 'appprojectfloor' || f === 'appfloor' || f === 'app: floor') {
-        val = data.hasAppProject ? (data.location || data.floor || '') : '';
-      } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
-        val = data.hasAppProject ? (data.appProjectMdStatus || '') : '';
-      } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status' || f === 'actstatus') {
-        val = data.hasAppProject ? (data.appProjectActStatus || '') : '';
-      } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)' || f === 'detail') {
-        val = data.hasAppProject ? (data.appProjectDetail || '') : '';
-      } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)' || f === 'description (project)') {
-        val = data.hasAppProject ? (data.appProjectDescription || '') : '';
-      } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party' || f === 'party') {
-        val = data.hasAppProject ? (data.appProjectParty || '') : '';
-      } else if (f === 'appprojectbudget' || f === 'appbudget' || f === 'app: budget' || f === 'budget') {
-        val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
-      } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual' || f === 'actual') {
-        val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
-      } else if (val === undefined || val === null || String(val).trim() === '') {
-        // 2. General attribute fallbacks
-        if (f === 'floor' || f === 'location') {
-          val = data.floor || unit.location || location || '';
-        } else if (f === 'year') {
-          val = data.year || String(effectiveYear);
-        } else if (f === 'mdstatus') {
-          val = data.hasAppProject ? (data.appProjectMdStatus || data.mdStatus || '') : (data.mdStatus || '');
-        } else if (f === 'unit' || f === 'code') {
-          val = data.unit || data.appProjectCode || unit.name || '';
-        }
-      }
-
-      if (rule.field === "margin" || rule.field === "marginByCp") {
-        val = val * 100; // evaluate margin as percentage, e.g. 25 instead of 0.25
-      }
-
-      const numVal = Number(rule.value);
-      const isNum = !isNaN(numVal) && rule.value.trim() !== "";
-      
-      let res = false;
-      
-      let compareValStr = String(val || "").toLowerCase().trim();
-      let compareRuleStr = String(rule.value || "").toLowerCase().trim();
-      if (compareRuleStr === "in progress") compareRuleStr = "on process";
-      if (compareValStr === "in progress") compareValStr = "on process";
-
-      switch (rule.operator) {
-        case ">":
-          res = isNum ? Number(val) > numVal : false; break;
-        case "<":
-          res = isNum ? Number(val) < numVal : false; break;
-        case ">=":
-          res = isNum ? Number(val) >= numVal : false; break;
-        case "<=":
-          res = isNum ? Number(val) <= numVal : false; break;
-        case "=":
-          res = compareValStr === compareRuleStr; break;
-        case "contains": {
-          const searchTerms = compareRuleStr.split(/\s+/);
-          res = searchTerms.every(term => compareValStr.includes(term));
-          break;
-        }
-        case "or":
-        case "OR": {
-          const orTerms = compareRuleStr
-            .split(/[\r\n\t,;+/&|]+|\s{2,}/)
-            .map(t => {
-              let tr = t.trim();
-              if (tr === "in progress") tr = "on process";
-              return tr;
-            })
-            .filter(Boolean);
-          if (orTerms.length === 0) {
-            const spaceTerms = compareRuleStr.split(/\s+/).filter(Boolean);
-            res = spaceTerms.some(term => compareValStr === term || compareValStr.includes(term));
-          } else {
-            res = orTerms.some(term => {
-              if (compareValStr === term) return true;
-              if (compareValStr.includes(term)) return true;
-              if (isNum && !isNaN(Number(term)) && Number(val) === Number(term)) return true;
-              return false;
-            });
-          }
-          break;
-        }
-        case "exclude": {
-          const searchTerms = compareRuleStr.split(/\s+/);
-          res = !searchTerms.some(term => compareValStr.includes(term));
-          break;
-        }
-        default:
-          res = false; break;
-      }
-      
-      return res;
-    });
-  };
+  const unitLookupMap = useMemo(() => {
+    const map = new Map<string, UnitShape>();
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (u.id) map.set(u.id, u);
+      if (u.name) map.set(u.name.toLowerCase(), u);
+    }
+    return map;
+  }, [units]);
 
   const applyRules = async () => {
     try {
@@ -1178,9 +901,8 @@ function DynamicHierarchyTab({
 
               <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-2.5">
                 {activeGroups.map((group) => {
-                  const groupMatchedItems = summaryList.filter((item) => item.matchedGroupId === group.id);
                   const assignedUnits = (group.rules && group.rules.length > 0)
-                    ? groupMatchedItems.map((item) => item.unitId)
+                    ? (matchedUnitIdsByGroupId.get(group.id) || [])
                     : (activeVersion.groupMappings[group.id] || []);
                   return (
                     <div
@@ -1207,20 +929,10 @@ function DynamicHierarchyTab({
                               </span>
                             )}
                           </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.1"
-                            value={group.opacity ?? 0.6}
-                            title={`Opacity: ${group.opacity ?? 0.6}`}
-                            onChange={(e) =>
-                              updateGroupOpacity(
-                                group.id,
-                                parseFloat(e.target.value),
-                              )
-                            }
-                            className="w-10 h-1 accent-brand-500 shrink-0 cursor-pointer"
+                          <DebouncedOpacitySlider
+                            compact
+                            opacity={group.opacity ?? 0.6}
+                            onCommit={(val) => updateGroupOpacity(group.id, val)}
                           />
                           {/* Hatching Pattern Selector */}
                           <GroupHatchPatternPicker
@@ -1367,16 +1079,15 @@ function DynamicHierarchyTab({
                                 <option value="exclude">Exclude</option>
                               </select>
 
-                              <input
-                                type="text"
+                              <DebouncedRuleValueInput
                                 className="bg-transparent text-slate-200 text-xs flex-1 min-w-0 outline-none border-b border-slate-700 focus:border-brand-500 px-1 py-0.5"
                                 value={rule.value}
-                                onChange={(e) =>
+                                onCommit={(val) =>
                                   updateRule(
                                     group.id,
                                     idx,
                                     "value",
-                                    e.target.value,
+                                    val,
                                   )
                                 }
                                 placeholder="Value..."
@@ -1400,7 +1111,7 @@ function DynamicHierarchyTab({
                               </span>
                               <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto custom-scrollbar">
                                 {assignedUnits.map((uid) => {
-                                  const u = units.find((x) => x.id === uid || (x.name && x.name.toLowerCase() === uid.toLowerCase()));
+                                  const u = unitLookupMap.get(uid) || unitLookupMap.get(uid.toLowerCase());
                                   return u ? (
                                     <div
                                       key={uid}

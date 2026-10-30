@@ -37041,11 +37041,17 @@ export function useGanttZoomAndPan({
 
       if (!isDraggingRef.current || !mainScrollRef.current) return;
 
-      const dx = e.clientX - dragStartRef.current.x;
-      const dy = e.clientY - dragStartRef.current.y;
-
-      mainScrollRef.current.scrollLeft = dragStartRef.current.scrollLeft - dx;
-      mainScrollRef.current.scrollTop = dragStartRef.current.scrollTop - dy;
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      if (rafIdRef.current !== null) return;
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        if (!isDraggingRef.current || !mainScrollRef.current) return;
+        const dx = clientX - dragStartRef.current.x;
+        const dy = clientY - dragStartRef.current.y;
+        mainScrollRef.current.scrollLeft = dragStartRef.current.scrollLeft - dx;
+        mainScrollRef.current.scrollTop = dragStartRef.current.scrollTop - dy;
+      });
     };
 
     const handlePointerUp = () => {
@@ -37060,11 +37066,15 @@ export function useGanttZoomAndPan({
       }
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
+        if (rafIdRef.current !== null) {
+          cancelAnimationFrame(rafIdRef.current);
+          rafIdRef.current = null;
+        }
         setIsPanning(false);
       }
     };
 
-    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
     window.addEventListener('pointerup', handlePointerUp);
     window.addEventListener('pointercancel', handlePointerUp);
 
@@ -37084,7 +37094,6 @@ export function useGanttZoomAndPan({
     handleStartMonthResize
   };
 }
-
 ================================================================================
 FILE: src/components/GanttTab.tsx
 ================================================================================
@@ -67612,28 +67621,133 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
     };
   }, [activeVersion?.id]);
 
+  const wheelRafRef = useRef<number | null>(null);
+  const wheelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingWheelDeltaRef = useRef<number>(0);
+  const lastWheelPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const pinchDistRef = useRef<number>(0);
+  const pinchCenterRef = useRef<{ x: number; y: number } | null>(null);
+  const pinchRafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (wheelRafRef.current !== null) cancelAnimationFrame(wheelRafRef.current);
+      if (pinchRafRef.current !== null) cancelAnimationFrame(pinchRafRef.current);
+      if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
+    };
+  }, []);
+
   const handleWheel = (e: any) => {
     e.evt.preventDefault();
     const stage = e.target.getStage();
-    const oldScale = stage.scaleX();
+    if (!stage) return;
     const pointer = stage.getPointerPosition();
-
     if (!pointer) return;
 
-    const mousePointTo = {
-      x: (pointer.x - stage.x()) / oldScale,
-      y: (pointer.y - stage.y()) / oldScale,
-    };
+    lastWheelPointerRef.current = pointer;
+    pendingWheelDeltaRef.current += e.evt.deltaY;
 
-    // Smooth dampened zoom speed for desktop mouse wheels
-    const deltaY = e.evt.deltaY;
-    const zoomFactor = Math.exp(-deltaY * 0.0008);
-    const newScale = Math.max(0.05, Math.min(10, oldScale * zoomFactor));
-    setScale(newScale);
-    setPosition({
-      x: pointer.x - mousePointTo.x * newScale,
-      y: pointer.y - mousePointTo.y * newScale,
+    if (wheelRafRef.current === null) {
+      wheelRafRef.current = requestAnimationFrame(() => {
+        wheelRafRef.current = null;
+        const curStage = stageRef.current;
+        const ptr = lastWheelPointerRef.current;
+        if (!curStage || !ptr) return;
+
+        const deltaY = pendingWheelDeltaRef.current;
+        pendingWheelDeltaRef.current = 0;
+
+        const oldScale = curStage.scaleX();
+        const zoomFactor = Math.exp(-deltaY * 0.0008);
+        const newScale = Math.max(0.05, Math.min(10, oldScale * zoomFactor));
+
+        const mousePointTo = {
+          x: (ptr.x - curStage.x()) / oldScale,
+          y: (ptr.y - curStage.y()) / oldScale,
+        };
+        const newPos = {
+          x: ptr.x - mousePointTo.x * newScale,
+          y: ptr.y - mousePointTo.y * newScale,
+        };
+
+        curStage.scale({ x: newScale, y: newScale });
+        curStage.position(newPos);
+        curStage.getLayers().forEach((l: any) => l.drawScene());
+
+        if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
+        wheelSyncTimerRef.current = setTimeout(() => {
+          wheelSyncTimerRef.current = null;
+          if (!stageRef.current) return;
+          stageRef.current.batchDraw();
+          setScale(stageRef.current.scaleX());
+          setPosition({ x: stageRef.current.x(), y: stageRef.current.y() });
+        }, 120);
+      });
+    }
+  };
+
+  const handleTouchMove = (e: any) => {
+    const touch1 = e.evt.touches?.[0];
+    const touch2 = e.evt.touches?.[1];
+    if (!touch1 || !touch2) return;
+    e.evt.preventDefault();
+
+    const curStage = stageRef.current;
+    if (!curStage) return;
+    if (curStage.isDragging()) curStage.stopDrag();
+
+    const p1 = { x: touch1.clientX, y: touch1.clientY };
+    const p2 = { x: touch2.clientX, y: touch2.clientY };
+    const newCenter = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+    if (!pinchDistRef.current || !pinchCenterRef.current) {
+      pinchDistRef.current = dist;
+      pinchCenterRef.current = newCenter;
+      return;
+    }
+
+    if (pinchRafRef.current !== null) return;
+    pinchRafRef.current = requestAnimationFrame(() => {
+      pinchRafRef.current = null;
+      const st = stageRef.current;
+      const lastCenter = pinchCenterRef.current;
+      const lastDist = pinchDistRef.current;
+      if (!st || !lastCenter || !lastDist) return;
+
+      const rect = st.container().getBoundingClientRect();
+      const localCenter = { x: newCenter.x - rect.left, y: newCenter.y - rect.top };
+      const oldScale = st.scaleX();
+      const pointTo = {
+        x: (localCenter.x - st.x()) / oldScale,
+        y: (localCenter.y - st.y()) / oldScale,
+      };
+      const newScale = Math.max(0.05, Math.min(10, oldScale * (dist / lastDist)));
+      const dx = newCenter.x - lastCenter.x;
+      const dy = newCenter.y - lastCenter.y;
+
+      st.scale({ x: newScale, y: newScale });
+      st.position({
+        x: localCenter.x - pointTo.x * newScale + dx,
+        y: localCenter.y - pointTo.y * newScale + dy,
+      });
+      st.getLayers().forEach((l: any) => l.drawScene());
+
+      pinchDistRef.current = dist;
+      pinchCenterRef.current = newCenter;
     });
+  };
+
+  const handleTouchEnd = () => {
+    if (pinchDistRef.current !== 0) {
+      pinchDistRef.current = 0;
+      pinchCenterRef.current = null;
+      if (stageRef.current) {
+        stageRef.current.batchDraw();
+        setScale(stageRef.current.scaleX());
+        setPosition({ x: stageRef.current.x(), y: stageRef.current.y() });
+      }
+    }
   };
 
   if (!activeVersion) {
@@ -67814,6 +67928,13 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
             width={canvasSize.width} 
             height={canvasSize.height}
             onWheel={handleWheel}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onDragEnd={(e) => {
+              if (e.target === stageRef.current) {
+                setPosition({ x: e.target.x(), y: e.target.y() });
+              }
+            }}
             scaleX={scale}
             scaleY={scale}
             x={position.x}
@@ -67824,6 +67945,7 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
               {image && <KonvaImage 
                 image={image} 
                 listening={false} 
+                perfectDrawEnabled={false}
                 x={activeVersion?.imagePos?.x || 0}
                 y={activeVersion?.imagePos?.y || 0}
                 scaleX={activeVersion?.imageScale || 1}
@@ -67891,10 +68013,12 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                         width={bbox.width}
                         height={bbox.height}
                         rotation={unit.rotation || 0}
+                        listening={false}
                       >
                         {(() => {
                           const lines = unit.sizeLabelLines || [];
-                          const fontSize = Math.max(7, Math.min(18, 10 / scale));
+                          const quantizedScale = Math.max(0.3, Math.round(scale * 4) / 4);
+                          const fontSize = Math.max(7, Math.min(18, 10 / quantizedScale));
                           const lineHeight = fontSize * 1.2;
                           const totalHeight = lines.length * lineHeight;
                           const startY = (bbox.height - totalHeight) / 2;
@@ -68933,7 +69057,6 @@ export const ExportAllManager = ({ versions, units, summaryData, dynamicSummaryM
 };
 
 export default React.memo(ReviewTab);
-
 ================================================================================
 FILE: src/components/PictureMapping/components/DataMapping/types.ts
 export type ShapeType = 'rect' | 'circle' | 'polygon';
@@ -122725,15 +122848,20 @@ import { extractAllProjectCodes } from "./projectCodeAndScopeUtils";
 import { rollupTaskSummaries } from "../taskRollupHelpers";
 import { useDataStore } from "../../components/PictureMapping/DataContext";
 
-// Module-level cache for zero-cost multi-component calls to enrichProjects
+// Module-level 8-slot ring buffer cache for zero-cost multi-component calls to enrichProjects
+// Prevents cache thrashing when different hooks pass rawTasks vs deduplicated baseTasks
 const EMPTY_DELEGATION_GROUPS: DelegationGroup[] = [];
-let _lastProjectsRef: Project[] | null = null;
-let _lastTasksRef: Task[] | null = null;
-let _lastDelegationRef: DelegationGroup[] | null = null;
-let _lastMapUnitsRef: any = null;
-let _lastMapVersionsRef: any = null;
-let _lastStoreLocationDataRef: any = null;
-let _lastEnrichedResult: Project[] | null = null;
+interface EnrichGlobalCacheSlot {
+  projectsRef: Project[];
+  tasksRef: Task[];
+  delegationRef: DelegationGroup[];
+  mapUnitsRef: any;
+  mapVersionsRef: any;
+  storeLocationDataRef: any;
+  result: Project[];
+}
+const ENRICH_CACHE_MAX = 8;
+const _enrichCacheRing: EnrichGlobalCacheSlot[] = [];
 
 interface PerProjectEnrichCacheEntry {
   projectTasks: Task[];
@@ -122765,16 +122893,18 @@ export function enrichProjects(
     delegationGroups && delegationGroups.length > 0 ? delegationGroups : EMPTY_DELEGATION_GROUPS;
   const dataState = useDataStore.getState();
 
-  if (
-    _lastProjectsRef === projects &&
-    _lastTasksRef === tasks &&
-    _lastDelegationRef === normDelegations &&
-    _lastMapUnitsRef === dataState.mapUnits &&
-    _lastMapVersionsRef === dataState.mapVersions &&
-    _lastStoreLocationDataRef === dataState.storeLocationData &&
-    _lastEnrichedResult
-  ) {
-    return _lastEnrichedResult;
+  for (let i = 0; i < _enrichCacheRing.length; i++) {
+    const slot = _enrichCacheRing[i];
+    if (
+      slot.projectsRef === projects &&
+      slot.tasksRef === tasks &&
+      slot.delegationRef === normDelegations &&
+      slot.mapUnitsRef === dataState.mapUnits &&
+      slot.mapVersionsRef === dataState.mapVersions &&
+      slot.storeLocationDataRef === dataState.storeLocationData
+    ) {
+      return slot.result;
+    }
   }
 
   const tasksByProjectId = new Map<string, Task[]>();
@@ -123141,7 +123271,7 @@ export function enrichProjects(
       taskCount,
     };
 
-    _perProjectEnrichCache.set(p, {
+    const cacheVal: PerProjectEnrichCacheEntry = {
       projectTasks,
       candidateDelegations,
       isHydrated,
@@ -123149,26 +123279,15 @@ export function enrichProjects(
       mapVersionsRef: dataState.mapVersions,
       storeLocationDataRef: dataState.storeLocationData,
       enriched,
-    });
-    _perProjectEnrichCache.set(enriched, {
-      projectTasks,
-      candidateDelegations,
-      isHydrated,
-      mapUnitsRef: dataState.mapUnits,
-      mapVersionsRef: dataState.mapVersions,
-      storeLocationDataRef: dataState.storeLocationData,
-      enriched,
-    });
+    };
+    _perProjectEnrichCache.set(p, cacheVal);
+    _perProjectEnrichCache.set(enriched, cacheVal);
 
     return enriched;
   });
 
   const statusPriority: Record<string, number> = {
-    'On process': 1,
-    'Handover': 2,
-    'Upcoming': 3,
-    'Completed': 4,
-    'Canceled': 5
+    'On process': 1, 'Handover': 2, 'Upcoming': 3, 'Completed': 4, 'Canceled': 5
   };
 
   const today = new Date();
@@ -123181,51 +123300,44 @@ export function enrichProjects(
     const ep = enrichedProjects[i];
     if ((ep.computedStatus || 'Upcoming') === 'On process') {
       const parsed = parseDateTime(ep.computedTakCompl || ep.computedOpening || ep.opening || '9999-12-31');
-      if (parsed) {
-        onProcessFinishDiffMap.set(ep, Math.abs(parsed.getTime() - todayTime));
-      }
+      if (parsed) onProcessFinishDiffMap.set(ep, Math.abs(parsed.getTime() - todayTime));
     }
   }
 
   enrichedProjects.sort((a, b) => {
     const statusA = a.computedStatus || 'Upcoming';
     const statusB = b.computedStatus || 'Upcoming';
-
     const priorityA = statusPriority[statusA] || 99;
     const priorityB = statusPriority[statusB] || 99;
-
-    if (priorityA !== priorityB) {
-      return priorityA - priorityB;
-    }
+    if (priorityA !== priorityB) return priorityA - priorityB;
 
     if (statusA === 'On process') {
       const diffA = onProcessFinishDiffMap.get(a);
       const diffB = onProcessFinishDiffMap.get(b);
-      if (diffA !== undefined && diffB !== undefined && diffA !== diffB) {
-        return diffA - diffB;
-      }
+      if (diffA !== undefined && diffB !== undefined && diffA !== diffB) return diffA - diffB;
     }
 
     const startA = a.computedTakStart || '9999-12-31';
     const startB = b.computedTakStart || '9999-12-31';
-
     if (startA < startB) return -1;
     if (startA > startB) return 1;
 
     return String(a.code || '').localeCompare(String(b.code || '')) || String(a.year || '').localeCompare(String(b.year || ''));
   });
 
-  _lastProjectsRef = projects;
-  _lastTasksRef = tasks;
-  _lastDelegationRef = normDelegations;
-  _lastMapUnitsRef = dataState.mapUnits;
-  _lastMapVersionsRef = dataState.mapVersions;
-  _lastStoreLocationDataRef = dataState.storeLocationData;
-  _lastEnrichedResult = enrichedProjects;
+  if (_enrichCacheRing.length >= ENRICH_CACHE_MAX) _enrichCacheRing.shift();
+  _enrichCacheRing.push({
+    projectsRef: projects,
+    tasksRef: tasks,
+    delegationRef: normDelegations,
+    mapUnitsRef: dataState.mapUnits,
+    mapVersionsRef: dataState.mapVersions,
+    storeLocationDataRef: dataState.storeLocationData,
+    result: enrichedProjects,
+  });
 
   return enrichedProjects;
 }
-
 ================================================================================
 FILE: src/lib/utilsParts/statusResolutionUtils.ts
 ================================================================================
@@ -164176,9 +164288,11 @@ const DebouncedRuleValueInput = memo(({
 const DebouncedOpacitySlider = memo(({
   opacity,
   onCommit,
+  compact,
 }: {
   opacity: number;
   onCommit: (val: number) => void;
+  compact?: boolean;
 }) => {
   const [localOpacity, setLocalOpacity] = useState(opacity);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -164204,6 +164318,21 @@ const DebouncedOpacitySlider = memo(({
       onCommitRef.current(val);
     }, 150);
   };
+
+  if (compact) {
+    return (
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.1"
+        value={localOpacity}
+        title={`Opacity: ${localOpacity}`}
+        onChange={handleChange}
+        className="w-10 h-1 accent-brand-500 shrink-0 cursor-pointer"
+      />
+    );
+  }
 
   return (
     <div
@@ -164237,10 +164366,8 @@ function DynamicHierarchyTab({
   store: propStore,
   location: propLocation,
 }: DynamicHierarchyTabProps) {
-  const summaryData = useSummaryData();
   const projects = useAppStore(state => state.projects);
   const tasks = useAppStore(state => state.tasks);
-  const delegationGroups = useAppStore(state => state.delegationGroups);
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
   const setGlobalYearFilter = useAppStore(state => state.setGlobalYearFilter);
 
@@ -164368,323 +164495,31 @@ function DynamicHierarchyTab({
     year: String(effectiveYear),
   });
 
-  const unitNamesStr = useMemo(() => JSON.stringify(units.map(u => ({ id: u.id, name: u.name, location: u.location }))), [units]);
-
-  // Pre-compute aggregated data for unit evaluation
-  const enrichedProjects = useMemo(() => enrichProjects(projects, tasks, delegationGroups), [projects, tasks, delegationGroups]);
-
-  const aggregatedData = useMemo(() => {
-    const dataMap: Record<string, any> = {};
-
-    // Pre-index tasks by project code
-    const tasksByCodeMap = new Map<string, any[]>();
-    tasks.forEach((t) => {
-      if (!t || !t.name || !t.projectCode) return;
-      const rawCode = String(t.projectCode).trim().toLowerCase();
-      const codeParts = rawCode.split(/[+;,/]/).map((c) => c.trim()).filter(Boolean);
-      codeParts.forEach((c) => {
-        let list = tasksByCodeMap.get(c);
-        if (!list) {
-          list = [];
-          tasksByCodeMap.set(c, list);
-        }
-        list.push(t);
-      });
-    });
-
-    // Initialize with mapped shapes
-    const parsedUnits = JSON.parse(unitNamesStr);
-    parsedUnits.forEach((u: any) => {
-      const uName = (u.name || '').toLowerCase();
-      if (!uName) return;
-      dataMap[uName] = {
-        name: u.name || '',
-        id: u.id,
-        unit: u.name || '',
-        year: String(effectiveYear),
-        store: u.store || store || 'HCM',
-        location: u.location || location || 'L1',
-        floor: u.location || location || '',
-        hasAppProject: false,
-        size: 0,
-        sales: 0,
-        salesByCp: 0,
-        salesByHcmcate: 0,
-        profit: 0,
-        profitByCp: 0,
-        profitByHcmcate: 0,
-        margin: 0,
-        marginByCp: 0,
-        hcmSalesEffi: 0,
-        hcmMargin: 0,
-        mdStatus: "",
-        task: "",
-        projectStatus: "",
-        actStatus: "",
-        startDate: "",
-        endDate: "",
-        status: "",
-        vendorCode: "",
-        brandCode: "",
-        brandName: "",
-        classCode: "",
-        appProjectStatus: "",
-        appProjectBudget: 0,
-        appProjectActual: 0,
-        appProjectCode: "",
-        appProjectYear: "",
-        appProjectMdStatus: "",
-        appMdStatus: "",
-        appProjectActStatus: "",
-        appActStatus: "",
-        appProjectDetail: "",
-        appDetail: "",
-        appProjectDescription: "",
-        appDescription: "",
-        appProjectParty: "",
-        appParty: "",
-      };
-    });
-
-    summaryData.forEach((sumData) => {
-      const key = sumData.unit?.toLowerCase();
-      if (key && dataMap[key]) {
-        dataMap[key].size = sumData.size || 0;
-        dataMap[key].sales = sumData.salesAmount || 0;
-        dataMap[key].salesByCp = sumData.salesByCp || 0;
-        dataMap[key].salesByHcmcate = sumData.salesByHcmcate || 0;
-        dataMap[key].profit = sumData.profitAmount || 0;
-        dataMap[key].profitByCp = sumData.profitByCp || 0;
-        dataMap[key].profitByHcmcate = sumData.profitByHcmcate || 0;
-        dataMap[key].margin = sumData.margin || 0;
-        dataMap[key].marginByCp = sumData.marginByCp || 0;
-        dataMap[key].hcmSalesEffi = sumData.hcmSalesEffi || 0;
-        dataMap[key].hcmMargin = sumData.hcmMargin || 0;
-        dataMap[key].mdStatus = sumData.mdStatus || "";
-        dataMap[key].vendorCode = sumData.vendorCode || "";
-        dataMap[key].brandCode = sumData.brandCode || "";
-        dataMap[key].brandName = sumData.brandName || "";
-        dataMap[key].classCode = sumData.classCode || "";
-        dataMap[key].floor = dataMap[key].floor || (sumData as any).floor || "";
+  // Pre-index summaryList by matchedGroupId and units by id/name for O(1) group card rendering
+  const matchedUnitIdsByGroupId = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (let i = 0; i < summaryList.length; i++) {
+      const item = summaryList[i];
+      if (!item.matchedGroupId) continue;
+      let list = map.get(item.matchedGroupId);
+      if (!list) {
+        list = [];
+        map.set(item.matchedGroupId, list);
       }
-    });
+      list.push(item.unitId);
+    }
+    return map;
+  }, [summaryList]);
 
-    // Merge real Project data synchronized strictly by effectiveYear, location and store
-    enrichedProjects.forEach((p) => {
-      if (!p.code && !p.linkCodes) return;
-
-      const pMeta = extractProjectMetadata(p);
-      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) return;
-
-      const pCodes = extractAllProjectCodes(p);
-      const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
-      const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, delegationGroups);
-      const detailStr = p.detail || '';
-      const descStr = p.detail || (p as any).description || '';
-      const partyStr = p.party || (p as any).contractor || '';
-      const mdStatusStr = p.mdStatus || '';
-
-      // Match tasks for this project
-      const matchedTaskSet = new Set<any>();
-      pCodes.forEach((c) => {
-        const list = tasksByCodeMap.get(c);
-        if (list) list.forEach((t) => matchedTaskSet.add(t));
-      });
-      if (p.code) {
-        const list = tasksByCodeMap.get(String(p.code).trim().toLowerCase());
-        if (list) list.forEach((t) => matchedTaskSet.add(t));
-      }
-
-      const now = new Date();
-      let activeTaskNames: string[] = [];
-      const allMatchedTasks = Array.from(matchedTaskSet);
-      if (allMatchedTasks.length > 0) {
-        const activeTasks = allMatchedTasks.filter((t: any) => {
-          if (!t.start || !t.finish) return false;
-          const start = new Date(t.start);
-          const finish = new Date(t.finish);
-          return now >= start && now <= finish;
-        });
-        activeTaskNames = activeTasks.map((t: any) => t.name);
-      } else if (p.taskSummaries && p.taskSummaries.length > 0) {
-        const activeTasks = p.taskSummaries.filter((t: any) => {
-          if (!t.start || !t.finish) return false;
-          const start = new Date(t.start);
-          const finish = new Date(t.finish);
-          return now >= start && now <= finish;
-        });
-        activeTaskNames = activeTasks.map((t: any) => t.name);
-      }
-      const taskSummaryStr = activeTaskNames.length > 0 
-        ? activeTaskNames.join('; ')
-        : (allMatchedTasks.map((t: any) => t.name).join('; ') || (p.taskSummaries?.map((t: any) => t.name).join('; ') || ''));
-
-      const targetUnitKeys = new Set<string>();
-      Object.keys(dataMap).forEach(uKey => {
-        const uEntry = dataMap[uKey];
-        if (!uEntry) return;
-        const uStore = (uEntry.store || store || '').toUpperCase().trim();
-        const uLoc = (uEntry.location || location || '').toUpperCase().trim();
-        const uYr = String(uEntry.year || effectiveYear || '').trim();
-
-        if (pMeta.store && uStore && pMeta.store !== uStore) return;
-        const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
-        if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
-        if (pMeta.year && uYr && pMeta.year !== uYr) return;
-
-        const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
-        if (isExactCode || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
-          targetUnitKeys.add(uKey);
-        }
-      });
-
-      targetUnitKeys.forEach(code => {
-         if (dataMap[code]) {
-            dataMap[code].hasAppProject = true;
-            dataMap[code].appProjectStatus = status;
-            dataMap[code].task = taskSummaryStr;
-            dataMap[code].appProjectBudget = p.budget || 0;
-            dataMap[code].appProjectActual = p.actual || 0;
-            dataMap[code].appProjectCode = String(p.code || code);
-            dataMap[code].appProjectYear = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
-            dataMap[code].year = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
-
-            dataMap[code].appProjectMdStatus = mdStatusStr;
-            dataMap[code].appMdStatus = mdStatusStr;
-
-            dataMap[code].appProjectActStatus = actStatus;
-            dataMap[code].appActStatus = actStatus;
-
-            dataMap[code].appProjectDetail = detailStr;
-            dataMap[code].appDetail = detailStr;
-
-            dataMap[code].appProjectDescription = descStr;
-            dataMap[code].appDescription = descStr;
-
-            dataMap[code].appProjectParty = partyStr;
-            dataMap[code].appParty = partyStr;
-         }
-      });
-    });
-
-    return dataMap;
-  }, [unitNamesStr, summaryData, enrichedProjects, tasks, store, location, effectiveYear, delegationGroups]);
-
-  // Evaluates rules for a given group against a unit shape
-  const matchRules = (unit: UnitShape, rules: GroupRule[] | undefined) => {
-    if (!rules || rules.length === 0) return false;
-    const uName = (unit.name || '').toLowerCase();
-    const data = uName ? aggregatedData[uName] : null;
-    if (!data) return false;
-
-    // Must pass all rules (AND condition)
-    return rules.every((rule) => {
-      let val = data[rule.field];
-      const f = String(rule.field || '').toLowerCase().trim();
-
-      // 1. Explicit App Data / Real-time Project checks (Strictly from App Projects & Live Task Summaries - ZERO Excel)
-      if (f === 'appprojectstatus' || f === 'appstatus' || f === 'app: status' || f === 'status' || f === 'projectstatus') {
-        val = data.hasAppProject ? (data.appProjectStatus || '') : '';
-      } else if (f === 'apptask' || f === 'app: task' || f === 'app: task summarize' || f === 'app: task summaries' || f === 'app: tasks' || f === 'task' || f === 'tasks' || f === 'tasksummaries' || f === 'task summarize' || f === 'task summary' || f === 'task name') {
-        val = data.hasAppProject ? (data.task || '') : '';
-      } else if (f === 'appprojectyear' || f === 'appyear' || f === 'app: year') {
-        val = data.hasAppProject ? (data.appProjectYear || '') : '';
-      } else if (f === 'appprojectcode' || f === 'appcode' || f === 'app: project code') {
-        val = data.hasAppProject ? (data.appProjectCode || '') : '';
-      } else if (f === 'appprojectfloor' || f === 'appfloor' || f === 'app: floor') {
-        val = data.hasAppProject ? (data.location || data.floor || '') : '';
-      } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
-        val = data.hasAppProject ? (data.appProjectMdStatus || '') : '';
-      } else if (f === 'appprojectactstatus' || f === 'appactstatus' || f === 'app: act status' || f === 'app:act status' || f === 'actstatus') {
-        val = data.hasAppProject ? (data.appProjectActStatus || '') : '';
-      } else if (f === 'appprojectdetail' || f === 'appdetail' || f === 'app: detail (project)' || f === 'detail') {
-        val = data.hasAppProject ? (data.appProjectDetail || '') : '';
-      } else if (f === 'appprojectdescription' || f === 'appdescription' || f === 'app: description (project)' || f === 'description (project)') {
-        val = data.hasAppProject ? (data.appProjectDescription || '') : '';
-      } else if (f === 'appprojectparty' || f === 'appparty' || f === 'app: party' || f === 'party') {
-        val = data.hasAppProject ? (data.appProjectParty || '') : '';
-      } else if (f === 'appprojectbudget' || f === 'appbudget' || f === 'app: budget' || f === 'budget') {
-        val = data.hasAppProject ? (data.appProjectBudget ?? 0) : 0;
-      } else if (f === 'appprojectactual' || f === 'appactual' || f === 'app: actual' || f === 'actual') {
-        val = data.hasAppProject ? (data.appProjectActual ?? 0) : 0;
-      } else if (val === undefined || val === null || String(val).trim() === '') {
-        // 2. General attribute fallbacks
-        if (f === 'floor' || f === 'location') {
-          val = data.floor || unit.location || location || '';
-        } else if (f === 'year') {
-          val = data.year || String(effectiveYear);
-        } else if (f === 'mdstatus') {
-          val = data.hasAppProject ? (data.appProjectMdStatus || data.mdStatus || '') : (data.mdStatus || '');
-        } else if (f === 'unit' || f === 'code') {
-          val = data.unit || data.appProjectCode || unit.name || '';
-        }
-      }
-
-      if (rule.field === "margin" || rule.field === "marginByCp") {
-        val = val * 100; // evaluate margin as percentage, e.g. 25 instead of 0.25
-      }
-
-      const numVal = Number(rule.value);
-      const isNum = !isNaN(numVal) && rule.value.trim() !== "";
-      
-      let res = false;
-      
-      let compareValStr = String(val || "").toLowerCase().trim();
-      let compareRuleStr = String(rule.value || "").toLowerCase().trim();
-      if (compareRuleStr === "in progress") compareRuleStr = "on process";
-      if (compareValStr === "in progress") compareValStr = "on process";
-
-      switch (rule.operator) {
-        case ">":
-          res = isNum ? Number(val) > numVal : false; break;
-        case "<":
-          res = isNum ? Number(val) < numVal : false; break;
-        case ">=":
-          res = isNum ? Number(val) >= numVal : false; break;
-        case "<=":
-          res = isNum ? Number(val) <= numVal : false; break;
-        case "=":
-          res = compareValStr === compareRuleStr; break;
-        case "contains": {
-          const searchTerms = compareRuleStr.split(/\s+/);
-          res = searchTerms.every(term => compareValStr.includes(term));
-          break;
-        }
-        case "or":
-        case "OR": {
-          const orTerms = compareRuleStr
-            .split(/[\r\n\t,;+/&|]+|\s{2,}/)
-            .map(t => {
-              let tr = t.trim();
-              if (tr === "in progress") tr = "on process";
-              return tr;
-            })
-            .filter(Boolean);
-          if (orTerms.length === 0) {
-            const spaceTerms = compareRuleStr.split(/\s+/).filter(Boolean);
-            res = spaceTerms.some(term => compareValStr === term || compareValStr.includes(term));
-          } else {
-            res = orTerms.some(term => {
-              if (compareValStr === term) return true;
-              if (compareValStr.includes(term)) return true;
-              if (isNum && !isNaN(Number(term)) && Number(val) === Number(term)) return true;
-              return false;
-            });
-          }
-          break;
-        }
-        case "exclude": {
-          const searchTerms = compareRuleStr.split(/\s+/);
-          res = !searchTerms.some(term => compareValStr.includes(term));
-          break;
-        }
-        default:
-          res = false; break;
-      }
-      
-      return res;
-    });
-  };
+  const unitLookupMap = useMemo(() => {
+    const map = new Map<string, UnitShape>();
+    for (let i = 0; i < units.length; i++) {
+      const u = units[i];
+      if (u.id) map.set(u.id, u);
+      if (u.name) map.set(u.name.toLowerCase(), u);
+    }
+    return map;
+  }, [units]);
 
   const applyRules = async () => {
     try {
@@ -165027,22 +164862,22 @@ function DynamicHierarchyTab({
   const activeGroups = activeVersion?.groups || [];
 
   return (
-    <div className="flex flex-col h-full gap-6">
-      <div className="flex-1 bg-slate-900/50 rounded-2xl border border-slate-800/50 p-6 glass flex flex-col relative overflow-hidden">
-        <div className="flex items-center justify-between mb-8 shrink-0">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h3 className="text-lg font-bold text-white uppercase tracking-widest flex items-center gap-3">
-              <Calculator className="text-brand-500" /> Dynamic Hierarchy
+    <div className="flex flex-col h-full gap-2">
+      <div className="flex-1 bg-slate-900/50 rounded-xl border border-slate-800/50 p-2.5 sm:p-3 glass flex flex-col relative overflow-hidden">
+        <div className="flex items-center justify-between mb-2.5 shrink-0 flex-wrap gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+              <Calculator size={14} className="text-brand-500" /> Dynamic Hierarchy
             </h3>
 
             {/* Year Filter */}
-            <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-700 px-3 py-1.5 rounded-lg shadow-inner">
-              <Calendar size={13} className="text-brand-400" />
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Year:</span>
+            <div className="flex items-center gap-1 bg-slate-950 border border-slate-700 px-2 py-0.5 rounded-md shadow-inner">
+              <Calendar size={11} className="text-brand-400" />
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Year:</span>
               <select
                 value={effectiveYear}
                 onChange={(e) => setGlobalYearFilter(e.target.value)}
-                className="bg-transparent border-none text-xs text-white font-bold outline-none cursor-pointer hover:text-brand-300 transition-colors"
+                className="bg-transparent border-none text-[11px] text-white font-bold outline-none cursor-pointer hover:text-brand-300 transition-colors"
                 title="Filter Dynamic Hierarchy by Year"
               >
                 {availableYears.map(y => (
@@ -165053,7 +164888,7 @@ function DynamicHierarchyTab({
 
             {/* Version Select */}
             <select
-              className="bg-slate-950 text-white text-sm px-4 py-2 rounded-lg border border-slate-700 outline-none cursor-pointer hover:border-brand-500 transition-colors"
+              className="bg-slate-950 text-white text-[11px] font-semibold px-2.5 py-1 rounded-md border border-slate-700 outline-none cursor-pointer hover:border-brand-500 transition-colors"
               value={viewVersionId || ""}
               onChange={(e) =>
                 setActiveVersionId(
@@ -165068,62 +164903,62 @@ function DynamicHierarchyTab({
                 </option>
               ))}
             </select>
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-950 text-slate-300 border border-slate-700 text-xs font-semibold" title="Quy hoạch phân vùng dữ liệu theo Store, Vị trí và Năm">
+            <div className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-950 text-slate-300 border border-slate-700 text-[10px] font-semibold" title="Quy hoạch phân vùng dữ liệu theo Store, Vị trí và Năm">
               <span className="text-brand-400 font-bold">{store}</span>
               <span className="text-slate-600">•</span>
               <span className="text-purple-400 font-bold">{location}</span>
               <span className="text-slate-600">•</span>
               <span className="text-amber-400 font-bold">{effectiveYear}</span>
-              <span className="text-slate-500 text-[11px]">({currentLocationUnits.length} units)</span>
+              <span className="text-slate-500 text-[9px]">({currentLocationUnits.length} units)</span>
             </div>
             {activeVersion && (
               <>
                 <button
                   onClick={toggleVersionActive}
-                  className="px-4 py-2 rounded-lg text-xs font-bold uppercase transition-colors shrink-0 bg-emerald-600/20 text-emerald-400 border border-emerald-500/50 flex items-center gap-1.5 shadow-sm"
+                  className="px-2 py-1 rounded-md text-[10px] font-bold uppercase transition-colors shrink-0 bg-emerald-600/20 text-emerald-400 border border-emerald-500/50 flex items-center gap-1 shadow-sm"
                   title="Dynamic Rules is permanently enabled (Always ON)"
                 >
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  Dynamic Active: ALWAYS ON
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Always ON
                 </button>
                 <button
                   onClick={duplicateVersion}
-                  className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-brand-400 transition-colors"
+                  className="p-1 hover:bg-slate-800 rounded-md text-slate-500 hover:text-brand-400 transition-colors"
                   title="Duplicate version"
                 >
-                  <Copy size={16} />
+                  <Copy size={13} />
                 </button>
                 <button
                   onClick={deleteVersion}
-                  className="p-2 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
+                  className="p-1 hover:bg-slate-800 rounded-md text-slate-500 hover:text-red-400 transition-colors"
                   title="Delete version"
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={13} />
                 </button>
               </>
             )}
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-1.5">
             <button
               onClick={addVersion}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white text-xs font-bold uppercase shadow-lg hover:bg-brand-500 transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-brand-600 text-white text-[10px] font-bold uppercase shadow hover:bg-brand-500 transition-colors"
             >
-              <Plus size={14} /> New Version
+              <Plus size={12} /> New Version
             </button>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-2">
+        <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar">
           {activeVersion ? (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2 flex-wrap gap-2">
-                <h4 className="text-sm font-bold text-slate-300 uppercase tracking-widest">
-                  Rule-Based Groups
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 flex-wrap gap-1.5">
+                <h4 className="text-[11px] font-bold text-slate-300 uppercase tracking-widest">
+                  Rule-Based Groups ({activeGroups.length})
                 </h4>
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {/* Memory & Cloud Status Indicator */}
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-[11px] shadow-sm">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400" title="Tier 1: Đánh giá RAM 0ms" />
+                  <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 text-[10px] shadow-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Tier 1: Đánh giá RAM 0ms" />
                     <span className="text-slate-300 font-semibold">RAM 0ms</span>
                     <span className="text-slate-600">•</span>
                     {cloudSyncStatus === 'syncing' ? (
@@ -165133,12 +164968,12 @@ function DynamicHierarchyTab({
                       </span>
                     ) : cloudSyncStatus === 'saved' ? (
                       <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                        <Check size={12} className="text-emerald-400" />
+                        <Check size={10} className="text-emerald-400" />
                         R2 Đã lưu
                       </span>
                     ) : (
                       <span className="text-slate-400 font-medium flex items-center gap-1">
-                        <Cloud size={12} className="text-slate-500" />
+                        <Cloud size={10} className="text-slate-500" />
                         R2 Sẵn sàng
                       </span>
                     )}
@@ -165146,20 +164981,20 @@ function DynamicHierarchyTab({
 
                   <button
                     onClick={applyRules}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold uppercase transition-colors shadow-lg shadow-brand-900/20 box-border border-2 border-brand-400 active:scale-95"
+                    className="flex items-center gap-1 px-2 py-1 rounded-md bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold uppercase transition-colors shadow-sm border border-brand-400 active:scale-95"
                   >
-                    <Calculator size={12} /> Apply Rules
+                    <Calculator size={11} /> Apply Rules
                   </button>
                   <button
                     onClick={addGroup}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-brand-400 text-xs font-bold uppercase transition-colors active:scale-95"
+                    className="flex items-center gap-1 px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-brand-400 text-[10px] font-bold uppercase transition-colors active:scale-95"
                   >
-                    <Plus size={12} /> Create Group
+                    <Plus size={11} /> Create Group
                   </button>
 
                   {versions.filter(v => v.id !== activeVersion.id && (v.groups || []).length > 0).length > 0 && (
                     <select
-                      className="bg-slate-800 hover:bg-slate-700 text-brand-400 text-xs font-bold uppercase px-3 py-1.5 rounded-lg border border-slate-700 outline-none transition-colors cursor-pointer"
+                      className="bg-slate-800 hover:bg-slate-700 text-brand-400 text-[10px] font-bold uppercase px-2 py-1 rounded-md border border-slate-700 outline-none transition-colors cursor-pointer"
                       value=""
                       onChange={(e) => {
                         if (e.target.value) {
@@ -165182,49 +165017,48 @@ function DynamicHierarchyTab({
               </div>
 
               {activeGroups.length === 0 && (
-                <div className="text-center py-10 px-6 border-2 border-dashed border-slate-800 rounded-2xl bg-slate-950/40 text-slate-400 flex flex-col items-center justify-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400">
-                    <Calculator size={24} />
+                <div className="text-center py-6 px-4 border border-dashed border-slate-800 rounded-xl bg-slate-950/40 text-slate-400 flex flex-col items-center justify-center gap-2">
+                  <div className="w-9 h-9 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400">
+                    <Calculator size={18} />
                   </div>
-                  <p className="text-sm font-semibold text-slate-300">
+                  <p className="text-xs font-semibold text-slate-300">
                     Phiên bản này ({activeVersion.name} • {activeVersion.year || effectiveYear}) chưa có nhóm phân loại & quy tắc.
                   </p>
-                  <p className="text-xs text-slate-500 max-w-md">
+                  <p className="text-[11px] text-slate-500 max-w-md">
                     Mỗi phiên bản (theo từng năm) có nhóm quy tắc riêng. Bạn có thể sao chép nhanh từ phiên bản năm khác hoặc tự tạo nhóm mới.
                   </p>
-                  <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
+                  <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
                     <button
                       onClick={addGroup}
-                      className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold uppercase transition-colors shadow-md flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-md bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold uppercase transition-colors shadow flex items-center gap-1"
                     >
-                      <Plus size={14} /> Tạo nhóm mới
+                      <Plus size={12} /> Tạo nhóm mới
                     </button>
                     {versions.filter(v => v.id !== activeVersion.id && (v.groups || []).length > 0).map(v => (
                       <button
                         key={v.id}
                         onClick={() => copyGroups(v.id)}
-                        className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-brand-400 border border-slate-700 text-xs font-semibold transition-colors flex items-center gap-1.5"
+                        className="px-2.5 py-1.5 rounded-md bg-slate-800 hover:bg-slate-700 text-brand-400 border border-slate-700 text-[10px] font-semibold transition-colors flex items-center gap-1"
                       >
-                        <Copy size={13} /> Copy từ {v.name} ({v.year || 'N/A'})
+                        <Copy size={11} /> Copy từ {v.name} ({v.year || 'N/A'})
                       </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-2.5">
                 {activeGroups.map((group) => {
-                  const groupMatchedItems = summaryList.filter((item) => item.matchedGroupId === group.id);
                   const assignedUnits = (group.rules && group.rules.length > 0)
-                    ? groupMatchedItems.map((item) => item.unitId)
+                    ? (matchedUnitIdsByGroupId.get(group.id) || [])
                     : (activeVersion.groupMappings[group.id] || []);
                   return (
                     <div
                       key={group.id}
-                      className="border border-slate-700 rounded-xl overflow-hidden bg-slate-900/80 hover:border-brand-500/50 transition-colors"
+                      className="border border-slate-700/80 rounded-lg overflow-hidden bg-slate-900/80 hover:border-brand-500/50 transition-colors"
                     >
-                      <div className="px-4 py-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-                        <div className="flex items-center gap-2 flex-wrap">
+                      <div className="px-2.5 py-1.5 bg-slate-800/90 border-b border-slate-700/80 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                           <div className="relative flex items-center justify-center shrink-0">
                             <ColorPicker
                               color={group.color}
@@ -165238,25 +165072,15 @@ function DynamicHierarchyTab({
                               />
                             )}
                             {group.symbol && (
-                              <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-white pointer-events-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
+                              <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-white pointer-events-none drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]">
                                 {group.symbol}
                               </span>
                             )}
                           </div>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.1"
-                            value={group.opacity ?? 0.6}
-                            title={`Opacity: ${group.opacity ?? 0.6}`}
-                            onChange={(e) =>
-                              updateGroupOpacity(
-                                group.id,
-                                parseFloat(e.target.value),
-                              )
-                            }
-                            className="w-12 h-1 accent-brand-500 shrink-0 cursor-pointer"
+                          <DebouncedOpacitySlider
+                            compact
+                            opacity={group.opacity ?? 0.6}
+                            onCommit={(val) => updateGroupOpacity(group.id, val)}
                           />
                           {/* Hatching Pattern Selector */}
                           <GroupHatchPatternPicker
@@ -165270,49 +165094,48 @@ function DynamicHierarchyTab({
                             onChange={(sym) => updateGroupSymbol(group.id, sym)}
                           />
                           <span 
-                            className="text-sm font-bold text-white ml-1 cursor-pointer hover:text-brand-400 transition-colors flex items-center gap-1.5 group/title"
+                            className="text-xs font-bold text-white ml-0.5 cursor-pointer hover:text-brand-400 transition-colors flex items-center gap-1 group/title truncate"
                             onClick={(e) => renameGroup(group.id, e)}
                           >
                             {group.symbol && (
-                              <span className="text-amber-400 font-mono text-xs px-1 py-0.2 rounded bg-amber-950/60 border border-amber-800/80">
+                              <span className="text-amber-400 font-mono text-[10px] px-1 py-0.1 rounded bg-amber-950/60 border border-amber-800/80">
                                 {group.symbol}
                               </span>
                             )}
-                            <span>{group.name}</span>
-                            <Edit2 size={10} className="opacity-0 group-hover/title:opacity-100" />
+                            <span className="truncate">{group.name}</span>
+                            <Edit2 size={9} className="opacity-0 group-hover/title:opacity-100 shrink-0" />
                           </span>
                         </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-slate-300 bg-slate-700 px-2 py-1 rounded-md font-medium">
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] text-slate-300 bg-slate-700/80 px-1.5 py-0.5 rounded font-mono font-bold">
                             {assignedUnits.length} Matches
                           </span>
                           <button
                             onClick={(e) => deleteGroup(group.id, e)}
-                            className="p-1 text-slate-400 hover:text-red-400"
+                            className="p-0.5 text-slate-400 hover:text-red-400"
                             title="Delete group"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </div>
 
-                      <div className="p-4 space-y-3">
+                      <div className="p-2.5 space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs uppercase text-slate-500 font-bold">
+                          <span className="text-[10px] uppercase text-slate-500 font-bold">
                             Conditions API
                           </span>
                           <button
                             onClick={() => addRuleToGroup(group.id)}
-                            className="text-[10px] uppercase font-bold text-brand-400 hover:text-brand-300 flex items-center gap-1"
+                            className="text-[9.5px] uppercase font-bold text-brand-400 hover:text-brand-300 flex items-center gap-0.5"
                           >
-                            <Plus size={12} /> Add Rule
+                            <Plus size={11} /> Add Rule
                           </button>
                         </div>
 
                         {(!group.rules || group.rules.length === 0) && (
-                          <div className="text-xs text-slate-500 italic">
-                            No rules defined. Add a rule to dynamically assign
-                            units.
+                          <div className="text-[11px] text-slate-500 italic">
+                            No rules defined. Add a rule to dynamically assign units.
                           </div>
                         )}
 
@@ -165320,10 +165143,10 @@ function DynamicHierarchyTab({
                           group.rules.map((rule, idx) => (
                             <div
                               key={idx}
-                              className="flex items-center gap-2 bg-slate-950 p-2 rounded-lg border border-slate-800"
+                              className="flex items-center gap-1.5 bg-slate-950 p-1.5 rounded-md border border-slate-800"
                             >
                               <select
-                                className="bg-slate-900 text-slate-300 text-sm outline-none w-1/3 flex-shrink-0 px-2 py-1 rounded border border-slate-700"
+                                className="bg-slate-900 text-slate-300 text-xs outline-none w-2/5 flex-shrink-0 px-1.5 py-0.5 rounded border border-slate-700"
                                 value={normalizeRuleField(rule.field)}
                                 onChange={(e) =>
                                   updateRule(
@@ -165383,7 +165206,7 @@ function DynamicHierarchyTab({
                               </select>
 
                               <select
-                                className="bg-slate-900 text-slate-300 text-sm px-2 py-1 rounded border border-slate-700 outline-none"
+                                className="bg-slate-900 text-slate-300 text-xs px-1.5 py-0.5 rounded border border-slate-700 outline-none shrink-0"
                                 value={rule.operator}
                                 onChange={(e) =>
                                   updateRule(
@@ -165399,21 +165222,20 @@ function DynamicHierarchyTab({
                                 <option value=">=">&gt;=</option>
                                 <option value="<=">&lt;=</option>
                                 <option value="=">=</option>
-                                <option value="contains">Contains (Bao gồm)</option>
-                                <option value="or">OR (Hoặc)</option>
-                                <option value="exclude">Exclude (Ngoại trừ)</option>
+                                <option value="contains">Contains</option>
+                                <option value="or">OR</option>
+                                <option value="exclude">Exclude</option>
                               </select>
 
-                              <input
-                                type="text"
-                                className="bg-transparent text-slate-300 text-sm flex-1 outline-none border-b border-slate-700 focus:border-brand-500 px-1"
+                              <DebouncedRuleValueInput
+                                className="bg-transparent text-slate-200 text-xs flex-1 min-w-0 outline-none border-b border-slate-700 focus:border-brand-500 px-1 py-0.5"
                                 value={rule.value}
-                                onChange={(e) =>
+                                onCommit={(val) =>
                                   updateRule(
                                     group.id,
                                     idx,
                                     "value",
-                                    e.target.value,
+                                    val,
                                   )
                                 }
                                 placeholder="Value..."
@@ -165421,9 +165243,9 @@ function DynamicHierarchyTab({
 
                               <button
                                 onClick={() => deleteRule(group.id, idx)}
-                                className="text-slate-500 hover:text-red-400 p-1"
+                                className="text-slate-500 hover:text-red-400 p-0.5 shrink-0"
                               >
-                                <X size={14} />
+                                <X size={12} />
                               </button>
                             </div>
                           ))}
@@ -165431,20 +165253,20 @@ function DynamicHierarchyTab({
                         {group.rules &&
                           group.rules.length > 0 &&
                           assignedUnits.length > 0 && (
-                            <div className="pt-2 mt-2 border-t border-slate-800/50">
-                              <span className="text-[10px] uppercase text-slate-500 font-bold mb-2 block">
-                                Matched Units
+                            <div className="pt-1.5 mt-1 border-t border-slate-800/50">
+                              <span className="text-[9px] uppercase text-slate-500 font-bold mb-1 block">
+                                Matched Units ({assignedUnits.length})
                               </span>
-                              <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                              <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto custom-scrollbar">
                                 {assignedUnits.map((uid) => {
-                                  const u = units.find((x) => x.id === uid || (x.name && x.name.toLowerCase() === uid.toLowerCase()));
+                                  const u = unitLookupMap.get(uid) || unitLookupMap.get(uid.toLowerCase());
                                   return u ? (
                                     <div
                                       key={uid}
-                                      className="text-[10px] px-2 py-1 rounded bg-slate-800 text-slate-300 flex items-center gap-1.5"
+                                      className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 flex items-center gap-1"
                                     >
                                       {u.location && (
-                                        <span className="text-[9px] px-1 py-0.2 rounded bg-purple-950/80 text-purple-300 font-bold border border-purple-800/40">
+                                        <span className="text-[8px] px-1 py-0.1 rounded bg-purple-950/80 text-purple-300 font-bold border border-purple-800/40">
                                           {u.location}
                                         </span>
                                       )}
@@ -165453,7 +165275,7 @@ function DynamicHierarchyTab({
                                   ) : (
                                     <div
                                       key={uid}
-                                      className="text-[10px] px-2 py-1 rounded bg-slate-800 text-slate-300 flex items-center gap-1.5"
+                                      className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 flex items-center gap-1"
                                     >
                                       <span className="font-semibold">{uid}</span>
                                     </div>
@@ -165469,7 +165291,7 @@ function DynamicHierarchyTab({
               </div>
 
               {/* Real-time Dynamic Unit Summary Table (Bảng Tổng Hợp So Sánh & Màu Tô) */}
-              <div className="pt-4 border-t border-slate-800/80">
+              <div className="pt-2 border-t border-slate-800/80">
                 <DynamicUnitSummaryTable 
                   summaryList={summaryList}
                   title={`Bảng Tổng Hợp Trạng Thái & Màu Tô Thực Tế [${store} • ${location} • ${effectiveYear}]`}
@@ -165502,8 +165324,6 @@ function DynamicHierarchyTab({
 }
 
 export default React.memo(DynamicHierarchyTab);
-
-
 ================================================================================
 FILE: src/components/PictureMapping/components/DataMapping/EditTab.tsx
 ================================================================================
@@ -166330,14 +166150,18 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
   const drawRafRef = useRef<number | null>(null);
   const wheelRafRef = useRef<number | null>(null);
+  const pinchRafRef = useRef<number | null>(null);
   const wheelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingWheelDeltaRef = useRef<number>(0);
   const lastWheelPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const pinchDistRef = useRef<number>(0);
+  const pinchCenterRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     return () => {
       if (drawRafRef.current !== null) cancelAnimationFrame(drawRafRef.current);
       if (wheelRafRef.current !== null) cancelAnimationFrame(wheelRafRef.current);
+      if (pinchRafRef.current !== null) cancelAnimationFrame(pinchRafRef.current);
       if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
     };
   }, []);
@@ -166506,6 +166330,70 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
           setPosition({ x: stageRef.current.x(), y: stageRef.current.y() });
         }, 120);
       });
+    }
+  };
+
+  const handleTouchMove = (e: any) => {
+    const touch1 = e.evt.touches?.[0];
+    const touch2 = e.evt.touches?.[1];
+    if (!touch1 || !touch2) return;
+    e.evt.preventDefault();
+
+    const curStage = stageRef.current;
+    if (!curStage) return;
+    if (curStage.isDragging()) curStage.stopDrag();
+
+    const p1 = { x: touch1.clientX, y: touch1.clientY };
+    const p2 = { x: touch2.clientX, y: touch2.clientY };
+    const newCenter = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+
+    if (!pinchDistRef.current || !pinchCenterRef.current) {
+      pinchDistRef.current = dist;
+      pinchCenterRef.current = newCenter;
+      return;
+    }
+
+    if (pinchRafRef.current !== null) return;
+    pinchRafRef.current = requestAnimationFrame(() => {
+      pinchRafRef.current = null;
+      const st = stageRef.current;
+      const lastCenter = pinchCenterRef.current;
+      const lastDist = pinchDistRef.current;
+      if (!st || !lastCenter || !lastDist) return;
+
+      const rect = st.container().getBoundingClientRect();
+      const localCenter = { x: newCenter.x - rect.left, y: newCenter.y - rect.top };
+      const oldScale = st.scaleX();
+      const pointTo = {
+        x: (localCenter.x - st.x()) / oldScale,
+        y: (localCenter.y - st.y()) / oldScale,
+      };
+      const newScale = Math.max(0.05, Math.min(10, oldScale * (dist / lastDist)));
+      const dx = newCenter.x - lastCenter.x;
+      const dy = newCenter.y - lastCenter.y;
+
+      st.scale({ x: newScale, y: newScale });
+      st.position({
+        x: localCenter.x - pointTo.x * newScale + dx,
+        y: localCenter.y - pointTo.y * newScale + dy,
+      });
+      st.getLayers().forEach((l: any) => l.drawScene());
+
+      pinchDistRef.current = dist;
+      pinchCenterRef.current = newCenter;
+    });
+  };
+
+  const handleTouchEnd = () => {
+    if (pinchDistRef.current !== 0) {
+      pinchDistRef.current = 0;
+      pinchCenterRef.current = null;
+      if (stageRef.current) {
+        stageRef.current.batchDraw();
+        setScale(stageRef.current.scaleX());
+        setPosition({ x: stageRef.current.x(), y: stageRef.current.y() });
+      }
     }
   };
 
@@ -166752,25 +166640,25 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   };
 
   return (
-    <div className="flex h-full gap-1.5 p-1 overflow-hidden">
+    <div className="flex h-full gap-1 p-0.5 overflow-hidden">
       {/* Tools Left */}
-      <div className="w-9 sm:w-10 flex flex-col gap-1 py-1.5 items-center bg-slate-900/80 rounded-xl border border-slate-800/80 glass z-10 shrink-0 overflow-y-auto custom-scrollbar">
+      <div className="w-7 sm:w-8 flex flex-col gap-0.5 py-1 items-center bg-slate-900/80 rounded-lg border border-slate-800/80 glass z-10 shrink-0 overflow-y-auto custom-scrollbar">
         <ToolButton icon={MousePointer2} active={activeTool === 'select'} onClick={() => setActiveTool('select')} title="Select" />
         <ToolButton icon={Move} active={activeTool === 'edit-bg'} onClick={() => setActiveTool('edit-bg')} title="Edit Background Image" />
-        <div className="w-6 h-px bg-slate-800 my-1" />
+        <div className="w-5 h-px bg-slate-800 my-0.5" />
         <ToolButton icon={Square} active={activeTool === 'rect'} onClick={() => setActiveTool('rect')} title="Rectangle" />
         <ToolButton icon={CircleIcon} active={activeTool === 'circle'} onClick={() => setActiveTool('circle')} title="Circle" />
         <ToolButton icon={Hexagon} active={activeTool === 'polygon'} onClick={() => setActiveTool('polygon')} title="Polygon (Double click to finish)" />
-        <div className="w-6 h-px bg-slate-800 my-1" />
+        <div className="w-5 h-px bg-slate-800 my-0.5" />
         <ToolButton icon={RotateCw} active={false} onClick={handleRotate} title="Rotate 90°" disabled={!selectedId || selectedUnit?.locked} />
         <ToolButton icon={Undo2} active={false} onClick={handleUndo} title="Undo (Ctrl+Z)" disabled={history.length === 0} />
         <ToolButton icon={Trash2} active={false} onClick={handleDelete} title="Delete Selected" disabled={!selectedId || selectedUnit?.locked} />
       </div>
 
       {portalNode && createPortal(
-        <div className="flex items-center gap-0.5 pl-1.5 ml-1.5 border-l border-slate-700">
+        <div className="flex items-center gap-0.5 pl-1 ml-1 border-l border-slate-700">
             <ToolButton icon={Magnet} active={magneticGrid} onClick={() => setMagneticGrid(!magneticGrid)} title="Magnetic Grid (0.1 Snap)" />
-            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+            <div className="w-px h-3 bg-slate-700 mx-0.5" />
             <ToolButton icon={Download} active={false} onClick={handleExportUnits} title="Save Units As File" />
             <div className="relative">
               <ToolButton icon={FolderOpen} active={false} onClick={() => document.getElementById('import-units-input')?.click()} title="Open Units From File" />
@@ -166803,13 +166691,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       )}
 
       {/* Main Canvas Area */}
-      <div className="flex-1 min-h-[360px] rounded-xl border border-slate-800 shadow-xl overflow-hidden relative flex flex-col bg-[#141416]" ref={containerRef}>
+      <div className="flex-1 min-h-[320px] rounded-lg border border-slate-800 shadow-lg overflow-hidden relative flex flex-col bg-[#141416]" ref={containerRef}>
         
-        {/* Top Floating Controls - Compact 75% Density */}
-        <div className="absolute top-1.5 left-1.5 right-1.5 z-20 flex justify-between items-center pointer-events-none gap-1 flex-wrap">
+        {/* Top Floating Controls - Ultra Compact Density */}
+        <div className="absolute top-1 left-1 right-1 z-20 flex justify-between items-center pointer-events-none gap-1 flex-wrap">
             <div className="flex gap-1 pointer-events-auto items-center flex-wrap">
                 <select 
-                    className="bg-slate-900/90 text-white text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-md border border-slate-700 outline-none backdrop-blur-md cursor-pointer"
+                    className="bg-slate-900/90 text-white text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border border-slate-700 outline-none backdrop-blur-md cursor-pointer"
                     value={activeVersionId || ''}
                     onChange={(e) => setActiveVersionId(e.target.value === '' ? null : e.target.value)}
                 >
@@ -166934,29 +166822,29 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                     <button 
                         onClick={() => setIsLocked(!isLocked)}
                         className={cn(
-                            "flex items-center gap-1 px-2.5 py-1 rounded-md border backdrop-blur-md text-[10px] font-bold uppercase transition-all",
+                            "flex items-center gap-1 px-1.5 py-0.5 rounded border backdrop-blur-md text-[9px] font-bold uppercase transition-all",
                             isLocked ? "bg-red-500/20 text-red-400 border-red-500/50" : "bg-green-500/20 text-green-400 border-green-500/50"
                         )}
                     >
-                        <Lock size={11} /> {isLocked ? 'Unlock Grid' : 'Lock Grid'}
+                        <Lock size={10} /> {isLocked ? 'Unlock Grid' : 'Lock Grid'}
                     </button>
                 )}
                 
                 {localImageUrl && !activeVersionId && isLocked && (
                     <button 
                         onClick={handleCreateVersion}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-brand-600 text-white border border-brand-500 text-[10px] font-bold uppercase shadow-md hover:bg-brand-500"
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-brand-600 text-white border border-brand-500 text-[9px] font-bold uppercase shadow hover:bg-brand-500"
                     >
-                        <Save size={11} /> Save Version
+                        <Save size={10} /> Save Version
                     </button>
                 )}
                 
                 {activeVersionId && !isLocked && (
                     <button 
                         onClick={handleUpdateVersion}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-600/80 text-white border border-amber-500 text-[10px] font-bold uppercase shadow-md hover:bg-amber-500"
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-600/80 text-white border border-amber-500 text-[9px] font-bold uppercase shadow hover:bg-amber-500"
                     >
-                        <Save size={11} /> Update Version View
+                        <Save size={10} /> Update View
                     </button>
                 )}
             </div>
@@ -166965,14 +166853,14 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                 <button
                     onClick={() => setIsSummaryTableOpen(prev => !prev)}
                     className={cn(
-                        "px-2 py-1 bg-slate-900/80 hover:bg-slate-800 rounded-md border backdrop-blur-sm transition-all flex items-center gap-1 shadow-sm",
+                        "px-1.5 py-0.5 bg-slate-900/80 hover:bg-slate-800 rounded border backdrop-blur-sm transition-all flex items-center gap-1 shadow-sm",
                         isSummaryTableOpen ? "text-emerald-400 border-emerald-500/50 bg-emerald-950/40 ring-1 ring-emerald-500/30" : "text-slate-300 border-slate-700"
                     )}
                     title="Mở Bảng Tổng Hợp So Sánh & Màu Tô Thực Tế (Dynamic Unit Summary)"
                 >
-                    <Building size={12} className="text-emerald-400" />
-                    <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Dynamic Summary</span>
-                    <span className="px-1 py-0.2 text-[8px] font-mono rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                    <Building size={10} className="text-emerald-400" />
+                    <span className="text-[8.5px] uppercase font-bold tracking-wider hidden sm:inline">Summary</span>
+                    <span className="px-1 py-0.1 text-[8px] font-mono rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
                         {isSummaryTableOpen ? dynamicSummaryList.length : units.length}
                     </span>
                 </button>
@@ -166982,11 +166870,11 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                         setCopyBgSearchTerm('');
                         setIsCopyBgModalOpen(true);
                     }}
-                    className="px-2 py-1 bg-slate-900/80 hover:bg-slate-800 text-brand-400 hover:text-brand-300 rounded-md border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1 shadow-sm"
+                    className="px-1.5 py-0.5 bg-slate-900/80 hover:bg-slate-800 text-brand-400 hover:text-brand-300 rounded border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1 shadow-sm"
                     title="Sao chép Background & cách căn chỉnh từ một Version khác (cùng Store, Tầng, Năm)"
                 >
-                    <Copy size={12} />
-                    <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Copy BG từ Version</span>
+                    <Copy size={10} />
+                    <span className="text-[8.5px] uppercase font-bold tracking-wider hidden sm:inline">Copy BG</span>
                 </button>
 
                 {localImageUrl && (
@@ -166994,11 +166882,11 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                         <div className="relative">
                             <button
                                 onClick={() => document.getElementById('replace-bg-input2')?.click()}
-                                className="px-2 py-1 bg-slate-900/80 hover:bg-slate-800 text-white rounded-md border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1"
+                                className="px-1.5 py-0.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1"
                                 title="Thay đổi Background Image/PDF"
                             >
-                                <FileImage size={12} />
-                                <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Thay BG</span>
+                                <FileImage size={10} />
+                                <span className="text-[8.5px] uppercase font-bold tracking-wider hidden sm:inline">Thay BG</span>
                             </button>
                             <input 
                                 id="replace-bg-input2"
@@ -167012,21 +166900,21 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                         {(!localImageUrl.startsWith('data:') && !localImageUrl.startsWith('blob:')) && (
                             <button
                                 onClick={handleReloadExternalBackground}
-                                className="px-2 py-1 bg-slate-900/80 hover:bg-slate-800 text-white rounded-md border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1"
+                                className="px-1.5 py-0.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1"
                                 title="Tải lại ảnh nền từ máy chủ (Tránh bị lưu bộ nhớ đệm)"
                             >
-                                <RefreshCw size={12} />
-                                <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Làm Mới</span>
+                                <RefreshCw size={10} />
+                                <span className="text-[8.5px] uppercase font-bold tracking-wider hidden sm:inline">Làm Mới</span>
                             </button>
                         )}
                         
                         <button
                             onClick={handleRotateBackground}
-                            className="px-2 py-1 bg-slate-900/80 hover:bg-slate-800 text-white rounded-md border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1"
+                            className="px-1.5 py-0.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1"
                             title="Xoay Background Image/PDF (90 độ)"
                         >
-                            <RotateCw size={12} />
-                            <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Xoay BG</span>
+                            <RotateCw size={10} />
+                            <span className="text-[8.5px] uppercase font-bold tracking-wider hidden sm:inline">Xoay BG</span>
                         </button>
                     </>
                 )}
@@ -167034,11 +166922,11 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                 {localImageUrl && (
                     <button 
                         onClick={toggleFullscreen}
-                        className="px-2 py-1 bg-slate-900/80 hover:bg-slate-800 text-white rounded-md border border-slate-700 backdrop-blur-sm transition-all pointer-events-auto flex items-center gap-1"
+                        className="px-1.5 py-0.5 bg-slate-900/80 hover:bg-slate-800 text-white rounded border border-slate-700 backdrop-blur-sm transition-all pointer-events-auto flex items-center gap-1"
                         title="Toggle Fullscreen"
                     >
-                        {isFullscreen ? <Minimize size={12} /> : <Maximize size={12} />}
-                        <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Toàn Màn Hình</span>
+                        {isFullscreen ? <Minimize size={10} /> : <Maximize size={10} />}
+                        <span className="text-[8.5px] uppercase font-bold tracking-wider hidden sm:inline">Full</span>
                     </button>
                 )}
             </div>
@@ -167046,35 +166934,35 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
         {/* Bottom Floating Zoom & View Controls */}
         {localImageUrl && (
-          <div className="absolute bottom-2 left-2 z-20 flex items-center gap-0.5 p-0.5 bg-slate-900/90 border border-slate-700/80 rounded-lg backdrop-blur-md shadow-xl pointer-events-auto">
+          <div className="absolute bottom-1.5 left-1.5 z-20 flex items-center gap-0.5 p-0.5 bg-slate-900/90 border border-slate-700/80 rounded-md backdrop-blur-md shadow-lg pointer-events-auto">
             <button 
               onClick={handleZoomOut}
-              className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-md transition-colors"
+              className="p-0.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded transition-colors"
               title="Thu nhỏ (Zoom Out)"
             >
-              <ZoomOut size={13} />
+              <ZoomOut size={11} />
             </button>
             <button 
               onClick={handleZoomReset}
-              className="px-1.5 py-0.5 hover:bg-slate-800 text-slate-200 hover:text-white rounded-md transition-colors text-[10px] font-mono font-bold min-w-[40px] text-center"
+              className="px-1 py-0.5 hover:bg-slate-800 text-slate-200 hover:text-white rounded transition-colors text-[9px] font-mono font-bold min-w-[34px] text-center"
               title="Đặt lại 100%"
             >
               {Math.round(scale * 100)}%
             </button>
             <button 
               onClick={handleZoomIn}
-              className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-md transition-colors"
+              className="p-0.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded transition-colors"
               title="Phóng to (Zoom In)"
             >
-              <ZoomIn size={13} />
+              <ZoomIn size={11} />
             </button>
-            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
+            <div className="w-px h-3 bg-slate-700 mx-0.5" />
             <button 
               onClick={handleFitToScreen}
-              className="px-2 py-0.5 bg-brand-600/25 hover:bg-brand-600/40 text-brand-300 hover:text-brand-200 border border-brand-500/40 rounded-md transition-colors text-[10px] font-bold flex items-center gap-1 shadow-sm"
+              className="px-1.5 py-0.5 bg-brand-600/25 hover:bg-brand-600/40 text-brand-300 hover:text-brand-200 border border-brand-500/40 rounded transition-colors text-[9px] font-bold flex items-center gap-1 shadow-sm"
               title="Tự động căn vừa màn hình (Fit to Screen) - Khắc phục bị crop ảnh"
             >
-              <Maximize2 size={11} />
+              <Maximize2 size={10} />
               <span>Vừa Màn Hình</span>
             </button>
           </div>
@@ -167110,6 +166998,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                     onMouseUp={handleMouseUp}
                     onDblClick={handleDoubleClick}
                     onWheel={handleWheel}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
                     scaleX={scale}
                     scaleY={scale}
                     x={position.x}
@@ -167467,41 +167357,41 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
         )}
       </div>
 
-      {/* Settings / Inspector - Compact 75% Width */}
+      {/* Settings / Inspector - Ultra Compact Width */}
       <div className={cn(
-        "flex flex-col bg-slate-900/90 rounded-xl border border-slate-800/80 transition-all duration-300 relative shrink-0 overflow-hidden",
-        isInspectorCollapsed ? "w-9 p-1.5 items-center" : "w-56 sm:w-60 p-2 sm:p-2.5 gap-2 glass"
+        "flex flex-col bg-slate-900/90 rounded-lg border border-slate-800/80 transition-all duration-300 relative shrink-0 overflow-hidden",
+        isInspectorCollapsed ? "w-7 p-1 items-center" : "w-44 sm:w-48 p-1.5 gap-1.5 glass"
       )}>
         {/* Toggle Collapse Button */}
         <button 
           onClick={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
           className={cn(
-            "p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
-            isInspectorCollapsed ? "w-6 h-6 flex items-center justify-center my-0.5" : "absolute right-2 top-2 z-30 border border-slate-700 bg-slate-900"
+            "p-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
+            isInspectorCollapsed ? "w-5 h-5 flex items-center justify-center my-0.5" : "absolute right-1.5 top-1.5 z-30 border border-slate-700 bg-slate-900"
           )}
           title={isInspectorCollapsed ? "Mở rộng Inspector" : "Thu gọn Inspector để mở rộng Canvas"}
         >
-          {isInspectorCollapsed ? <ChevronLeft size={12} className="rotate-180" /> : <ChevronRight size={12} />}
+          {isInspectorCollapsed ? <ChevronLeft size={11} className="rotate-180" /> : <ChevronRight size={11} />}
         </button>
 
         {isInspectorCollapsed ? (
-          <div className="flex flex-col items-center gap-3 mt-4 text-slate-400">
-            <span className="text-[9px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
+          <div className="flex flex-col items-center gap-2 mt-3 text-slate-400">
+            <span className="text-[8px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
               INSPECTOR ({units.length})
             </span>
           </div>
         ) : (
-          <div className="flex flex-col h-full overflow-hidden w-full gap-2">
-            <div className="space-y-1.5 border-b border-slate-800 pb-2">
-                <h4 className="text-[11px] font-bold text-slate-300 uppercase tracking-widest flex items-center justify-between pr-7">
+          <div className="flex flex-col h-full overflow-hidden w-full gap-1.5">
+            <div className="space-y-1 border-b border-slate-800 pb-1.5">
+                <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-widest flex items-center justify-between pr-6">
                   <span>Inspector</span>
-                  <span className="text-[9px] font-normal text-slate-500 font-mono">{units.length} units</span>
+                  <span className="text-[8.5px] font-normal text-slate-500 font-mono">{units.length} units</span>
                 </h4>
                 <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 z-10 pointer-events-none" size={12} />
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 z-10 pointer-events-none" size={11} />
                     <DebouncedSearchInput 
                       placeholder="Search units..."
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-7 py-1 text-[11px] text-slate-200 outline-none focus:border-brand-500 transition-all"
+                      className="w-full bg-slate-950 border border-slate-800 rounded pl-6 py-0.5 text-[10px] text-slate-200 outline-none focus:border-brand-500 transition-all"
                       value={librarySearchTerm}
                       onChange={(val) => setLibrarySearchTerm(val)}
                       debounceMs={250}
@@ -167649,42 +167539,42 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
             </div>
         )}
 
-        <div className="mt-2 border-t border-slate-800 pt-2.5 flex-1 overflow-y-auto custom-scrollbar">
-            <div className="flex items-center justify-between mb-2">
-                <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Library ({filteredUnits.length}/{units.length})</h4>
-                <div className="flex items-center gap-1.5">
+        <div className="mt-1 border-t border-slate-800 pt-1.5 flex-1 overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between mb-1">
+                <h4 className="text-[9px] font-bold text-slate-300 uppercase tracking-wider">Library ({filteredUnits.length}/{units.length})</h4>
+                <div className="flex items-center gap-1">
                     <button 
                         onClick={handleToggleAllVisibility}
                         disabled={filteredUnits.length === 0 || !filteredUnits.some(u => !u.locked)}
-                        className="text-[9px] font-bold text-brand-400 hover:text-brand-300 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
+                        className="text-[8px] font-bold text-brand-400 hover:text-brand-300 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
                         title="Toggle Visibility for Unlocked Filtered Units"
                     >
-                        <Eye size={9} /> All
+                        <Eye size={8} /> All
                     </button>
                     <button 
                         onClick={handleToggleAllLock}
                         disabled={filteredUnits.length === 0}
-                        className="text-[9px] font-bold text-amber-500 hover:text-amber-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
+                        className="text-[8px] font-bold text-amber-500 hover:text-amber-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
                         title="Toggle Lock for Filtered Units"
                     >
-                        {filteredUnits.length > 0 && filteredUnits.every(u => u.locked) ? <Unlock size={9} /> : <Lock size={9} />} All
+                        {filteredUnits.length > 0 && filteredUnits.every(u => u.locked) ? <Unlock size={8} /> : <Lock size={8} />} All
                     </button>
                     <button 
                         onClick={handleDeleteAll}
                         disabled={filteredUnits.length === 0 || !filteredUnits.some(u => !u.locked)}
-                        className="text-[9px] font-bold text-red-500 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
+                        className="text-[8px] font-bold text-red-500 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
                         title="Delete All Unlocked Filtered Units"
                     >
-                        <Trash2 size={9} /> All
+                        <Trash2 size={8} /> All
                     </button>
                 </div>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-0.5">
                 {filteredUnits.length > 0 ? filteredUnits.map(unit => (
                     <div 
                         key={unit.id}
                         className={cn(
-                            "flex items-center justify-between px-2 py-1 rounded-md border text-xs cursor-pointer transition-colors",
+                            "flex items-center justify-between px-1.5 py-0.5 rounded border text-[10px] cursor-pointer transition-colors",
                             selectedId === unit.id ? "bg-brand-900/20 border-brand-500/50 text-brand-300" : "bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800"
                         )}
                         onClick={() => {
@@ -167697,7 +167587,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                         }}
                     >
                         <div className="flex items-center gap-1 min-w-0">
-                            <span className="truncate max-w-[90px] font-medium">{unit.name}</span>
+                            <span className="truncate max-w-[75px] font-medium">{unit.name}</span>
                             {(() => {
                                 const uSize = getUnitEffectiveSizeM2(
                                     unit,
@@ -167705,7 +167595,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                     unit.name ? summaryMap.get(unit.name)?.size : undefined
                                 );
                                 return uSize > 0 ? (
-                                    <span className="px-1 py-0.2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[9px] font-mono font-bold shrink-0">
+                                    <span className="px-1 py-0.1 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-mono font-bold shrink-0">
                                         {uSize}m²
                                     </span>
                                 ) : null;
@@ -167727,7 +167617,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                 )}
                                 title={unit.locked ? "Unlock to toggle visibility" : (unit.visible ? "Hide Unit" : "Show Unit")}
                              >
-                                {unit.visible ? <Eye size={11} /> : <EyeOff size={11} />}
+                                {unit.visible ? <Eye size={10} /> : <EyeOff size={10} />}
                              </button>
                              <button 
                                 onClick={(e) => {
@@ -167739,13 +167629,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                     unit.locked ? "text-amber-500 hover:bg-amber-500/10" : "text-slate-500 hover:bg-slate-700"
                                 )}
                              >
-                                {unit.locked ? <Lock size={11} /> : <Unlock size={11} />}
+                                {unit.locked ? <Lock size={10} /> : <Unlock size={10} />}
                              </button>
-                             <div className="w-2.5 h-2.5 rounded-xs flex-shrink-0 ml-0.5" style={{ backgroundColor: (unit.fill && unit.fill !== 'rgba(0, 0, 0, 0.001)' && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0')) ? unit.fill : '#3b82f6' }} />
+                             <div className="w-2 h-2 rounded-xs flex-shrink-0 ml-0.5" style={{ backgroundColor: (unit.fill && unit.fill !== 'rgba(0, 0, 0, 0.001)' && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0')) ? unit.fill : '#3b82f6' }} />
                         </div>
                     </div>
                 )) : (
-                    <div className="text-center py-3 text-slate-600 text-[11px] italic">
+                    <div className="text-center py-2 text-slate-600 text-[10px] italic">
                         No units match your search
                     </div>
                 )}
@@ -168041,12 +167931,12 @@ function ToolButton({ icon: Icon, active, onClick, title, disabled }: { icon: an
             onClick={onClick}
             disabled={disabled}
             className={cn(
-                "p-1.5 rounded-md transition-all flex items-center justify-center",
+                "p-1 rounded transition-all flex items-center justify-center",
                 disabled ? "opacity-30 cursor-not-allowed" : "hover:bg-slate-800",
                 active ? "bg-brand-600/30 text-brand-300 shadow-inner" : "text-slate-400"
             )}
         >
-            <Icon size={14} />
+            <Icon size={12} />
         </button>
     )
 }
@@ -168082,7 +167972,6 @@ function createGridPattern(gridSize: number) {
 }
 
 export default React.memo(EditTab);
-
 ================================================================================
 FILE: src/components/LayoutTabParts/LayoutKonvaLayers.tsx
 ================================================================================
@@ -168978,3 +168867,492 @@ export async function exportLayoutPlanToPdf(params: {
   return true;
 }
 
+
+================================================================================
+FILE: src/components/PictureMapping/lib/summaryData.ts
+================================================================================
+import { useShallow } from 'zustand/react/shallow';
+import { useMemo } from "react";
+import { useDataStore } from '../DataContext';
+import { useAppStore } from '../../../store/useAppStore';
+import { getStatus, computeProjectActStatus, enrichProjects, extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata, projectMatchesScope } from '../../../lib/utils';
+import { UnitInfo, SalesInfo } from "../types";
+
+export interface SummaryDataItem extends UnitInfo {
+  className?: string;
+  salesAmount: number;
+  salesByCp: number;
+  profitAmount: number;
+  profitByCp: number;
+  margin: number;
+  marginByCp: number;
+  mgmtFee: number;
+  mdStatus: string;
+  mdNotes: string;
+  task: string;
+  projectStatus: string;
+  actStatus: string;
+  taskDelegation: string;
+  flowStatus: string;
+  party: string;
+  startDate: string;
+  endDate: string;
+  detail?: string;
+  description?: string;
+  projectCode?: string;
+  projectName?: string;
+  salesByHcmcate: number;
+  profitByHcmcate: number;
+  hcmSalesEffi: number;
+  hcmMargin: number;
+}
+
+interface SummaryCacheEntry {
+  unitInfo: any; classInfo: any; actualClassInfo: any; salesData: any;
+  profitData: any; subFeesData: any; mdStatusData: any; projectStatusData: any;
+  projectLinkData: any; basePlan: any; unitsData: any;
+  appProjects: any; appTasks: any; appDelegations: any;
+  store?: string; location?: string; year?: string;
+  result: SummaryDataItem[];
+}
+const _summaryCacheRing: SummaryCacheEntry[] = [];
+
+export function calculateSummaryData({
+  unitInfo, classInfo, actualClassInfo, sales: salesData, profits: profitData,
+  subFees: subFeesData, mdStatus: mdStatusData, projectStatus: projectStatusData,
+  projectLink: projectLinkData, basePlan, units: unitsData, store, location, year,
+}: {
+  unitInfo?: any[]; classInfo?: any[]; actualClassInfo?: any[]; sales?: any[];
+  profits?: any[]; subFees?: any[]; mdStatus?: any[]; projectStatus?: any[];
+  projectLink?: any[]; basePlan?: any[]; units?: any[];
+  store?: string; location?: string; year?: string;
+}): SummaryDataItem[] {
+  const appState = useAppStore.getState();
+  const appProjects = appState.projects || [];
+  const appTasks = appState.tasks || [];
+  const appDelegations = appState.delegationGroups || [];
+
+  for (let i = 0; i < _summaryCacheRing.length; i++) {
+    const c = _summaryCacheRing[i];
+    if (
+      c.unitInfo === unitInfo && c.classInfo === classInfo && c.actualClassInfo === actualClassInfo &&
+      c.salesData === salesData && c.profitData === profitData && c.subFeesData === subFeesData &&
+      c.mdStatusData === mdStatusData && c.projectStatusData === projectStatusData &&
+      c.projectLinkData === projectLinkData && c.basePlan === basePlan && c.unitsData === unitsData &&
+      c.appProjects === appProjects && c.appTasks === appTasks && c.appDelegations === appDelegations &&
+      c.store === store && c.location === location && c.year === year
+    ) {
+      return c.result;
+    }
+  }
+
+  // 1. Build Index Maps for fast lookup
+  const normalize = (s: any) => String(s || "").toLowerCase().trim();
+
+  const profitMap = new Map();
+  (profitData || []).forEach(p => {
+    if (!p?.brandCode) return;
+    if (!profitMap.has(p.brandCode)) profitMap.set(p.brandCode, []);
+    profitMap.get(p.brandCode).push(p);
+  });
+
+  const subFeesMap = new Map();
+  (subFeesData || []).forEach(sf => {
+    if (!sf?.brandCode) return;
+    if (!subFeesMap.has(sf.brandCode)) subFeesMap.set(sf.brandCode, []);
+    subFeesMap.get(sf.brandCode).push(sf);
+  });
+
+  const mdStatusMap = new Map();
+  (mdStatusData || []).forEach(md => {
+    if (md?.unit) mdStatusMap.set(md.unit, md);
+  });
+
+  const projectStatusMap = new Map();
+  (projectStatusData || []).forEach(ps => {
+    if (!ps?.unit) return;
+    if (store && store !== 'all') {
+      const psStore = String(ps.store || '').toUpperCase().trim();
+      if (psStore && psStore !== 'ALL' && psStore !== store.toUpperCase().trim()) return;
+    }
+    if (location && location !== 'all') {
+      let targetLoc = location.toUpperCase().trim();
+      if (targetLoc.endsWith('F')) targetLoc = `L${targetLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(targetLoc)) targetLoc = targetLoc.slice(0, -1);
+      let psLoc = String(ps.floor || ps.location || '').toUpperCase().trim();
+      if (psLoc.endsWith('F')) psLoc = `L${psLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(psLoc)) psLoc = psLoc.slice(0, -1);
+      const isStorewide = psLoc === 'ALL' || psLoc === 'STORE' || psLoc === 'STOREWIDE' || psLoc === 'WHOLE STORE' || psLoc === 'ALL FLOORS';
+      if (psLoc && !isStorewide && psLoc !== targetLoc) return;
+    }
+    if (year && year !== 'all') {
+      const targetYear = String(year).trim();
+      let psYear = String(ps.year || ps.projectYear || '').trim();
+      if (!psYear) {
+        const dStr = `${ps.startDate || ''} ${ps.endDate || ''} ${ps.code || ''}`;
+        const m = dStr.match(/\b(202\d|203\d)\b/);
+        if (m) psYear = m[1];
+      }
+      if (psYear && psYear !== 'ALL' && psYear !== targetYear) return;
+    }
+    projectStatusMap.set(ps.unit, ps);
+  });
+
+  const projectLinkMap = new Map();
+  (projectLinkData || []).forEach(pl => {
+    if (!pl?.unit) return;
+    if (store && store !== 'all') {
+      const plStore = String(pl.store || '').toUpperCase().trim();
+      if (plStore && plStore !== 'ALL' && plStore !== store.toUpperCase().trim()) return;
+    }
+    if (location && location !== 'all') {
+      let targetLoc = location.toUpperCase().trim();
+      if (targetLoc.endsWith('F')) targetLoc = `L${targetLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(targetLoc)) targetLoc = targetLoc.slice(0, -1);
+      let plLoc = String(pl.floor || pl.location || '').toUpperCase().trim();
+      if (plLoc.endsWith('F')) plLoc = `L${plLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(plLoc)) plLoc = plLoc.slice(0, -1);
+      const isStorewide = plLoc === 'ALL' || plLoc === 'STORE' || plLoc === 'STOREWIDE' || plLoc === 'WHOLE STORE' || plLoc === 'ALL FLOORS';
+      if (plLoc && !isStorewide && plLoc !== targetLoc) return;
+    }
+    if (year && year !== 'all') {
+      const targetYear = String(year).trim();
+      let plYear = String(pl.year || pl.projectYear || '').trim();
+      if (!plYear) {
+        const dStr = `${pl.startDate || ''} ${pl.endDate || ''} ${pl.code || ''} ${pl.projectCode || ''}`;
+        const m = dStr.match(/\b(202\d|203\d)\b/);
+        if (m) plYear = m[1];
+      }
+      if (plYear && plYear !== 'ALL' && plYear !== targetYear) return;
+    }
+    projectLinkMap.set(pl.unit, pl);
+  });
+
+  const classInfoMap = new Map();
+  (classInfo || []).forEach(c => {
+    const classCode = normalize(c.classCode || c['class code'] || c['classcode']);
+    if (classCode) classInfoMap.set(classCode, c);
+  });
+
+  const actualClassInfoMap = new Map();
+  (actualClassInfo || []).forEach(c => {
+    const classCode = normalize(c.classCode || c['class code'] || c['classcode']);
+    if (classCode) actualClassInfoMap.set(classCode, c);
+  });
+
+  const basePlanMap = new Map();
+  (basePlan || []).forEach(bp => {
+    const floor = normalize(bp.floor);
+    if (floor) basePlanMap.set(floor, bp);
+  });
+
+  const unitsMap = new Map();
+  (unitsData || []).forEach(u => {
+    const unit = normalize(u.unit || u.name);
+    if (unit) unitsMap.set(unit, u);
+  });
+
+  const enrichedAppProjects = enrichProjects(appProjects, appTasks, appDelegations)
+    .filter(p => projectMatchesScope(extractProjectMetadata(p), { store, location, year }))
+    .map(p => ({
+      project: p,
+      pCode: String(p.code || '').trim().toLowerCase(),
+      pCodes: extractAllProjectCodes(p).map(c => c.toLowerCase()),
+    }));
+
+  const storeAndLocFilteredUnitInfo = (unitInfo || []).filter((unit) => {
+    if (store && store !== 'all') {
+      const uStore = String(unit.store || '').toUpperCase().trim();
+      if (uStore && uStore !== 'ALL' && uStore !== store.toUpperCase().trim()) return false;
+    }
+    if (location && location !== 'all') {
+      let targetLoc = location.toUpperCase().trim();
+      if (targetLoc.endsWith('F')) targetLoc = `L${targetLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(targetLoc)) targetLoc = targetLoc.slice(0, -1);
+      let uLoc = String(unit.floor || unit.location || '').toUpperCase().trim();
+      if (uLoc.endsWith('F')) uLoc = `L${uLoc[0]}`;
+      if (/^L\d+[A-Z]$/i.test(uLoc)) uLoc = uLoc.slice(0, -1);
+      const isStorewide = uLoc === 'ALL' || uLoc === 'STORE' || uLoc === 'STOREWIDE' || uLoc === 'WHOLE STORE' || uLoc === 'ALL FLOORS';
+      if (uLoc && !isStorewide && uLoc !== targetLoc) return false;
+    }
+    return true;
+  });
+
+  const yearFilteredUnitInfo =
+    year && year !== 'all'
+      ? storeAndLocFilteredUnitInfo.filter((unit) => {
+          const uYear = String(unit.year || '').trim();
+          return !uYear || uYear === 'ALL' || uYear === String(year).trim();
+        })
+      : storeAndLocFilteredUnitInfo;
+
+  const filteredUnitInfo =
+    yearFilteredUnitInfo.length > 0 ? yearFilteredUnitInfo : storeAndLocFilteredUnitInfo;
+
+  const validSales = (salesData || []).filter(
+    (s) => s && (s.vendorCode || s.brandCode || s.brandName || s.classCode)
+  );
+
+  const result = filteredUnitInfo.map((unit) => {
+    let salesAmount = 0;
+    let salesByCpAmount = 0;
+
+    for (let i = 0; i < validSales.length; i++) {
+      const s = validSales[i];
+      if (s.vendorCode && unit.vendorCode !== s.vendorCode) continue;
+      if (s.brandCode && unit.brandCode !== s.brandCode) continue;
+      if (s.brandName && unit.brandName !== s.brandName) continue;
+      if (s.classCode && unit.classCode && unit.classCode !== s.classCode) continue;
+      salesAmount += Number(s.sales) || 0;
+      salesByCpAmount += Number(s.salesByCp) || 0;
+    }
+
+    let profitAmount = 0;
+    let profitByCpAmount = 0;
+    const profitMatches = profitMap.get(unit.brandCode) || [];
+    if (profitMatches.length > 0) {
+      profitAmount = profitMatches.reduce((sum: number, p: any) => sum + (Number(p?.profit) || 0), 0);
+      profitByCpAmount = profitMatches.reduce((sum: number, p: any) => sum + (Number(p?.profitByCp) || 0), 0);
+    }
+
+    const margin = salesAmount > 0 ? profitAmount / salesAmount : 0;
+    const marginByCp = salesByCpAmount > 0 ? profitByCpAmount / salesByCpAmount : 0;
+
+    const subFeesMatches = subFeesMap.get(unit.brandCode) || [];
+    let mgmtFeeAmount = 0;
+    if (subFeesMatches.length > 0) {
+      mgmtFeeAmount = subFeesMatches.reduce((sum: number, sf: any) => sum + (Number(sf?.managementFee) || 0), 0);
+    }
+
+    const mdStatusMatch = mdStatusMap.get(unit.unit);
+    const projectStatusMatch = projectStatusMap.get(unit.unit);
+    const projectLinkMatch = projectLinkMap.get(unit.unit);
+
+    let linkedAppProject: any = null;
+    const targetLinkCode = String(projectLinkMatch?.code || projectLinkMatch?.projectCode || projectLinkMatch?.project || '').trim().toLowerCase();
+    
+    if (targetLinkCode && enrichedAppProjects.length > 0) {
+      const found = enrichedAppProjects.find(({ pCode, pCodes }) =>
+        pCode === targetLinkCode || pCodes.includes(targetLinkCode) || projectMatchesUnitCode(pCodes, targetLinkCode)
+      );
+      if (found) linkedAppProject = found.project;
+    }
+
+    if (!linkedAppProject && enrichedAppProjects.length > 0) {
+      const uKey = String(unit.unit || '').trim().toLowerCase();
+      const found = enrichedAppProjects.find(({ pCodes }) =>
+        pCodes.includes(uKey) || projectMatchesUnitCode(pCodes, uKey)
+      );
+      if (found) linkedAppProject = found.project;
+    }
+
+    const appStatusFromProject = linkedAppProject
+      ? getStatus(
+          linkedAppProject.computedTakStart || linkedAppProject.start,
+          linkedAppProject.computedTakCompl || linkedAppProject.handover,
+          linkedAppProject.computedOpening || linkedAppProject.opening,
+          linkedAppProject.code
+        )
+      : null;
+
+    const appActStatusFromProject = linkedAppProject
+      ? ((linkedAppProject as any).computedActStatus || (linkedAppProject as any).actStatus || computeProjectActStatus(linkedAppProject, appDelegations))
+      : null;
+
+    let statusVal = unit.status || "Active";
+    if (statusVal === "act") statusVal = "Active";
+    if (statusVal === "unact" || statusVal === "Inactive") statusVal = "Unactive";
+
+    const matchedClass = classInfoMap.get(normalize(unit.classCode || unit['class code'] || unit['classcode']));
+    const matchedActualClass = actualClassInfoMap.get(normalize(unit.classCode || unit['class code'] || unit['classcode']));
+
+    const salesEffiStr = String(matchedClass?.salesEffi || matchedClass?.['sales effi'] || matchedClass?.['sales efficiency'] || matchedClass?.['hcm sales effi'] || 0);
+    const profitEffiStr = String(matchedClass?.profitEffi || matchedClass?.['profit effi'] || matchedClass?.['profit efficiency'] || matchedClass?.['hcm profit effi'] || 0);
+    
+    const actualSalesEffiStr = String(matchedActualClass?.hcmSalesEffi || matchedActualClass?.['hcm sales effi'] || matchedActualClass?.['sales effi'] || 0);
+    const actualProfitEffiStr = String(matchedActualClass?.hcmProfitEffi || matchedActualClass?.['hcm profit effi'] || matchedActualClass?.['profit effi'] || 0);
+    
+    const explicitMarginStr = String(matchedClass?.margin || matchedClass?.['hcm margin'] || matchedClass?.['margin (%)'] || matchedActualClass?.hcmMargin || matchedActualClass?.['hcm margin'] || 0);
+    
+    const salesEffi = Number(salesEffiStr.replace(/,/g, '').replace(/%/g, '')) || 0;
+    const profitEffi = Number(profitEffiStr.replace(/,/g, '').replace(/%/g, '')) || 0;
+    
+    const actualSalesEffi = Number(actualSalesEffiStr.replace(/,/g, '').replace(/%/g, '')) || 0;
+    const actualProfitEffi = Number(actualProfitEffiStr.replace(/,/g, '').replace(/%/g, '')) || 0;
+    
+    let explicitMargin = Number(explicitMarginStr.replace(/,/g, '').replace(/%/g, '')) || 0;
+    if (explicitMargin > 1) {
+      explicitMargin = explicitMargin / 100;
+    }
+    
+    const finalSalesEffi = actualSalesEffi > 0 ? actualSalesEffi : salesEffi;
+    const finalProfitEffi = actualProfitEffi !== 0 ? actualProfitEffi : profitEffi;
+    
+    let hcmMargin = Math.max(explicitMargin, finalSalesEffi > 0 ? finalProfitEffi / finalSalesEffi : 0);
+    
+    let unitSize = Number(String(unit.sizeM2 ?? unit.size ?? '').replace(/,/g, '')) || 0;
+    if (unitSize === 0) {
+      const matchedUnit = unitsMap.get(normalize(unit.unit));
+      if (matchedUnit) {
+        unitSize = Number(String(matchedUnit.sizeM2 ?? matchedUnit.size ?? '').replace(/,/g, '')) || 0;
+      }
+    }
+
+    const matchedBasePlan = basePlanMap.get(normalize(unit.floor));
+    const vsHCMStr = String(matchedBasePlan?.vshcm || matchedBasePlan?.Vshcm || 0);
+    const vsHCM = Number(vsHCMStr.replace(/,/g, '').replace(/%/g, '')) || 0;
+
+    const salesByHcmcate = finalSalesEffi * 12 * unitSize * (vsHCM / 100);
+    const profitByHcmcate = finalProfitEffi * 12 * unitSize * (vsHCM / 100);
+
+    return {
+      ...unit,
+      className: matchedClass?.name || matchedActualClass?.name || "",
+      status: statusVal,
+      update: unit?.update || "-",
+      salesAmount,
+      salesByCp: salesByCpAmount,
+      profitAmount,
+      profitByCp: profitByCpAmount,
+      margin,
+      marginByCp,
+      mgmtFee: mgmtFeeAmount,
+      mdStatus: mdStatusMatch ? mdStatusMatch.status : "-",
+      mdNotes: mdStatusMatch?.mdNotes || "-",
+      task: (() => {
+        if (linkedAppProject?.taskSummaries && linkedAppProject.taskSummaries.length > 0) {
+          return linkedAppProject.taskSummaries.map((t: any) => t.name).join('; ');
+        }
+        const psTask = projectStatusMatch?.task;
+        const plTask = projectLinkMatch?.task;
+        if (psTask && plTask && psTask !== plTask) return `${psTask} + ${plTask}`;
+        return psTask || plTask || "-";
+      })(),
+      projectStatus: (() => {
+        if (appStatusFromProject) return appStatusFromProject;
+        const ps = projectStatusMatch?.status;
+        const pl = projectLinkMatch?.status;
+        if (ps && pl) return `${ps} + ${pl}`;
+        return ps || pl || "N/A";
+      })(),
+      actStatus: 
+        appActStatusFromProject || projectLinkMatch?.actStatus || projectStatusMatch?.actStatus || "-",
+      taskDelegation: projectStatusMatch?.delegationStatus || "-",
+      flowStatus: projectStatusMatch?.flowStatus || "-",
+      party: linkedAppProject?.party || projectStatusMatch?.party || "-",
+      startDate: (() => {
+        if (linkedAppProject) {
+          return linkedAppProject.computedTakStart || linkedAppProject.start || linkedAppProject.takStart || "-";
+        }
+        const psDate = projectStatusMatch?.startDate;
+        const plDate = projectLinkMatch?.startDate;
+        if (psDate && plDate && psDate !== plDate) return `${psDate} / ${plDate}`;
+        return psDate || plDate || "-";
+      })(),
+      endDate: (() => {
+        if (linkedAppProject) {
+          return linkedAppProject.computedTakCompl || linkedAppProject.handover || linkedAppProject.opening || "-";
+        }
+        const psDate = projectStatusMatch?.endDate;
+        const plDate = projectLinkMatch?.endDate;
+        if (psDate && plDate && psDate !== plDate) return `${psDate} / ${plDate}`;
+        return psDate || plDate || "-";
+      })(),
+      detail: linkedAppProject?.detail || projectStatusMatch?.detail || "-",
+      description: linkedAppProject?.detail || (linkedAppProject as any)?.description || projectStatusMatch?.description || "-",
+      projectCode: linkedAppProject?.code || (projectLinkMatch?.code || projectLinkMatch?.projectCode || "-"),
+      projectName: linkedAppProject?.name || "-",
+      salesByHcmcate,
+      profitByHcmcate,
+      hcmSalesEffi: finalSalesEffi,
+      hcmMargin,
+    };
+  });
+
+  if (_summaryCacheRing.length >= 8) _summaryCacheRing.shift();
+  _summaryCacheRing.push({
+    unitInfo, classInfo, actualClassInfo, salesData, profitData, subFeesData,
+    mdStatusData, projectStatusData, projectLinkData, basePlan, unitsData,
+    appProjects, appTasks, appDelegations, store, location, year, result,
+  });
+
+  return result;
+}
+
+export function useSummaryData(scope?: { store?: string; location?: string; year?: string }) {
+  const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
+  const globalLocationFilter = useAppStore(state => state.globalLocationFilter);
+  const globalYearFilter = useAppStore(state => state.globalYearFilter);
+
+  const targetStore = scope?.store || (globalStoreFilter !== 'all' ? globalStoreFilter : undefined);
+  const targetLocation = scope?.location || (globalLocationFilter[0] && globalLocationFilter[0] !== 'ALL' ? globalLocationFilter[0] : undefined);
+  const targetYear = scope?.year || (globalYearFilter !== 'all' ? globalYearFilter : undefined);
+
+  const {
+    unitInfo, classInfo, actualClassInfo, sales: salesData, profits: profitData,
+    subFees: subFeesData, mdStatus: mdStatusData, projectStatus: projectStatusData,
+    projectLink: projectLinkData, basePlan, units: unitsData,
+  } = useDataStore(useShallow(state => ({
+    unitInfo: state.unitInfo, classInfo: state.classInfo, actualClassInfo: state.actualClassInfo,
+    sales: state.sales, profits: state.profits, subFees: state.subFees,
+    mdStatus: state.mdStatus, projectStatus: state.projectStatus, projectLink: state.projectLink,
+    basePlan: state.basePlan, units: state.units,
+  })));
+
+  return useMemo(() => calculateSummaryData({
+    unitInfo, classInfo, actualClassInfo, sales: salesData, profits: profitData,
+    subFees: subFeesData, mdStatus: mdStatusData, projectStatus: projectStatusData,
+    projectLink: projectLinkData, basePlan, units: unitsData,
+    store: targetStore, location: targetLocation, year: targetYear,
+  }), [unitInfo, classInfo, actualClassInfo, salesData, profitData, subFeesData, mdStatusData, projectStatusData, projectLinkData, basePlan, unitsData, targetStore, targetLocation, targetYear]);
+}
+
+export const formatMoney = (val: any) => val ? Number(val).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '0';
+export const formatPercent = (val: any) => val ? (Number(val) * 100).toLocaleString('en-US', { maximumFractionDigits: 1 }) + '%' : '0%';
+
+export const generateSizeLabelLines = (unit: Record<string, any>, uInfo: any, selectedLabels: string[]) => {
+    const lines: { key: string, text: string }[] = [];
+    const effectiveSize = unit.sizeM2 ?? unit.size ?? uInfo?.size;
+    if (selectedLabels.includes('Unit ID')) lines.push({ key: 'Unit ID', text: unit.name });
+    if (selectedLabels.includes('Size SQM') && effectiveSize) lines.push({ key: 'Size SQM', text: `${effectiveSize} SQM` });
+    if (selectedLabels.includes('Floor') && uInfo?.floor) lines.push({ key: 'Floor', text: `Floor: ${uInfo.floor}` });
+    if (selectedLabels.includes('Brand Code') && uInfo?.brandCode) lines.push({ key: 'Brand Code', text: `Brand Code: ${uInfo.brandCode}` });
+    if (selectedLabels.includes('Brand Name') && uInfo?.brandName) lines.push({ key: 'Brand Name', text: uInfo.brandName });
+    if (selectedLabels.includes('Vendor Code') && uInfo?.vendorCode) lines.push({ key: 'Vendor Code', text: `Vendor Code: ${uInfo.vendorCode}` });
+    if (selectedLabels.includes('Name') && uInfo?.className) lines.push({ key: 'Name', text: uInfo.className });
+    if (selectedLabels.includes('Class Code') && uInfo?.classCode) lines.push({ key: 'Class Code', text: uInfo.classCode });
+    if (selectedLabels.includes('Update') && uInfo?.update) lines.push({ key: 'Update', text: `Update: ${uInfo.update}` });
+    if (selectedLabels.includes('Status') && uInfo?.status) lines.push({ key: 'Status', text: `Status: ${uInfo.status}` });
+    if (selectedLabels.includes('MD Status') && uInfo?.mdStatus) lines.push({ key: 'MD Status', text: `MD Status: ${uInfo.mdStatus}` });
+    if (selectedLabels.includes('MD Notes') && uInfo?.mdNotes) lines.push({ key: 'MD Notes', text: `MD Notes: ${uInfo.mdNotes}` });
+    if (selectedLabels.includes('Task') && uInfo?.task) lines.push({ key: 'Task', text: `Task: ${uInfo.task}` });
+    if (selectedLabels.includes('Project Status') && uInfo?.projectStatus) lines.push({ key: 'Project Status', text: `Project Status: ${uInfo.projectStatus}` });
+    if (selectedLabels.includes('Act: Status') && uInfo?.actStatus) lines.push({ key: 'Act: Status', text: `Act: Status: ${uInfo.actStatus}` });
+    if (selectedLabels.includes('Start Date') && uInfo?.startDate) lines.push({ key: 'Start Date', text: `Start Date: ${uInfo.startDate}` });
+    if (selectedLabels.includes('End Date') && uInfo?.endDate) lines.push({ key: 'End Date', text: `End Date: ${uInfo.endDate}` });
+    if (selectedLabels.includes('Detail') && uInfo?.detail && uInfo.detail !== '-') lines.push({ key: 'Detail', text: `Detail: ${uInfo.detail}` });
+    if (selectedLabels.includes('Description') && uInfo?.description && uInfo.description !== '-') lines.push({ key: 'Description', text: `Desc: ${uInfo.description}` });
+    if (selectedLabels.includes('Project Code') && uInfo?.projectCode && uInfo.projectCode !== '-') lines.push({ key: 'Project Code', text: `Project: ${uInfo.projectCode}` });
+    if (selectedLabels.includes('Project Name') && uInfo?.projectName && uInfo.projectName !== '-') lines.push({ key: 'Project Name', text: `Project Name: ${uInfo.projectName}` });
+    
+    if (selectedLabels.includes('Sales') && uInfo?.salesAmount !== undefined) lines.push({ key: 'Sales', text: `Sales: ${formatMoney(uInfo.salesAmount)}` });
+    if (selectedLabels.includes('Sales By CP') && uInfo?.salesByCp !== undefined) lines.push({ key: 'Sales By CP', text: `Sales (CP): ${formatMoney(uInfo.salesByCp)}` });
+    if (selectedLabels.includes('Sales By HCM Categ') && uInfo?.salesByHcmcate !== undefined) lines.push({ key: 'Sales By HCM Categ', text: `Sales (HCM): ${formatMoney(uInfo.salesByHcmcate)}` });
+    
+    if (selectedLabels.includes('Profit') && uInfo?.profitAmount !== undefined) lines.push({ key: 'Profit', text: `Profit: ${formatMoney(uInfo.profitAmount)}` });
+    if (selectedLabels.includes('Profit By CP') && uInfo?.profitByCp !== undefined) lines.push({ key: 'Profit By CP', text: `Profit (CP): ${formatMoney(uInfo.profitByCp)}` });
+    if (selectedLabels.includes('Profit By HCM Categ') && uInfo?.profitByHcmcate !== undefined) lines.push({ key: 'Profit By HCM Categ', text: `Profit (HCM): ${formatMoney(uInfo.profitByHcmcate)}` });
+    
+    if (selectedLabels.includes('Margin') && uInfo?.margin !== undefined) lines.push({ key: 'Margin', text: `Margin: ${formatPercent(uInfo.margin)}` });
+    if (selectedLabels.includes('Margin By CP') && uInfo?.marginByCp !== undefined) lines.push({ key: 'Margin By CP', text: `Margin (CP): ${formatPercent(uInfo.marginByCp)}` });
+    if (selectedLabels.includes('HCM Margin') && uInfo?.hcmMargin !== undefined) lines.push({ key: 'HCM Margin', text: `HCM Margin: ${formatPercent(uInfo.hcmMargin)}` });
+    
+    if (selectedLabels.includes('HCM Sales Effi') && uInfo?.hcmSalesEffi !== undefined) lines.push({ key: 'HCM Sales Effi', text: `HCM Sales Effi: ${formatMoney(uInfo.hcmSalesEffi)}` });
+    
+    if (lines.length === 0) lines.push({ key: 'Unit ID', text: unit.name });
+    return lines;
+};
+
+export const generateSizeLabel = (unit: Record<string, any>, uInfo: any, selectedLabels: string[]) => {
+    return generateSizeLabelLines(unit, uInfo, selectedLabels).map(l => l.text).join('\n') || unit.name;
+};
