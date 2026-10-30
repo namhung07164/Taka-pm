@@ -8,6 +8,7 @@ import { extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata 
 import { TooltipImageItem } from './tooltipTypes';
 import { deleteR2ImageCleanly } from '../../../lib/r2StorageUtils';
 import { recordDelta } from '../../../lib/deltaSyncService';
+import { removeUploadedImageEverywhere } from '../../../lib/projectImageSync';
 
 function normalizeStore(store?: string | null): string {
   if (!store) return '';
@@ -230,86 +231,28 @@ export function useTooltipImages({
 
   const handleDeleteCustomImage = (id: string, urlToDelete?: string) => {
     if (!canWrite) return;
+    const targetUrl = urlToDelete || customUnitImages.find(item => item.id === id)?.url;
+
+    // 1. Immediately remove from local component state
     const updated = customUnitImages.filter(item => item.id !== id && (urlToDelete ? item.url !== urlToDelete : true));
     setCustomUnitImages(updated);
-    try {
-      if (updated.length === 0) {
-        localStorage.removeItem(activeUnitStorageKey);
-      } else {
-        localStorage.setItem(activeUnitStorageKey, JSON.stringify(updated));
-      }
-    } catch {}
 
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('taka_unit_images_changed'));
-    }
+    // 2. Resolve matching project
+    const allProjects = useAppStore.getState().projects;
+    const targetProj = (p && normalizeStore(extractProjectMetadata(p).store) === activeStore ? p : null) || allProjects.find(item => {
+      if (item.id === p?.id && normalizeStore(extractProjectMetadata(item).store) === activeStore) return true;
+      const itemStore = normalizeStore(extractProjectMetadata(item).store);
+      if (itemStore && itemStore !== activeStore) return false;
+      const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
+      const targetCode = String(data?.code || data?.unit || data?.name || unitCode || '').toLowerCase();
+      return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
+    });
 
-    // 1. Update Firestore taka_unit_images doc
-    const unitImagesDocRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_unit_images", unitImagesDocKey);
-    setDoc(unitImagesDocRef, {
-      unitCode: cleanCode,
-      store: activeStore,
-      images: updated,
-      updatedAt: new Date().toISOString(),
-    }, { merge: true }).catch(console.error);
-
-    // 2. Clean up from project.taskSummaries & project.imageLinks
-    try {
-      const targetUrl = urlToDelete || customUnitImages.find(item => item.id === id)?.url;
-      if (targetUrl) {
-        deleteR2ImageCleanly(targetUrl).catch(err => {
-          console.warn("[R2 Purge] Deep clean error:", err);
-        });
-      }
-
-      const allProjects = useAppStore.getState().projects;
-      const targetProj = (p && normalizeStore(extractProjectMetadata(p).store) === activeStore ? p : null) || allProjects.find(item => {
-        if (item.id === p?.id && normalizeStore(extractProjectMetadata(item).store) === activeStore) return true;
-        const itemStore = normalizeStore(extractProjectMetadata(item).store);
-        if (itemStore && itemStore !== activeStore) return false;
-        const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
-        const targetCode = String(data?.code || data?.unit || data?.name || unitCode || '').toLowerCase();
-        return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
+    // 3. Purge image permanently from R2 Cloud, project comments, project imageLinks/thumbs, taka_unit_images, and delta sync
+    if (targetUrl) {
+      removeUploadedImageEverywhere(targetUrl, targetProj, cleanCode).catch(err => {
+        console.warn("[handleDeleteCustomImage] removeUploadedImageEverywhere error:", err);
       });
-
-      if (targetProj && normalizeStore(extractProjectMetadata(targetProj).store) === activeStore) {
-        const filteredSummaries = (targetProj.taskSummaries || []).filter(
-          ts => ts.link !== urlToDelete && ts.imageUrl !== urlToDelete && !ts.name?.includes(urlToDelete || '') && !ts.name?.startsWith('Link / Photo:')
-        );
-        const existingLinks: any[] = Array.isArray(targetProj.imageLinks) ? targetProj.imageLinks : [];
-        const updatedImageLinks = existingLinks.filter(l => {
-          const lUrl = typeof l === 'string' ? l : l?.url;
-          const lId = typeof l === 'object' ? l?.id : null;
-          if (id && lId === id) return false;
-          if (urlToDelete && lUrl === urlToDelete) return false;
-          return true;
-        });
-
-        const newImageUrl = targetProj.imageUrl === urlToDelete ? '' : targetProj.imageUrl;
-        const newThumbnail = targetProj.thumbnail === urlToDelete ? '' : targetProj.thumbnail;
-        const newPhoto = (targetProj as any).photo === urlToDelete ? '' : (targetProj as any).photo;
-        const newImage = (targetProj as any).image === urlToDelete ? '' : (targetProj as any).image;
-
-        const updatedProject: Project = {
-          ...targetProj, taskSummaries: filteredSummaries,
-          imageUrl: newImageUrl, thumbnail: newThumbnail, photo: newPhoto, image: newImage, imageLinks: updatedImageLinks,
-        } as Project;
-
-        useAppStore.getState().setProjects(allProjects.map(proj => proj.id === targetProj.id ? updatedProject : proj));
-
-        if (targetProj.id) {
-          const firestoreUpdate: Record<string, any> = { taskSummaries: filteredSummaries, imageLinks: updatedImageLinks, updatedAt: new Date().toISOString() };
-          if (targetProj.imageUrl === urlToDelete) firestoreUpdate.imageUrl = deleteField();
-          if (targetProj.thumbnail === urlToDelete) firestoreUpdate.thumbnail = deleteField();
-          if ((targetProj as any).photo === urlToDelete) firestoreUpdate.photo = deleteField();
-          if ((targetProj as any).image === urlToDelete) firestoreUpdate.image = deleteField();
-
-          setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), firestoreUpdate, { merge: true }).catch(console.error);
-          recordDelta({ docId: targetProj.id, collectionName: 'taka_projects', action: 'update', data: firestoreUpdate, year: String(targetProj.year || '') }).catch(console.error);
-        }
-      }
-    } catch (err) {
-      console.error("Error removing from project taskSummaries:", err);
     }
   };
 
@@ -434,7 +377,13 @@ export function useTooltipImages({
           c.attachments.forEach((att, aIdx) => {
             if (att.url && !seenUrls.has(att.url)) {
               seenUrls.add(att.url);
-              list.push({ id: `comm_${cIdx}_${aIdx}`, url: att.url, title: att.name || `Attachment ${list.length + 1}`, source: `Comment by ${c.userName || 'User'}` });
+              list.push({
+                id: `comm_${cIdx}_${aIdx}`,
+                url: att.url,
+                title: att.name || `Attachment ${list.length + 1}`,
+                source: `Comment by ${c.userName || 'User'}`,
+                isCustom: true,
+              });
             }
           });
         }
@@ -448,7 +397,13 @@ export function useTooltipImages({
               url.includes('firebasestorage.googleapis.com');
             if (isImg && !seenUrls.has(url)) {
               seenUrls.add(url);
-              list.push({ id: `comm_txt_${c.id || cIdx}_${uIdx}`, url, title: `Comment Photo (${c.userName || 'User'})`, source: `Comment by ${c.userName || 'User'}` });
+              list.push({
+                id: `comm_txt_${c.id || cIdx}_${uIdx}`,
+                url,
+                title: `Comment Photo (${c.userName || 'User'})`,
+                source: `Comment by ${c.userName || 'User'}`,
+                isCustom: true,
+              });
             }
           });
         }

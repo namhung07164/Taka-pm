@@ -5,6 +5,7 @@ import { ref as storageRef, deleteObject } from 'firebase/storage';
 import { generateId } from '../../../lib/utils';
 import { useAppStore } from '../../../store/useAppStore';
 import { Project, TaskComment, AppUser } from '../../../types';
+import { removeUploadedImageEverywhere } from '../../../lib/projectImageSync';
 
 interface UseProjectChatActionsParams {
   project: Project;
@@ -35,9 +36,17 @@ export function useProjectChatActions({
     const doDelete = async () => {
       const commentToDelete = localComments.find((c) => c.id === commentId);
       if (commentToDelete) {
-        const urls = commentToDelete.text.match(/(https?:\/\/[^\s]+)/g) || [];
-        urls.forEach(async (url: string) => {
-          if (url.includes('firebasestorage.googleapis.com')) {
+        const textUrls = commentToDelete.text?.match(/(https?:\/\/[^\s]+)/g) || [];
+        const attUrls = (commentToDelete.attachments || []).map((att: any) => att.url).filter(Boolean);
+        const allUrls = Array.from(new Set([...textUrls, ...attUrls]));
+
+        allUrls.forEach(async (rawUrl: string) => {
+          const url = rawUrl.trim();
+          if (url.includes('hcm.taka-pm.org') || url.includes('Taka-Pm-folder')) {
+            removeUploadedImageEverywhere(url, project).catch((err) => {
+              console.warn('[handleDeleteComment] Failed to purge R2 image:', err);
+            });
+          } else if (url.includes('firebasestorage.googleapis.com')) {
             try {
               const fileRef = storageRef(storage, url);
               await deleteObject(fileRef);

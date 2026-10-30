@@ -350,7 +350,7 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
                     >
                       <ExternalLink className="w-3 h-3" />
                     </a>
-                    {canWrite && img.isCustom && (
+                    {canWrite && (img.isCustom || img.url?.includes('hcm.taka-pm.org') || img.url?.includes('Taka-Pm-folder') || img.url?.includes('firebasestorage.googleapis.com')) && (
                       <button
                         type="button"
                         onPointerDown={(e) => {
@@ -362,7 +362,7 @@ export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> =
                           handleDeleteCustomImage(img.id, img.url);
                         }}
                         className="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer active:scale-95 touch-manipulation flex items-center justify-center"
-                        title="Xóa link này"
+                        title="Xóa ảnh này khỏi R2 Cloud & Dự án"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-red-500 hover:text-red-600" />
                       </button>

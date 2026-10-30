@@ -74015,6 +74015,7 @@ import { ref as storageRef, deleteObject } from 'firebase/storage';
 import { generateId } from '../../../lib/utils';
 import { useAppStore } from '../../../store/useAppStore';
 import { Project, TaskComment, AppUser } from '../../../types';
+import { removeUploadedImageEverywhere } from '../../../lib/projectImageSync';
 
 interface UseProjectChatActionsParams {
   project: Project;
@@ -74045,9 +74046,17 @@ export function useProjectChatActions({
     const doDelete = async () => {
       const commentToDelete = localComments.find((c) => c.id === commentId);
       if (commentToDelete) {
-        const urls = commentToDelete.text.match(/(https?:\/\/[^\s]+)/g) || [];
-        urls.forEach(async (url: string) => {
-          if (url.includes('firebasestorage.googleapis.com')) {
+        const textUrls = commentToDelete.text?.match(/(https?:\/\/[^\s]+)/g) || [];
+        const attUrls = (commentToDelete.attachments || []).map((att: any) => att.url).filter(Boolean);
+        const allUrls = Array.from(new Set([...textUrls, ...attUrls]));
+
+        allUrls.forEach(async (rawUrl: string) => {
+          const url = rawUrl.trim();
+          if (url.includes('hcm.taka-pm.org') || url.includes('Taka-Pm-folder')) {
+            removeUploadedImageEverywhere(url, project).catch((err) => {
+              console.warn('[handleDeleteComment] Failed to purge R2 image:', err);
+            });
+          } else if (url.includes('firebasestorage.googleapis.com')) {
             try {
               const fileRef = storageRef(storage, url);
               await deleteObject(fileRef);
@@ -74200,7 +74209,6 @@ export function useProjectChatActions({
     handleSendFromInput
   };
 }
-
 
 ================================================================================
 FILE: src/components/ProjectModalParts/FastTextarea.tsx
@@ -181178,3 +181186,1668 @@ export async function syncUploadedImageToProjectAndUnit(
     }
   }
 }
+
+================================================================================
+FILE: src/lib/projectImageSync.ts
+================================================================================
+import { doc, deleteField } from 'firebase/firestore';
+import { setDoc } from './firestoreWrites';
+import { db, APP_ID, storage } from './firebase';
+import { ref as storageRef, deleteObject } from 'firebase/storage';
+import { useAppStore } from '../store/useAppStore';
+import { Project } from '../types';
+import { recordDelta } from './deltaSyncService';
+import { deleteR2ImageCleanly } from './r2StorageUtils';
+
+function normalizeStore(store?: string | null): string {
+  if (!store) return 'HCM';
+  const s = String(store).trim().toUpperCase();
+  if (s.includes('HN') || s.includes('HÀ NỘI') || s.includes('HA NOI') || s.includes('HANOI')) return 'HN';
+  if (s.includes('HCM') || s.includes('HỒ CHÍ MINH') || s.includes('HO CHI MINH') || s.includes('SAI GON') || s.includes('SG')) return 'HCM';
+  return s;
+}
+
+/**
+ * Registers an uploaded image (from Project Comments or Project Modal) into:
+ * 1. project.imageLinks and project.imageUrl / thumbnail
+ * 2. taka_unit_images collection (for cross-device real-time sync with Layout Tab Tooltip)
+ * 3. LocalStorage cache for instant 0ms display
+ * 4. CustomEvent 'taka_unit_images_changed' to notify open tooltips immediately
+ */
+export async function syncUploadedImageToProjectAndUnit(
+  url: string,
+  fileName: string,
+  project?: Project | null
+): Promise<void> {
+  if (!url || !url.trim()) return;
+  const trimmedUrl = url.trim();
+
+  const store = normalizeStore(project?.store);
+  const primaryCode = String(project?.code || '').trim();
+
+  const newImgEntry = {
+    id: `img_${Date.now()}`,
+    url: trimmedUrl,
+    title: fileName || (primaryCode ? `${primaryCode} Photo` : 'Project Photo'),
+    createdAt: new Date().toISOString(),
+    store,
+  };
+
+  // 1. Gather all unit codes associated with this project (including linkCodes)
+  const codesToUpdate = new Set<string>();
+  if (primaryCode) codesToUpdate.add(primaryCode);
+
+  if (project?.linkCodes) {
+    String(project.linkCodes)
+      .split(/[,;\s]+/)
+      .map((c) => c.trim())
+      .filter(Boolean)
+      .forEach((c) => codesToUpdate.add(c));
+  }
+
+  // 2. Update taka_unit_images for each unit code (LocalStorage + Firestore)
+  for (const unitCode of Array.from(codesToUpdate)) {
+    const activeUnitStorageKey = `taka_unit_images_${store}_${unitCode}`;
+    const unitImagesDocKey = `${store}_${unitCode}`;
+
+    let currentList: any[] = [];
+    try {
+      const saved = localStorage.getItem(activeUnitStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) currentList = parsed;
+      }
+    } catch {
+      currentList = [];
+    }
+
+    const alreadyHas = currentList.some((item) =>
+      typeof item === 'string' ? item === trimmedUrl : item?.url === trimmedUrl
+    );
+    const updatedImages = alreadyHas ? currentList : [newImgEntry, ...currentList];
+
+    try {
+      localStorage.setItem(activeUnitStorageKey, JSON.stringify(updatedImages));
+    } catch {}
+
+    try {
+      const unitImagesDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_unit_images', unitImagesDocKey);
+      setDoc(
+        unitImagesDocRef,
+        {
+          unitCode,
+          store,
+          images: updatedImages,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      ).catch((err) => console.warn('[projectImageSync] Error saving unit images doc:', err));
+    } catch (e) {
+      console.warn('[projectImageSync] Failed to push to taka_unit_images:', e);
+    }
+  }
+
+  // 3. Dispatch UI event so Layout Unit Tooltip immediately updates in 0ms
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('taka_unit_images_changed'));
+  }
+
+  // 4. Update the Project document in Zustand + Firestore + Delta
+  if (project && project.id) {
+    try {
+      const allProjects = useAppStore.getState().projects;
+      const targetProj = allProjects.find((p) => p.id === project.id) || project;
+
+      const existingLinks: any[] = Array.isArray(targetProj.imageLinks) ? targetProj.imageLinks : [];
+      const hasLink = existingLinks.some((l) =>
+        typeof l === 'string' ? l === trimmedUrl : l?.url === trimmedUrl
+      );
+      const updatedImageLinks = hasLink ? existingLinks : [newImgEntry, ...existingLinks];
+
+      const nowIso = new Date().toISOString();
+      const updatedProject: Project = {
+        ...targetProj,
+        imageUrl: targetProj.imageUrl || trimmedUrl,
+        thumbnail: targetProj.thumbnail || trimmedUrl,
+        imageLinks: updatedImageLinks,
+        updatedAt: nowIso,
+      };
+
+      // Zustand Optimistic Update (0ms)
+      useAppStore
+        .getState()
+        .setProjects(allProjects.map((p) => (p.id === project.id ? updatedProject : p)));
+
+      // Firestore Update
+      const projDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', project.id);
+      const updateData = {
+        imageUrl: updatedProject.imageUrl,
+        thumbnail: updatedProject.thumbnail,
+        imageLinks: updatedImageLinks,
+        updatedAt: nowIso,
+      };
+
+      await setDoc(projDocRef, updateData, { merge: true });
+
+      // Record Delta for multi-device sync
+      await recordDelta({
+        docId: project.id,
+        collectionName: 'taka_projects',
+        action: 'update',
+        data: updateData,
+        year: String(project.year || ''),
+      }).catch(console.error);
+    } catch (err) {
+      console.error('[projectImageSync] Failed to update project imageLinks:', err);
+    }
+  }
+}
+
+/**
+ * Permanently removes an image everywhere:
+ * 1. Cloudflare R2 bucket deletion (via deleteR2ImageCleanly)
+ * 2. Firebase Storage deletion if applicable
+ * 3. Removes from taka_unit_images across all associated units (LocalStorage + Firestore)
+ * 4. Removes from project.imageLinks, project.imageUrl/thumbnail/photo/image
+ * 5. Removes the image link from project.comments (both c.attachments and stripping URL from c.text, or deleting empty comments)
+ * 6. Dispatches 'taka_unit_images_changed' event so open tooltips/galleries refresh immediately in 0ms
+ */
+export async function removeUploadedImageEverywhere(
+  url: string,
+  project?: Project | null,
+  unitCodeParam?: string
+): Promise<void> {
+  if (!url || !url.trim()) return;
+  const trimmedUrl = url.trim();
+
+  // 1. Purge from Cloudflare R2 in background
+  try {
+    deleteR2ImageCleanly(trimmedUrl).catch((err) => {
+      console.warn('[removeUploadedImageEverywhere] R2 purge error:', err);
+    });
+  } catch (e) {
+    console.warn('[removeUploadedImageEverywhere] R2 error:', e);
+  }
+
+  // 2. Purge from Firebase Storage if it's a storage URL
+  if (trimmedUrl.includes('firebasestorage.googleapis.com')) {
+    try {
+      const fileRef = storageRef(storage, trimmedUrl);
+      deleteObject(fileRef).catch((e) => console.warn('Storage delete error:', e));
+    } catch {}
+  }
+
+  const store = normalizeStore(project?.store);
+  const primaryCode = String(project?.code || unitCodeParam || '').trim();
+
+  // 3. Purge from taka_unit_images (for primary code and linkCodes)
+  const codesToUpdate = new Set<string>();
+  if (primaryCode) codesToUpdate.add(primaryCode);
+  if (unitCodeParam) codesToUpdate.add(unitCodeParam);
+
+  if (project?.linkCodes) {
+    String(project.linkCodes)
+      .split(/[,;\s]+/)
+      .map((c) => c.trim())
+      .filter(Boolean)
+      .forEach((c) => codesToUpdate.add(c));
+  }
+
+  for (const uCode of Array.from(codesToUpdate)) {
+    const activeUnitStorageKey = `taka_unit_images_${store}_${uCode}`;
+    const unitImagesDocKey = `${store}_${uCode}`;
+
+    let currentList: any[] = [];
+    try {
+      const saved = localStorage.getItem(activeUnitStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) currentList = parsed;
+      }
+    } catch {
+      currentList = [];
+    }
+
+    const updatedImages = currentList.filter((item) => {
+      const iUrl = typeof item === 'string' ? item : item?.url;
+      return iUrl !== trimmedUrl;
+    });
+
+    try {
+      if (updatedImages.length === 0) {
+        localStorage.removeItem(activeUnitStorageKey);
+      } else {
+        localStorage.setItem(activeUnitStorageKey, JSON.stringify(updatedImages));
+      }
+    } catch {}
+
+    try {
+      const unitImagesDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_unit_images', unitImagesDocKey);
+      setDoc(
+        unitImagesDocRef,
+        {
+          unitCode: uCode,
+          store,
+          images: updatedImages,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      ).catch(console.error);
+    } catch {}
+  }
+
+  // 4. Dispatch event so Layout Unit Tooltip updates immediately
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('taka_unit_images_changed'));
+  }
+
+  // 5. Update Project document (imageLinks, comments, thumbnails)
+  const allProjects = useAppStore.getState().projects;
+  const targetProj = (project && project.id ? allProjects.find((p) => p.id === project.id) : null) ||
+    allProjects.find((p) => {
+      if (primaryCode && p.code === primaryCode && normalizeStore(p.store) === store) return true;
+      return false;
+    });
+
+  if (targetProj && targetProj.id) {
+    try {
+      // 5a. Clean imageLinks
+      const existingLinks: any[] = Array.isArray(targetProj.imageLinks) ? targetProj.imageLinks : [];
+      const updatedImageLinks = existingLinks.filter((l) => {
+        const lUrl = typeof l === 'string' ? l : l?.url;
+        return lUrl !== trimmedUrl;
+      });
+
+      // 5b. Clean comments: remove trimmedUrl from comment text & attachments
+      const existingComments: any[] = Array.isArray(targetProj.comments) ? targetProj.comments : [];
+      const updatedComments = existingComments
+        .map((c) => {
+          let updatedText = c.text || '';
+          if (typeof updatedText === 'string' && updatedText.includes(trimmedUrl)) {
+            // Strip markdown image/link if present: ![title](url) or [title](url)
+            const escapedUrl = trimmedUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const mdRegex = new RegExp(`!?\\[[^\\]]*\\]\\(${escapedUrl}\\)`, 'g');
+            updatedText = updatedText.replace(mdRegex, '');
+            // Also strip raw URL
+            updatedText = updatedText.replace(new RegExp(escapedUrl, 'g'), '');
+            updatedText = updatedText.replace(/\s+/g, ' ').trim();
+          }
+
+          let updatedAttachments = c.attachments;
+          if (Array.isArray(updatedAttachments)) {
+            updatedAttachments = updatedAttachments.filter((att: any) => att.url !== trimmedUrl);
+          }
+
+          return {
+            ...c,
+            text: updatedText,
+            attachments: updatedAttachments,
+          };
+        })
+        .filter((c) => {
+          const hasText = typeof c.text === 'string' && c.text.trim().length > 0;
+          const hasAttachments = Array.isArray(c.attachments) && c.attachments.length > 0;
+          return hasText || hasAttachments;
+        });
+
+      // 5c. Clean thumbnail / imageUrl / photo / image
+      const newImageUrl = targetProj.imageUrl === trimmedUrl ? '' : targetProj.imageUrl;
+      const newThumbnail = targetProj.thumbnail === trimmedUrl ? '' : targetProj.thumbnail;
+      const newPhoto = (targetProj as any).photo === trimmedUrl ? '' : (targetProj as any).photo;
+      const newImage = (targetProj as any).image === trimmedUrl ? '' : (targetProj as any).image;
+
+      // 5d. Clean taskSummaries
+      const filteredSummaries = (targetProj.taskSummaries || []).filter(
+        (ts) => ts.link !== trimmedUrl && ts.imageUrl !== trimmedUrl && !ts.name?.includes(trimmedUrl)
+      );
+
+      const nowIso = new Date().toISOString();
+      const updatedProject: Project = {
+        ...targetProj,
+        comments: updatedComments,
+        imageLinks: updatedImageLinks,
+        imageUrl: newImageUrl,
+        thumbnail: newThumbnail,
+        photo: newPhoto,
+        image: newImage,
+        taskSummaries: filteredSummaries,
+        updatedAt: nowIso,
+      } as Project;
+
+      // Optimistic update in Zustand (0ms)
+      useAppStore
+        .getState()
+        .setProjects(allProjects.map((p) => (p.id === targetProj.id ? updatedProject : p)));
+
+      // Firestore Update
+      const projDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', targetProj.id);
+      const firestoreUpdate: Record<string, any> = {
+        comments: updatedComments,
+        imageLinks: updatedImageLinks,
+        taskSummaries: filteredSummaries,
+        updatedAt: nowIso,
+      };
+      if (targetProj.imageUrl === trimmedUrl) firestoreUpdate.imageUrl = deleteField();
+      if (targetProj.thumbnail === trimmedUrl) firestoreUpdate.thumbnail = deleteField();
+      if ((targetProj as any).photo === trimmedUrl) firestoreUpdate.photo = deleteField();
+      if ((targetProj as any).image === trimmedUrl) firestoreUpdate.image = deleteField();
+
+      await setDoc(projDocRef, firestoreUpdate, { merge: true });
+
+      // Record Delta
+      await recordDelta({
+        docId: targetProj.id,
+        collectionName: 'taka_projects',
+        action: 'update',
+        data: firestoreUpdate,
+        year: String(targetProj.year || ''),
+      }).catch(console.error);
+    } catch (err) {
+      console.error('[removeUploadedImageEverywhere] Error updating project:', err);
+    }
+  }
+}
+
+
+================================================================================
+FILE: src/components/LayoutTabParts/TooltipParts/useTooltipImages.ts
+================================================================================
+import React, { useEffect, useMemo, useState } from 'react';
+import { Project } from '../../../types';
+import { useAppStore } from '../../../store/useAppStore';
+import { doc, deleteField, onSnapshot } from 'firebase/firestore';
+import { setDoc } from '../../../lib/firestoreWrites';
+import { db, APP_ID } from '../../../lib/firebase';
+import { extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../../lib/utils';
+import { TooltipImageItem } from './tooltipTypes';
+import { deleteR2ImageCleanly } from '../../../lib/r2StorageUtils';
+import { recordDelta } from '../../../lib/deltaSyncService';
+import { removeUploadedImageEverywhere } from '../../../lib/projectImageSync';
+
+function normalizeStore(store?: string | null): string {
+  if (!store) return '';
+  const s = String(store).trim().toUpperCase();
+  if (s.includes('HN') || s.includes('HÀ NỘI') || s.includes('HA NOI') || s.includes('HANOI')) return 'HN';
+  if (s.includes('HCM') || s.includes('HỒ CHÍ MINH') || s.includes('HO CHI MINH') || s.includes('SAI GON') || s.includes('SG')) return 'HCM';
+  return s;
+}
+
+interface UseTooltipImagesParams {
+  p?: Project;
+  data: any;
+  unitCode: string;
+  tooltipRef: React.RefObject<HTMLDivElement>;
+  positionTooltip: (forceRecalculate?: boolean) => void;
+  storeFilter?: string;
+  quickImageMode?: boolean;
+  canWrite?: boolean;
+}
+
+export function useTooltipImages({
+  p, data, unitCode, tooltipRef, positionTooltip, storeFilter, quickImageMode = false, canWrite = false,
+}: UseTooltipImagesParams) {
+  const [showImagePanel, setShowImagePanel] = useState<boolean>(Boolean(quickImageMode));
+  const [showAddLinkInput, setShowAddLinkInput] = useState(false);
+  const [newLinkInput, setNewLinkInput] = useState('');
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [enlargedImage, setEnlargedImage] = useState<{ url: string; title?: string; initialScale?: number } | null>(null);
+  const [customUnitImages, setCustomUnitImages] = useState<Array<{ id: string; url: string; title?: string; createdAt?: string; store?: string }>>([]);
+
+  const rawStore = (
+    p?.store ||
+    data?.store ||
+    (p ? extractProjectMetadata(p).store : '') ||
+    (storeFilter && storeFilter.toUpperCase() !== 'ALL' ? storeFilter : '') ||
+    'HCM'
+  );
+  const activeStore = normalizeStore(rawStore) || 'HCM';
+
+  const cleanCode = String(data?.code || data?.unit || data?.name || unitCode || 'default').trim();
+  const activeUnitStorageKey = `taka_unit_images_${activeStore}_${cleanCode}`;
+  const unitImagesDocKey = `${activeStore}_${cleanCode}`;
+
+  // 1. Instant 0ms load from localStorage
+  // 2. Real-time Firestore sync on taka_unit_images for cross-device sync (Desktop <-> iOS <-> Android)
+  useEffect(() => {
+    let localImages: any[] = [];
+    try {
+      const saved = localStorage.getItem(activeUnitStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          localImages = parsed.filter(item => !item.store || normalizeStore(item.store) === activeStore);
+          setCustomUnitImages(localImages);
+        }
+      }
+    } catch {
+      setCustomUnitImages([]);
+    }
+
+    const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_unit_images", unitImagesDocKey);
+    const unsub = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        const cloudData = snap.data();
+        if (Array.isArray(cloudData?.images)) {
+          const cloudImages = cloudData.images.filter((item: any) => !item.store || normalizeStore(item.store) === activeStore);
+          setCustomUnitImages(cloudImages);
+          try {
+            localStorage.setItem(activeUnitStorageKey, JSON.stringify(cloudImages));
+          } catch {}
+          return;
+        }
+      } else if (localImages.length > 0 && canWrite) {
+        // Auto-heal: If images existed in desktop's localStorage, sync them up to Firestore so iOS receives them
+        setDoc(docRef, {
+          unitCode: cleanCode,
+          store: activeStore,
+          images: localImages,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true }).catch(() => {});
+      }
+    }, (err) => {
+      console.warn("[useTooltipImages] Cloud sync listener:", err);
+    });
+
+    return () => unsub();
+  }, [activeUnitStorageKey, activeStore, cleanCode, unitImagesDocKey, canWrite]);
+
+  useEffect(() => {
+    setShowImagePanel(Boolean(quickImageMode));
+    setShowAddLinkInput(false);
+  }, [data.code, data.unit, unitCode, quickImageMode]);
+
+  useEffect(() => {
+    if (!tooltipRef.current) return;
+    positionTooltip(true);
+    if (!showImagePanel) return;
+    const timer1 = setTimeout(() => {
+      if (tooltipRef.current) {
+        positionTooltip(true);
+        if (!quickImageMode) {
+          tooltipRef.current.scrollTo({ top: tooltipRef.current.scrollHeight, behavior: 'smooth' });
+        }
+      }
+    }, 50);
+    return () => clearTimeout(timer1);
+  }, [showImagePanel, quickImageMode, positionTooltip, tooltipRef]);
+
+  useEffect(() => {
+    if (!enlargedImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setEnlargedImage(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [enlargedImage]);
+
+  const handleAddCustomImage = (e?: React.FormEvent, customUrl?: string) => {
+    if (e) e.preventDefault();
+    if (!canWrite) return;
+    const targetUrl = customUrl || newLinkInput;
+    const trimmed = targetUrl.trim();
+    if (!trimmed) return;
+
+    const newEntry = {
+      id: `img_${Date.now()}`,
+      url: trimmed,
+      title: `Link ${customUnitImages.length + 1}`,
+      createdAt: new Date().toISOString(),
+      store: activeStore,
+    };
+    const updated = [newEntry, ...customUnitImages];
+    setCustomUnitImages(updated);
+    setNewLinkInput('');
+    setShowAddLinkInput(false);
+
+    try {
+      localStorage.setItem(activeUnitStorageKey, JSON.stringify(updated));
+    } catch {}
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('taka_unit_images_changed'));
+    }
+
+    // 1. Direct Cloud Firestore persistence for taka_unit_images (Multi-device sync iOS <-> Desktop)
+    const unitImagesDocRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_unit_images", unitImagesDocKey);
+    setDoc(unitImagesDocRef, {
+      unitCode: cleanCode,
+      store: activeStore,
+      images: updated,
+      updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(err => {
+      console.error("[useTooltipImages] Failed to save unit images to Firestore:", err);
+    });
+
+    // 2. Also persist link to matched project document
+    try {
+      const allProjects = useAppStore.getState().projects;
+      const targetProj = (p && normalizeStore(extractProjectMetadata(p).store) === activeStore ? p : null) || allProjects.find(item => {
+        if (item.id === p?.id && normalizeStore(extractProjectMetadata(item).store) === activeStore) return true;
+        const itemStore = normalizeStore(extractProjectMetadata(item).store);
+        if (itemStore && itemStore !== activeStore) return false;
+        const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
+        const targetCode = String(data?.code || data?.unit || data?.name || unitCode || '').toLowerCase();
+        return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
+      });
+
+      if (targetProj && normalizeStore(extractProjectMetadata(targetProj).store) === activeStore) {
+        const cleanedSummaries = (targetProj.taskSummaries || []).filter(
+          ts => !ts.name?.startsWith('Link / Photo:') && !ts.name?.startsWith('http://') && !ts.name?.startsWith('https://')
+        );
+
+        const existingLinks: any[] = Array.isArray(targetProj.imageLinks) ? targetProj.imageLinks : [];
+        const hasLinkAlready = existingLinks.some(l => (typeof l === 'string' ? l === trimmed : l?.url === trimmed));
+        const newLinkObj = {
+          id: newEntry.id,
+          url: trimmed,
+          title: newEntry.title,
+          createdAt: newEntry.createdAt,
+          store: activeStore,
+        };
+        const updatedImageLinks = hasLinkAlready ? existingLinks : [newLinkObj, ...existingLinks];
+
+        const updatedProject: Project = {
+          ...targetProj,
+          taskSummaries: cleanedSummaries,
+          imageUrl: targetProj.imageUrl || trimmed,
+          thumbnail: targetProj.thumbnail || trimmed,
+          imageLinks: updatedImageLinks,
+        };
+
+        useAppStore.getState().setProjects(
+          allProjects.map(proj => proj.id === targetProj.id ? updatedProject : proj)
+        );
+
+        if (targetProj.id) {
+          const updateData = {
+            taskSummaries: cleanedSummaries,
+            imageUrl: updatedProject.imageUrl,
+            thumbnail: updatedProject.thumbnail,
+            imageLinks: updatedImageLinks,
+            updatedAt: new Date().toISOString(),
+          };
+          setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), updateData, { merge: true }).catch(err => {
+            console.error("Failed to sync to Firestore:", err);
+          });
+          recordDelta({
+            docId: targetProj.id,
+            collectionName: 'taka_projects',
+            action: 'update',
+            data: updateData,
+            year: String(targetProj.year || '')
+          }).catch(console.error);
+        }
+      }
+    } catch (err) {
+      console.error("Error updating project image link:", err);
+    }
+  };
+
+  const handleDeleteCustomImage = (id: string, urlToDelete?: string) => {
+    if (!canWrite) return;
+    const targetUrl = urlToDelete || customUnitImages.find(item => item.id === id)?.url;
+
+    // 1. Immediately remove from local component state
+    const updated = customUnitImages.filter(item => item.id !== id && (urlToDelete ? item.url !== urlToDelete : true));
+    setCustomUnitImages(updated);
+
+    // 2. Resolve matching project
+    const allProjects = useAppStore.getState().projects;
+    const targetProj = (p && normalizeStore(extractProjectMetadata(p).store) === activeStore ? p : null) || allProjects.find(item => {
+      if (item.id === p?.id && normalizeStore(extractProjectMetadata(item).store) === activeStore) return true;
+      const itemStore = normalizeStore(extractProjectMetadata(item).store);
+      if (itemStore && itemStore !== activeStore) return false;
+      const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
+      const targetCode = String(data?.code || data?.unit || data?.name || unitCode || '').toLowerCase();
+      return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
+    });
+
+    // 3. Purge image permanently from R2 Cloud, project comments, project imageLinks/thumbs, taka_unit_images, and delta sync
+    if (targetUrl) {
+      removeUploadedImageEverywhere(targetUrl, targetProj, cleanCode).catch(err => {
+        console.warn("[handleDeleteCustomImage] removeUploadedImageEverywhere error:", err);
+      });
+    }
+  };
+
+  const handleCopyLink = (url: string) => {
+    try {
+      navigator.clipboard?.writeText(url);
+      setCopiedLink(url);
+      setTimeout(() => setCopiedLink(null), 2000);
+    } catch {}
+  };
+
+  // Consolidate all image items (user-added cloud links, taskSummaries, layout image/thumbnail, project attachments)
+  const allUnitImages = useMemo(() => {
+    const list: TooltipImageItem[] = [];
+    const seenUrls = new Set<string>();
+
+    const allProjects = useAppStore.getState().projects;
+    const resolvedProj = (p && normalizeStore(extractProjectMetadata(p).store) === activeStore ? p : null) || allProjects.find(item => {
+      const itemStore = normalizeStore(extractProjectMetadata(item).store);
+      if (itemStore && itemStore !== activeStore) return false;
+      const itemCodes = extractAllProjectCodes(item).map(c => c.toLowerCase());
+      const targetCode = String(data?.code || data?.unit || data?.name || unitCode || '').toLowerCase();
+      return itemCodes.includes(targetCode) || projectMatchesUnitCode(itemCodes, targetCode);
+    });
+
+    const targetP = resolvedProj || p;
+    const projStore = targetP ? normalizeStore(extractProjectMetadata(targetP).store) : '';
+    const isProjMatchingStore = !targetP || !projStore || !activeStore || projStore === activeStore;
+
+    // 1. Cloud-backed project.imageLinks
+    if (isProjMatchingStore && targetP?.imageLinks && Array.isArray(targetP.imageLinks)) {
+      targetP.imageLinks.forEach((imgItem: any, idx: number) => {
+        const url = typeof imgItem === 'string' ? imgItem : imgItem?.url;
+        const itemStore = typeof imgItem === 'object' ? normalizeStore(imgItem?.store) : '';
+        if (url && typeof url === 'string' && !seenUrls.has(url)) {
+          if (!itemStore || itemStore === activeStore) {
+            seenUrls.add(url);
+            list.push({
+              id: typeof imgItem === 'object' && imgItem.id ? imgItem.id : `img_cloud_${idx}`,
+              url: url,
+              title: (typeof imgItem === 'object' && imgItem.title) || `Link ${list.length + 1}`,
+              source: `${activeStore} Link`,
+              isCustom: true,
+            });
+          }
+        }
+      });
+    }
+
+    // 2. Project taskSummaries links
+    if (isProjMatchingStore && targetP?.taskSummaries && Array.isArray(targetP.taskSummaries)) {
+      targetP.taskSummaries.forEach((ts, tsIdx) => {
+        const url = ts.link || ts.imageUrl || ts.thumbnail || (typeof ts.name === 'string' ? ts.name.match(/https?:\/\/[^\s]+/)?.[0] : null);
+        if (url && typeof url === 'string' && !seenUrls.has(url)) {
+          seenUrls.add(url);
+          list.push({
+            id: `ts_${ts.id || tsIdx}_${url.slice(-8)}`,
+            url: url,
+            title: ts.name || `Task Summary Link ${list.length + 1}`,
+            source: 'Task Summarize',
+            isCustom: true,
+          });
+        }
+      });
+    }
+
+    // 3. Custom user-posted links (real-time Firestore sync & localStorage fallback)
+    customUnitImages.forEach((c) => {
+      if (c.url && !seenUrls.has(c.url)) {
+        if (!c.store || normalizeStore(c.store) === activeStore) {
+          seenUrls.add(c.url);
+          list.push({
+            id: c.id,
+            url: c.url,
+            title: c.title || 'Attached Link',
+            source: `${activeStore} Link`,
+            isCustom: true,
+          });
+        }
+      }
+    });
+
+    // 4. Project direct image / thumbnail fields
+    if (isProjMatchingStore && targetP) {
+      ['thumbnail', 'imageUrl', 'image', 'photo'].forEach((key) => {
+        const val = (targetP as any)[key];
+        if (val && typeof val === 'string' && !seenUrls.has(val)) {
+          seenUrls.add(val);
+          list.push({
+            id: `proj_${key}`,
+            url: val,
+            title: key === 'thumbnail' ? 'Project Thumbnail' : 'Project Image',
+            source: 'Project Data',
+            isCustom: true,
+          });
+        }
+      });
+    }
+
+    // 5. Unit image from layout data
+    const dataStore = normalizeStore(data?.store || '');
+    const isDataMatchingStore = !dataStore || !activeStore || dataStore === activeStore;
+    if (isDataMatchingStore) {
+      ['imageUrl', 'thumbnail', 'image'].forEach((key) => {
+        const val = data[key];
+        if (val && typeof val === 'string' && !seenUrls.has(val)) {
+          seenUrls.add(val);
+          list.push({
+            id: `data_${key}`,
+            url: val,
+            title: key === 'thumbnail' ? 'Unit Thumbnail' : 'Unit Layout Image',
+            source: 'Layout Data',
+          });
+        }
+      });
+    }
+
+    // 6. Project comments attachments & image URLs in comment text
+    if (isProjMatchingStore && targetP?.comments && Array.isArray(targetP.comments)) {
+      targetP.comments.forEach((c, cIdx) => {
+        if (c.attachments && Array.isArray(c.attachments)) {
+          c.attachments.forEach((att, aIdx) => {
+            if (att.url && !seenUrls.has(att.url)) {
+              seenUrls.add(att.url);
+              list.push({
+                id: `comm_${cIdx}_${aIdx}`,
+                url: att.url,
+                title: att.name || `Attachment ${list.length + 1}`,
+                source: `Comment by ${c.userName || 'User'}`,
+                isCustom: true,
+              });
+            }
+          });
+        }
+        if (c.text && typeof c.text === 'string') {
+          const matchedUrls = c.text.match(/(https?:\/\/[^\s]+)/g) || [];
+          matchedUrls.forEach((rawUrl, uIdx) => {
+            const url = rawUrl.trim();
+            const isImg = url.match(/\.(jpe?g|png|webp|gif|svg|bmp)(\?.*)?$/i) ||
+              url.includes('hcm.taka-pm.org') ||
+              url.includes('drive.google.com/file') ||
+              url.includes('firebasestorage.googleapis.com');
+            if (isImg && !seenUrls.has(url)) {
+              seenUrls.add(url);
+              list.push({
+                id: `comm_txt_${c.id || cIdx}_${uIdx}`,
+                url,
+                title: `Comment Photo (${c.userName || 'User'})`,
+                source: `Comment by ${c.userName || 'User'}`,
+                isCustom: true,
+              });
+            }
+          });
+        }
+      });
+    }
+
+    return list;
+  }, [customUnitImages, activeStore, data, p, unitCode]);
+
+  return {
+    showImagePanel,
+    setShowImagePanel,
+    showAddLinkInput,
+    setShowAddLinkInput,
+    newLinkInput,
+    setNewLinkInput,
+    copiedLink,
+    enlargedImage,
+    setEnlargedImage,
+    allUnitImages,
+    handleAddCustomImage,
+    handleDeleteCustomImage,
+    handleCopyLink,
+  };
+}
+
+
+================================================================================
+FILE: src/components/LayoutTabParts/TooltipParts/TooltipImageGalleryPanel.tsx
+================================================================================
+import React, { Dispatch, FC, SetStateAction, useRef, useState } from 'react';
+import { 
+  Image as ImageIcon, 
+  Plus, 
+  X, 
+  Link as LinkIcon, 
+  Check, 
+  Maximize2, 
+  ExternalLink, 
+  Copy, 
+  Trash2,
+  Upload,
+  Loader2,
+  Crop,
+  Camera
+} from 'lucide-react';
+import { cn } from '../../../lib/utils';
+import { TooltipImageItem } from './tooltipTypes';
+import { normalizeImageUrl } from '../LayoutUnitLightboxModal';
+import { uploadPictureToTakaFolder } from '../../../lib/r2StorageUtils';
+import { TooltipZoomableThumbnail } from './TooltipZoomableThumbnail';
+import { ScreenshotCropModal } from './ScreenshotCropModal';
+
+interface TooltipImageGalleryPanelProps {
+  showImagePanel: boolean;
+  setShowImagePanel: React.Dispatch<React.SetStateAction<boolean>>;
+  showAddLinkInput: boolean;
+  setShowAddLinkInput: React.Dispatch<React.SetStateAction<boolean>>;
+  newLinkInput: string;
+  setNewLinkInput: React.Dispatch<React.SetStateAction<string>>;
+  allUnitImages: TooltipImageItem[];
+  copiedLink: string | null;
+  handleAddCustomImage: (e?: React.FormEvent, customUrl?: string) => void;
+  handleDeleteCustomImage: (id: string, urlToDelete?: string) => void;
+  handleCopyLink: (url: string) => void;
+  setEnlargedImage: (img: { url: string; title?: string; initialScale?: number } | null) => void;
+  unitCode?: string;
+  activeStore?: string;
+  isQuickMode?: boolean;
+  canWrite?: boolean;
+}
+
+export const TooltipImageGalleryPanel: React.FC<TooltipImageGalleryPanelProps> = ({
+  showImagePanel,
+  setShowImagePanel,
+  showAddLinkInput,
+  setShowAddLinkInput,
+  newLinkInput,
+  setNewLinkInput,
+  allUnitImages,
+  copiedLink,
+  handleAddCustomImage,
+  handleDeleteCustomImage,
+  handleCopyLink,
+  setEnlargedImage,
+  unitCode,
+  activeStore = 'HCM',
+  isQuickMode = false,
+  canWrite = false,
+}) => {
+  const [addMode, setAddMode] = useState<'link' | 'picture'>('link');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccessUrl, setUploadSuccessUrl] = useState<string | null>(null);
+  const [showScreenshotModal, setShowScreenshotModal] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  if (!showImagePanel && !showAddLinkInput) return null;
+
+  const handlePictureFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    setIsUploading(true);
+    setUploadError(null);
+    setUploadSuccessUrl(null);
+
+    try {
+      const res = await uploadPictureToTakaFolder(file, unitCode, activeStore);
+      if (res.success && res.publicUrl) {
+        const feedback = `${res.publicUrl}${(res as any).compressionInfo || ''}`;
+        setUploadSuccessUrl(feedback);
+        setNewLinkInput(res.publicUrl);
+        // Save link immediately into gallery
+        handleAddCustomImage(undefined, res.publicUrl);
+        setTimeout(() => setUploadSuccessUrl(null), 4500);
+      } else {
+        setUploadError(res.error || 'Upload failed');
+      }
+    } catch (err: any) {
+      setUploadError(err?.message || 'Lỗi kết nối upload');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className={cn(
+      "w-full flex flex-col gap-2 duration-150",
+      isQuickMode 
+        ? "pt-1" 
+        : "bg-slate-50/95 dark:bg-[#161618] rounded-xl p-2.5 border border-slate-200 dark:border-[#333336] shadow-inner animate-in fade-in zoom-in-95 my-1"
+    )}>
+      {/* Panel Header: Hidden in Quick-Image Mode to eliminate duplicate title and buttons */}
+      {!isQuickMode && (
+        <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-slate-200/80 dark:border-slate-800">
+          <div className="flex items-center gap-1.5 font-bold text-xs text-slate-700 dark:text-slate-200 min-w-0">
+            <ImageIcon className="w-3.5 h-3.5 text-blue-600 dark:text-[#8ab4f8] shrink-0" />
+            <span className="truncate">Hình ảnh liên kết ({activeStore})</span>
+            <span className={cn(
+              "text-[10px] px-1.5 py-0.2 rounded-full font-mono shrink-0 font-bold",
+              activeStore.toUpperCase() === 'HN'
+                ? "bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-400"
+                : "bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-[#8ab4f8]"
+            )}>
+              {allUnitImages.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Top "+ Thêm" Button (Only when canWrite) */}
+            {canWrite && (
+              <button
+                type="button"
+                onClick={() => setShowAddLinkInput(prev => !prev)}
+                className={cn(
+                  "px-2 py-0.5 rounded text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs",
+                  showAddLinkInput 
+                    ? "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200" 
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                )}
+                title={showAddLinkInput ? "Đóng ô nhập link" : "Thêm link ảnh / bài viết"}
+              >
+                <Plus className="w-3 h-3" />
+                <span>Thêm</span>
+              </button>
+            )}
+            {/* Close Image Panel Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowImagePanel(false);
+                setShowAddLinkInput(false);
+              }}
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Đóng bảng ảnh"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Post Link Input or Upload Picture Section (Hidden in Quick Mode or Read-Only Mode) */}
+      {!isQuickMode && canWrite && showAddLinkInput && (
+        <div className="flex flex-col gap-2 w-full animate-in fade-in slide-in-from-top-1 duration-150 py-1 bg-white dark:bg-[#1a1a1c] border border-blue-300 dark:border-blue-900 rounded-xl p-2 shadow-xs">
+          {/* Mode Switcher Tabs */}
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-1.5 gap-1">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddMode('link');
+                  setUploadError(null);
+                }}
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer",
+                  addMode === 'link'
+                    ? "bg-blue-600 text-white shadow-2xs"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                )}
+              >
+                <LinkIcon className="w-3 h-3" />
+                <span>Dán Link URL</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAddMode('picture');
+                  setUploadError(null);
+                }}
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation cursor-pointer",
+                  addMode === 'picture'
+                    ? "bg-purple-600 text-white shadow-2xs"
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200"
+                )}
+              >
+                <Upload className="w-3 h-3" />
+                <span>Add Picture (Upload R2)</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setNewLinkInput('');
+                setShowAddLinkInput(false);
+                setUploadError(null);
+              }}
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Đóng"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Mode 1: Dán Link URL */}
+          {addMode === 'link' && (
+            <form onSubmit={handleAddCustomImage} className="flex gap-1.5 items-center w-full pt-0.5">
+              <div className="relative flex-1 min-w-0">
+                <LinkIcon className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input 
+                  type="url"
+                  value={newLinkInput}
+                  onChange={(e) => setNewLinkInput(e.target.value)}
+                  onFocus={(e) => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                  placeholder="Dán link ảnh hoặc link bài viết (https://...)..."
+                  className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-slate-50 dark:bg-[#1e1e20] border border-blue-400 dark:border-blue-500 rounded-lg text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all font-mono"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={!newLinkInput.trim()}
+                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 touch-manipulation shrink-0 cursor-pointer shadow-xs"
+                title="Xác nhận thêm link"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>OK</span>
+              </button>
+            </form>
+          )}
+
+          {/* Mode 2: Add Picture (Auto upload R2) */}
+          {addMode === 'picture' && (
+            <div className="flex flex-col gap-1.5 w-full pt-0.5">
+              <input 
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={handlePictureFileSelected}
+              />
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs shrink-0"
+                >
+                  {isUploading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="w-3.5 h-3.5" />
+                  )}
+                  <span>{isUploading ? "Đang upload lên R2..." : "Chọn Ảnh Từ Máy / Chụp Ảnh"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  onClick={() => setShowScreenshotModal(true)}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all active:scale-95 touch-manipulation cursor-pointer shadow-xs shrink-0"
+                  title="Chụp màn hình (Desktop/iOS) và Cắt ảnh (Crop) tải lên R2"
+                >
+                  <Crop className="w-3.5 h-3.5" />
+                  <span>Screenshot & Crop</span>
+                </button>
+
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-mono shrink-0 truncate max-w-[210px]">
+                  <span>Thư mục R2:</span>
+                  <span className="font-bold text-purple-600 dark:text-purple-400">Taka-Pm-folder/</span>
+                </div>
+              </div>
+
+              {uploadError && (
+                <div className="text-[10px] font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/60 p-1.5 rounded-md border border-red-200 dark:border-red-900/80 flex items-center gap-1">
+                  <span>⚠️ {uploadError}</span>
+                </div>
+              )}
+
+              {uploadSuccessUrl && (
+                <div className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 p-1.5 rounded-md border border-emerald-200 dark:border-emerald-900/80 flex items-center gap-1 truncate font-mono">
+                  <span>✅ Đã lưu link R2:</span>
+                  <span className="truncate">{uploadSuccessUrl}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Image & Link Thumbnail List */}
+      {allUnitImages.length === 0 ? (
+        <div className="text-center py-3.5 px-2 bg-white/60 dark:bg-[#1e1e20]/60 rounded-lg border border-dashed border-slate-200 dark:border-slate-800 text-slate-400 text-xs flex flex-col items-center gap-1.5">
+          <ImageIcon className="w-6 h-6 text-slate-300 dark:text-slate-600" />
+          <span>Chưa có hình ảnh. Bấm nút <b>+ Thêm</b> ở trên để dán link ảnh/bài viết.</span>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2.5 max-h-[70vh] sm:max-h-[460px] overflow-y-auto custom-scrollbar pr-0.5">
+          {allUnitImages.map((img) => (
+            <div 
+              key={img.id}
+              className="bg-white dark:bg-[#1e1e20] rounded-lg border border-slate-200 dark:border-[#333336] p-2 flex flex-col gap-1.5 shadow-2xs group hover:border-blue-300 dark:hover:border-blue-800 transition-colors"
+            >
+              {/* Thumbnail Image Container with Pinch / Wheel / Double-tap Auto-Fullscreen Zoom */}
+              <TooltipZoomableThumbnail
+                img={img}
+                onOpenFullscreen={(target) => setEnlargedImage(target)}
+              />
+
+              {/* Link Address and Action Buttons (Only shown when clicking "+ Thêm") */}
+              {showAddLinkInput && (
+                <div className="flex items-center justify-between gap-1.5 pt-0.5 border-t border-slate-100 dark:border-slate-800/80 animate-in fade-in duration-150">
+                  <div className="flex items-center gap-1 min-w-0 flex-1">
+                    <LinkIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                    <a 
+                      href={img.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-[10px] font-mono text-blue-600 dark:text-[#8ab4f8] hover:underline truncate"
+                      title={img.url}
+                    >
+                      {img.url}
+                    </a>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyLink(img.url)}
+                      className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title={copiedLink === img.url ? "Đã sao chép link!" : "Sao chép link"}
+                    >
+                      {copiedLink === img.url ? (
+                        <Check className="w-3 h-3 text-green-500" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </button>
+                    <a
+                      href={img.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title="Mở link trong tab mới"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                    {canWrite && (img.isCustom || img.url?.includes('hcm.taka-pm.org') || img.url?.includes('Taka-Pm-folder') || img.url?.includes('firebasestorage.googleapis.com')) && (
+                      <button
+                        type="button"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDeleteCustomImage(img.id, img.url);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer active:scale-95 touch-manipulation flex items-center justify-center"
+                        title="Xóa ảnh này khỏi R2 Cloud & Dự án"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-red-500 hover:text-red-600" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Screenshot & Interactive Crop Modal */}
+      {showScreenshotModal && (
+        <ScreenshotCropModal
+          isOpen={showScreenshotModal}
+          onClose={() => setShowScreenshotModal(false)}
+          onSuccess={(publicUrl) => {
+            setUploadSuccessUrl(publicUrl);
+            setNewLinkInput(publicUrl);
+            handleAddCustomImage(undefined, publicUrl);
+            setTimeout(() => setUploadSuccessUrl(null), 4500);
+          }}
+          unitCode={unitCode}
+          activeStore={activeStore}
+        />
+      )}
+    </div>
+  );
+};
+
+
+================================================================================
+FILE: src/components/ProjectModal/chat/ProjectChatInput.tsx
+================================================================================
+import React, { forwardRef, memo, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { useLanguage } from '../../../lib/LanguageContext';
+import { AppUser, Task, Project } from '../../../types';
+import { storage } from '../../../lib/firebase';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { Paperclip, AtSign, Hash, Send, Loader2 } from 'lucide-react';
+import { recordMention, getMentionFrequencies } from '../../TaskModalParts/chat/chatSharedUtils';
+import { uploadPictureToTakaFolder } from '../../../lib/r2StorageUtils';
+import { syncUploadedImageToProjectAndUnit } from '../../../lib/projectImageSync';
+
+export interface ProjectChatInputHandle {
+  insertTaskTag: (tagName: string) => void;
+}
+
+export interface ProjectChatInputProps {
+  onSend: (text: string, mentions: string[]) => void;
+  appUsers: AppUser[];
+  projectTasks: Task[];
+  project?: Project;
+}
+
+export const ProjectChatInput = React.memo(
+  React.forwardRef<ProjectChatInputHandle, ProjectChatInputProps>(function ProjectChatInput(
+    { onSend, appUsers, projectTasks, project },
+    ref
+  ) {
+    const { t } = useLanguage();
+    const [commentText, setCommentText] = useState('');
+    const [mentions, setMentions] = useState<string[]>([]);
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [showMentionMenu, setShowMentionMenu] = useState(false);
+    const [taskQuery, setTaskQuery] = useState('');
+    const [showTaskMenu, setShowTaskMenu] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+
+    const inputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    React.useImperativeHandle(ref, () => ({
+      insertTaskTag: (tagName: string) => {
+        setCommentText((prev) => `${prev} #${tagName} `);
+        setTimeout(() => inputRef.current?.focus(), 50);
+      },
+    }));
+
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setIsUploading(true);
+      try {
+        let uploadedUrl = '';
+        const isImage = file.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|bmp|heic|heif|svg)$/i.test(file.name);
+
+        if (isImage) {
+          // 1. Upload to Cloudflare R2 (same folder Taka-Pm-folder/ and WebP compression as Layout Tab)
+          const r2Res = await uploadPictureToTakaFolder(file, project?.code, project?.store);
+          if (r2Res.success && r2Res.publicUrl) {
+            uploadedUrl = r2Res.publicUrl;
+            // 2. Automatically sync to project.imageLinks and taka_unit_images so it appears in the Layout Tooltip gallery
+            await syncUploadedImageToProjectAndUnit(uploadedUrl, file.name, project);
+          } else {
+            console.warn('[ProjectChatInput] R2 upload failed, attempting fallback:', r2Res.error);
+          }
+        }
+
+        // 3. Fallback to Firebase Storage if not an image or if R2 was not configured
+        if (!uploadedUrl) {
+          try {
+            const storageReference = storageRef(storage, `comments/${Date.now()}_${file.name}`);
+            const uploadTask = await uploadBytesResumable(storageReference, file);
+            uploadedUrl = await getDownloadURL(uploadTask.ref);
+            if (isImage && uploadedUrl) {
+              await syncUploadedImageToProjectAndUnit(uploadedUrl, file.name, project);
+            }
+          } catch (err) {
+            console.error('Firebase Storage upload failed:', err);
+          }
+        }
+
+        if (!uploadedUrl) {
+          throw new Error('Upload failed');
+        }
+
+        setCommentText((prev) => (prev ? `${prev} ${uploadedUrl} ` : `${uploadedUrl} `));
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        setTimeout(() => inputRef.current?.focus(), 50);
+      } catch (error) {
+        console.error('Upload error', error);
+      } finally {
+        setIsUploading(false);
+      }
+    };
+
+    const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const text = e.target.value;
+      setCommentText(text);
+
+      const cursorPosition = e.target.selectionStart || 0;
+      const textBeforeCursor = text.substring(0, cursorPosition);
+      const mentionMatch = textBeforeCursor.match(/@(\S*)$/);
+      const taskMatch = textBeforeCursor.match(/#([^#]*)$/);
+
+      if (mentionMatch) {
+        setMentionQuery(mentionMatch[1]);
+        setShowMentionMenu(true);
+        setShowTaskMenu(false);
+      } else if (taskMatch) {
+        setTaskQuery(taskMatch[1]);
+        setShowTaskMenu(true);
+        setShowMentionMenu(false);
+      } else {
+        setShowMentionMenu(false);
+        setShowTaskMenu(false);
+      }
+    };
+
+    const insertMention = (user: AppUser) => {
+      recordMention(user.id);
+      const cursorPosition = inputRef.current?.selectionStart || 0;
+      const textBeforeMention = commentText.substring(0, cursorPosition).replace(/@\S*$/, '');
+      const textAfterMention = commentText.substring(cursorPosition);
+
+      setCommentText(`${textBeforeMention}@${user.username} ${textAfterMention}`);
+      if (!mentions.includes(user.id)) {
+        setMentions([...mentions, user.id]);
+      }
+      setShowMentionMenu(false);
+      inputRef.current?.focus();
+    };
+
+    const insertTask = (task: Task) => {
+      const cursorPosition = inputRef.current?.selectionStart || 0;
+      const textBeforeTask = commentText.substring(0, cursorPosition).replace(/#([^#]*)$/, '');
+      const textAfterTask = commentText.substring(cursorPosition);
+
+      setCommentText(`${textBeforeTask}#${task.name} ${textAfterTask}`);
+      setShowTaskMenu(false);
+      inputRef.current?.focus();
+    };
+
+    const handleSend = () => {
+      if (!commentText.trim()) return;
+
+      const lowerCommentText = (commentText || '').toLowerCase();
+      const activeMentions = Array.from(
+        new Set([
+          ...mentions.filter((userId) => {
+            const user = (appUsers || []).find((u) => u && u.id === userId);
+            return user && typeof user.username === 'string' && lowerCommentText.includes(`@${user.username.toLowerCase()}`);
+          }),
+          ...(appUsers || [])
+            .filter((u) => u && typeof u.username === 'string' && lowerCommentText.includes(`@${u.username.toLowerCase()}`))
+            .map((u) => u.id),
+        ])
+      );
+
+      activeMentions.forEach((userId) => recordMention(userId));
+
+      onSend(commentText, activeMentions);
+      setCommentText('');
+      setMentions([]);
+    };
+
+    const filteredUsers = useMemo(() => {
+      const freqs = getMentionFrequencies();
+      const q = (mentionQuery || '').toLowerCase();
+      return (appUsers || [])
+        .filter((u) => u && typeof u.username === 'string' && u.username.toLowerCase().includes(q))
+        .sort((a, b) => {
+          const freqA = freqs[a.id] || 0;
+          const freqB = freqs[b.id] || 0;
+          if (freqA !== freqB) return freqB - freqA;
+          return (a.username || '').localeCompare(b.username || '');
+        });
+    }, [appUsers, mentionQuery]);
+
+    const filteredTasks = useMemo(() => {
+      const q = (taskQuery || '').toLowerCase();
+      return (projectTasks || []).filter((t) => t && typeof t.name === 'string' && t.name.toLowerCase().includes(q));
+    }, [projectTasks, taskQuery]);
+
+    return (
+      <div className="p-4 border-t border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20] relative shrink-0">
+        {showMentionMenu && filteredUsers.length > 0 && (
+          <div className="absolute bottom-full left-4 mb-2 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-xl shadow-xl w-64 max-h-48 overflow-y-auto z-10">
+            {filteredUsers.map((u) => (
+              <button
+                type="button"
+                key={u.id}
+                onClick={() => insertMention(u)}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-[#333336] dark:text-[#e3e3e3] transition-colors flex items-center gap-2"
+              >
+                <div className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center font-bold text-[10px]">
+                  {(u.username || u.email || 'U').substring(0, 2).toUpperCase()}
+                </div>
+                {u.username || u.email || 'User'}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {showTaskMenu && filteredTasks.length > 0 && (
+          <div className="absolute bottom-full left-4 mb-2 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-xl shadow-xl w-80 max-h-48 overflow-y-auto z-10">
+            {filteredTasks.map((t) => (
+              <button
+                type="button"
+                key={t.id}
+                onClick={() => insertTask(t)}
+                className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-[#333336] dark:text-[#e3e3e3] transition-colors flex items-center justify-between"
+              >
+                <span className="font-medium text-slate-800 dark:text-[#f3f3f3] truncate">{t.name}</span>
+                {t.party && <span className="text-xs text-slate-500 dark:text-[#a3a3a3]">{t.party}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImageUpload}
+            className="hidden"
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
+            className="p-2 text-slate-500 dark:text-[#a3a3a3] hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors disabled:opacity-50"
+            title={t('Attach File / Image')}
+          >
+            {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setCommentText((prev) => `${prev}@`);
+              setShowMentionMenu(true);
+              inputRef.current?.focus();
+            }}
+            className="p-2 text-slate-500 dark:text-[#a3a3a3] hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors"
+            title={t('Mention User')}
+          >
+            <AtSign className="w-5 h-5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setCommentText((prev) => `${prev}#`);
+              setShowTaskMenu(true);
+              inputRef.current?.focus();
+            }}
+            className="p-2 text-slate-500 dark:text-[#a3a3a3] hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-200/50 dark:hover:bg-[#28282a] transition-colors"
+            title={t('Tag Task')}
+          >
+            <Hash className="w-5 h-5" />
+          </button>
+
+          <div className="flex-1 relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={commentText}
+              onChange={handleTextChange}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder={t('Write a comment... Use @ for users, # for tasks')}
+              className="w-full px-4 py-2 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500 dark:text-[#e3e3e3]"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!commentText.trim()}
+            className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all disabled:opacity-50 active:scale-95 touch-manipulation shadow-sm"
+            title={t('Send')}
+          >
+            <Send className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+    );
+  })
+);
+
+
+================================================================================
+FILE: src/components/ProjectModal/ProjectChat.tsx
+================================================================================
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useLanguage } from '../../lib/LanguageContext';
+import { Project, Task, AppUser, DelegationGroup, TaskComment } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
+import { ChevronUp } from 'lucide-react';
+import { useProjectChatActions } from './chat/useProjectChatActions';
+import { ProjectCommentItem } from './chat/ProjectCommentItem';
+import { ProjectChatInput, ProjectChatInputHandle } from './chat/ProjectChatInput';
+
+export interface ProjectChatProps {
+  project: Project;
+  projects: Project[];
+  tasks: Task[];
+  currentUser: AppUser;
+  appUsers: AppUser[];
+  subAppUsers?: any[];
+  delegationGroups: DelegationGroup[];
+  onOpenTask?: (taskId: string) => void;
+  setConfirmModal?: any;
+}
+
+export const ProjectChat = React.memo(function ProjectChat({
+  project,
+  tasks,
+  currentUser,
+  appUsers,
+  onOpenTask,
+  setConfirmModal,
+}: ProjectChatProps) {
+  const { t } = useLanguage();
+  const focusCommentId = useAppStore((state) => state.focusCommentId);
+  const setFocusCommentId = useAppStore((state) => state.setFocusCommentId);
+
+  const [localComments, setLocalComments] = useState<TaskComment[]>(project.comments || []);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const [visibleCount, setVisibleCount] = useState(25);
+
+  const chatInputRef = useRef<ProjectChatInputHandle>(null);
+
+  useEffect(() => {
+    setLocalComments(project.comments || []);
+  }, [project.comments]);
+
+  useEffect(() => {
+    if (focusCommentId && localComments.length > 0) {
+      const idx = localComments.findIndex((c) => c.id === focusCommentId);
+      if (idx !== -1) {
+        const fromEnd = localComments.length - idx;
+        if (fromEnd > visibleCount) {
+          setVisibleCount(Math.min(localComments.length, fromEnd + 10));
+        }
+      }
+    }
+  }, [focusCommentId, localComments, visibleCount]);
+
+  const displayedComments = useMemo(() => {
+    if (localComments.length <= visibleCount) return localComments;
+    return localComments.slice(localComments.length - visibleCount);
+  }, [localComments, visibleCount]);
+
+  useEffect(() => {
+    if (focusCommentId) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById('comment-' + focusCommentId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.classList.add('ring-2', 'ring-blue-500', 'ring-offset-2', 'ring-offset-slate-50', 'dark:ring-offset-[#131314]');
+          setTimeout(() => {
+            el.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-2', 'ring-offset-slate-50', 'dark:ring-offset-[#131314]');
+          }, 3000);
+          setFocusCommentId(null);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [focusCommentId, setFocusCommentId]);
+
+  const projectTasks = useMemo(() => {
+    return tasks.filter(
+      (t) =>
+        t.projectCode === project.code &&
+        (String(t.projectYear) === String(project.year) || (!t.projectYear && !project.year)) &&
+        (t.projectStore === project.store || (!t.projectStore && !project.store))
+    );
+  }, [tasks, project.code, project.year, project.store]);
+
+  const { handleDeleteComment, handleEditComment, handleSendFromInput } = useProjectChatActions({
+    project,
+    localComments,
+    setLocalComments,
+    currentUser,
+    setConfirmModal,
+    editingText,
+    setEditingText,
+    setEditingCommentId,
+    t
+  });
+
+  return (
+    <div 
+      className="flex flex-col h-full flex-grow overflow-hidden relative overscroll-contain"
+      onWheel={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+    >
+      <div 
+        className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 overscroll-contain touch-pan-y custom-scrollbar"
+        style={{ touchAction: 'pan-y' }}
+      >
+        {localComments.length > visibleCount && (
+          <div className="flex justify-center pb-2">
+            <button
+              type="button"
+              onClick={() => setVisibleCount((prev) => Math.min(localComments.length, prev + 25))}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-blue-600 dark:text-[#8ab4f8] bg-blue-50 dark:bg-[#28282a] hover:bg-blue-100 dark:hover:bg-[#333336] rounded-full border border-blue-200 dark:border-blue-900/60 shadow-sm transition-all active:scale-95 touch-manipulation"
+            >
+              <ChevronUp className="w-3.5 h-3.5" />
+              <span>{t('Load older messages')} ({localComments.length - visibleCount} {t('remaining')})</span>
+            </button>
+          </div>
+        )}
+
+        {displayedComments.map((c) => {
+          const isMe = c.userId === currentUser.id;
+          const isEditing = editingCommentId === c.id;
+
+          return (
+            <ProjectCommentItem
+              key={c.id}
+              comment={c}
+              currentUser={currentUser}
+              appUsers={appUsers}
+              isMe={isMe}
+              isEditing={isEditing}
+              editingText={editingText}
+              setEditingText={setEditingText}
+              setEditingCommentId={setEditingCommentId}
+              handleEditComment={handleEditComment}
+              handleDeleteComment={handleDeleteComment}
+              projectTasks={projectTasks}
+              onOpenTask={onOpenTask}
+            />
+          );
+        })}
+
+        {localComments.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-48 text-slate-400 dark:text-[#838383] text-sm">
+            <p>{t('No comments yet. Start the conversation!')}</p>
+          </div>
+        )}
+      </div>
+
+      <ProjectChatInput
+        ref={chatInputRef}
+        onSend={handleSendFromInput}
+        appUsers={appUsers}
+        projectTasks={projectTasks}
+        project={project}
+      />
+    </div>
+  );
+});
+
