@@ -1243,25 +1243,25 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   };
 
   return (
-    <div className="flex h-full gap-2 p-1.5 sm:p-2.5 overflow-hidden">
+    <div className="flex h-full gap-1.5 p-1 overflow-hidden">
       {/* Tools Left */}
-      <div className="w-12 sm:w-14 flex flex-col gap-1.5 py-2.5 items-center bg-slate-900/80 rounded-xl border border-slate-800/80 glass z-10 shrink-0 overflow-y-auto custom-scrollbar">
+      <div className="w-9 sm:w-10 flex flex-col gap-1 py-1.5 items-center bg-slate-900/80 rounded-xl border border-slate-800/80 glass z-10 shrink-0 overflow-y-auto custom-scrollbar">
         <ToolButton icon={MousePointer2} active={activeTool === 'select'} onClick={() => setActiveTool('select')} title="Select" />
         <ToolButton icon={Move} active={activeTool === 'edit-bg'} onClick={() => setActiveTool('edit-bg')} title="Edit Background Image" />
-        <div className="w-8 h-px bg-slate-800 my-2" />
+        <div className="w-6 h-px bg-slate-800 my-1" />
         <ToolButton icon={Square} active={activeTool === 'rect'} onClick={() => setActiveTool('rect')} title="Rectangle" />
         <ToolButton icon={CircleIcon} active={activeTool === 'circle'} onClick={() => setActiveTool('circle')} title="Circle" />
         <ToolButton icon={Hexagon} active={activeTool === 'polygon'} onClick={() => setActiveTool('polygon')} title="Polygon (Double click to finish)" />
-        <div className="w-8 h-px bg-slate-800 my-2" />
+        <div className="w-6 h-px bg-slate-800 my-1" />
         <ToolButton icon={RotateCw} active={false} onClick={handleRotate} title="Rotate 90°" disabled={!selectedId || selectedUnit?.locked} />
         <ToolButton icon={Undo2} active={false} onClick={handleUndo} title="Undo (Ctrl+Z)" disabled={history.length === 0} />
         <ToolButton icon={Trash2} active={false} onClick={handleDelete} title="Delete Selected" disabled={!selectedId || selectedUnit?.locked} />
       </div>
 
       {portalNode && createPortal(
-        <div className="flex items-center gap-1 pl-2 ml-2 border-l border-slate-700">
+        <div className="flex items-center gap-0.5 pl-1.5 ml-1.5 border-l border-slate-700">
             <ToolButton icon={Magnet} active={magneticGrid} onClick={() => setMagneticGrid(!magneticGrid)} title="Magnetic Grid (0.1 Snap)" />
-            <div className="w-px h-4 bg-slate-700 mx-1" />
+            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
             <ToolButton icon={Download} active={false} onClick={handleExportUnits} title="Save Units As File" />
             <div className="relative">
               <ToolButton icon={FolderOpen} active={false} onClick={() => document.getElementById('import-units-input')?.click()} title="Open Units From File" />
@@ -1294,13 +1294,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       )}
 
       {/* Main Canvas Area */}
-      <div className="flex-1 min-h-[400px] rounded-xl border border-slate-800 shadow-xl overflow-hidden relative flex flex-col bg-[#141416]" ref={containerRef}>
+      <div className="flex-1 min-h-[360px] rounded-xl border border-slate-800 shadow-xl overflow-hidden relative flex flex-col bg-[#141416]" ref={containerRef}>
         
-        {/* Top Floating Controls */}
-        <div className="absolute top-2.5 left-2.5 right-2.5 z-20 flex justify-between items-center pointer-events-none gap-2 flex-wrap">
-            <div className="flex gap-2 pointer-events-auto items-center flex-wrap">
+        {/* Top Floating Controls - Compact 75% Density */}
+        <div className="absolute top-1.5 left-1.5 right-1.5 z-20 flex justify-between items-center pointer-events-none gap-1 flex-wrap">
+            <div className="flex gap-1 pointer-events-auto items-center flex-wrap">
                 <select 
-                    className="bg-slate-900/90 text-white text-xs font-bold uppercase tracking-wide px-4 py-2 rounded-lg border border-slate-700 outline-none backdrop-blur-md cursor-pointer"
+                    className="bg-slate-900/90 text-white text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-md border border-slate-700 outline-none backdrop-blur-md cursor-pointer"
                     value={activeVersionId || ''}
                     onChange={(e) => setActiveVersionId(e.target.value === '' ? null : e.target.value)}
                 >
@@ -1327,10 +1327,10 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                   ));
                               }
                           }}
-                          className="p-2 bg-slate-900/90 text-slate-400 hover:text-white rounded-lg border border-slate-700 backdrop-blur-md transition-colors"
+                          className="p-1 bg-slate-900/90 text-slate-400 hover:text-white rounded-md border border-slate-700 backdrop-blur-md transition-colors"
                           title="Rename Version"
                       >
-                          <Pencil size={14} />
+                          <Pencil size={12} />
                       </button>
 
                       <button 
@@ -1351,17 +1351,17 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                 }
                               }
                           }}
-                          className="p-2 bg-slate-900/90 text-rose-400 hover:text-rose-200 hover:bg-rose-900/50 rounded-lg border border-slate-700 backdrop-blur-md transition-colors"
+                          className="p-1 bg-slate-900/90 text-rose-400 hover:text-rose-200 hover:bg-rose-900/50 rounded-md border border-slate-700 backdrop-blur-md transition-colors"
                           title="Delete Version"
                       >
-                          <Trash2 size={14} />
+                          <Trash2 size={12} />
                       </button>
                     </>
                 )}
 
                 {magneticGrid && (
-                    <div className="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-700 backdrop-blur-md">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase">Grid</span>
+                    <div className="flex items-center gap-1.5 bg-slate-900/90 px-2 py-1 rounded-md border border-slate-700 backdrop-blur-md">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase">Grid</span>
                         <input 
                             type="number" 
                             min="0.1" 
@@ -1369,15 +1369,15 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                             step="0.1"
                             value={gridSize}
                             onChange={(e) => setGridSize(Math.max(0.1, Number(e.target.value) || 0.1))}
-                            className="w-16 bg-transparent text-white text-xs outline-none text-center"
+                            className="w-12 bg-transparent text-white text-[10px] outline-none text-center"
                         />
-                        <span className="text-[10px] text-slate-500 font-bold uppercase">px</span>
+                        <span className="text-[9px] text-slate-500 font-bold uppercase">px</span>
                     </div>
                 )}
                 
                 {activeTool === 'edit-bg' && (
-                    <div className="flex items-center gap-2 bg-slate-900/90 px-3 py-1.5 rounded-lg border border-slate-700 backdrop-blur-md pointer-events-auto">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">BG Zoom</span>
+                    <div className="flex items-center gap-1.5 bg-slate-900/90 px-2 py-1 rounded-md border border-slate-700 backdrop-blur-md pointer-events-auto">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase whitespace-nowrap">BG Zoom</span>
                         <input 
                             type="range" 
                             min="0.1" 
@@ -1385,23 +1385,23 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                             step="0.01"
                             value={imageScale}
                             onChange={(e) => setImageScale(Number(e.target.value))}
-                            className="w-24"
+                            className="w-20"
                         />
-                        <span className="text-[10px] text-slate-500 font-bold w-6 text-right">{(imageScale * 100).toFixed(0)}%</span>
+                        <span className="text-[9px] text-slate-500 font-bold w-6 text-right">{(imageScale * 100).toFixed(0)}%</span>
                         
-                        <div className="w-px h-4 bg-slate-700 mx-2" />
+                        <div className="w-px h-3.5 bg-slate-700 mx-1" />
                         
                         {alignStep === 'none' ? (
                             <button 
                                 onClick={() => setAlignStep('bg1')}
-                                className="text-[10px] font-bold uppercase text-brand-400 hover:text-brand-300 flex items-center gap-1"
+                                className="text-[9px] font-bold uppercase text-brand-400 hover:text-brand-300 flex items-center gap-1"
                             >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12A9 9 0 1 1 3 12a9 9 0 0 1 18 0z"></path><path d="M12 8v8"></path><path d="M8 12h8"></path></svg>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12A9 9 0 1 1 3 12a9 9 0 0 1 18 0z"></path><path d="M12 8v8"></path><path d="M8 12h8"></path></svg>
                                 2-Point Align
                             </button>
                         ) : (
-                            <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold text-amber-400">
+                            <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] font-bold text-amber-400">
                                     {alignStep === 'bg1' && "Set Point 1 (on image)"}
                                     {alignStep === 'bg2' && "Set Point 2 (on image)"}
                                     {alignStep === 'target1' && "Set Target 1a (on canvas)"}
@@ -1412,7 +1412,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                         setAlignStep('none');
                                         setAlignPts({});
                                     }}
-                                    className="text-[10px] font-bold text-red-400 hover:text-red-300 px-1"
+                                    className="text-[9px] font-bold text-red-400 hover:text-red-300 px-1"
                                 >
                                     Cancel
                                 </button>
@@ -1425,45 +1425,45 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                     <button 
                         onClick={() => setIsLocked(!isLocked)}
                         className={cn(
-                            "flex items-center gap-2 px-4 py-2 rounded-lg border backdrop-blur-md text-xs font-bold uppercase transition-all",
+                            "flex items-center gap-1 px-2.5 py-1 rounded-md border backdrop-blur-md text-[10px] font-bold uppercase transition-all",
                             isLocked ? "bg-red-500/20 text-red-400 border-red-500/50" : "bg-green-500/20 text-green-400 border-green-500/50"
                         )}
                     >
-                        <Lock size={14} /> {isLocked ? 'Unlock Grid' : 'Lock Grid'}
+                        <Lock size={11} /> {isLocked ? 'Unlock Grid' : 'Lock Grid'}
                     </button>
                 )}
                 
                 {localImageUrl && !activeVersionId && isLocked && (
                     <button 
                         onClick={handleCreateVersion}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-600 text-white border border-brand-500 text-xs font-bold uppercase shadow-lg hover:bg-brand-500"
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-brand-600 text-white border border-brand-500 text-[10px] font-bold uppercase shadow-md hover:bg-brand-500"
                     >
-                        <Save size={14} /> Save Version
+                        <Save size={11} /> Save Version
                     </button>
                 )}
                 
                 {activeVersionId && !isLocked && (
                     <button 
                         onClick={handleUpdateVersion}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600/80 text-white border border-amber-500 text-xs font-bold uppercase shadow-lg hover:bg-amber-500"
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-600/80 text-white border border-amber-500 text-[10px] font-bold uppercase shadow-md hover:bg-amber-500"
                     >
-                        <Save size={14} /> Update Version View
+                        <Save size={11} /> Update Version View
                     </button>
                 )}
             </div>
             
-            <div className="flex gap-2 items-center pointer-events-auto flex-wrap">
+            <div className="flex gap-1 items-center pointer-events-auto flex-wrap">
                 <button
                     onClick={() => setIsSummaryTableOpen(prev => !prev)}
                     className={cn(
-                        "p-2 bg-slate-900/80 hover:bg-slate-800 rounded-lg border backdrop-blur-sm transition-all flex items-center gap-1.5 shadow-sm",
+                        "px-2 py-1 bg-slate-900/80 hover:bg-slate-800 rounded-md border backdrop-blur-sm transition-all flex items-center gap-1 shadow-sm",
                         isSummaryTableOpen ? "text-emerald-400 border-emerald-500/50 bg-emerald-950/40 ring-1 ring-emerald-500/30" : "text-slate-300 border-slate-700"
                     )}
                     title="Mở Bảng Tổng Hợp So Sánh & Màu Tô Thực Tế (Dynamic Unit Summary)"
                 >
-                    <Building size={16} className="text-emerald-400" />
-                    <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Dynamic Summary</span>
-                    <span className="px-1.5 py-0.2 text-[9px] font-mono rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+                    <Building size={12} className="text-emerald-400" />
+                    <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Dynamic Summary</span>
+                    <span className="px-1 py-0.2 text-[8px] font-mono rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
                         {isSummaryTableOpen ? dynamicSummaryList.length : units.length}
                     </span>
                 </button>
@@ -1473,11 +1473,11 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                         setCopyBgSearchTerm('');
                         setIsCopyBgModalOpen(true);
                     }}
-                    className="p-2 bg-slate-900/80 hover:bg-slate-800 text-brand-400 hover:text-brand-300 rounded-lg border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1.5 shadow-sm"
+                    className="px-2 py-1 bg-slate-900/80 hover:bg-slate-800 text-brand-400 hover:text-brand-300 rounded-md border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1 shadow-sm"
                     title="Sao chép Background & cách căn chỉnh từ một Version khác (cùng Store, Tầng, Năm)"
                 >
-                    <Copy size={16} />
-                    <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Copy BG từ Version</span>
+                    <Copy size={12} />
+                    <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Copy BG từ Version</span>
                 </button>
 
                 {localImageUrl && (
@@ -1485,11 +1485,11 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                         <div className="relative">
                             <button
                                 onClick={() => document.getElementById('replace-bg-input2')?.click()}
-                                className="p-2 bg-slate-900/80 hover:bg-slate-800 text-white rounded-lg border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-2"
+                                className="px-2 py-1 bg-slate-900/80 hover:bg-slate-800 text-white rounded-md border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1"
                                 title="Thay đổi Background Image/PDF"
                             >
-                                <FileImage size={18} />
-                                <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Thay BG</span>
+                                <FileImage size={12} />
+                                <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Thay BG</span>
                             </button>
                             <input 
                                 id="replace-bg-input2"
@@ -1503,21 +1503,21 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                         {(!localImageUrl.startsWith('data:') && !localImageUrl.startsWith('blob:')) && (
                             <button
                                 onClick={handleReloadExternalBackground}
-                                className="p-2 bg-slate-900/80 hover:bg-slate-800 text-white rounded-lg border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-2"
+                                className="px-2 py-1 bg-slate-900/80 hover:bg-slate-800 text-white rounded-md border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1"
                                 title="Tải lại ảnh nền từ máy chủ (Tránh bị lưu bộ nhớ đệm)"
                             >
-                                <RefreshCw size={18} />
-                                <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Làm Mới</span>
+                                <RefreshCw size={12} />
+                                <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Làm Mới</span>
                             </button>
                         )}
                         
                         <button
                             onClick={handleRotateBackground}
-                            className="p-2 bg-slate-900/80 hover:bg-slate-800 text-white rounded-lg border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-2"
+                            className="px-2 py-1 bg-slate-900/80 hover:bg-slate-800 text-white rounded-md border border-slate-700 backdrop-blur-sm transition-all flex items-center gap-1"
                             title="Xoay Background Image/PDF (90 độ)"
                         >
-                            <RotateCw size={18} />
-                            <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Xoay BG</span>
+                            <RotateCw size={12} />
+                            <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Xoay BG</span>
                         </button>
                     </>
                 )}
@@ -1525,11 +1525,11 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                 {localImageUrl && (
                     <button 
                         onClick={toggleFullscreen}
-                        className="p-2 bg-slate-900/80 hover:bg-slate-800 text-white rounded-lg border border-slate-700 backdrop-blur-sm transition-all pointer-events-auto flex items-center gap-2"
+                        className="px-2 py-1 bg-slate-900/80 hover:bg-slate-800 text-white rounded-md border border-slate-700 backdrop-blur-sm transition-all pointer-events-auto flex items-center gap-1"
                         title="Toggle Fullscreen"
                     >
-                        {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
-                        <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Toàn Màn Hình</span>
+                        {isFullscreen ? <Minimize size={12} /> : <Maximize size={12} />}
+                        <span className="text-[9px] uppercase font-bold tracking-wider hidden sm:inline">Toàn Màn Hình</span>
                     </button>
                 )}
             </div>
@@ -1537,35 +1537,35 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
         {/* Bottom Floating Zoom & View Controls */}
         {localImageUrl && (
-          <div className="absolute bottom-3 left-3 z-20 flex items-center gap-1 p-1 bg-slate-900/90 border border-slate-700/80 rounded-xl backdrop-blur-md shadow-2xl pointer-events-auto">
+          <div className="absolute bottom-2 left-2 z-20 flex items-center gap-0.5 p-0.5 bg-slate-900/90 border border-slate-700/80 rounded-lg backdrop-blur-md shadow-xl pointer-events-auto">
             <button 
               onClick={handleZoomOut}
-              className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors"
+              className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-md transition-colors"
               title="Thu nhỏ (Zoom Out)"
             >
-              <ZoomOut size={15} />
+              <ZoomOut size={13} />
             </button>
             <button 
               onClick={handleZoomReset}
-              className="px-2 py-1 hover:bg-slate-800 text-slate-200 hover:text-white rounded-lg transition-colors text-[11px] font-mono font-bold min-w-[48px] text-center"
+              className="px-1.5 py-0.5 hover:bg-slate-800 text-slate-200 hover:text-white rounded-md transition-colors text-[10px] font-mono font-bold min-w-[40px] text-center"
               title="Đặt lại 100%"
             >
               {Math.round(scale * 100)}%
             </button>
             <button 
               onClick={handleZoomIn}
-              className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors"
+              className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-md transition-colors"
               title="Phóng to (Zoom In)"
             >
-              <ZoomIn size={15} />
+              <ZoomIn size={13} />
             </button>
-            <div className="w-px h-4 bg-slate-700 mx-0.5" />
+            <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
             <button 
               onClick={handleFitToScreen}
-              className="px-2.5 py-1 bg-brand-600/25 hover:bg-brand-600/40 text-brand-300 hover:text-brand-200 border border-brand-500/40 rounded-lg transition-colors text-[11px] font-bold flex items-center gap-1.5 shadow-sm"
+              className="px-2 py-0.5 bg-brand-600/25 hover:bg-brand-600/40 text-brand-300 hover:text-brand-200 border border-brand-500/40 rounded-md transition-colors text-[10px] font-bold flex items-center gap-1 shadow-sm"
               title="Tự động căn vừa màn hình (Fit to Screen) - Khắc phục bị crop ảnh"
             >
-              <Maximize2 size={13} />
+              <Maximize2 size={11} />
               <span>Vừa Màn Hình</span>
             </button>
           </div>
@@ -1958,41 +1958,41 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
         )}
       </div>
 
-      {/* Settings / Inspector */}
+      {/* Settings / Inspector - Compact 75% Width */}
       <div className={cn(
         "flex flex-col bg-slate-900/90 rounded-xl border border-slate-800/80 transition-all duration-300 relative shrink-0 overflow-hidden",
-        isInspectorCollapsed ? "w-10 p-2 items-center" : "w-72 sm:w-80 p-3 sm:p-4 gap-3 glass"
+        isInspectorCollapsed ? "w-9 p-1.5 items-center" : "w-56 sm:w-60 p-2 sm:p-2.5 gap-2 glass"
       )}>
         {/* Toggle Collapse Button */}
         <button 
           onClick={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
           className={cn(
-            "p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
-            isInspectorCollapsed ? "w-7 h-7 flex items-center justify-center my-1" : "absolute -left-3.5 top-3 z-30 border border-slate-700 bg-slate-900"
+            "p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
+            isInspectorCollapsed ? "w-6 h-6 flex items-center justify-center my-0.5" : "absolute right-2 top-2 z-30 border border-slate-700 bg-slate-900"
           )}
           title={isInspectorCollapsed ? "Mở rộng Inspector" : "Thu gọn Inspector để mở rộng Canvas"}
         >
-          {isInspectorCollapsed ? <ChevronLeft size={14} className="rotate-180" /> : <ChevronRight size={14} />}
+          {isInspectorCollapsed ? <ChevronLeft size={12} className="rotate-180" /> : <ChevronRight size={12} />}
         </button>
 
         {isInspectorCollapsed ? (
-          <div className="flex flex-col items-center gap-4 mt-6 text-slate-400">
-            <span className="text-[10px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
+          <div className="flex flex-col items-center gap-3 mt-4 text-slate-400">
+            <span className="text-[9px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
               INSPECTOR ({units.length})
             </span>
           </div>
         ) : (
-          <div className="flex flex-col h-full overflow-hidden w-full gap-3">
-            <div className="space-y-3 border-b border-slate-800 pb-3">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest flex items-center justify-between">
+          <div className="flex flex-col h-full overflow-hidden w-full gap-2">
+            <div className="space-y-1.5 border-b border-slate-800 pb-2">
+                <h4 className="text-[11px] font-bold text-slate-300 uppercase tracking-widest flex items-center justify-between pr-7">
                   <span>Inspector</span>
-                  <span className="text-[10px] font-normal text-slate-500 font-mono">{units.length} units</span>
+                  <span className="text-[9px] font-normal text-slate-500 font-mono">{units.length} units</span>
                 </h4>
                 <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 z-10 pointer-events-none" size={14} />
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 z-10 pointer-events-none" size={12} />
                     <DebouncedSearchInput 
                       placeholder="Search units..."
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 py-1.5 text-xs text-slate-200 outline-none focus:border-brand-500 transition-all"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-7 py-1 text-[11px] text-slate-200 outline-none focus:border-brand-500 transition-all"
                       value={librarySearchTerm}
                       onChange={(val) => setLibrarySearchTerm(val)}
                       debounceMs={250}
@@ -2001,10 +2001,10 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
             </div>
         
         {selectedId ? (
-            <div className="space-y-4">
-                <div className="grid grid-cols-12 gap-2 items-end">
-                    <div className="col-span-8 space-y-1">
-                        <label className="text-[10px] uppercase text-slate-500 font-bold block">Unit Name</label>
+            <div className="space-y-2.5">
+                <div className="grid grid-cols-12 gap-1.5 items-end">
+                    <div className="col-span-8 space-y-0.5">
+                        <label className="text-[9px] uppercase text-slate-500 font-bold block">Unit Name</label>
                         <SearchableSelect 
                             value={selectedUnit?.name || ''}
                             onChange={(val) => {
@@ -2039,8 +2039,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                             options={masterUnitOptions}
                         />
                     </div>
-                    <div className="col-span-4 space-y-1">
-                        <label className="text-[10px] uppercase text-slate-500 font-bold block">Size (m²)</label>
+                    <div className="col-span-4 space-y-0.5">
+                        <label className="text-[9px] uppercase text-slate-500 font-bold block">Size (m²)</label>
                         <UnitSizeInput
                             unitId={selectedId}
                             effectiveSize={getUnitEffectiveSizeM2(
@@ -2106,76 +2106,76 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                     </div>
                 </div>
 
-                <div className="flex items-center justify-between bg-slate-950 p-3 rounded-xl border border-slate-800">
-                    <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between bg-slate-950 p-2 rounded-lg border border-slate-800">
+                    <div className="flex items-center gap-1.5">
                         <div className={cn(
-                            "p-2 rounded-lg",
+                            "p-1.5 rounded-md",
                             selectedUnit?.locked ? "bg-amber-500/10 text-amber-500" : "bg-slate-800 text-slate-400"
                         )}>
-                            {selectedUnit?.locked ? <Lock size={16} /> : <Unlock size={16} />}
+                            {selectedUnit?.locked ? <Lock size={13} /> : <Unlock size={13} />}
                         </div>
-                        <span className="text-xs font-bold text-slate-300 uppercase">Lock Position</span>
+                        <span className="text-[10px] font-bold text-slate-300 uppercase">Lock Position</span>
                     </div>
                     <button
                         onClick={() => {
                             handleSetUnitsWithHistory(units.map(u => u.id === selectedId ? { ...u, locked: !u.locked } : u));
                         }}
                         className={cn(
-                            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none",
+                            "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none",
                             selectedUnit?.locked ? "bg-amber-500" : "bg-slate-700"
                         )}
                     >
                         <span
                             className={cn(
-                                "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                                selectedUnit?.locked ? "translate-x-6" : "translate-x-1"
+                                "inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform",
+                                selectedUnit?.locked ? "translate-x-4.5" : "translate-x-1"
                             )}
                         />
                     </button>
                 </div>
             </div>
         ) : (
-            <div className="text-center py-8 text-slate-500 text-sm italic">
+            <div className="text-center py-3 text-slate-500 text-xs italic">
                 Select a unit to edit properties
             </div>
         )}
 
-        <div className="mt-8 border-t border-slate-800 pt-4 flex-1 overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Library ({filteredUnits.length}/{units.length})</h4>
-                <div className="flex items-center gap-2">
+        <div className="mt-2 border-t border-slate-800 pt-2.5 flex-1 overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between mb-2">
+                <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Library ({filteredUnits.length}/{units.length})</h4>
+                <div className="flex items-center gap-1.5">
                     <button 
                         onClick={handleToggleAllVisibility}
                         disabled={filteredUnits.length === 0 || !filteredUnits.some(u => !u.locked)}
-                        className="text-[10px] font-bold text-brand-400 hover:text-brand-300 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-1"
+                        className="text-[9px] font-bold text-brand-400 hover:text-brand-300 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
                         title="Toggle Visibility for Unlocked Filtered Units"
                     >
-                        <Eye size={10} /> All
+                        <Eye size={9} /> All
                     </button>
                     <button 
                         onClick={handleToggleAllLock}
                         disabled={filteredUnits.length === 0}
-                        className="text-[10px] font-bold text-amber-500 hover:text-amber-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-1"
+                        className="text-[9px] font-bold text-amber-500 hover:text-amber-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
                         title="Toggle Lock for Filtered Units"
                     >
-                        {filteredUnits.length > 0 && filteredUnits.every(u => u.locked) ? <Unlock size={10} /> : <Lock size={10} />} All
+                        {filteredUnits.length > 0 && filteredUnits.every(u => u.locked) ? <Unlock size={9} /> : <Lock size={9} />} All
                     </button>
                     <button 
                         onClick={handleDeleteAll}
                         disabled={filteredUnits.length === 0 || !filteredUnits.some(u => !u.locked)}
-                        className="text-[10px] font-bold text-red-500 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-1"
+                        className="text-[9px] font-bold text-red-500 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed uppercase transition-colors flex items-center gap-0.5"
                         title="Delete All Unlocked Filtered Units"
                     >
-                        <Trash2 size={10} /> All
+                        <Trash2 size={9} /> All
                     </button>
                 </div>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1">
                 {filteredUnits.length > 0 ? filteredUnits.map(unit => (
                     <div 
                         key={unit.id}
                         className={cn(
-                            "flex items-center justify-between p-2 rounded-lg border text-sm cursor-pointer transition-colors",
+                            "flex items-center justify-between px-2 py-1 rounded-md border text-xs cursor-pointer transition-colors",
                             selectedId === unit.id ? "bg-brand-900/20 border-brand-500/50 text-brand-300" : "bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800"
                         )}
                         onClick={() => {
@@ -2187,8 +2187,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                             }
                         }}
                     >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="truncate max-w-[100px]">{unit.name}</span>
+                        <div className="flex items-center gap-1 min-w-0">
+                            <span className="truncate max-w-[90px] font-medium">{unit.name}</span>
                             {(() => {
                                 const uSize = getUnitEffectiveSizeM2(
                                     unit,
@@ -2196,13 +2196,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                     unit.name ? summaryMap.get(unit.name)?.size : undefined
                                 );
                                 return uSize > 0 ? (
-                                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold shrink-0">
+                                    <span className="px-1 py-0.2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[9px] font-mono font-bold shrink-0">
                                         {uSize}m²
                                     </span>
                                 ) : null;
                             })()}
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-0.5">
                              <button 
                                 onClick={(e) => {
                                     e.stopPropagation();
@@ -2212,13 +2212,13 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                 }}
                                 disabled={unit.locked}
                                 className={cn(
-                                    "p-1 rounded transition-colors",
+                                    "p-0.5 rounded transition-colors",
                                     unit.visible ? "text-brand-400 hover:bg-brand-500/10" : "text-slate-600 hover:bg-slate-700",
                                     unit.locked && "opacity-30 cursor-not-allowed"
                                 )}
                                 title={unit.locked ? "Unlock to toggle visibility" : (unit.visible ? "Hide Unit" : "Show Unit")}
                              >
-                                {unit.visible ? <Eye size={12} /> : <EyeOff size={12} />}
+                                {unit.visible ? <Eye size={11} /> : <EyeOff size={11} />}
                              </button>
                              <button 
                                 onClick={(e) => {
@@ -2226,17 +2226,17 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                     handleSetUnitsWithHistory(units.map(u => u.id === unit.id ? { ...u, locked: !u.locked } : u));
                                 }}
                                 className={cn(
-                                    "p-1 rounded transition-colors",
+                                    "p-0.5 rounded transition-colors",
                                     unit.locked ? "text-amber-500 hover:bg-amber-500/10" : "text-slate-500 hover:bg-slate-700"
                                 )}
                              >
-                                {unit.locked ? <Lock size={12} /> : <Unlock size={12} />}
+                                {unit.locked ? <Lock size={11} /> : <Unlock size={11} />}
                              </button>
-                             <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: (unit.fill && unit.fill !== 'rgba(0, 0, 0, 0.001)' && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0')) ? unit.fill : '#3b82f6' }} />
+                             <div className="w-2.5 h-2.5 rounded-xs flex-shrink-0 ml-0.5" style={{ backgroundColor: (unit.fill && unit.fill !== 'rgba(0, 0, 0, 0.001)' && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0')) ? unit.fill : '#3b82f6' }} />
                         </div>
                     </div>
                 )) : (
-                    <div className="text-center py-4 text-slate-600 text-xs italic">
+                    <div className="text-center py-3 text-slate-600 text-[11px] italic">
                         No units match your search
                     </div>
                 )}
@@ -2532,12 +2532,12 @@ function ToolButton({ icon: Icon, active, onClick, title, disabled }: { icon: an
             onClick={onClick}
             disabled={disabled}
             className={cn(
-                "p-2 sm:p-2.5 rounded-lg transition-all flex items-center justify-center",
+                "p-1.5 rounded-md transition-all flex items-center justify-center",
                 disabled ? "opacity-30 cursor-not-allowed" : "hover:bg-slate-800",
                 active ? "bg-brand-600/30 text-brand-300 shadow-inner" : "text-slate-400"
             )}
         >
-            <Icon size={17} />
+            <Icon size={14} />
         </button>
     )
 }

@@ -724,63 +724,63 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
   }
 
   return (
-    <div className="flex flex-col h-full gap-2 p-1.5 sm:p-2.5 overflow-hidden">
-      {/* Selection Header */}
-      <div className="flex items-center justify-between p-2.5 sm:p-3 bg-slate-900/90 rounded-xl border border-slate-800 glass relative z-50 flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-brand-600/20 text-brand-400 rounded-lg flex items-center justify-center">
-            <Eye size={18} />
+    <div className="flex flex-col h-full gap-1.5 p-1 overflow-hidden">
+      {/* Selection Header - Compact 75% Density */}
+      <div className="flex items-center justify-between py-1.5 px-2.5 bg-slate-900/90 rounded-lg border border-slate-800 glass relative z-50 flex-wrap gap-1.5">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 bg-brand-600/20 text-brand-400 rounded-md flex items-center justify-center">
+            <Eye size={13} />
           </div>
           <div>
-            <h4 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">Mapping Review</h4>
-            <p className="text-[9px] sm:text-[10px] text-slate-500 uppercase font-bold tracking-tight">XEM TRƯỚC PHIÊN BẢN THEO NHÓM</p>
+            <h4 className="text-[11px] font-bold text-white uppercase tracking-wider leading-tight">Mapping Review</h4>
+            <p className="text-[8px] text-slate-500 uppercase font-bold tracking-tight leading-tight">XEM TRƯỚC PHIÊN BẢN THEO NHÓM</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <button
             onClick={() => setIsSummaryTableOpen(prev => !prev)}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all shadow-md",
+              "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase transition-all shadow-sm",
               isSummaryTableOpen 
-                ? "bg-emerald-600 text-white border border-emerald-400 ring-2 ring-emerald-500/30 shadow-emerald-900/30" 
+                ? "bg-emerald-600 text-white border border-emerald-400 ring-1 ring-emerald-500/30 shadow-emerald-900/30" 
                 : "bg-slate-950 hover:bg-slate-800 text-emerald-400 border border-slate-800 hover:border-emerald-500/50"
             )}
             title="Mở Bảng Tổng Hợp So Sánh & Màu Tô Thực Tế (Dynamic Unit Summary)"
           >
-            <Building size={13} className="text-emerald-400" />
+            <Building size={11} className="text-emerald-400" />
             <span>Summary Table</span>
-            <span className="px-1.5 py-0.2 text-[9px] font-mono rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
+            <span className="px-1 py-0.2 text-[8px] font-mono rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">
               {dynamicSummaryList.length}
             </span>
           </button>
 
           <button
             onClick={applyAllDynamicRules}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold uppercase transition-colors shadow-lg shadow-brand-900/20 box-border border border-brand-400"
+            className="flex items-center gap-1 px-2 py-1 rounded-md bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold uppercase transition-colors shadow-md shadow-brand-900/20 box-border border border-brand-400"
           >
-            <Calculator size={13} /> Apply Rules
+            <Calculator size={11} /> Apply Rules
           </button>
           
-          <div className="flex bg-slate-950 border border-slate-800 rounded-lg p-0.5">
-             <button onClick={handleExportJPEG} title="Save to JPEG" className="px-2.5 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded flex items-center justify-center transition-colors text-xs">
-               <Camera size={13} className="mr-1.5" /> JPEG
+          <div className="flex bg-slate-950 border border-slate-800 rounded-md p-0.5">
+             <button onClick={handleExportJPEG} title="Save to JPEG" className="px-2 py-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded flex items-center justify-center transition-colors text-[10px]">
+               <Camera size={11} className="mr-1" /> JPEG
              </button>
-             <button onClick={handleExportPDF} title="Save to PDF" className="px-2.5 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded flex items-center justify-center transition-colors text-xs">
-               <FileDown size={13} className="mr-1.5" /> PDF
+             <button onClick={handleExportPDF} title="Save to PDF" className="px-2 py-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded flex items-center justify-center transition-colors text-[10px]">
+               <FileDown size={11} className="mr-1" /> PDF
              </button>
-             <button onClick={handleExportDrive} title="Upload to Google Drive" className="px-2.5 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-brand-400 rounded flex items-center justify-center transition-colors text-xs">
-               <CloudUpload size={13} className="mr-1.5" /> Drive
+             <button onClick={handleExportDrive} title="Upload to Google Drive" className="px-2 py-1 hover:bg-slate-800 text-slate-400 hover:text-brand-400 rounded flex items-center justify-center transition-colors text-[10px]">
+               <CloudUpload size={11} className="mr-1" /> Drive
              </button>
-             <button onClick={handleExportR2} title="Upload to Cloudflare R2" className="px-2.5 py-1.5 hover:bg-slate-800 text-slate-400 hover:text-amber-400 rounded flex items-center justify-center transition-colors text-xs">
-               <CloudUpload size={13} className="mr-1.5" /> R2 Cloud
+             <button onClick={handleExportR2} title="Upload to Cloudflare R2" className="px-2 py-1 hover:bg-slate-800 text-slate-400 hover:text-amber-400 rounded flex items-center justify-center transition-colors text-[10px]">
+               <CloudUpload size={11} className="mr-1" /> R2 Cloud
              </button>
              <div className="relative">
                 <button 
                   onClick={() => setShowLabelSettings(!showLabelSettings)} 
-                  className={cn("px-2.5 py-1.5 rounded flex items-center justify-center transition-colors text-xs", showLabelSettings ? "bg-brand-600 text-white" : "hover:bg-slate-800 text-slate-400 hover:text-brand-400")}
+                  className={cn("px-2 py-1 rounded flex items-center justify-center transition-colors text-[10px]", showLabelSettings ? "bg-brand-600 text-white" : "hover:bg-slate-800 text-slate-400 hover:text-brand-400")}
                 >
-                  <Tags size={13} className="mr-1.5" /> Labels
+                  <Tags size={11} className="mr-1" /> Labels
                 </button>
                 {showLabelSettings && (
                   <div className="absolute top-full right-0 mt-2 bg-slate-900 border border-slate-700 rounded-lg shadow-xl p-3 w-56 z-[9999] flex flex-col gap-2 max-h-[60vh] overflow-y-auto">
@@ -813,15 +813,15 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
              </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {/* Year Filter */}
-            <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 px-2.5 py-1.5 rounded-lg shadow-inner">
-              <Calendar size={12} className="text-brand-400" />
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Year:</span>
+            <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 px-2 py-1 rounded-md shadow-inner">
+              <Calendar size={11} className="text-brand-400" />
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Year:</span>
               <select
                 value={effectiveYear}
                 onChange={(e) => setGlobalYearFilter(e.target.value)}
-                className="bg-transparent border-none text-xs text-white font-bold outline-none cursor-pointer hover:text-brand-300 transition-colors"
+                className="bg-transparent border-none text-[11px] text-white font-bold outline-none cursor-pointer hover:text-brand-300 transition-colors"
                 title="Filter Review by Year"
               >
                 {availableYears.map(y => (
@@ -830,18 +830,18 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
               </select>
             </div>
 
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest hidden sm:inline">Version:</span>
+            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest hidden sm:inline">Version:</span>
             <select 
               value={activeVersionId || ''} 
               onChange={(e) => setActiveVersionId(e.target.value)}
-              className="bg-slate-950 border border-slate-800 text-slate-300 text-xs font-bold rounded-lg px-3 py-1.5 outline-none focus:border-brand-500 transition-all min-w-[140px] uppercase tracking-wider cursor-pointer hover:border-brand-500"
+              className="bg-slate-950 border border-slate-800 text-slate-300 text-[10px] font-bold rounded-md px-2.5 py-1 outline-none focus:border-brand-500 transition-all min-w-[120px] uppercase tracking-wider cursor-pointer hover:border-brand-500"
             >
               {filteredVersions.length === 0 && <option value="">No versions for {location} ({effectiveYear})</option>}
               {filteredVersions.map(v => (
                 <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>
-            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 text-slate-300 border border-slate-800 text-[11px] font-semibold">
+            <div className="hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-950 text-slate-300 border border-slate-800 text-[10px] font-semibold">
               <span className="text-brand-400 font-bold">{store}</span>
               <span className="text-slate-600">•</span>
               <span className="text-purple-400 font-bold">{location}</span>
@@ -850,9 +850,9 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
         </div>
       </div>
 
-      <div className="flex-1 flex gap-2 overflow-hidden">
+      <div className="flex-1 flex gap-1.5 overflow-hidden">
         {/* Main Preview Area */}
-        <div className="flex-1 min-h-[400px] rounded-xl border border-slate-800 shadow-xl overflow-hidden relative bg-[#141416]" ref={containerRef}>
+        <div className="flex-1 min-h-[360px] rounded-xl border border-slate-800 shadow-xl overflow-hidden relative bg-[#141416]" ref={containerRef}>
           
           {/* Bottom Floating Zoom & View Controls */}
           <div className="absolute bottom-3 left-3 z-20 flex items-center gap-1 p-1 bg-slate-900/90 border border-slate-700/80 rounded-xl backdrop-blur-md shadow-2xl pointer-events-auto">
@@ -1002,34 +1002,34 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
           </Stage>
         </div>
 
-        {/* Info Legend Right */}
+        {/* Info Legend Right - Compact 75% Width */}
         <div className={cn(
           "flex flex-col bg-slate-900/90 rounded-xl border border-slate-800/80 transition-all duration-300 relative shrink-0 overflow-hidden",
-          isReviewSidebarCollapsed ? "w-10 p-2 items-center" : "w-72 sm:w-80 p-3 sm:p-4 gap-3 glass"
+          isReviewSidebarCollapsed ? "w-9 p-1.5 items-center" : "w-56 sm:w-60 p-2 sm:p-2.5 gap-2 glass"
         )}>
           {/* Toggle Collapse Button */}
           <button 
             onClick={() => setIsReviewSidebarCollapsed(!isReviewSidebarCollapsed)}
             className={cn(
-              "p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
-              isReviewSidebarCollapsed ? "w-7 h-7 flex items-center justify-center my-1" : "absolute -left-3.5 top-3 z-30 border border-slate-700 bg-slate-900"
+              "p-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
+              isReviewSidebarCollapsed ? "w-6 h-6 flex items-center justify-center my-0.5" : "absolute right-2 top-2 z-30 border border-slate-700 bg-slate-900"
             )}
             title={isReviewSidebarCollapsed ? "Mở rộng Legend & Groups" : "Thu gọn để mở rộng Canvas"}
           >
-            {isReviewSidebarCollapsed ? <ChevronLeft size={14} className="rotate-180" /> : <ChevronRight size={14} />}
+            {isReviewSidebarCollapsed ? <ChevronLeft size={12} className="rotate-180" /> : <ChevronRight size={12} />}
           </button>
 
           {isReviewSidebarCollapsed ? (
-            <div className="flex flex-col items-center gap-4 mt-6 text-slate-400">
-              <span className="text-[10px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
+            <div className="flex flex-col items-center gap-3 mt-4 text-slate-400">
+              <span className="text-[9px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
                 LEGEND & GROUPS
               </span>
             </div>
           ) : (
-            <div className="flex flex-col h-full overflow-hidden w-full gap-3">
-              <div className="flex border-b border-slate-800 pb-2 mb-1 items-center justify-between">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Legend / Groups</h4>
-                <span className="text-[10px] text-slate-500 font-mono">
+            <div className="flex flex-col h-full overflow-hidden w-full gap-2">
+              <div className="flex border-b border-slate-800 pb-1.5 mb-0.5 items-center justify-between pr-7">
+                <h4 className="text-[11px] font-bold text-slate-300 uppercase tracking-widest">Legend / Groups</h4>
+                <span className="text-[9px] text-slate-500 font-mono">
                   {activeVersion?.groups.filter(g => (activeVersion?.groupMappings[g.id] || []).length > 0).length || 0} groups
                 </span>
               </div>

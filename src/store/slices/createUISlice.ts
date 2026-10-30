@@ -158,6 +158,12 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
     safeSetItemLocal("taka_print_filter_header", String(val));
     set({ printFilterHeader: val });
   },
+
+  printShowColorLegend: safeGetItemLocal("taka_print_show_color_legend") !== "false",
+  setPrintShowColorLegend: (val) => {
+    safeSetItemLocal("taka_print_show_color_legend", String(val));
+    set({ printShowColorLegend: val });
+  },
   
   printScaleMode: (safeGetItemLocal("taka_print_scale_mode") as any) || "default",
   setPrintScaleMode: (val) => {

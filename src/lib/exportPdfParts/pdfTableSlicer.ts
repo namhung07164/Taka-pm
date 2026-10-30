@@ -322,6 +322,111 @@ export async function exportLayoutPlanToPdf(params: {
 
   pdf.addImage(dataUrl, 'JPEG', xPos, yPos, targetW, targetH, undefined, 'FAST');
 
+  // Render Color Legend on PDF if enabled in Print Preview
+  const legendBridge = (window as any).__taka_layout_print_legend;
+  if (legendBridge && legendBridge.show) {
+    try {
+      const hexToRgb = (hex: string): [number, number, number] => {
+        const clean = String(hex || '#3b82f6').replace('#', '').trim();
+        if (clean.length === 3) {
+          return [
+            parseInt(clean[0] + clean[0], 16) || 59,
+            parseInt(clean[1] + clean[1], 16) || 130,
+            parseInt(clean[2] + clean[2], 16) || 246,
+          ];
+        }
+        const num = parseInt(clean.slice(0, 6), 16);
+        if (isNaN(num)) return [59, 130, 246];
+        return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+      };
+
+      const rawGroups: any[] =
+        Array.isArray(legendBridge.activeGroups) && legendBridge.activeGroups.length > 0
+          ? legendBridge.activeGroups
+          : [
+              { id: 'completed', name: 'Completed', color: '#10b981' },
+              { id: 'on_process', name: 'On Process', color: '#3b82f6' },
+              { id: 'upcoming', name: 'Upcoming', color: '#f59e0b' },
+              { id: 'delay', name: 'Delay', color: '#f43f5e' },
+            ];
+
+      const items = rawGroups.map((g: any) => {
+        let label = String(g.name || '');
+        if (g.matchCount !== undefined) {
+          const areaStr =
+            g.totalArea > 0
+              ? ` • ${Number(g.totalArea).toLocaleString('en-US', { maximumFractionDigits: 1 })} m²`
+              : '';
+          const pctStr = g.areaPercent ? ` • ${Number(g.areaPercent).toFixed(1)}%` : '';
+          label += ` (${g.matchCount} ${g.matchCount === 1 ? 'unit' : 'units'}${areaStr}${pctStr})`;
+        }
+        return { label, color: g.color || '#3b82f6' };
+      });
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.5);
+      const maxItemWidth = items.reduce((maxW, it) => {
+        const w = pdf.getTextWidth(it.label) + 8;
+        return Math.max(maxW, w);
+      }, 48);
+
+      const boxW = Math.min(targetW * 0.48, Math.max(54, maxItemWidth + 6));
+      const rowH = 4.6;
+      const boxH = 8 + items.length * rowH + 2;
+
+      const relRect =
+        typeof legendBridge.getRelativeRect === 'function' ? legendBridge.getRelativeRect() : null;
+      let boxX = xPos + 4;
+      let boxY = yPos + targetH - boxH - 4;
+      if (relRect) {
+        boxX = xPos + relRect.relX * targetW;
+        boxY = yPos + relRect.relY * targetH;
+        // Clamp inside the PDF page
+        boxX = Math.max(margin, Math.min(pdfPageWidth - margin - boxW, boxX));
+        boxY = Math.max(topOffset, Math.min(pdfPageHeight - margin - 5 - boxH, boxY));
+      }
+
+      // Draw white card with dark slate border
+      pdf.setFillColor(255, 255, 255);
+      pdf.setDrawColor(30, 41, 59);
+      pdf.setLineWidth(0.4);
+      pdf.roundedRect(boxX, boxY, boxW, boxH, 2, 2, 'FD');
+
+      // Header text
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text('COLOR LEGEND', boxX + 3, boxY + 4.8);
+
+      const scopeText = `${legendBridge.storeFilter || ''} • ${legendBridge.targetLoc || ''}${
+        legendBridge.versionYear ? ` (${legendBridge.versionYear})` : ''
+      }`;
+      pdf.setFontSize(6.8);
+      pdf.setTextColor(71, 85, 105);
+      pdf.text(scopeText, boxX + boxW - 3, boxY + 4.8, { align: 'right' });
+
+      pdf.setDrawColor(203, 213, 225);
+      pdf.setLineWidth(0.2);
+      pdf.line(boxX + 2.5, boxY + 6.4, boxX + boxW - 2.5, boxY + 6.4);
+
+      items.forEach((it, idx) => {
+        const iy = boxY + 8.2 + idx * rowH;
+        const [r, g, b] = hexToRgb(it.color);
+        pdf.setFillColor(r, g, b);
+        pdf.setDrawColor(100, 116, 139);
+        pdf.setLineWidth(0.2);
+        pdf.rect(boxX + 3, iy, 3, 3, 'FD');
+
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(7);
+        pdf.setTextColor(15, 23, 42);
+        pdf.text(it.label, boxX + 7.5, iy + 2.4);
+      });
+    } catch {
+      // Ignore legend PDF drawing errors
+    }
+  }
+
   if (printWatermark && printWatermark !== 'none') {
     try {
       pdf.saveGraphicsState();

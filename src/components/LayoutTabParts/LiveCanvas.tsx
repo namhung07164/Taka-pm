@@ -332,22 +332,24 @@ export const LiveCanvas = React.memo(function LiveCanvas({
         </div>
       )}
 
-      {/* Compact Color Legend Bar with Export Integration */}
-      <LayoutColorLegendBar
-        layoutTooltipVisibility={layoutTooltipVisibility}
-        activeGroups={activeGroups}
-        selectedLegendGroupId={selectedLegendGroupId}
-        setSelectedLegendGroupId={setSelectedLegendGroupId}
-        setShowLegendModal={setShowLegendModal}
-        isLegendStripCollapsed={isLegendStripCollapsed}
-        setIsLegendStripCollapsed={setIsLegendStripCollapsed}
-        canWrite={canWrite}
-        handleTriggerExport={handleTriggerExport}
-        isExporting={isExporting}
-        exportStatus={exportStatus}
-        handleExport={stageInteractions.handleExport}
-        setIsPrintPreview={setIsPrintPreview}
-      />
+      {/* Compact Color Legend Bar with Export Integration (Hidden in Print Preview where LayoutPrintLegendOverlay is active) */}
+      {!isPrintPreview && (
+        <LayoutColorLegendBar
+          layoutTooltipVisibility={layoutTooltipVisibility}
+          activeGroups={activeGroups}
+          selectedLegendGroupId={selectedLegendGroupId}
+          setSelectedLegendGroupId={setSelectedLegendGroupId}
+          setShowLegendModal={setShowLegendModal}
+          isLegendStripCollapsed={isLegendStripCollapsed}
+          setIsLegendStripCollapsed={setIsLegendStripCollapsed}
+          canWrite={canWrite}
+          handleTriggerExport={handleTriggerExport}
+          isExporting={isExporting}
+          exportStatus={exportStatus}
+          handleExport={stageInteractions.handleExport}
+          setIsPrintPreview={setIsPrintPreview}
+        />
+      )}
 
       {/* Full Color Legend Modal / Drawer (iOS friendly) */}
       <LayoutColorLegendModal

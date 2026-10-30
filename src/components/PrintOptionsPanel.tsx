@@ -38,6 +38,8 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
   const setPrintWatermark = useAppStore(state => state.setPrintWatermark);
   const printFilterHeader = useAppStore(state => state.printFilterHeader);
   const setPrintFilterHeader = useAppStore(state => state.setPrintFilterHeader);
+  const printShowColorLegend = useAppStore(state => state.printShowColorLegend);
+  const setPrintShowColorLegend = useAppStore(state => state.setPrintShowColorLegend);
   const printDate = useAppStore(state => state.printDate);
   const setPrintDate = useAppStore(state => state.setPrintDate);
   const printRangeType = useAppStore(state => state.printRangeType);
@@ -367,17 +369,36 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
           </select>
         </div>
 
-        {/* Header & Date Checkboxes */}
+        {/* Header, Legend & Date Checkboxes */}
         <div className="flex flex-col gap-2 justify-center mt-2">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={printFilterHeader}
-              onChange={() => setPrintFilterHeader(!printFilterHeader)}
-              className="w-4 h-4 cursor-pointer text-blue-600 rounded"
-            />
-            <span className="text-xs font-bold text-slate-700 dark:text-[#e3e3e3]">Show Filter Header</span>
-          </label>
+          {activeTab === "layout" ? (
+            <div className="flex flex-col gap-1 p-2 rounded-lg bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-800/50">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={printShowColorLegend}
+                  onChange={() => setPrintShowColorLegend(!printShowColorLegend)}
+                  className="w-4 h-4 cursor-pointer text-purple-600 rounded"
+                />
+                <span className="text-xs font-bold text-slate-800 dark:text-[#e3e3e3]">Show Color Legend</span>
+              </label>
+              {printShowColorLegend && (
+                <span className="text-[10px] font-medium text-purple-700 dark:text-purple-300 pl-6 leading-tight">
+                  Drag the Color Legend box freely on the layout preview to position it.
+                </span>
+              )}
+            </div>
+          ) : (
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={printFilterHeader}
+                onChange={() => setPrintFilterHeader(!printFilterHeader)}
+                className="w-4 h-4 cursor-pointer text-blue-600 rounded"
+              />
+              <span className="text-xs font-bold text-slate-700 dark:text-[#e3e3e3]">Show Filter Header</span>
+            </label>
+          )}
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
