@@ -130,11 +130,13 @@ export const DetailTableView = memo(function DetailTableView({
 }: DetailTableViewProps) {
   const isDraggingActive = draggingTaskIds.length > 0;
   const dragPointerYRef = useRef<number | null>(null);
+  const lockedDragRangeRef = useRef<{ minStart: number; maxEnd: number; baseStart: number; basePaddingTop: number } | null>(null);
 
-  // Smooth 60fps upward & downward auto-scroll when dragging tasks near top (including over sticky header or above container) or bottom
+  // Smooth 60fps upward & downward auto-scroll when dragging tasks near top sticky header or bottom edge
   useEffect(() => {
     if (!isDraggingActive) {
       dragPointerYRef.current = null;
+      lockedDragRangeRef.current = null;
       return;
     }
 
@@ -149,8 +151,8 @@ export const DetailTableView = memo(function DetailTableView({
       if (
         e.clientX >= rect.left - 40 &&
         e.clientX <= rect.right + 40 &&
-        e.clientY >= rect.top - 140 &&
-        e.clientY <= rect.bottom + 140
+        e.clientY >= rect.top - 120 &&
+        e.clientY <= rect.bottom + 120
       ) {
         e.preventDefault();
         if (e.dataTransfer) {
@@ -164,23 +166,23 @@ export const DetailTableView = memo(function DetailTableView({
       const clientY = dragPointerYRef.current;
       if (container && clientY !== null) {
         const rect = container.getBoundingClientRect();
-        // Top trigger zone: 105px inside top of scroll container (covers sticky thead + top rows) up to 150px above container
-        const topZoneBottom = rect.top + 105;
-        const bottomZoneTop = rect.bottom - 90;
+        // Only auto-scroll when cursor is pushed into the top 44px (sticky thead) or bottom 44px edge
+        const topZoneBottom = rect.top + 44;
+        const bottomZoneTop = rect.bottom - 44;
 
-        if (clientY < topZoneBottom && clientY > rect.top - 150 && container.scrollTop > 0) {
+        if (clientY < topZoneBottom && clientY > rect.top - 120 && container.scrollTop > 0) {
           const dist = topZoneBottom - clientY;
-          const intensity = Math.min(1, Math.max(0.15, dist / 110));
-          const delta = Math.round(4 + intensity * 20);
+          const intensity = Math.min(1, Math.max(0.15, dist / 80));
+          const delta = Math.round(3 + intensity * 14);
           container.scrollTop = Math.max(0, container.scrollTop - delta);
         } else if (
           clientY > bottomZoneTop &&
-          clientY < rect.bottom + 150 &&
+          clientY < rect.bottom + 120 &&
           container.scrollTop < container.scrollHeight - container.clientHeight
         ) {
           const dist = clientY - bottomZoneTop;
-          const intensity = Math.min(1, Math.max(0.15, dist / 110));
-          const delta = Math.round(4 + intensity * 20);
+          const intensity = Math.min(1, Math.max(0.15, dist / 80));
+          const delta = Math.round(3 + intensity * 14);
           container.scrollTop = Math.min(
             container.scrollHeight - container.clientHeight,
             container.scrollTop + delta
@@ -199,9 +201,10 @@ export const DetailTableView = memo(function DetailTableView({
     };
   }, [isDraggingActive, tableContainerRef]);
 
-  // Expand virtual slice if a dragged row is outside [startIndex, endIndex] so the browser never unmounts the active draggable <tr> mid-drag
+  // Expand virtual slice monotonically during active drag so rows above the viewport never unmount/remount mid-drag (eliminating scroll height jumps)
   const { effectiveStartIndex, effectiveEndIndex, effectivePaddingTop, effectivePaddingBottom } = useMemo(() => {
     if (!isDraggingActive) {
+      lockedDragRangeRef.current = null;
       return {
         effectiveStartIndex: startIndex,
         effectiveEndIndex: endIndex,
@@ -209,9 +212,20 @@ export const DetailTableView = memo(function DetailTableView({
         effectivePaddingBottom: paddingBottom,
       };
     }
+
+    if (!lockedDragRangeRef.current) {
+      lockedDragRangeRef.current = {
+        minStart: startIndex,
+        maxEnd: endIndex,
+        baseStart: startIndex,
+        basePaddingTop: paddingTop,
+      };
+    }
+
     const dragSet = new Set(draggingTaskIds);
-    let minIdx = startIndex;
-    let maxIdx = endIndex;
+    let minIdx = Math.min(lockedDragRangeRef.current.minStart, startIndex);
+    let maxIdx = Math.max(lockedDragRangeRef.current.maxEnd, endIndex);
+
     for (let i = 0; i < flatTableRows.length; i++) {
       const r = flatTableRows[i];
       if (r.type === 'task' && dragSet.has(r.task.id)) {
@@ -219,26 +233,23 @@ export const DetailTableView = memo(function DetailTableView({
         if (i + 1 > maxIdx) maxIdx = i + 1;
       }
     }
-    if (minIdx === startIndex && maxIdx === endIndex) {
-      return {
-        effectiveStartIndex: startIndex,
-        effectiveEndIndex: endIndex,
-        effectivePaddingTop: paddingTop,
-        effectivePaddingBottom: paddingBottom,
-      };
-    }
+
+    lockedDragRangeRef.current.minStart = minIdx;
+    lockedDragRangeRef.current.maxEnd = maxIdx;
+
     let removedTop = 0;
-    for (let i = minIdx; i < startIndex; i++) {
+    for (let i = minIdx; i < lockedDragRangeRef.current.baseStart; i++) {
       removedTop += flatTableRows[i]?.type === 'project' ? 46 : 42;
     }
     let removedBottom = 0;
     for (let i = endIndex; i < maxIdx; i++) {
       removedBottom += flatTableRows[i]?.type === 'project' ? 46 : 42;
     }
+
     return {
       effectiveStartIndex: minIdx,
       effectiveEndIndex: maxIdx,
-      effectivePaddingTop: Math.max(0, paddingTop - removedTop),
+      effectivePaddingTop: Math.max(0, lockedDragRangeRef.current.basePaddingTop - removedTop),
       effectivePaddingBottom: Math.max(0, paddingBottom - removedBottom),
     };
   }, [isDraggingActive, draggingTaskIds, flatTableRows, startIndex, endIndex, paddingTop, paddingBottom]);

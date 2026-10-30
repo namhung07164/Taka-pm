@@ -282,6 +282,11 @@ export const LiveCanvas = React.memo(function LiveCanvas({
         targetLoc={targetLoc}
         version={version}
         activeGroups={activeGroups}
+        bgImage={bgImage}
+        units={units}
+        stageScale={stageInteractions.stageScale}
+        stagePos={stageInteractions.stagePos}
+        dimensions={stageInteractions.dimensions}
       />
       
       {/* Floating Focus Unit Banner with Cancel / Exit Button */}

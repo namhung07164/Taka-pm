@@ -88,12 +88,15 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
       onDragEnd={onDragEnd}
       onDrop={(e) => onDrop(e, t, p)}
       className={cn(
-        "table-row-optimized h-[42px] border-b border-slate-100 dark:border-[#333336] transition-colors duration-500 relative",
+        "table-row-optimized h-[42px] border-b border-slate-100 dark:border-[#333336] relative",
+        !isDragOver && "transition-colors duration-300",
         item.taskIndex % 2 === 0 ? "bg-white dark:bg-[#1e1e20]" : "bg-slate-50/50 dark:bg-[#252528]",
         isSelected && "bg-blue-50/80 dark:bg-blue-900/20",
         isDragging && "opacity-40",
         isFocused && "ring-2 ring-blue-500 z-10",
-        isFlashed && "ring-2 ring-emerald-500/80 bg-emerald-50/80 dark:bg-emerald-950/60 z-10 shadow-sm"
+        isFlashed && "ring-2 ring-emerald-500/80 bg-emerald-50/80 dark:bg-emerald-950/60 z-10 shadow-sm",
+        isDragOver && dropPosition === 'before' && "[&>td]:shadow-[inset_0_3px_0_0_#3b82f6]",
+        isDragOver && dropPosition === 'after' && "[&>td]:shadow-[inset_0_-3px_0_0_#3b82f6]"
       )}
     >
       {visibleColumns.includes('drag') && (
@@ -354,15 +357,6 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
             )}
           </div>
         </td>
-      )}
-      {isDragOver && dropPosition && (
-        <td
-          colSpan={visibleColumns.length}
-          className={cn(
-            "absolute left-0 right-0 h-1 bg-blue-500 pointer-events-none z-20",
-            dropPosition === 'before' ? "top-0" : "bottom-0"
-          )}
-        />
       )}
     </tr>
   );

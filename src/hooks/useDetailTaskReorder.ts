@@ -317,7 +317,21 @@ export function useDetailTaskReorder({
     if (draggingTaskIdsRef.current.includes(taskId)) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const relY = e.clientY - rect.top;
-    const pos: 'before' | 'after' = relY < rect.height / 2 ? 'before' : 'after';
+    const midY = rect.height / 2;
+
+    let pos: 'before' | 'after';
+    if (dragOverTaskIdRef.current === taskId && dropPositionRef.current) {
+      // 4px hysteresis band around row midpoint to prevent rapid before/after oscillation
+      if (dropPositionRef.current === 'before' && relY <= midY + 4) {
+        pos = 'before';
+      } else if (dropPositionRef.current === 'after' && relY >= midY - 4) {
+        pos = 'after';
+      } else {
+        pos = relY < midY ? 'before' : 'after';
+      }
+    } else {
+      pos = relY < midY ? 'before' : 'after';
+    }
 
     if (dragOverTaskIdRef.current !== taskId || dropPositionRef.current !== pos) {
       dragOverTaskIdRef.current = taskId;
@@ -328,9 +342,16 @@ export function useDetailTaskReorder({
   }, []);
 
   const handleDetailTaskDragLeave = useCallback((e: React.DragEvent, taskId: string) => {
-    const related = e.relatedTarget as Node | null;
-    if (related && (e.currentTarget as HTMLElement).contains(related)) {
-      return;
+    const currentRow = e.currentTarget as HTMLElement;
+    const related = e.relatedTarget as HTMLElement | null;
+    if (related) {
+      if (currentRow.contains(related)) {
+        return;
+      }
+      // If moving directly onto another task row, let that row's onDragOver update state atomically without a null flash
+      if (related.closest && related.closest('tr[data-task-item="true"]')) {
+        return;
+      }
     }
     if (dragOverTaskIdRef.current === taskId) {
       dragOverTaskIdRef.current = null;

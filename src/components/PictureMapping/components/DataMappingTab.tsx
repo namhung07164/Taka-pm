@@ -222,16 +222,16 @@ export default React.memo(function DataMappingTab() {
   };
 
   return (
-    <div className="flex flex-col h-full w-full overflow-hidden pb-0.5 relative min-h-0">
-      <div className="relative z-10 p-0.5 shrink-0">
-        <div className="glass rounded-lg py-1 px-2 border border-slate-800/80 shadow-md flex flex-col sm:flex-row sm:items-center justify-between bg-slate-950/90 backdrop-blur-xl gap-1.5">
+    <div className="flex flex-col h-full w-full overflow-hidden relative min-h-0">
+      <div className="relative z-10 px-0.5 py-0.5 shrink-0">
+        <div className="glass rounded-md py-0.5 px-1.5 border border-slate-800/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between bg-slate-950/90 backdrop-blur-xl gap-1">
           {/* Top Row on Mobile: Title & SubTab Switcher + Fullscreen */}
-          <div className="flex items-center justify-between sm:justify-start gap-1.5 w-full sm:w-auto">
-            <div className="flex items-center gap-1.5">
-              <div className="w-5 h-5 bg-brand-600/20 border border-brand-500/30 rounded-md flex items-center justify-center text-brand-400 shrink-0">
-                <Split size={12} />
+          <div className="flex items-center justify-between sm:justify-start gap-1 w-full sm:w-auto">
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-4 bg-brand-600/20 border border-brand-500/30 rounded flex items-center justify-center text-brand-400 shrink-0">
+                <Split size={10} />
               </div>
-              <h3 className="text-[11px] font-bold italic serif tracking-wide text-white flex items-center gap-1.5 whitespace-nowrap">
+              <h3 className="text-[10px] font-bold italic serif tracking-wide text-white flex items-center gap-1 whitespace-nowrap">
                 Picture Mapping
                 <span id="data-mapping-toolbar-portal" className="flex items-center gap-0.5"></span>
               </h3>
@@ -239,66 +239,66 @@ export default React.memo(function DataMappingTab() {
 
             {/* Sub-tab Selector & Fullscreen on Mobile Right */}
             <div className="flex items-center gap-1 ml-auto sm:ml-0">
-              <div className="flex bg-slate-900/70 p-0.5 rounded-md border border-slate-800/80">
+              <div className="flex bg-slate-900/70 p-0.5 rounded border border-slate-800/80">
                 <button
                   onClick={() => setActiveSubTab('edit')}
                   className={cn(
-                    "flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-200",
+                    "flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all duration-200",
                     activeSubTab === 'edit' 
                       ? "bg-brand-600/30 text-brand-300 border border-brand-500/40 shadow-sm" 
                       : "text-slate-400 hover:text-slate-200"
                   )}
                 >
-                  <Edit3 size={10} />
+                  <Edit3 size={9} />
                   Edit
                 </button>
                 <button
                   onClick={() => setActiveSubTab('dynamic-hierarchy')}
                   className={cn(
-                    "flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-200",
+                    "flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all duration-200",
                     activeSubTab === 'dynamic-hierarchy' 
                       ? "bg-brand-600/30 text-brand-300 border border-brand-500/40 shadow-sm" 
                       : "text-slate-400 hover:text-slate-200"
                   )}
                 >
-                  <GitMerge size={10} />
+                  <GitMerge size={9} />
                   Dynamic
                 </button>
                 <button
                   onClick={() => setActiveSubTab('review')}
                   className={cn(
-                    "flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-all duration-200",
+                    "flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all duration-200",
                     activeSubTab === 'review' 
                       ? "bg-brand-600/30 text-brand-300 border border-brand-500/40 shadow-sm" 
                       : "text-slate-400 hover:text-slate-200"
                   )}
                 >
-                  <Eye size={10} />
+                  <Eye size={9} />
                   Review
                 </button>
               </div>
 
               <button 
                 onClick={() => setIsTabFullscreen(true)}
-                className="px-2 py-1 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-md text-slate-300 hover:text-white transition-all shadow-sm flex items-center gap-1 text-[10px] font-semibold shrink-0"
+                className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded text-slate-300 hover:text-white transition-all shadow-sm flex items-center gap-1 text-[9px] font-semibold shrink-0"
                 title="Toàn màn hình Workspace"
               >
-                <Maximize2 size={11} />
+                <Maximize2 size={10} />
                 <span className="hidden md:inline">Toàn Màn Hình</span>
               </button>
             </div>
           </div>
 
           {/* Bottom Row on Mobile / Right Filters on Desktop: Store & Location Filter Dropdown */}
-          <div className="flex items-center justify-between sm:justify-start gap-1.5 flex-wrap w-full sm:w-auto border-t sm:border-t-0 pt-1 sm:pt-0 border-slate-800/80">
-            <div className="flex items-center gap-1.5 bg-slate-900/90 px-2 py-0.5 rounded-md border border-slate-700/80 shadow-inner flex-wrap">
-              <div className="flex items-center gap-1" title="Chọn Chi nhánh (Store)">
-                <Building2 size={11} className="text-brand-400" />
-                <span className="text-[9px] font-bold uppercase text-slate-400">Store:</span>
+          <div className="flex items-center justify-between sm:justify-start gap-1 flex-wrap w-full sm:w-auto border-t sm:border-t-0 pt-0.5 sm:pt-0 border-slate-800/80">
+            <div className="flex items-center gap-1 bg-slate-900/90 px-1.5 py-0.5 rounded border border-slate-700/80 shadow-inner flex-wrap">
+              <div className="flex items-center gap-0.5" title="Chọn Chi nhánh (Store)">
+                <Building2 size={10} className="text-brand-400" />
+                <span className="text-[8px] font-bold uppercase text-slate-400">Store:</span>
                 <select
                   value={store}
                   onChange={(e) => setStore(e.target.value as 'HCM' | 'HN')}
-                  className="bg-transparent border-none text-[11px] text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-brand-300 transition-colors"
+                  className="bg-transparent border-none text-[10px] text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-brand-300 transition-colors"
                 >
                   {allowedStores.map(s => (
                     <option key={s} value={s} className="bg-slate-950 text-slate-200 font-semibold">{s}</option>
@@ -306,16 +306,16 @@ export default React.memo(function DataMappingTab() {
                 </select>
               </div>
 
-              <div className="w-px h-2.5 bg-slate-700/80"></div>
+              <div className="w-px h-2 bg-slate-700/80"></div>
 
               {/* Location Filter on all tabs */}
-              <div className="flex items-center gap-1" title="Chọn Tầng / Vị trí (Location)">
-                <MapPin size={11} className="text-purple-400" />
-                <span className="text-[9px] font-bold uppercase text-slate-400">Loc:</span>
+              <div className="flex items-center gap-0.5" title="Chọn Tầng / Vị trí (Location)">
+                <MapPin size={10} className="text-purple-400" />
+                <span className="text-[8px] font-bold uppercase text-slate-400">Loc:</span>
                 <select
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  className="bg-transparent border-none text-[11px] text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-purple-300 transition-colors"
+                  className="bg-transparent border-none text-[10px] text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-purple-300 transition-colors"
                 >
                   {userAllowedLocations.map(loc => (
                     <option key={loc} value={loc} className="bg-slate-950 text-slate-200 font-semibold">{loc}</option>
@@ -326,14 +326,14 @@ export default React.memo(function DataMappingTab() {
               {/* Year Filter: ONLY on dynamic-hierarchy and review tabs, HIDDEN on edit tab */}
               {activeSubTab !== 'edit' && (
                 <>
-                  <div className="w-px h-2.5 bg-slate-700/80"></div>
-                  <div className="flex items-center gap-1" title="Chọn Năm quy hoạch (Year)">
-                    <Calendar size={11} className="text-amber-400" />
-                    <span className="text-[9px] font-bold uppercase text-slate-400">Year:</span>
+                  <div className="w-px h-2 bg-slate-700/80"></div>
+                  <div className="flex items-center gap-0.5" title="Chọn Năm quy hoạch (Year)">
+                    <Calendar size={10} className="text-amber-400" />
+                    <span className="text-[8px] font-bold uppercase text-slate-400">Year:</span>
                     <select
                       value={effectiveYear}
                       onChange={(e) => setGlobalYearFilter(e.target.value)}
-                      className="bg-transparent border-none text-[11px] text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-amber-300 transition-colors"
+                      className="bg-transparent border-none text-[10px] text-white font-bold uppercase tracking-wide outline-none cursor-pointer hover:text-amber-300 transition-colors"
                     >
                       {availableYears.map(y => (
                         <option key={y} value={y} className="bg-slate-950 text-slate-200 font-semibold">{y}</option>
@@ -343,9 +343,9 @@ export default React.memo(function DataMappingTab() {
                 </>
               )}
 
-              <div className="w-px h-2.5 bg-slate-700/80 hidden sm:block"></div>
+              <div className="w-px h-2 bg-slate-700/80 hidden sm:block"></div>
 
-              <span className="text-[9px] font-medium text-slate-400 hidden sm:inline">
+              <span className="text-[8px] font-medium text-slate-400 hidden sm:inline">
                 {mapUnits.length} units
               </span>
             </div>
@@ -356,7 +356,7 @@ export default React.memo(function DataMappingTab() {
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 w-full h-full rounded-xl border border-slate-800 shadow-xl relative overflow-hidden flex flex-col z-0 bg-[#141416]">
+      <div className="flex-1 w-full h-full rounded-lg border border-slate-800 shadow-lg relative overflow-hidden flex flex-col z-0 bg-[#141416]">
         <AnimatePresence mode="wait">
           <motion.div
             key={activeSubTab}
@@ -375,51 +375,51 @@ export default React.memo(function DataMappingTab() {
       <AnimatePresence>
         {isTabFullscreen && (
           <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
+            initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed inset-0 z-[99999] bg-bg-dark p-6 lg:p-12 overflow-hidden flex flex-col"
+            exit={{ opacity: 0, scale: 0.98 }}
+            className="fixed inset-0 z-[99999] bg-bg-dark p-2 lg:p-3 overflow-hidden flex flex-col"
           >
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex bg-slate-900/50 p-1 rounded-xl border border-slate-800">
+            <div className="flex items-center justify-between mb-2 shrink-0">
+              <div className="flex bg-slate-900/70 p-0.5 rounded-lg border border-slate-800">
                 <button
                   onClick={() => setActiveSubTab('edit')}
                   className={cn(
-                    "flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold uppercase transition-all",
-                    activeSubTab === 'edit' ? "bg-brand-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-200"
+                    "flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-bold uppercase transition-all",
+                    activeSubTab === 'edit' ? "bg-brand-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
                   )}
                 >
-                  <Edit3 size={16} /> Edit
+                  <Edit3 size={12} /> Edit
                 </button>
                 <button
                   onClick={() => setActiveSubTab('dynamic-hierarchy')}
                   className={cn(
-                    "flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold uppercase transition-all",
-                    activeSubTab === 'dynamic-hierarchy' ? "bg-brand-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-200"
+                    "flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-bold uppercase transition-all",
+                    activeSubTab === 'dynamic-hierarchy' ? "bg-brand-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
                   )}
                 >
-                  <GitMerge size={16} /> Dynamic Hierarchy
+                  <GitMerge size={12} /> Dynamic Hierarchy
                 </button>
                 <button
                   onClick={() => setActiveSubTab('review')}
                   className={cn(
-                    "flex items-center gap-2 px-8 py-3 rounded-lg text-sm font-bold uppercase transition-all",
-                    activeSubTab === 'review' ? "bg-brand-600 text-white shadow-lg" : "text-slate-500 hover:text-slate-200"
+                    "flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-bold uppercase transition-all",
+                    activeSubTab === 'review' ? "bg-brand-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
                   )}
                 >
-                  <Eye size={16} /> Review
+                  <Eye size={12} /> Review
                 </button>
               </div>
 
               <button 
                 onClick={() => setIsTabFullscreen(false)}
-                className="w-12 h-12 flex items-center justify-center bg-slate-800 hover:bg-red-600 text-white rounded-2xl transition-all shadow-xl"
+                className="w-7 h-7 flex items-center justify-center bg-slate-800 hover:bg-red-600 text-white rounded-lg transition-all shadow"
               >
-                <X size={24} />
+                <X size={15} />
               </button>
             </div>
             
-            <div className="flex-1 overflow-hidden relative glass border border-slate-800 rounded-3xl p-8">
+            <div className="flex-1 overflow-hidden relative glass border border-slate-800 rounded-xl p-1.5">
               <AnimatePresence mode="wait">
                 <motion.div
                   key={`fs-${activeSubTab}`}

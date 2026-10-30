@@ -363,6 +363,15 @@ export async function exportLayoutPlanToPdf(params: {
         return { label, color: g.color || '#3b82f6' };
       });
 
+      const hasTotalRow =
+        Array.isArray(legendBridge.activeGroups) && legendBridge.activeGroups.length > 1;
+      const totalUnits = hasTotalRow
+        ? legendBridge.activeGroups.reduce((acc: number, g: any) => acc + Number(g.matchCount || 0), 0)
+        : 0;
+      const totalArea = hasTotalRow
+        ? legendBridge.activeGroups.reduce((acc: number, g: any) => acc + Number(g.totalArea || 0), 0)
+        : 0;
+
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(7.5);
       const maxItemWidth = items.reduce((maxW, it) => {
@@ -370,58 +379,91 @@ export async function exportLayoutPlanToPdf(params: {
         return Math.max(maxW, w);
       }, 48);
 
-      const boxW = Math.min(targetW * 0.48, Math.max(54, maxItemWidth + 6));
-      const rowH = 4.6;
-      const boxH = 8 + items.length * rowH + 2;
-
       const relRect =
         typeof legendBridge.getRelativeRect === 'function' ? legendBridge.getRelativeRect() : null;
+
+      const defaultBoxW = Math.min(targetW * 0.48, Math.max(54, maxItemWidth + 6));
+      const defaultRowH = 4.4;
+      const defaultBoxH = 8 + items.length * defaultRowH + (hasTotalRow ? 5.2 : 1.8);
+
+      let boxW = relRect && relRect.relW > 0.05 ? relRect.relW * targetW : defaultBoxW;
+      let boxH = relRect && relRect.relH > 0.03 ? relRect.relH * targetH : defaultBoxH;
+      // Ensure text fits comfortably inside boxW
+      boxW = Math.max(boxW, Math.min(targetW * 0.65, maxItemWidth + 5));
+
       let boxX = xPos + 4;
       let boxY = yPos + targetH - boxH - 4;
       if (relRect) {
         boxX = xPos + relRect.relX * targetW;
         boxY = yPos + relRect.relY * targetH;
-        // Clamp inside the PDF page
-        boxX = Math.max(margin, Math.min(pdfPageWidth - margin - boxW, boxX));
-        boxY = Math.max(topOffset, Math.min(pdfPageHeight - margin - 5 - boxH, boxY));
+        // Clamp inside the floor plan image area
+        boxX = Math.max(xPos, Math.min(xPos + targetW - boxW, boxX));
+        boxY = Math.max(yPos, Math.min(yPos + targetH - boxH, boxY));
       }
+
+      const scaleFactor = Math.max(0.72, Math.min(1.35, boxH / Math.max(1, defaultBoxH)));
+      const headerH = 6.2 * scaleFactor;
+      const footerH = hasTotalRow ? 5.0 * scaleFactor : 1.5 * scaleFactor;
+      const availItemsH = Math.max(items.length * 3.2, boxH - headerH - footerH - 1.2 * scaleFactor);
+      const rowH = availItemsH / Math.max(1, items.length);
 
       // Draw white card with dark slate border
       pdf.setFillColor(255, 255, 255);
       pdf.setDrawColor(30, 41, 59);
       pdf.setLineWidth(0.4);
-      pdf.roundedRect(boxX, boxY, boxW, boxH, 2, 2, 'FD');
+      pdf.roundedRect(boxX, boxY, boxW, boxH, 1.8, 1.8, 'FD');
 
       // Header text
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8);
+      pdf.setFontSize(7.8 * scaleFactor);
       pdf.setTextColor(15, 23, 42);
-      pdf.text('COLOR LEGEND', boxX + 3, boxY + 4.8);
+      pdf.text('COLOR LEGEND', boxX + 2.8, boxY + 4.4 * scaleFactor);
 
       const scopeText = `${legendBridge.storeFilter || ''} • ${legendBridge.targetLoc || ''}${
         legendBridge.versionYear ? ` (${legendBridge.versionYear})` : ''
       }`;
-      pdf.setFontSize(6.8);
+      pdf.setFontSize(6.6 * scaleFactor);
       pdf.setTextColor(71, 85, 105);
-      pdf.text(scopeText, boxX + boxW - 3, boxY + 4.8, { align: 'right' });
+      pdf.text(scopeText, boxX + boxW - 2.8, boxY + 4.4 * scaleFactor, { align: 'right' });
 
       pdf.setDrawColor(203, 213, 225);
       pdf.setLineWidth(0.2);
-      pdf.line(boxX + 2.5, boxY + 6.4, boxX + boxW - 2.5, boxY + 6.4);
+      pdf.line(boxX + 2.5, boxY + headerH, boxX + boxW - 2.5, boxY + headerH);
 
+      const swatchSize = Math.min(3.2 * scaleFactor, rowH * 0.72);
       items.forEach((it, idx) => {
-        const iy = boxY + 8.2 + idx * rowH;
+        const iy = boxY + headerH + 1.4 * scaleFactor + idx * rowH;
         const [r, g, b] = hexToRgb(it.color);
         pdf.setFillColor(r, g, b);
         pdf.setDrawColor(100, 116, 139);
         pdf.setLineWidth(0.2);
-        pdf.rect(boxX + 3, iy, 3, 3, 'FD');
+        pdf.rect(boxX + 2.8, iy, swatchSize, swatchSize, 'FD');
 
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(7);
+        pdf.setFontSize(6.8 * scaleFactor);
         pdf.setTextColor(15, 23, 42);
-        pdf.text(it.label, boxX + 7.5, iy + 2.4);
+        pdf.text(it.label, boxX + 3.8 + swatchSize, iy + swatchSize * 0.82);
       });
+
+      if (hasTotalRow) {
+        const totalLineY = boxY + boxH - footerH;
+        pdf.setDrawColor(226, 232, 240);
+        pdf.setLineWidth(0.2);
+        pdf.line(boxX + 2.5, totalLineY, boxX + boxW - 2.5, totalLineY);
+
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(6.5 * scaleFactor);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text('TOTAL', boxX + 2.8, totalLineY + 3.4 * scaleFactor);
+
+        const totalSummary = `${totalUnits} ${totalUnits === 1 ? 'unit' : 'units'}${
+          totalArea > 0
+            ? ` • ${totalArea.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} m² • 100%`
+            : ''
+        }`;
+        pdf.setTextColor(51, 65, 85);
+        pdf.text(totalSummary, boxX + boxW - 2.8, totalLineY + 3.4 * scaleFactor, { align: 'right' });
+      }
     } catch {
       // Ignore legend PDF drawing errors
     }

@@ -1029,29 +1029,29 @@ export default function CloudSyncManager({
   }[selectedScope];
 
   return (
-    <div className={cn("flex items-center gap-1.5 relative", className)}>
-      <div className="flex items-center gap-1.5 flex-wrap">
+    <div className={cn("flex items-center gap-1 relative", className)}>
+      <div className="flex items-center gap-1 flex-wrap">
         {/* Main Save Button with non-blocking progress */}
         <button 
           onClick={() => handleOpenSync('upload')}
           disabled={backgroundSyncing === 'upload'}
           className={cn(
-            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-brand-400 hover:text-brand-300 transition-all shadow-sm active:scale-95 touch-manipulation cursor-pointer",
+            "flex items-center gap-1 rounded-md bg-slate-900 hover:bg-slate-800 border border-slate-700 text-brand-400 hover:text-brand-300 transition-all shadow-sm active:scale-95 touch-manipulation cursor-pointer",
             backgroundSyncing === 'upload' && "opacity-90 cursor-wait",
-            compact ? "text-[10px] px-2 py-1" : "text-[11px]"
+            compact ? "text-[9px] px-1.5 py-0.5" : "text-[11px] px-2.5 py-1.5"
           )}
           title={`Lưu dữ liệu (${getScopeName(selectedScope)}) lên Cloudflare R2 & Firestore`}
         >
           {backgroundSyncing === 'upload' ? (
-            <RefreshCw size={13} className="shrink-0 animate-spin text-brand-400" />
+            <RefreshCw size={11} className="shrink-0 animate-spin text-brand-400" />
           ) : (
-            <CloudUpload size={13} className="shrink-0" />
+            <CloudUpload size={11} className="shrink-0" />
           )}
           <span className="font-bold uppercase tracking-wider">
-            {backgroundSyncing === 'upload' ? 'Saving Cloud...' : 'Save Cloud'}
+            {backgroundSyncing === 'upload' ? 'Saving...' : 'Save Cloud'}
           </span>
           {selectedScope !== 'all' && (
-            <span className={cn("text-[9px] font-extrabold uppercase px-1 py-0.2 rounded border", scopeBadgeColor)}>
+            <span className={cn("text-[8px] font-extrabold uppercase px-1 py-0.1 rounded border", scopeBadgeColor)}>
               {selectedScope}
             </span>
           )}
@@ -1062,22 +1062,22 @@ export default function CloudSyncManager({
           onClick={() => handleOpenSync('download')}
           disabled={backgroundSyncing === 'download'}
           className={cn(
-            "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-purple-400 hover:text-purple-300 transition-all shadow-sm active:scale-95 touch-manipulation cursor-pointer",
+            "flex items-center gap-1 rounded-md bg-slate-900 hover:bg-slate-800 border border-slate-700 text-purple-400 hover:text-purple-300 transition-all shadow-sm active:scale-95 touch-manipulation cursor-pointer",
             backgroundSyncing === 'download' && "opacity-90 cursor-wait",
-            compact ? "text-[10px] px-2 py-1" : "text-[11px]"
+            compact ? "text-[9px] px-1.5 py-0.5" : "text-[11px] px-2.5 py-1.5"
           )}
           title={`Tải dữ liệu (${getScopeName(selectedScope)}) từ Cloudflare R2`}
         >
           {backgroundSyncing === 'download' ? (
-            <RefreshCw size={13} className="shrink-0 animate-spin text-purple-400" />
+            <RefreshCw size={11} className="shrink-0 animate-spin text-purple-400" />
           ) : (
-            <CloudDownload size={13} className="shrink-0" />
+            <CloudDownload size={11} className="shrink-0" />
           )}
           <span className="font-bold uppercase tracking-wider">
-            {backgroundSyncing === 'download' ? 'Loading Cloud...' : 'Load Cloud'}
+            {backgroundSyncing === 'download' ? 'Loading...' : 'Load Cloud'}
           </span>
           {selectedScope !== 'all' && (
-            <span className={cn("text-[9px] font-extrabold uppercase px-1 py-0.2 rounded border", scopeBadgeColor)}>
+            <span className={cn("text-[8px] font-extrabold uppercase px-1 py-0.1 rounded border", scopeBadgeColor)}>
               {selectedScope}
             </span>
           )}
@@ -1087,10 +1087,13 @@ export default function CloudSyncManager({
           <div className="relative">
             <button
               onClick={() => setShowScopeDropdown(!showScopeDropdown)}
-              className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+              className={cn(
+                "bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-md text-slate-400 hover:text-white transition-colors cursor-pointer",
+                compact ? "p-1" : "p-1.5"
+              )}
               title="Chọn phạm vi Lưu / Tải Cloud (Edit, Dynamic, Review, Toàn bộ)"
             >
-              <ChevronDown size={12} className={cn("transition-transform duration-200", showScopeDropdown && "rotate-180")} />
+              <ChevronDown size={11} className={cn("transition-transform duration-200", showScopeDropdown && "rotate-180")} />
             </button>
 
             {showScopeDropdown && (
@@ -1160,22 +1163,25 @@ export default function CloudSyncManager({
           {/* R2 Credentials Settings Button */}
           <button
             onClick={() => setIsModalOpen(true)}
-            className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+            className={cn(
+              "bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-md text-slate-400 hover:text-white transition-colors cursor-pointer",
+              compact ? "p-1" : "p-1.5"
+            )}
             title="Cài đặt khóa kết nối Cloudflare R2"
           >
-            <Settings size={12} />
+            <Settings size={11} />
           </button>
 
           {showCleanButton && (
             <button 
               onClick={handleCleanR2Garbage}
               className={cn(
-                "flex items-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-emerald-950/40 border border-slate-700 hover:border-emerald-700/50 text-emerald-400 hover:text-emerald-300 transition-colors shadow-sm active:scale-95 cursor-pointer",
-                compact ? "text-[10px] px-1.5 py-1" : "text-[11px]"
+                "flex items-center gap-1 rounded-md bg-slate-900 hover:bg-emerald-950/40 border border-slate-700 hover:border-emerald-700/50 text-emerald-400 hover:text-emerald-300 transition-colors shadow-sm active:scale-95 cursor-pointer",
+                compact ? "text-[9px] px-1.5 py-0.5" : "text-[11px] px-2 py-1.5"
               )}
               title="Dọn dẹp & giải phóng tất cả ảnh nền mồ côi trên Cloudflare R2"
             >
-              <Sparkles size={12} className="shrink-0" />
+              <Sparkles size={10} className="shrink-0" />
               <span className="font-bold uppercase tracking-widest hidden md:inline">Clean R2</span>
             </button>
           )}

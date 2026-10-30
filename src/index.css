@@ -442,10 +442,9 @@ body.print-preview-active .print\:overflow-hidden {
     white-space: nowrap !important;
 }
 
-/* High-Performance Table Row Virtualization (Rendering Economy) */
+/* High-Performance Table Row Virtualization (Handled by JS useDetailVirtualization) */
 .table-row-optimized {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 42px;
+  contain: style;
 }
 
 /* High-Performance Mobile Card Virtualization (Rendering Economy) */
