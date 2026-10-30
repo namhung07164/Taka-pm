@@ -44,7 +44,11 @@ export function MultiCheckboxSelect({
   const allOptions = Array.from(new Set([...options, ...value])).sort();
 
   return (
-    <div ref={containerRef} className={cn("relative", className)}>
+    <div
+      ref={containerRef}
+      className={cn("relative", isOpen && "z-[100]", className)}
+      style={isOpen ? { zIndex: 100 } : undefined}
+    >
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
@@ -55,7 +59,10 @@ export function MultiCheckboxSelect({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-lg shadow-xl z-[9999] p-1">
+        <div
+          className="absolute top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-lg shadow-2xl z-[99999] p-1"
+          style={{ transform: 'translateZ(0)', WebkitTransform: 'translateZ(0)' }}
+        >
           {allOptions.map((opt) => (
             <div
               key={opt}

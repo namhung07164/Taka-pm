@@ -173,7 +173,7 @@ export function GanttToolbar({
 
   return (
     <>
-      <div className="relative z-40 px-2 pt-2 pb-1.5 sm:px-3 sm:pt-3 sm:pb-1.5 bg-slate-100 dark:bg-[#121214] flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+      <div className="relative z-50 px-2 pt-2 pb-1.5 sm:px-3 sm:pt-3 sm:pb-1.5 bg-slate-100 dark:bg-[#121214] flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
         {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
         <div className="flex flex-col lg:flex-row gap-2 justify-between items-stretch lg:items-center w-full">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
@@ -302,7 +302,7 @@ export function GanttToolbar({
       </div>
 
       {/* Row 2: Non-sticky Date Filter & Column Adder */}
-      <div className="relative z-10 px-2 py-1.5 sm:px-3 sm:py-2 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 shrink-0 print:hidden text-slate-800 dark:text-slate-100">
+      <div className="relative z-30 px-2 py-1.5 sm:px-3 sm:py-2 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 shrink-0 print:hidden text-slate-800 dark:text-slate-100">
         <div className="flex flex-wrap items-center gap-2">
           <GanttToolbarDateFilter
             handleTodayClick={handleTodayClick}
@@ -343,7 +343,7 @@ export function GanttToolbar({
       <div
         id="gantt-sticky-search-bar"
         style={{ position: '-webkit-sticky' as any, top: 0 }}
-        className="sticky top-0 z-40 px-2 py-2 sm:px-3 sm:py-2 bg-slate-100/95 dark:bg-[#121214]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col gap-1.5 shrink-0 print:hidden text-slate-800 dark:text-slate-100 shadow-2xs"
+        className="sticky top-0 z-20 px-2 py-2 sm:px-3 sm:py-2 bg-slate-100/95 dark:bg-[#121214]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex flex-col gap-1.5 shrink-0 print:hidden text-slate-800 dark:text-slate-100 shadow-2xs"
       >
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 sm:gap-2 w-full">
           <div className="w-full sm:w-auto shrink-0">
