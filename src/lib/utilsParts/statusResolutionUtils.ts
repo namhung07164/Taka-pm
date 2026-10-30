@@ -247,8 +247,54 @@ export function computeProjectActStatus(
       if (statuses.some(s => s === 'Rejected' || s === 'Correction Needed')) return 'Rejected';
       if (statuses.every(s => s === 'Completed')) return 'Completed';
       if (statuses.some(s => s === 'Pending Completed' || s === 'Pending Approval' || s === 'Review Late')) return 'Pending Completed';
-      if (statuses.some(s => s === 'In Progress' || s === 'On Process' || s === 'Delayed' || s === 'Accepted')) return 'In Progress';
+      if (statuses.some(s => s === 'Delayed' || s === 'Delay')) return 'Delay';
+      if (statuses.some(s => s === 'In Progress' || s === 'On Process' || s === 'Accepted')) return 'In Progress';
       return statuses[0] || 'Planned';
+    }
+  }
+
+  // Inspect taskSummaries or matchedTasks for precise Delay/Completed/Pending status
+  const allTasks = (matchedTasks && matchedTasks.length > 0)
+    ? matchedTasks
+    : (p.taskSummaries && Array.isArray(p.taskSummaries) ? p.taskSummaries : []);
+
+  if (allTasks.length > 0) {
+    const todayTime = getTodayMidnightMs();
+    let hasDelay = false;
+    let hasPending = false;
+    let hasInProgress = false;
+    let hasRejected = false;
+    let allCompleted = true;
+    let validTaskCount = 0;
+
+    for (const t of allTasks) {
+      if ((t as any).isModularParent) continue;
+      validTaskCount++;
+      const st = String(t.runningStatus || (t as any).actStatus || (t as any).status || '').toLowerCase();
+      const app = String((t as any).approval || '').toLowerCase();
+      const finMs = parseDateMidnightMs(t.finish);
+      const isDone = st.includes('complete') || st.includes('finished') || app === 'approved';
+
+      if (!isDone) {
+        allCompleted = false;
+        if (st.includes('delay') || (finMs !== null && todayTime > finMs)) {
+          hasDelay = true;
+        } else if (app === 'reqapproval' || st.includes('pending') || st.includes('waiting')) {
+          hasPending = true;
+        } else if (st.includes('reject') || st.includes('rework')) {
+          hasRejected = true;
+        } else if (st.includes('process') || st.includes('progress') || st.includes('accept') || (t.start && parseDateMidnightMs(t.start)! <= todayTime)) {
+          hasInProgress = true;
+        }
+      }
+    }
+
+    if (validTaskCount > 0) {
+      if (allCompleted || p.computedActProgress === 100) return 'Completed';
+      if (hasRejected) return 'Rejected';
+      if (hasDelay) return 'Delay';
+      if (hasPending) return 'Pending Completed';
+      if (hasInProgress || (p.computedActProgress && p.computedActProgress > 0)) return 'In Progress';
     }
   }
 

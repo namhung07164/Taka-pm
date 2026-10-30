@@ -38,73 +38,93 @@ export function computePlanProgressFromSummaries(
 }
 
 export function computeActProgressFromSummaries(
-  summaries: Array<{ start?: string; finish?: string; runningStatus?: string; approval?: string; [key: string]: any }>
+  summaries: Array<{ start?: string; finish?: string; duration?: number | string; runningStatus?: string; approval?: string; isModularParent?: boolean; parentTaskId?: string; [key: string]: any }>
 ): number {
   if (!summaries || summaries.length === 0) return 0;
   const todayTime = getTodayMidnightMs();
 
-  const validScores: number[] = [];
-
+  // 1. Double-counting guard: filter out modular parent tasks when subtasks exist
+  const parentIds = new Set<string>();
   for (const s of summaries) {
+    if (s.parentTaskId) parentIds.add(String(s.parentTaskId));
+  }
+  const leafSummaries = summaries.filter(s => {
+    if (s.isModularParent) return false;
+    if (s.id && parentIds.has(String(s.id))) return false;
+    return true;
+  });
+  const effectiveSummaries = leafSummaries.length > 0 ? leafSummaries : summaries;
+
+  let totalWeightedScore = 0;
+  let totalDurationWeight = 0;
+
+  for (const s of effectiveSummaries) {
     if (!s.start && !s.finish && !s.runningStatus && !s.actStatus && !s.status) continue;
-
-    const statusStr = String(s.runningStatus || s.actStatus || s.status || s.delegationStatus || '').toLowerCase();
-    const approvalStr = String(s.approval || s.approvalStatus || '').toLowerCase();
-
-    if (statusStr.includes('complete') || statusStr.includes('finished') || approvalStr === 'approved') {
-      validScores.push(1.0);
-      continue;
-    }
-    if (statusStr.includes('pending') || statusStr.includes('reqapproval') || statusStr.includes('waiting') || approvalStr === 'reqapproval' || approvalStr === 'requested') {
-      validScores.push(0.8);
-      continue;
-    }
-    if (statusStr.includes('accept') || statusStr.includes('process') || statusStr.includes('progress') || statusStr.includes('delay') || approvalStr === 'accepttask') {
-      validScores.push(0.5);
-      continue;
-    }
-    if (statusStr.includes('rework') || statusStr.includes('reject') || approvalStr === 'rejected' || approvalStr === 'reqreview') {
-      validScores.push(0.3);
-      continue;
-    }
 
     const startMs = parseDateMidnightMs(s.start);
     const finishMs = parseDateMidnightMs(s.finish);
 
-    if (finishMs !== null && todayTime > finishMs) {
-      validScores.push(1.0);
-    } else if (startMs !== null && finishMs !== null && todayTime >= startMs && todayTime <= finishMs) {
-      const totalDuration = finishMs - startMs;
-      if (totalDuration > 0) {
-        const passed = todayTime - startMs;
-        validScores.push(Math.max(0.3, Math.min(0.9, passed / totalDuration)));
+    // Compute task duration weight in days (minimum 1 day)
+    let weight = 1;
+    if (s.duration !== undefined && s.duration !== null && !isNaN(Number(s.duration)) && Number(s.duration) > 0) {
+      weight = Math.max(1, Number(s.duration));
+    } else if (startMs !== null && finishMs !== null && finishMs >= startMs) {
+      weight = Math.max(1, Math.round((finishMs - startMs) / (24 * 3600 * 1000)) + 1);
+    }
+
+    const statusStr = String(s.runningStatus || s.actStatus || s.status || s.delegationStatus || '').toLowerCase();
+    const approvalStr = String(s.approval || s.approvalStatus || '').toLowerCase();
+
+    let score = 0;
+
+    // 2. Definitive completion / approval check
+    if (statusStr.includes('complete') || statusStr.includes('finished') || approvalStr === 'approved') {
+      score = 1.0;
+    } else if (statusStr.includes('pending') || statusStr.includes('reqapproval') || statusStr.includes('waiting') || approvalStr === 'reqapproval' || approvalStr === 'requested') {
+      score = 0.85;
+    } else if (statusStr.includes('rework') || statusStr.includes('reject') || approvalStr === 'rejected' || approvalStr === 'reqreview') {
+      score = 0.25;
+    } else if (statusStr.includes('accept') || statusStr.includes('process') || statusStr.includes('progress') || statusStr.includes('doing') || approvalStr === 'accepttask') {
+      // In progress: scale by elapsed time, capped at 0.85 (cannot be 1.0 until approved)
+      if (startMs !== null && finishMs !== null && finishMs > startMs) {
+        if (todayTime <= startMs) {
+          score = 0.3;
+        } else if (todayTime >= finishMs) {
+          // Overdue in progress: capped at 0.85 since it's not marked finished
+          score = 0.85;
+        } else {
+          const ratio = (todayTime - startMs) / (finishMs - startMs);
+          score = Math.max(0.3, Math.min(0.85, ratio));
+        }
       } else {
-        validScores.push(1.0);
+        score = 0.5;
       }
+    } else if (statusStr.includes('delay') || statusStr.includes('delayed') || statusStr.includes('overdue')) {
+      score = 0.5;
     } else {
-      validScores.push(0.0);
+      // 3. Fallback when no explicit status
+      if (finishMs !== null && todayTime > finishMs) {
+        // If past finish with no explicit status, treat as done only if no active blocker
+        score = 1.0;
+      } else if (startMs !== null && finishMs !== null && todayTime >= startMs && todayTime <= finishMs) {
+        const totalDuration = finishMs - startMs;
+        if (totalDuration > 0) {
+          const passed = todayTime - startMs;
+          score = Math.max(0.2, Math.min(0.9, passed / totalDuration));
+        } else {
+          score = 1.0;
+        }
+      } else {
+        score = 0.0;
+      }
     }
+
+    totalWeightedScore += score * weight;
+    totalDurationWeight += weight;
   }
 
-  if (validScores.length === 0) return 0;
-
-  let maxCompletedIdx = -1;
-  for (let i = 0; i < validScores.length; i++) {
-    if (validScores[i] >= 1.0) {
-      maxCompletedIdx = i;
-    }
-  }
-
-  let totalScore = 0;
-  for (let i = 0; i < validScores.length; i++) {
-    if (maxCompletedIdx !== -1 && i <= maxCompletedIdx) {
-      totalScore += 1.0;
-    } else {
-      totalScore += validScores[i];
-    }
-  }
-
-  return Math.round((totalScore / validScores.length) * 100);
+  if (totalDurationWeight === 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((totalWeightedScore / totalDurationWeight) * 100)));
 }
 
 export function computePlanProgressPercent(groupTasks: Task[]): number {

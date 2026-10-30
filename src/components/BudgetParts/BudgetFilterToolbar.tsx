@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { Search, Download, Upload, Plus } from 'lucide-react';
+import React, { useRef, useEffect } from 'react';
+import { Plus } from 'lucide-react';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 import { FixedProjectInput } from '../FixedProjectInput';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
@@ -57,6 +57,21 @@ export function BudgetFilterToolbar({
   const { t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const projects = useAppStore(state => state.projects);
+
+  useEffect(() => {
+    const handleTriggerExport = () => {
+      handleExportBudget();
+    };
+    const handleTriggerImport = () => {
+      fileInputRef.current?.click();
+    };
+    window.addEventListener('taka_trigger_budget_export', handleTriggerExport);
+    window.addEventListener('taka_trigger_budget_import', handleTriggerImport);
+    return () => {
+      window.removeEventListener('taka_trigger_budget_export', handleTriggerExport);
+      window.removeEventListener('taka_trigger_budget_import', handleTriggerImport);
+    };
+  }, [handleExportBudget]);
 
   return (
     <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
@@ -144,34 +159,32 @@ export function BudgetFilterToolbar({
             </button>
           )}
 
+          {/* Hidden Action Elements for Hamburger Menu & Shortcuts */}
           <button 
+            id="budget-export-btn"
             type="button"
             onClick={handleExportBudget} 
-            className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
-            title="Export Filtered CSV"
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('Export CSV')}</span>
-          </button>
+            className="hidden"
+            aria-hidden="true"
+          />
           
           {canWrite && (
             <>
               <input 
+                id="budget-import-input"
                 type="file" 
                 ref={fileInputRef} 
                 onChange={handleImportBudget} 
                 accept=".csv" 
                 className="hidden" 
               />
-              <button 
+              <button
+                id="budget-full-import-btn"
                 type="button"
-                onClick={() => fileInputRef.current?.click()} 
-                className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
-                title="Import Budget CSV (Updates matching projects)"
-              >
-                <Upload className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('Import CSV')}</span>
-              </button>
+                onClick={() => fileInputRef.current?.click()}
+                className="hidden"
+                aria-hidden="true"
+              />
             </>
           )}
 

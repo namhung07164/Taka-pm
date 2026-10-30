@@ -4439,13 +4439,15 @@ export function BudgetEditableCell({
 ================================================================================
 FILE: src/components/BudgetParts/BudgetFilterToolbar.tsx
 ================================================================================
-import React, { useRef } from 'react';
-import { Search, Download, Upload, Plus } from 'lucide-react';
+import React, { useRef, useEffect } from 'react';
+import { Plus } from 'lucide-react';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { ColumnAdder } from '../ColumnAdder';
 import { useLanguage } from '../../lib/LanguageContext';
 import { safeSetItemSession } from '../../lib/storage';
+import { useAppStore } from '../../store/useAppStore';
 import { AVAILABLE_COLUMNS } from './budgetTypes';
 
 interface BudgetFilterToolbarProps {
@@ -4495,36 +4497,57 @@ export function BudgetFilterToolbar({
 }: BudgetFilterToolbarProps) {
   const { t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const projects = useAppStore(state => state.projects);
+
+  useEffect(() => {
+    const handleTriggerExport = () => {
+      handleExportBudget();
+    };
+    const handleTriggerImport = () => {
+      fileInputRef.current?.click();
+    };
+    window.addEventListener('taka_trigger_budget_export', handleTriggerExport);
+    window.addEventListener('taka_trigger_budget_import', handleTriggerImport);
+    return () => {
+      window.removeEventListener('taka_trigger_budget_export', handleTriggerExport);
+      window.removeEventListener('taka_trigger_budget_import', handleTriggerImport);
+    };
+  }, [handleExportBudget]);
 
   return (
-    <div className="px-3 sm:px-4 md:px-5 py-2.5 sm:py-3 border-b border-slate-100 dark:border-[#333336] bg-slate-50 dark:bg-[#1e1e20]/50 flex flex-wrap items-center justify-between gap-2.5 shrink-0 print:hidden rounded-t-xl">
-      <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-grow">
+    <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
+      {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
+        {/* Col 1: Year */}
         <select 
           value={globalYearFilter} 
           onChange={(e) => setGlobalYearFilter(e.target.value)}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
         >
           <option value="all">{t('All Years')}</option>
           {years.map(y => <option key={y} value={y}>{t('Year')} {y}</option>)}
         </select>
 
+        {/* Col 2: Store */}
         <select 
           value={effectiveStore} 
           onChange={(e) => setGlobalStoreFilter(e.target.value)}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[85px] sm:min-w-[95px] flex-1 sm:flex-none cursor-pointer"
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
         >
           {stores.length > 1 && <option value="all">{t('All Stores')}</option>}
           {stores.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
 
+        {/* Col 3: Location */}
         <MultiCheckboxSelect 
           value={globalLocationFilter}
           onChange={setGlobalLocationFilter}
           options={locationOptions}
           placeholder={t('All Locations')}
-          className="min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none"
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs"
         />
 
+        {/* Col 4: Money Filter */}
         <select
           value={moneyFilter}
           onChange={(e) => {
@@ -4535,79 +4558,89 @@ export function BudgetFilterToolbar({
               safeSetItemSession("taka_budget_money_filter", val);
             }
           }}
-          className="bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-900 dark:text-[#e3e3e3] text-xs sm:text-sm rounded-lg focus:ring-2 focus:ring-blue-500 block p-2 outline-none shadow-sm min-w-[95px] sm:min-w-[100px] flex-1 sm:flex-none cursor-pointer"
+          className="w-full bg-white dark:bg-[#1a1a1c] border border-slate-300 dark:border-slate-700/80 text-slate-800 dark:text-white text-xs rounded-lg px-2.5 py-1.5 outline-none shadow-xs font-medium cursor-pointer h-8"
         >
           <option value="all">{t('All Projects')}</option>
           <option value="has_money">{t('Has Budget or Actual')}</option>
           <option value="has_budget">{t('Has Budget Only')}</option>
           <option value="has_act_forc">{t('Has Actual/Forc Only')}</option>
         </select>
-
-        <div className="relative flex-1 min-w-[140px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
-          <DebouncedSearchInput 
-            value={searchTerm} 
-            onChange={(val) => setSearchTerm(val)}
-            placeholder={t('Search anything...')}
-          />
-        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 justify-end">
-        {canWrite && (
-          <button 
-            type="button"
-            onClick={onAddBudget}
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer"
-            title={t('Add Budget')}
-          >
-            <Plus className="w-4 h-4" />
-            <span>{t('Add Budget')}</span>
-          </button>
-        )}
+      {/* Row 2: Fixed Project, Search & Action Buttons */}
+      <div className="flex flex-wrap items-center justify-between gap-2 w-full">
+        <div className="flex flex-wrap items-center gap-2 flex-grow">
+          <FixedProjectInput 
+            projects={projects} 
+            yearFilter={globalYearFilter}
+            storeFilter={effectiveStore}
+            locationFilter={globalLocationFilter}
+            statusFilter={moneyFilter}
+          />
 
-        <button 
-          type="button"
-          onClick={handleExportBudget} 
-          className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
-          title="Export Filtered CSV"
-        >
-          <Download className="w-4 h-4" />
-          <span className="hidden sm:inline">{t('Export CSV')}</span>
-        </button>
-        
-        {canWrite && (
-          <>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleImportBudget} 
-              accept=".csv" 
-              className="hidden" 
+          <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
+            <DebouncedSearchInput 
+              value={searchTerm} 
+              onChange={(val) => setSearchTerm(val)}
+              placeholder={t('Search anything...')}
             />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          {canWrite && (
             <button 
               type="button"
-              onClick={() => fileInputRef.current?.click()} 
-              className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] text-slate-700 dark:text-[#c3c3c3] text-xs font-semibold rounded-lg hover:bg-slate-50 dark:hover:bg-[#28282a] shadow-sm transition-all active:scale-95 touch-manipulation"
-              title="Import Budget CSV (Updates matching projects)"
+              onClick={onAddBudget}
+              className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white text-xs font-semibold rounded-lg shadow-sm transition-all active:scale-95 touch-manipulation cursor-pointer"
+              title={t('Add Budget')}
             >
-              <Upload className="w-4 h-4" />
-              <span className="hidden sm:inline">{t('Import CSV')}</span>
+              <Plus className="w-4 h-4" />
+              <span>{t('Add Budget')}</span>
             </button>
-          </>
-        )}
+          )}
 
-        <div className="hidden xl:flex items-center gap-2 shrink-0">
-          <ColumnAdder 
-            availableColumns={AVAILABLE_COLUMNS} 
-            visibleColumns={visibleColumns} 
-            onAddColumn={handleToggleColumn} 
+          {/* Hidden Action Elements for Hamburger Menu & Shortcuts */}
+          <button 
+            id="budget-export-btn"
+            type="button"
+            onClick={handleExportBudget} 
+            className="hidden"
+            aria-hidden="true"
           />
+          
+          {canWrite && (
+            <>
+              <input 
+                id="budget-import-input"
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleImportBudget} 
+                accept=".csv" 
+                className="hidden" 
+              />
+              <button
+                id="budget-full-import-btn"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="hidden"
+                aria-hidden="true"
+              />
+            </>
+          )}
+
+          <div className="flex items-center gap-2 shrink-0">
+            <ColumnAdder 
+              availableColumns={AVAILABLE_COLUMNS} 
+              visibleColumns={visibleColumns} 
+              onAddColumn={handleToggleColumn} 
+            />
+          </div>
         </div>
       </div>
     </div>
   );
 }
-
 
 ================================================================================
 FILE: src/components/BudgetParts/BudgetLinkChildColumn.tsx
@@ -41187,7 +41220,8 @@ export function HeaderMenuDrawer({
               {canWriteImportCsv && (
                 <button
                   onClick={() => {
-                    document.getElementById('budget-import-input')?.click();
+                    const el = document.getElementById('budget-import-input') as HTMLInputElement | null;
+                    el ? el.click() : window.dispatchEvent(new CustomEvent('taka_trigger_budget_import'));
                     setIsMenuOpen(false);
                   }}
                   className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors cursor-pointer"
@@ -41198,7 +41232,8 @@ export function HeaderMenuDrawer({
               )}
               <button
                 onClick={() => {
-                  document.getElementById('budget-export-btn')?.click();
+                  const el = document.getElementById('budget-export-btn') as HTMLElement | null;
+                  el ? el.click() : window.dispatchEvent(new CustomEvent('taka_trigger_budget_export'));
                   setIsMenuOpen(false);
                 }}
                 className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors cursor-pointer"
@@ -41209,7 +41244,8 @@ export function HeaderMenuDrawer({
               {currentUser.role === 'admin' && (
                 <button
                   onClick={() => {
-                    document.getElementById('budget-full-import-btn')?.click();
+                    const el = (document.getElementById('budget-full-import-btn') || document.getElementById('budget-import-input')) as HTMLElement | null;
+                    el ? el.click() : window.dispatchEvent(new CustomEvent('taka_trigger_budget_import'));
                     setIsMenuOpen(false);
                   }}
                   className="w-full text-left px-4 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors cursor-pointer"
@@ -41297,7 +41333,6 @@ export function HeaderMenuDrawer({
     </>
   );
 }
-
 
 ================================================================================
 FILE: src/components/HeaderParts/HeaderUndoRedoControls.tsx
@@ -120549,73 +120584,93 @@ export function computePlanProgressFromSummaries(
 }
 
 export function computeActProgressFromSummaries(
-  summaries: Array<{ start?: string; finish?: string; runningStatus?: string; approval?: string; [key: string]: any }>
+  summaries: Array<{ start?: string; finish?: string; duration?: number | string; runningStatus?: string; approval?: string; isModularParent?: boolean; parentTaskId?: string; [key: string]: any }>
 ): number {
   if (!summaries || summaries.length === 0) return 0;
   const todayTime = getTodayMidnightMs();
 
-  const validScores: number[] = [];
-
+  // 1. Double-counting guard: filter out modular parent tasks when subtasks exist
+  const parentIds = new Set<string>();
   for (const s of summaries) {
+    if (s.parentTaskId) parentIds.add(String(s.parentTaskId));
+  }
+  const leafSummaries = summaries.filter(s => {
+    if (s.isModularParent) return false;
+    if (s.id && parentIds.has(String(s.id))) return false;
+    return true;
+  });
+  const effectiveSummaries = leafSummaries.length > 0 ? leafSummaries : summaries;
+
+  let totalWeightedScore = 0;
+  let totalDurationWeight = 0;
+
+  for (const s of effectiveSummaries) {
     if (!s.start && !s.finish && !s.runningStatus && !s.actStatus && !s.status) continue;
-
-    const statusStr = String(s.runningStatus || s.actStatus || s.status || s.delegationStatus || '').toLowerCase();
-    const approvalStr = String(s.approval || s.approvalStatus || '').toLowerCase();
-
-    if (statusStr.includes('complete') || statusStr.includes('finished') || approvalStr === 'approved') {
-      validScores.push(1.0);
-      continue;
-    }
-    if (statusStr.includes('pending') || statusStr.includes('reqapproval') || statusStr.includes('waiting') || approvalStr === 'reqapproval' || approvalStr === 'requested') {
-      validScores.push(0.8);
-      continue;
-    }
-    if (statusStr.includes('accept') || statusStr.includes('process') || statusStr.includes('progress') || statusStr.includes('delay') || approvalStr === 'accepttask') {
-      validScores.push(0.5);
-      continue;
-    }
-    if (statusStr.includes('rework') || statusStr.includes('reject') || approvalStr === 'rejected' || approvalStr === 'reqreview') {
-      validScores.push(0.3);
-      continue;
-    }
 
     const startMs = parseDateMidnightMs(s.start);
     const finishMs = parseDateMidnightMs(s.finish);
 
-    if (finishMs !== null && todayTime > finishMs) {
-      validScores.push(1.0);
-    } else if (startMs !== null && finishMs !== null && todayTime >= startMs && todayTime <= finishMs) {
-      const totalDuration = finishMs - startMs;
-      if (totalDuration > 0) {
-        const passed = todayTime - startMs;
-        validScores.push(Math.max(0.3, Math.min(0.9, passed / totalDuration)));
+    // Compute task duration weight in days (minimum 1 day)
+    let weight = 1;
+    if (s.duration !== undefined && s.duration !== null && !isNaN(Number(s.duration)) && Number(s.duration) > 0) {
+      weight = Math.max(1, Number(s.duration));
+    } else if (startMs !== null && finishMs !== null && finishMs >= startMs) {
+      weight = Math.max(1, Math.round((finishMs - startMs) / (24 * 3600 * 1000)) + 1);
+    }
+
+    const statusStr = String(s.runningStatus || s.actStatus || s.status || s.delegationStatus || '').toLowerCase();
+    const approvalStr = String(s.approval || s.approvalStatus || '').toLowerCase();
+
+    let score = 0;
+
+    // 2. Definitive completion / approval check
+    if (statusStr.includes('complete') || statusStr.includes('finished') || approvalStr === 'approved') {
+      score = 1.0;
+    } else if (statusStr.includes('pending') || statusStr.includes('reqapproval') || statusStr.includes('waiting') || approvalStr === 'reqapproval' || approvalStr === 'requested') {
+      score = 0.85;
+    } else if (statusStr.includes('rework') || statusStr.includes('reject') || approvalStr === 'rejected' || approvalStr === 'reqreview') {
+      score = 0.25;
+    } else if (statusStr.includes('accept') || statusStr.includes('process') || statusStr.includes('progress') || statusStr.includes('doing') || approvalStr === 'accepttask') {
+      // In progress: scale by elapsed time, capped at 0.85 (cannot be 1.0 until approved)
+      if (startMs !== null && finishMs !== null && finishMs > startMs) {
+        if (todayTime <= startMs) {
+          score = 0.3;
+        } else if (todayTime >= finishMs) {
+          // Overdue in progress: capped at 0.85 since it's not marked finished
+          score = 0.85;
+        } else {
+          const ratio = (todayTime - startMs) / (finishMs - startMs);
+          score = Math.max(0.3, Math.min(0.85, ratio));
+        }
       } else {
-        validScores.push(1.0);
+        score = 0.5;
       }
+    } else if (statusStr.includes('delay') || statusStr.includes('delayed') || statusStr.includes('overdue')) {
+      score = 0.5;
     } else {
-      validScores.push(0.0);
+      // 3. Fallback when no explicit status
+      if (finishMs !== null && todayTime > finishMs) {
+        // If past finish with no explicit status, treat as done only if no active blocker
+        score = 1.0;
+      } else if (startMs !== null && finishMs !== null && todayTime >= startMs && todayTime <= finishMs) {
+        const totalDuration = finishMs - startMs;
+        if (totalDuration > 0) {
+          const passed = todayTime - startMs;
+          score = Math.max(0.2, Math.min(0.9, passed / totalDuration));
+        } else {
+          score = 1.0;
+        }
+      } else {
+        score = 0.0;
+      }
     }
+
+    totalWeightedScore += score * weight;
+    totalDurationWeight += weight;
   }
 
-  if (validScores.length === 0) return 0;
-
-  let maxCompletedIdx = -1;
-  for (let i = 0; i < validScores.length; i++) {
-    if (validScores[i] >= 1.0) {
-      maxCompletedIdx = i;
-    }
-  }
-
-  let totalScore = 0;
-  for (let i = 0; i < validScores.length; i++) {
-    if (maxCompletedIdx !== -1 && i <= maxCompletedIdx) {
-      totalScore += 1.0;
-    } else {
-      totalScore += validScores[i];
-    }
-  }
-
-  return Math.round((totalScore / validScores.length) * 100);
+  if (totalDurationWeight === 0) return 0;
+  return Math.min(100, Math.max(0, Math.round((totalWeightedScore / totalDurationWeight) * 100)));
 }
 
 export function computePlanProgressPercent(groupTasks: Task[]): number {
@@ -121384,7 +121439,12 @@ import {
   computeActProgressFromSummaries,
   computeProjectActStatus,
 } from "./progressAndStatusUtils";
-import { resolveMatchedUnitSizeM2 } from "../unitSizeResolver";
+import {
+  extractPrimaryProjectCodes,
+  isProjectGroupedWithOthers,
+  resolveMatchedUnitSizeM2,
+} from "../unitSizeResolver";
+import { extractAllProjectCodes } from "./projectCodeAndScopeUtils";
 import { rollupTaskSummaries } from "../taskRollupHelpers";
 import { useDataStore } from "../../components/PictureMapping/DataContext";
 
@@ -121513,6 +121573,23 @@ export function enrichProjects(
     }
   }
 
+  // Pre-compute secondary grouped project codes per (store|year) so grouped projects take size strictly from EditTab (or 0)
+  const secondaryGroupedCodesByScope = new Set<string>();
+  for (let i = 0; i < projects.length; i++) {
+    const mp = projects[i];
+    if (!mp || mp.isDeleted || !isProjectGroupedWithOthers(mp)) continue;
+    const mpStore = String(mp.store || 'HCM').toUpperCase().trim() === 'HN' ? 'HN' : 'HCM';
+    const mpYear = String(mp.year || '').trim();
+    const primarySet = new Set(extractPrimaryProjectCodes(mp));
+    const allCodes = extractAllProjectCodes(mp);
+    for (let j = 0; j < allCodes.length; j++) {
+      const c = allCodes[j];
+      if (!primarySet.has(c)) {
+        secondaryGroupedCodesByScope.add(`${mpStore}|${mpYear}|${c}`);
+      }
+    }
+  }
+
   const enrichedProjects = projects.map((p) => {
     const pId = p.id ? String(p.id).trim() : "";
     const pCode = String(p.code || "").trim().toLowerCase();
@@ -121573,9 +121650,15 @@ export function enrichProjects(
       }
     }
 
+    const pStoreScope = String(p.store || 'HCM').toUpperCase().trim() === 'HN' ? 'HN' : 'HCM';
+    const pYearScope = String(p.year || '').trim();
+    const isSecondaryGroupedProject =
+      Boolean(pCode) && secondaryGroupedCodesByScope.has(`${pStoreScope}|${pYearScope}|${pCode}`);
+
     const isHydrated = isProjectTasksHydrated(pId);
     const cachedEntry = _perProjectEnrichCache.get(p);
     if (
+      !isSecondaryGroupedProject &&
       cachedEntry &&
       cachedEntry.isHydrated === isHydrated &&
       cachedEntry.mapUnitsRef === dataState.mapUnits &&
@@ -121741,9 +121824,9 @@ export function enrichProjects(
 
     const actProgressPercent = isAuthoritativeRealTasks && projectTasks.length > 0
       ? computeActProgressPercent(projectTasks, candidateDelegations)
-      : (p.computedActProgress && p.computedActProgress > 0 
-          ? p.computedActProgress 
-          : (taskSummaries.length > 0 ? computeActProgressFromSummaries(taskSummaries) : (p.computedActProgress ?? 0)));
+      : (taskSummaries.length > 0 
+          ? computeActProgressFromSummaries(taskSummaries) 
+          : (p.computedActProgress ?? 0));
 
     const taskCount = isAuthoritativeRealTasks
       ? projectTasks.length
@@ -121751,15 +121834,21 @@ export function enrichProjects(
 
     const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
     const actStatus = computeProjectActStatus(
-      { ...p, computedStatus: status, computedActProgress: actProgressPercent },
+      { ...p, taskSummaries, computedStatus: status, computedActProgress: actProgressPercent },
       candidateDelegations,
       projectTasks
     );
 
-    const resolvedSizeM2 =
-      p.sizeM2 !== undefined && p.sizeM2 !== null && p.sizeM2 > 0
-        ? p.sizeM2
-        : resolveMatchedUnitSizeM2(p).sizeM2;
+    const resolvedSizeM2 = isSecondaryGroupedProject
+      ? (resolveMatchedUnitSizeM2({
+          code: p.code,
+          store: p.store,
+          location: p.location,
+          year: p.year,
+        }).sizeM2 ?? 0)
+      : (p.sizeM2 !== undefined && p.sizeM2 !== null && p.sizeM2 > 0
+          ? p.sizeM2
+          : resolveMatchedUnitSizeM2(p).sizeM2);
 
     const enriched: Project = {
       ...p,
@@ -121859,7 +121948,6 @@ export function enrichProjects(
 
   return enrichedProjects;
 }
-
 
 ================================================================================
 FILE: src/lib/utilsParts/statusResolutionUtils.ts
@@ -122113,8 +122201,54 @@ export function computeProjectActStatus(
       if (statuses.some(s => s === 'Rejected' || s === 'Correction Needed')) return 'Rejected';
       if (statuses.every(s => s === 'Completed')) return 'Completed';
       if (statuses.some(s => s === 'Pending Completed' || s === 'Pending Approval' || s === 'Review Late')) return 'Pending Completed';
-      if (statuses.some(s => s === 'In Progress' || s === 'On Process' || s === 'Delayed' || s === 'Accepted')) return 'In Progress';
+      if (statuses.some(s => s === 'Delayed' || s === 'Delay')) return 'Delay';
+      if (statuses.some(s => s === 'In Progress' || s === 'On Process' || s === 'Accepted')) return 'In Progress';
       return statuses[0] || 'Planned';
+    }
+  }
+
+  // Inspect taskSummaries or matchedTasks for precise Delay/Completed/Pending status
+  const allTasks = (matchedTasks && matchedTasks.length > 0)
+    ? matchedTasks
+    : (p.taskSummaries && Array.isArray(p.taskSummaries) ? p.taskSummaries : []);
+
+  if (allTasks.length > 0) {
+    const todayTime = getTodayMidnightMs();
+    let hasDelay = false;
+    let hasPending = false;
+    let hasInProgress = false;
+    let hasRejected = false;
+    let allCompleted = true;
+    let validTaskCount = 0;
+
+    for (const t of allTasks) {
+      if ((t as any).isModularParent) continue;
+      validTaskCount++;
+      const st = String(t.runningStatus || (t as any).actStatus || (t as any).status || '').toLowerCase();
+      const app = String((t as any).approval || '').toLowerCase();
+      const finMs = parseDateMidnightMs(t.finish);
+      const isDone = st.includes('complete') || st.includes('finished') || app === 'approved';
+
+      if (!isDone) {
+        allCompleted = false;
+        if (st.includes('delay') || (finMs !== null && todayTime > finMs)) {
+          hasDelay = true;
+        } else if (app === 'reqapproval' || st.includes('pending') || st.includes('waiting')) {
+          hasPending = true;
+        } else if (st.includes('reject') || st.includes('rework')) {
+          hasRejected = true;
+        } else if (st.includes('process') || st.includes('progress') || st.includes('accept') || (t.start && parseDateMidnightMs(t.start)! <= todayTime)) {
+          hasInProgress = true;
+        }
+      }
+    }
+
+    if (validTaskCount > 0) {
+      if (allCompleted || p.computedActProgress === 100) return 'Completed';
+      if (hasRejected) return 'Rejected';
+      if (hasDelay) return 'Delay';
+      if (hasPending) return 'Pending Completed';
+      if (hasInProgress || (p.computedActProgress && p.computedActProgress > 0)) return 'In Progress';
     }
   }
 

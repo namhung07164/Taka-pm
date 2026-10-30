@@ -395,9 +395,9 @@ export function enrichProjects(
 
     const actProgressPercent = isAuthoritativeRealTasks && projectTasks.length > 0
       ? computeActProgressPercent(projectTasks, candidateDelegations)
-      : (p.computedActProgress && p.computedActProgress > 0 
-          ? p.computedActProgress 
-          : (taskSummaries.length > 0 ? computeActProgressFromSummaries(taskSummaries) : (p.computedActProgress ?? 0)));
+      : (taskSummaries.length > 0 
+          ? computeActProgressFromSummaries(taskSummaries) 
+          : (p.computedActProgress ?? 0));
 
     const taskCount = isAuthoritativeRealTasks
       ? projectTasks.length
@@ -405,7 +405,7 @@ export function enrichProjects(
 
     const status = getStatus(computedTakStart, computedTakCompl, computedOpening || p.opening, p.code);
     const actStatus = computeProjectActStatus(
-      { ...p, computedStatus: status, computedActProgress: actProgressPercent },
+      { ...p, taskSummaries, computedStatus: status, computedActProgress: actProgressPercent },
       candidateDelegations,
       projectTasks
     );

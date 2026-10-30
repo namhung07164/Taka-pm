@@ -381,7 +381,8 @@ export function HeaderMenuDrawer({
               {canWriteImportCsv && (
                 <button
                   onClick={() => {
-                    document.getElementById('budget-import-input')?.click();
+                    const el = document.getElementById('budget-import-input') as HTMLInputElement | null;
+                    el ? el.click() : window.dispatchEvent(new CustomEvent('taka_trigger_budget_import'));
                     setIsMenuOpen(false);
                   }}
                   className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors cursor-pointer"
@@ -392,7 +393,8 @@ export function HeaderMenuDrawer({
               )}
               <button
                 onClick={() => {
-                  document.getElementById('budget-export-btn')?.click();
+                  const el = document.getElementById('budget-export-btn') as HTMLElement | null;
+                  el ? el.click() : window.dispatchEvent(new CustomEvent('taka_trigger_budget_export'));
                   setIsMenuOpen(false);
                 }}
                 className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors cursor-pointer"
@@ -403,7 +405,8 @@ export function HeaderMenuDrawer({
               {currentUser.role === 'admin' && (
                 <button
                   onClick={() => {
-                    document.getElementById('budget-full-import-btn')?.click();
+                    const el = (document.getElementById('budget-full-import-btn') || document.getElementById('budget-import-input')) as HTMLElement | null;
+                    el ? el.click() : window.dispatchEvent(new CustomEvent('taka_trigger_budget_import'));
                     setIsMenuOpen(false);
                   }}
                   className="w-full text-left px-4 py-2.5 text-xs text-red-600 dark:text-red-400 font-medium hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2.5 transition-colors cursor-pointer"
