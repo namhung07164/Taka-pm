@@ -1,4 +1,5 @@
 import React, { Dispatch, SetStateAction, useEffect, useRef } from 'react';
+import { exportStageHighRes } from './layoutStageUtils';
 
 interface UseLayoutWindowListenersParams {
   isPrintPreview: boolean;
@@ -11,6 +12,9 @@ interface UseLayoutWindowListenersParams {
   versionId?: string | null;
   activeTab?: string;
   focusedUnitId?: string | null;
+  bgImage?: any;
+  version?: any;
+  units?: any[];
 }
 
 export function useLayoutWindowListeners({
@@ -24,6 +28,9 @@ export function useLayoutWindowListeners({
   versionId,
   activeTab,
   focusedUnitId,
+  bgImage,
+  version,
+  units,
 }: UseLayoutWindowListenersParams) {
   const focusedUnitIdRef = useRef(focusedUnitId);
   focusedUnitIdRef.current = focusedUnitId;
@@ -121,4 +128,19 @@ export function useLayoutWindowListeners({
       window.removeEventListener('focus', handleWakeUp);
     };
   }, [stageRef]);
+
+  // Global window references for high-res export
+  useEffect(() => {
+    (window as any).__taka_layout_stage = stageRef.current;
+    (window as any).__taka_layout_export = (dpi: number = 200) => {
+      return exportStageHighRes(stageRef.current, bgImage, version, units || [], dpi);
+    };
+
+    return () => {
+      if ((window as any).__taka_layout_stage === stageRef.current) {
+        (window as any).__taka_layout_stage = null;
+        (window as any).__taka_layout_export = null;
+      }
+    };
+  }, [bgImage, version, units, stageRef]);
 }

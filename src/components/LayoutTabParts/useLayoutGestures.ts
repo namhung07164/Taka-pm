@@ -58,6 +58,27 @@ export function useLayoutGestures({
   const rafZoomAnimIdRef = useRef<number | null>(null);
   const targetZoomScaleRef = useRef<number | null>(null);
 
+  // Interaction guard refs to prevent accidental unit tooltip triggers while zooming, pinching or dragging
+  const isPinchingRef = useRef(false);
+  const lastPinchEndTimeRef = useRef(0);
+  const lastWheelTimeRef = useRef(0);
+  const lastDragEndTimeRef = useRef(0);
+  const lastZoomTimeRef = useRef(0);
+  const dragStartPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const isDraggingStageRef = useRef(false);
+
+  const canTriggerUnitInteraction = useCallback(() => {
+    if (isInteractingRef.current) return false;
+    if (isPinchingRef.current) return false;
+    if (isDraggingStageRef.current) return false;
+    const now = Date.now();
+    if (now - lastPinchEndTimeRef.current < 550) return false;
+    if (now - lastWheelTimeRef.current < 400) return false;
+    if (now - lastDragEndTimeRef.current < 350) return false;
+    if (now - lastZoomTimeRef.current < 400) return false;
+    return true;
+  }, []);
+
   const stopInertia = useCallback(() => {
     if (rafInertiaIdRef.current !== null) {
       cancelAnimationFrame(rafInertiaIdRef.current);
@@ -224,9 +245,11 @@ export function useLayoutGestures({
     }
     stopInertia();
     isInteractingRef.current = true;
+    isDraggingStageRef.current = true;
     setHoverInfo((current: any) => (current ? null : current));
     const stage = stageRef.current;
     if (stage) {
+      dragStartPosRef.current = { x: stage.x(), y: stage.y() };
       dragVelocityTrackerRef.current.history = [
         { x: stage.x(), y: stage.y(), time: performance.now() }
       ];
@@ -248,8 +271,15 @@ export function useLayoutGestures({
     const stage = stageRef.current;
     if (!stage) {
       isInteractingRef.current = false;
+      isDraggingStageRef.current = false;
       return;
     }
+
+    const dist = Math.hypot(stage.x() - dragStartPosRef.current.x, stage.y() - dragStartPosRef.current.y);
+    if (dist > 5) {
+      lastDragEndTimeRef.current = Date.now();
+    }
+    isDraggingStageRef.current = false;
 
     const history = dragVelocityTrackerRef.current.history;
     const now = performance.now();
@@ -308,7 +338,9 @@ export function useLayoutGestures({
           rafInertiaIdRef.current = null;
           currentStage.batchDraw();
           setStagePos({ x: currentStage.x(), y: currentStage.y() });
-          isInteractingRef.current = false;
+          setTimeout(() => {
+            isInteractingRef.current = false;
+          }, 200);
         }
       };
 
@@ -316,7 +348,9 @@ export function useLayoutGestures({
     } else {
       stage.batchDraw();
       setStagePos({ x: stage.x(), y: stage.y() });
-      isInteractingRef.current = false;
+      setTimeout(() => {
+        isInteractingRef.current = false;
+      }, 200);
     }
   }, [stageRef, setStagePos]);
 
@@ -329,6 +363,7 @@ export function useLayoutGestures({
     }
 
     isInteractingRef.current = true;
+    lastZoomTimeRef.current = Date.now();
     setHoverInfo(null);
 
     const baseScale = targetZoomScaleRef.current ?? stage.scaleX();
@@ -370,7 +405,10 @@ export function useLayoutGestures({
         targetZoomScaleRef.current = null;
         setStageScale(goalScale);
         setStagePos(finalPos);
-        isInteractingRef.current = false;
+        lastZoomTimeRef.current = Date.now();
+        setTimeout(() => {
+          isInteractingRef.current = false;
+        }, 250);
         return;
       }
 
@@ -404,6 +442,12 @@ export function useLayoutGestures({
 
   return {
     isInteractingRef,
+    isPinchingRef,
+    lastPinchEndTimeRef,
+    lastWheelTimeRef,
+    lastDragEndTimeRef,
+    lastZoomTimeRef,
+    canTriggerUnitInteraction,
     wheelTimeoutRef,
     pendingWheelDeltaRef,
     rafWheelIdRef,

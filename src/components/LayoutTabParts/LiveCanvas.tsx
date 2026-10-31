@@ -48,18 +48,12 @@ export const LiveCanvas = React.memo(function LiveCanvas({
   onOpenR2Config,
   canWrite,
 }: LiveCanvasProps) {
-  const globalYearFilter = useAppStore(state => state.globalYearFilter);
-  const layoutTooltipVisibility = useAppStore(state => state.layoutTooltipVisibility);
-  const setLayoutTooltipVisibility = useAppStore(state => state.setLayoutTooltipVisibility);
-  const resetLayoutTooltipVisibility = useAppStore(state => state.resetLayoutTooltipVisibility);
-  const setEditingProject = useAppStore(state => state.setEditingProject);
-  const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
-  const setIsReadOnlyModal = useAppStore(state => state.setIsReadOnlyModal);
-  const isProjectModalOpen = useAppStore(state => state.isProjectModalOpen);
-  const quickNavTarget = useAppStore(state => state.quickNavTarget);
-  const setModalInitialTab = useAppStore(state => state.setModalInitialTab);
-  const isPrintPreview = useAppStore(state => state.isPrintPreview);
-  const setIsPrintPreview = useAppStore(state => state.setIsPrintPreview);
+  const globalYearFilter = useAppStore(state => state.globalYearFilter); const layoutTooltipVisibility = useAppStore(state => state.layoutTooltipVisibility);
+  const setLayoutTooltipVisibility = useAppStore(state => state.setLayoutTooltipVisibility); const resetLayoutTooltipVisibility = useAppStore(state => state.resetLayoutTooltipVisibility);
+  const setEditingProject = useAppStore(state => state.setEditingProject); const setIsProjectModalOpen = useAppStore(state => state.setIsProjectModalOpen);
+  const setIsReadOnlyModal = useAppStore(state => state.setIsReadOnlyModal); const isProjectModalOpen = useAppStore(state => state.isProjectModalOpen);
+  const quickNavTarget = useAppStore(state => state.quickNavTarget); const setModalInitialTab = useAppStore(state => state.setModalInitialTab);
+  const isPrintPreview = useAppStore(state => state.isPrintPreview); const setIsPrintPreview = useAppStore(state => state.setIsPrintPreview);
 
   const [filterOnlyAlerts, setFilterOnlyAlerts] = useState<boolean>(false);
   const [isSmartAlertCollapsed, setIsSmartAlertCollapsed] = useState<boolean>(false);
@@ -469,6 +463,10 @@ export const LiveCanvas = React.memo(function LiveCanvas({
         pendingTouchRef={stageInteractions.pendingTouchRef}
         rafTouchIdRef={stageInteractions.rafTouchIdRef}
         isInteractingRef={stageInteractions.isInteractingRef}
+        isPinchingRef={stageInteractions.isPinchingRef}
+        lastPinchEndTimeRef={stageInteractions.lastPinchEndTimeRef}
+        lastWheelTimeRef={stageInteractions.lastWheelTimeRef}
+        lastZoomTimeRef={stageInteractions.lastZoomTimeRef}
         fitToScreen={stageInteractions.fitToScreen}
         lastWheelPointerRef={stageInteractions.lastWheelPointerRef}
         pendingWheelDeltaRef={stageInteractions.pendingWheelDeltaRef}
