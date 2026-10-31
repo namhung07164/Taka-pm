@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { getUnitEffectiveSizeM2 } from '../../../../../lib/unitSizeResolver';
 import { SearchableSelect, UnitSizeInput } from './InspectorInputs';
+import { UnitSizeCsvToolbar } from './UnitSizeCsvToolbar';
 
 export interface EditTabInspectorProps {
   units: UnitShape[];
@@ -74,7 +75,7 @@ export const EditTabInspector = memo(function EditTabInspector({
           "p-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
           isInspectorCollapsed ? "w-5 h-5 flex items-center justify-center my-0.5" : "absolute right-1.5 top-1.5 z-30 border border-slate-700 bg-slate-900"
         )}
-        title={isInspectorCollapsed ? "Mở rộng Inspector" : "Thu gọn Inspector để mở rộng Canvas"}
+        title={isInspectorCollapsed ? "Expand Inspector" : "Collapse Inspector to expand Canvas"}
       >
         {isInspectorCollapsed ? <ChevronLeft size={11} className="rotate-180" /> : <ChevronRight size={11} />}
       </button>
@@ -101,6 +102,17 @@ export const EditTabInspector = memo(function EditTabInspector({
                 onChange={(e) => setLibrarySearchTerm(e.target.value)}
               />
             </div>
+            <UnitSizeCsvToolbar
+              units={units}
+              activeVersion={activeVersion}
+              activeVersionId={activeVersionId}
+              versions={versions}
+              setVersions={setVersions}
+              effectiveYear={effectiveYear}
+              summaryMap={summaryMap}
+              handleSetUnitsWithHistory={handleSetUnitsWithHistory}
+              syncUnitSizeToMatchedProjects={syncUnitSizeToMatchedProjects}
+            />
           </div>
       
           {selectedId ? (

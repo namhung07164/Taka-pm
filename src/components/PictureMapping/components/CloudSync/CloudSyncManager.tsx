@@ -175,6 +175,22 @@ export default function CloudSyncManager({
     }
   };
 
+  const withSyncTimeout = <T,>(promise: Promise<T>, ms: number, fallbackMsg = 'Timeout'): Promise<T> => {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(fallbackMsg)), ms);
+      promise.then(
+        (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+        (e) => {
+          clearTimeout(timer);
+          reject(e);
+        }
+      );
+    });
+  };
+
   const executeSync = async (forceAction?: 'upload' | 'download', isAuto = false, forceScope?: CloudSyncScope) => {
     const syncStartTime = Date.now();
     const currentAction = forceAction || actionType;
@@ -182,6 +198,11 @@ export default function CloudSyncManager({
     setIsModalOpen(false);
     setSyncing(true);
     setBackgroundSyncing(currentAction);
+
+    const watchdogTimer = setTimeout(() => {
+      setBackgroundSyncing(null);
+      setSyncing(false);
+    }, 18000);
 
     // 1. INSTANT 0ms OPTIMISTIC COMMIT TO ZUSTAND & LOCALSTORAGE
     const freshDataState = useDataStore.getState();
@@ -234,7 +255,7 @@ export default function CloudSyncManager({
 
     // 2. NETWORK ASYNC CLOUD SYNC (R2 & FIRESTORE)
     try {
-      const creds = await getStoredR2CredentialsAsync();
+      const creds = await withSyncTimeout(getStoredR2CredentialsAsync(), 4000, 'R2 credentials check timed out').catch(() => getStoredR2Credentials());
       const credsValidation = isR2CredentialsValid(creds);
 
       if (currentAction === 'upload') {
@@ -249,7 +270,11 @@ export default function CloudSyncManager({
               endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
               credentials: { accessKeyId: creds.accessKeyId.trim(), secretAccessKey: creds.secretAccessKey.trim() },
             });
-            const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', creds, s3ClientInstance);
+            const downloadRes = await withSyncTimeout(
+              downloadR2JsonFile<any>('mapping_config.json', creds, s3ClientInstance),
+              8000,
+              'Pre-fetch mapping_config.json timed out'
+            );
             if (downloadRes.success && downloadRes.data) {
               existingCloudData = downloadRes.data;
             }
@@ -261,7 +286,11 @@ export default function CloudSyncManager({
         // Fallback pre-fetch from Firestore backup if R2 did not have data
         if (!existingCloudData) {
           try {
-            const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
+            const snap = await withSyncTimeout(
+              getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config")),
+              5000,
+              'Firestore pre-fetch timed out'
+            );
             if (snap.exists()) {
               existingCloudData = snap.data();
             }
@@ -325,7 +354,11 @@ export default function CloudSyncManager({
                 const blob = await res.blob();
                 if (blob.size > 0) {
                   const bgName = `bg_${v.id}_${Date.now()}.jpeg`;
-                  const uploadRes = await uploadSingleR2File({ name: bgName, blob }, creds, s3ClientInstance);
+                  const uploadRes = await withSyncTimeout(
+                    uploadSingleR2File({ name: bgName, blob }, creds, s3ClientInstance),
+                    10000,
+                    'Background upload timed out'
+                  );
                   if (uploadRes.success) {
                     r2Key = uploadRes.name;
                     const { GetObjectCommand, getSignedUrl } = await getS3Sdk();
@@ -412,15 +445,11 @@ export default function CloudSyncManager({
           };
         }
 
-        // 2. Dọn dẹp ảnh mồ côi nếu scope có liên quan tới edit hoặc all
+        // 2. Non-blocking background cleanup of old R2 images (do not block Save Cloud button)
         if (creds && s3ClientInstance && (currentScope === 'edit' || currentScope === 'all') && allValidBgNames.length > 0) {
-          setProgress(60);
-          setStatusText('Đang dọn dẹp ảnh nền cũ trên R2...');
-          try {
-            await purgeOldR2BackgroundImages(allValidBgNames, creds, s3ClientInstance, (status) => setStatusText(status));
-          } catch (cleanErr) {
+          purgeOldR2BackgroundImages(allValidBgNames, creds, s3ClientInstance).catch((cleanErr) => {
             console.warn('[CloudSync] Lỗi dọn dẹp ảnh nền cũ:', cleanErr);
-          }
+          });
         }
 
         // 3. Build config Data
@@ -467,7 +496,11 @@ export default function CloudSyncManager({
         if (creds && credsValidation.valid && s3ClientInstance) {
           try {
             const configBlob = new Blob([JSON.stringify(configData, null, 2)], { type: 'application/json' });
-            const uploadRes = await uploadSingleR2File({ name: 'mapping_config.json', blob: configBlob }, creds, s3ClientInstance);
+            const uploadRes = await withSyncTimeout(
+              uploadSingleR2File({ name: 'mapping_config.json', blob: configBlob }, creds, s3ClientInstance),
+              10000,
+              'R2 mapping_config.json upload timed out'
+            );
             if (uploadRes.success) {
               r2UploadSuccess = true;
             } else {
@@ -569,16 +602,21 @@ export default function CloudSyncManager({
             timestamp: configData.timestamp,
           });
 
-          await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"), firestorePayload, { merge: true });
-          firestoreSaveSuccess = true;
-
-          // Also update version timestamp to notify LiveLayoutViewer and other clients
-          await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
+          const fsWrite1 = setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"), firestorePayload, { merge: true });
+          const fsWrite2 = setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "versions"), { 
             pictureMappingVersion: configData.timestamp,
             updatedAt: new Date().toISOString()
           }, { merge: true });
-        } catch (fsErr) {
-          console.error('[Firestore Backup] Error saving backup:', fsErr);
+
+          // Firestore queues writes locally immediately; wait up to 5s for server ACK so UI never hangs
+          await withSyncTimeout(Promise.all([fsWrite1, fsWrite2]), 5000, 'Firestore write queued');
+          firestoreSaveSuccess = true;
+        } catch (fsErr: any) {
+          if (fsErr?.message === 'Firestore write queued') {
+            firestoreSaveSuccess = true;
+          } else {
+            console.error('[Firestore Backup] Error saving backup:', fsErr);
+          }
         }
 
         try {
@@ -670,7 +708,11 @@ export default function CloudSyncManager({
               endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
               credentials: { accessKeyId: creds.accessKeyId, secretAccessKey: creds.secretAccessKey },
             });
-            const downloadRes = await downloadR2JsonFile<any>('mapping_config.json', creds, s3);
+            const downloadRes = await withSyncTimeout(
+              downloadR2JsonFile<any>('mapping_config.json', creds, s3),
+              8000,
+              'R2 download mapping_config.json timed out'
+            );
             if (downloadRes.success && downloadRes.data) {
               data = downloadRes.data;
               loadSource = 'Cloudflare R2';
@@ -688,7 +730,11 @@ export default function CloudSyncManager({
         } catch {}
         if (!data || (knownPicMapVer > 0 && knownPicMapVer > (data.timestamp || 0))) {
           try {
-            const snap = await getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config"));
+            const snap = await withSyncTimeout(
+              getDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_config", "picture_mapping_config")),
+              5000,
+              'Firestore download timed out'
+            );
             if (snap.exists()) {
               const fsData = snap.data() as any;
               if (fsData?.storeLocationData) {
@@ -980,6 +1026,7 @@ export default function CloudSyncManager({
         });
       }
     } finally {
+      clearTimeout(watchdogTimer);
       setBackgroundSyncing(null);
       setSyncing(false);
     }

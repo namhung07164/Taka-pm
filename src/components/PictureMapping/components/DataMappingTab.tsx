@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { motion, AnimatePresence } from 'motion/react';
-import { Split, Edit3, GitMerge, Eye, Maximize2, X, Building2, MapPin, Layers, Calendar } from 'lucide-react';
+import { Split, Edit3, GitMerge, Eye, Maximize2, Minimize2, X, Building2, MapPin, Layers, Calendar } from 'lucide-react';
 import { cn } from '../lib/utils';
 import EditTab from './DataMapping/EditTab';
 import DynamicHierarchyTab from './DataMapping/DynamicHierarchyTab';
@@ -21,6 +22,28 @@ export default React.memo(function DataMappingTab() {
   const [isTabFullscreen, setIsTabFullscreen] = useState(false);
   
   const [isHeaderVisible, setIsHeaderVisible] = useState(false);
+
+  useEffect(() => {
+    const handleToggleEvent = () => {
+      setIsTabFullscreen(prev => !prev);
+    };
+    window.addEventListener('taka_toggle_mapping_fullscreen', handleToggleEvent);
+    return () => window.removeEventListener('taka_toggle_mapping_fullscreen', handleToggleEvent);
+  }, []);
+
+  useEffect(() => {
+    if (!isTabFullscreen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+          return;
+        }
+        setIsTabFullscreen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isTabFullscreen]);
 
   const currentUser = useAppStore(state => state.currentUser);
   const isAdmin = currentUser.role === 'admin';
@@ -221,8 +244,13 @@ export default React.memo(function DataMappingTab() {
     }
   };
 
-  return (
-    <div className="flex flex-col h-full w-full overflow-hidden relative min-h-0">
+  const workspaceBody = (
+    <div className={cn(
+      "flex flex-col w-full overflow-hidden min-h-0",
+      isTabFullscreen
+        ? "fixed inset-0 z-[200000] bg-slate-950 text-slate-100 p-1.5 sm:p-2.5 h-screen"
+        : "h-full relative"
+    )}>
       <div className="relative z-10 px-0.5 py-0.5 shrink-0">
         <div className="glass rounded-md py-0.5 px-1.5 border border-slate-800/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between bg-slate-950/90 backdrop-blur-xl gap-1">
           {/* Top Row on Mobile: Title & SubTab Switcher + Fullscreen */}
@@ -279,12 +307,17 @@ export default React.memo(function DataMappingTab() {
               </div>
 
               <button 
-                onClick={() => setIsTabFullscreen(true)}
-                className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded text-slate-300 hover:text-white transition-all shadow-sm flex items-center gap-1 text-[9px] font-semibold shrink-0"
-                title="Toàn màn hình Workspace"
+                onClick={() => setIsTabFullscreen(prev => !prev)}
+                className={cn(
+                  "px-1.5 py-0.5 border rounded transition-all shadow-sm flex items-center gap-1 text-[9px] font-semibold shrink-0 active:scale-95 touch-manipulation cursor-pointer",
+                  isTabFullscreen
+                    ? "bg-red-600/20 hover:bg-red-600 text-red-300 hover:text-white border-red-500/40"
+                    : "bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300 hover:text-white"
+                )}
+                title={isTabFullscreen ? "Exit Fullscreen (Esc)" : "Fullscreen Workspace"}
               >
-                <Maximize2 size={10} />
-                <span className="hidden md:inline">Toàn Màn Hình</span>
+                {isTabFullscreen ? <Minimize2 size={10} /> : <Maximize2 size={10} />}
+                <span className="hidden md:inline">{isTabFullscreen ? 'Thoát Toàn Màn Hình' : 'Toàn Màn Hình'}</span>
               </button>
             </div>
           </div>
@@ -351,6 +384,16 @@ export default React.memo(function DataMappingTab() {
             </div>
 
             <CloudSyncManager scope={activeSubTab === 'dynamic-hierarchy' ? 'dynamic' : activeSubTab} compact />
+
+            {isTabFullscreen && (
+              <button
+                onClick={() => setIsTabFullscreen(false)}
+                className="w-6 h-6 flex items-center justify-center bg-slate-800 hover:bg-red-600 text-slate-200 hover:text-white rounded border border-slate-700 transition-all shadow cursor-pointer"
+                title="Close Fullscreen (Esc)"
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -370,72 +413,20 @@ export default React.memo(function DataMappingTab() {
           </motion.div>
         </AnimatePresence>
       </div>
-
-      {/* Fullscreen Overlay */}
-      <AnimatePresence>
-        {isTabFullscreen && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            className="fixed inset-0 z-[99999] bg-bg-dark p-2 lg:p-3 overflow-hidden flex flex-col"
-          >
-            <div className="flex items-center justify-between mb-2 shrink-0">
-              <div className="flex bg-slate-900/70 p-0.5 rounded-lg border border-slate-800">
-                <button
-                  onClick={() => setActiveSubTab('edit')}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-bold uppercase transition-all",
-                    activeSubTab === 'edit' ? "bg-brand-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-                  )}
-                >
-                  <Edit3 size={12} /> Edit
-                </button>
-                <button
-                  onClick={() => setActiveSubTab('dynamic-hierarchy')}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-bold uppercase transition-all",
-                    activeSubTab === 'dynamic-hierarchy' ? "bg-brand-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-                  )}
-                >
-                  <GitMerge size={12} /> Dynamic Hierarchy
-                </button>
-                <button
-                  onClick={() => setActiveSubTab('review')}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-bold uppercase transition-all",
-                    activeSubTab === 'review' ? "bg-brand-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-                  )}
-                >
-                  <Eye size={12} /> Review
-                </button>
-              </div>
-
-              <button 
-                onClick={() => setIsTabFullscreen(false)}
-                className="w-7 h-7 flex items-center justify-center bg-slate-800 hover:bg-red-600 text-white rounded-lg transition-all shadow"
-              >
-                <X size={15} />
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-hidden relative glass border border-slate-800 rounded-xl p-1.5">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={`fs-${activeSubTab}`}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="h-full"
-                >
-                  {renderTabContent()}
-                </motion.div>
-              </AnimatePresence>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
+
+  if (isTabFullscreen && typeof document !== 'undefined') {
+    return (
+      <>
+        <div className="flex flex-col h-full w-full overflow-hidden relative min-h-0 bg-slate-950/50 rounded-lg border border-slate-800 items-center justify-center text-slate-500 text-xs">
+          Workspace is open in Fullscreen mode
+        </div>
+        {createPortal(workspaceBody, document.body)}
+      </>
+    );
+  }
+
+  return workspaceBody;
 });
 

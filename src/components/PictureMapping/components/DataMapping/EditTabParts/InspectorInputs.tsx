@@ -143,14 +143,20 @@ export const UnitSizeInput = memo(function UnitSizeInput({
     };
   }, []);
 
+  const parseDecimal = (val: string): number | undefined => {
+    const normalized = String(val || '').replace(/,/g, '.').trim();
+    if (!normalized) return undefined;
+    const parsed = parseFloat(normalized);
+    return isNaN(parsed) || parsed <= 0 ? undefined : Math.round(parsed * 100) / 100;
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value;
     setLocalVal(raw);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      const parsed = parseFloat(raw);
-      onCommitRef.current(isNaN(parsed) || parsed <= 0 ? undefined : parsed);
+      onCommitRef.current(parseDecimal(raw));
     }, 350);
   };
 
@@ -160,8 +166,11 @@ export const UnitSizeInput = memo(function UnitSizeInput({
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    const parsed = parseFloat(localVal);
-    onCommitRef.current(isNaN(parsed) || parsed <= 0 ? undefined : parsed);
+    const num = parseDecimal(localVal);
+    if (num !== undefined) {
+      setLocalVal(String(num));
+    }
+    onCommitRef.current(num);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -172,9 +181,8 @@ export const UnitSizeInput = memo(function UnitSizeInput({
 
   return (
     <input
-      type="number"
-      step="0.01"
-      min="0"
+      type="text"
+      inputMode="decimal"
       placeholder="m²"
       value={localVal}
       onFocus={() => { isFocusedRef.current = true; }}

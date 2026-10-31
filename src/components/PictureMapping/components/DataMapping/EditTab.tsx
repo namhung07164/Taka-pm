@@ -541,11 +541,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
   }, []);
 
   const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      containerRef.current?.requestFullscreen();
-    } else {
-      document.exitFullscreen();
-    }
+    setIsFullscreen(prev => !prev);
+    window.dispatchEvent(new CustomEvent('taka_toggle_mapping_fullscreen'));
   };
 
   useEffect(() => {
@@ -2166,7 +2163,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
       {/* Copy Background & Alignment Modal */}
       {isCopyBgModalOpen && createPortal(
-        <div className="fixed inset-0 z-[99999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[350000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <Draggable handle=".copy-bg-handle" nodeRef={copyBgModalRef}>
             <div ref={copyBgModalRef} className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden text-slate-200">
               <div className="copy-bg-handle cursor-grab active:cursor-grabbing px-5 py-4 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between select-none">
@@ -2288,7 +2285,7 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
       {/* Dynamic Unit Summary Draggable Floating Modal */}
       {isSummaryTableOpen && createPortal(
-        <div className="fixed inset-0 z-[99998] pointer-events-none flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[320000] pointer-events-none flex items-center justify-center p-4">
           <Draggable handle=".summary-modal-handle" nodeRef={summaryModalRef}>
             <div 
               ref={summaryModalRef} 

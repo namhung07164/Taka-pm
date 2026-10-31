@@ -491,6 +491,22 @@ export async function purgeOldR2BackgroundImages(
   }
 }
 
+function withR2Timeout<T>(promise: Promise<T>, ms: number, errMsg = 'R2 request timed out'): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(errMsg)), ms);
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 /**
  * Downloads a JSON file from Cloudflare R2 using dual method:
  * Method 1: S3 SDK direct getObject with transformToString()
@@ -503,15 +519,15 @@ export async function downloadR2JsonFile<T = any>(
 ): Promise<{ success: boolean; data?: T; error?: string; notFound?: boolean }> {
   const { GetObjectCommand, getSignedUrl } = await getS3Sdk();
 
-  // Method 1: S3Client SDK direct send
+  // Method 1: S3Client SDK direct send (with 5s timeout)
   try {
     const command = new GetObjectCommand({
       Bucket: creds.bucketName.trim(),
       Key: key,
     });
-    const res = await s3.send(command);
+    const res = await withR2Timeout(s3.send(command), 5000, 'S3 GetObject timed out');
     if (res.Body) {
-      const text = await (res.Body as any).transformToString();
+      const text = await withR2Timeout((res.Body as any).transformToString() as Promise<string>, 5000, 'S3 Body read timed out');
       const parsed = JSON.parse(text);
       return { success: true, data: parsed };
     }
@@ -524,25 +540,27 @@ export async function downloadR2JsonFile<T = any>(
     console.warn(`[R2 Download] S3 send failed for "${key}", trying signed URL fallback:`, sdkErr);
   }
 
-  // Method 2: Presigned GET URL fetch
+  // Method 2: Presigned GET URL fetch (with 7s timeout)
   try {
     const command = new GetObjectCommand({
       Bucket: creds.bucketName.trim(),
       Key: key,
       ResponseCacheControl: 'no-cache, no-store, must-revalidate',
     });
-    const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
-    // Append timestamp query parameter to strictly bypass any browser / CDN HTTP cache
+    const signedUrl = await withR2Timeout(getSignedUrl(s3, command, { expiresIn: 3600 }), 4000, 'Presign GET timed out');
     const cacheBusterUrl = signedUrl.includes('?') 
       ? `${signedUrl}&_t=${Date.now()}` 
       : `${signedUrl}?_t=${Date.now()}`;
+    const controller = new AbortController();
+    const fetchTimer = setTimeout(() => controller.abort(), 7000);
     const res = await fetch(cacheBusterUrl, { 
       cache: 'no-store',
+      signal: controller.signal,
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache'
       }
-    });
+    }).finally(() => clearTimeout(fetchTimer));
     if (res.status === 404) {
       return { success: false, notFound: true, error: `File "${key}" chưa tồn tại trên R2 Bucket (Vui lòng bấm Save Cloud để lưu cấu hình lần đầu).` };
     }
@@ -554,7 +572,7 @@ export async function downloadR2JsonFile<T = any>(
     return { success: true, data };
   } catch (fetchErr: any) {
     const errMsg = fetchErr?.message || String(fetchErr);
-    if (errMsg.includes('Load failed') || errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('CORS')) {
+    if (errMsg.includes('Load failed') || errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('CORS') || errMsg.includes('abort')) {
       return { 
         success: false, 
         error: 'Lỗi CORS / Mạng khi kết nối Cloudflare R2: Hãy đảm bảo CORS Policy trên R2 Bucket cho phép GET/PUT từ domain của bạn.' 
@@ -576,7 +594,7 @@ export async function uploadSingleR2File(
     bucketName: string;
   },
   s3: S3ClientType,
-  maxRetries = 3
+  maxRetries = 2
 ): Promise<R2UploadFileResult> {
   const originalName = file.name || 'Export.jpeg';
   const isJson = originalName.toLowerCase().endsWith('.json');
@@ -587,7 +605,7 @@ export async function uploadSingleR2File(
   let lastError = '';
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    // Attempt Method 1: S3 SDK direct PutObjectCommand with ArrayBuffer
+    // Attempt Method 1: S3 SDK direct PutObjectCommand with ArrayBuffer (with 6s timeout)
     try {
       const { PutObjectCommand } = await getS3Sdk();
       const arrayBuffer = await file.blob.arrayBuffer();
@@ -601,13 +619,13 @@ export async function uploadSingleR2File(
         CacheControl: cacheControl,
       });
 
-      await s3.send(command);
+      await withR2Timeout(s3.send(command), 6000, 'S3 PutObject timed out');
       return { name: safeName, success: true };
     } catch (s3Err: any) {
       console.warn(`[R2 Upload] S3 SDK send failed (lần ${attempt}/${maxRetries}), trying presigned URL:`, s3Err);
     }
 
-    // Attempt Method 2: Presigned PUT URL fetch
+    // Attempt Method 2: Presigned PUT URL fetch (with 7s timeout)
     try {
       const { PutObjectCommand, getSignedUrl } = await getS3Sdk();
       const command = new PutObjectCommand({
@@ -617,15 +635,18 @@ export async function uploadSingleR2File(
         CacheControl: cacheControl,
       });
 
-      const signedUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+      const signedUrl = await withR2Timeout(getSignedUrl(s3, command, { expiresIn: 3600 }), 4000, 'Presign PUT timed out');
+      const controller = new AbortController();
+      const putTimer = setTimeout(() => controller.abort(), 7000);
       const res = await fetch(signedUrl, {
         method: 'PUT',
+        signal: controller.signal,
         headers: { 
           'Content-Type': contentType,
           'Cache-Control': cacheControl,
         },
         body: file.blob,
-      });
+      }).finally(() => clearTimeout(putTimer));
 
       if (res.ok) {
         return { name: safeName, success: true };
@@ -642,13 +663,13 @@ export async function uploadSingleR2File(
     } catch (directErr: any) {
       console.warn(`[R2 Upload] Lỗi tải lên presigned (lần ${attempt}/${maxRetries}):`, directErr);
       let errMsg = directErr?.message || 'Lỗi mạng khi tải lên R2.';
-      if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError')) {
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('NetworkError') || errMsg.includes('abort')) {
         errMsg = 'Lỗi CORS / Mạng: Vui lòng vào Cloudflare R2 > Bucket > Settings > thêm CORS Policy cho phép PUT & GET.';
       }
       lastError = errMsg;
       
       if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, 1000 * attempt));
+        await new Promise((r) => setTimeout(r, 500));
       }
     }
   }
