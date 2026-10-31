@@ -12,11 +12,12 @@
 3. **Kho quy chuẩn nghiệp vụ (`BUSINESS_LOGIC.md`):** Lưu trữ toàn bộ công thức tài chính, schema, RBAC. Tác vụ can thiệp sâu vào tính toán, phân quyền hoặc nghiệp vụ (Budget, Gantt, RBAC) **bắt buộc** dùng `view_file` tra cứu `BUSINESS_LOGIC.md` qua Navigation Index trước khi sửa code.
 
 ### 1.2. Quy Trình 3 Bước Khi Thực Hiện Yêu Cầu (Workflow)
-- **Bước 1 (Check Contracts):** Kiểm tra `src/api-contracts.ts` xem đã có sẵn `type/interface`, action trong Zustand store hoặc hàm API nào phục vụ được yêu cầu chưa. Tái sử dụng tối đa những gì đã có.
+- **Bước 1 (Check Contracts):** Kiểm tra `src/api-contracts.ts` xem đã có sẵn `type/interface`, action/selector trong Zustand store hoặc hàm API nào phục vụ được yêu cầu chưa. Tái sử dụng tối đa những gì đã có.
 - **Bước 2 (Code Implementation):** Viết code tuân thủ nghiêm ngặt quy tắc mỗi file dưới 500 dòng, dùng TypeScript strict mode (không dùng `any`), tách biệt rõ UI Component và Zustand Store.
-- **Bước 3 (Auto-Sync Contracts & Architecture):**
-  - Nếu có thêm/sửa/xóa bất kỳ `interface`, `type`, Zustand state/action, hoặc hàm API nào -> **Bắt buộc cập nhật ngay vào `src/api-contracts.ts`** trong cùng một lượt trả lời.
-  - Nếu có tạo thêm module hoặc thư mục tính năng mới -> **Bắt buộc cập nhật ngay vào `ARCHITECTURE.md`**.
+- **Bước 3 (Selective Auto-Sync & Mandatory Validation):**
+  - **Cập nhật có chọn lọc (Chống lãng phí token & xung đột):** CHỈ cập nhật `src/api-contracts.ts` khi thực sự có thêm/sửa/xóa `interface`, `type`, Zustand state/action/selector cốt lõi hoặc chữ ký hàm API; CHỈ cập nhật `ARCHITECTURE.md` khi tạo thêm module/phân hệ hoặc thư mục tính năng mới. **TUYỆT ĐỐI KHÔNG** sửa lại các file tài liệu này đối với các bản vá lỗi nhỏ (bug fix), tinh chỉnh UI/CSS, hoặc thay đổi biến cục bộ.
+  - **Chốt chặn kiểm tra tự động (`lint_applet`):** Sau khi viết/sửa code xong, **BẮT BUỘC** chạy `lint_applet` (`tsc --noEmit`) và `compile_applet` để bắt ngay mọi lỗi thiếu type hoặc sai kiểu dữ liệu trước khi kết thúc lượt trả lời.
+
 
 
 ## 2. Core Architecture & Build Constraints

@@ -92,16 +92,16 @@ Hệ thống hoạt động theo mô hình **Local-First 4 Tầng** với độ 
 | File | Hàm Quan Trọng | Mô Tả & Nghiệp Vụ |
 | :--- | :--- | :--- |
 | `src/lib/firestoreWrites.ts` | `setDoc`, `updateDoc`, `deleteDoc`, `writeBatch` | **BẮT BUỘC DÙNG**: Wrapper SDK Firestore tự phát delta `invalidate` qua `autoDeltaQueue`. |
-| `src/lib/localDb.ts` | `localDb`, `bootstrapLocalStore`, `bulkPutLocal` | Cơ sở dữ liệu IndexedDB Dexie lưu trữ sơ cấp client. |
-| `src/lib/deltaSyncService.ts` | `recordDelta`, `pullAndApplyDeltas` | Kéo và áp dụng các delta mutation mới nhất từ server vào local. |
+| `src/lib/localDb.ts` | `localDb`, `getLocalProjects`, `getLocalTasks`, `bulkPersistTasks` | Cơ sở dữ liệu IndexedDB Dexie lưu trữ sơ cấp client. |
+| `src/lib/deltaSyncService.ts` | `recordDelta`, `recordBatchDeltas`, `pullAndApplyDeltas` | Kéo và áp dụng các delta mutation mới nhất từ server vào local. |
 | `src/lib/deltaRealtimeListener.ts` | `startDeltaRealtimeListener` | Listener duy nhất thời gian thực trên `taka_deltas` để nhận biến động từ máy khác. |
-| `src/lib/syncQueue.ts` | `enqueueSyncItem`, `flushSyncQueue` | Hàng đợi lưu trữ ngoại tuyến khi mất mạng hoặc server bận. |
+| `src/lib/syncQueue.ts` | `syncQueueManager`, `addPendingUpdate`, `processPendingSync` | Hàng đợi lưu trữ ngoại tuyến khi mất mạng hoặc server bận. |
 | `src/lib/storageUtils.ts` | `extractStorageUrls`, `deleteStorageFiles` | Quét và xóa file mồ côi trên Firebase Storage khi xóa Task/Project. |
-| `src/lib/r2StorageUtils.ts` | `uploadToR2`, `deleteFromR2` | Quản lý sao lưu và lưu trữ ảnh mặt bằng/file lớn trên Cloudflare R2. |
-| `src/lib/imageCompression.ts` | `compressImageFile` | Nén ảnh phía client (max 1920px, webp/jpeg 0.82) trước khi tải lên Storage. |
+| `src/lib/r2StorageUtils.ts` | `uploadPictureToTakaFolder`, `deleteR2ImageCleanly`, `cleanOrphanR2Files` | Quản lý sao lưu và lưu trữ ảnh mặt bằng/file lớn trên Cloudflare R2. |
+| `src/lib/imageCompression.ts` | `compressImageToWebp` | Nén ảnh phía client (max 1920px, webp/jpeg 0.82) trước khi tải lên Storage. |
 | `src/lib/zIndexManager.ts` | `getZIndexValue`, `getZIndexClass` | Quản lý tập trung các tầng z-index toàn ứng dụng (`MODAL_MODULAR`, `DROPDOWN`...). |
 | `src/lib/lazyWithRetry.ts` | `lazyWithRetry` | Dynamic import bọc cơ chế tự tải lại khi mất mạng hoặc có phiên bản code mới. |
-| `src/lib/auditLogService.ts` | `logAuditEvent` | Ghi nhật ký kiểm toán Append-only vào `audit_logs` đối với biến động tiền và cấu hình. |
+| `src/lib/auditLogService.ts` | `recordAuditLog` | Ghi nhật ký kiểm toán Append-only vào `audit_logs` đối với biến động tiền và cấu hình. |
 | `src/lib/unitSizeResolver.ts` | `getUnitEffectiveSizeM2`, `projectMatchesUnitCode` | Giải mã diện tích m² và ghép nối mã dự án với layout CAD/PDF. |
 
 ---
@@ -110,7 +110,7 @@ Hệ thống hoạt động theo mô hình **Local-First 4 Tầng** với độ 
 
 | Hook | Đường Dẫn | Vai Trò & Tác Vụ |
 | :--- | :--- | :--- |
-| `useAppStore` | `src/store/useAppStore.ts` | Quản lý toàn bộ State toàn cục (Data, UI, Filters, Selections) theo atomic selectors. |
+| `useAppStore` / `useUISlice` / `useDataSlice` | `src/store/useAppStore.ts` | Quản lý toàn bộ State toàn cục (Data, UI, Optimistic) qua atomic/shallow selectors. |
 | `useEnrichedData` | `src/hooks/useEnrichedData.ts` | Nối dữ liệu (join) trong bộ nhớ: kết hợp Project + Tasks + Costs + Locations thành các object giàu thuộc tính (Computed dates, progress, status). |
 | `useFirebaseData` | `src/hooks/useFirebaseData.ts` | Orchestrator chính khởi chạy các hydration hooks theo nhu cầu (Tri-Gate). |
 | `useProjectsHydration` | `src/hooks/useFirebaseDataParts/useProjectsHydration.ts` | Lắng nghe realtime `taka_projects` theo năm tài chính đang chọn. |
@@ -165,16 +165,16 @@ Khi nhận bất kỳ yêu cầu sửa lỗi (hotfix), tối ưu hiệu năng ho
 
 1. **Bước 1: Check Contracts (`src/api-contracts.ts`) & Map (`ARCHITECTURE.md`)**:
    - Đọc `ARCHITECTURE.md` để định vị đúng phân hệ và file submodule trong `*Parts/`.
-   - Tra cứu `src/api-contracts.ts` để kiểm tra các interface, enum, Zustand state/action hoặc API service có sẵn. Tái sử dụng tối đa, cấm viết lại hàm đã tồn tại hoặc tự suy đoán attributes (Zero Hallucination).
+   - Tra cứu `src/api-contracts.ts` để kiểm tra các interface, enum, Zustand state/action/selector hoặc API service có sẵn. Tái sử dụng tối đa, cấm viết lại hàm đã tồn tại hoặc tự suy đoán attributes (Zero Hallucination).
 
 2. **Bước 2: Code Implementation (< 500 dòng/file)**:
    - **Chỉ mở các file submodule trong thư mục `*Parts/`** để chỉnh sửa. TUYỆT ĐỐI KHÔNG nhồi code mới vào file Container chính (`<TabName>.tsx`).
    - Thao tác ghi dữ liệu BẮT BUỘC import từ `src/lib/firestoreWrites.ts` và dùng các hàm chuẩn (`saveTaskStateUnified`, `saveCostWithAtomicSummary`...).
    - Bắt buộc giữ file < 500 dòng code (`AGENTS.md` Rule 12). Đảm bảo 100% UI bằng tiếng Anh Enterprise.
 
-3. **Bước 3: Auto-Sync Contracts & Architecture**:
-   - Nếu có thêm/sửa/xóa bất kỳ `interface`, `type`, Zustand state/action, hoặc hàm API nào ➔ **Bắt buộc cập nhật ngay vào `src/api-contracts.ts`**.
-   - Nếu có tạo thêm module hoặc thư mục tính năng mới ➔ **Bắt buộc cập nhật ngay vào `ARCHITECTURE.md`**.
-   - Chạy `lint_applet` (`tsc --noEmit`) và `compile_applet` để xác minh 0 lỗi.
+3. **Bước 3: Selective Auto-Sync & Mandatory Validation**:
+   - **Chỉ cập nhật tài liệu khi có thay đổi kiến trúc/interface cốt lõi:** Cập nhật `src/api-contracts.ts` CHỈ KHI có thêm/sửa/xóa `interface`, `type`, Zustand state/action/selector hoặc hàm API. Cập nhật `ARCHITECTURE.md` CHỈ KHI tạo thêm module/phân hệ hoặc thư mục tính năng mới. **KHÔNG** cập nhật tài liệu đối với các sửa lỗi cú pháp/logic nhỏ (bug fix) để tiết kiệm token và tránh xung đột.
+   - **Chốt chặn bắt buộc (`lint_applet`):** Sau khi sửa code xong, luôn chạy `lint_applet` (`tsc --noEmit`) và `compile_applet` để bắt ngay mọi lỗi thiếu type hoặc sai kiểu dữ liệu trước khi hoàn tất.
+
 
 

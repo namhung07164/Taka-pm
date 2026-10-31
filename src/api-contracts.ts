@@ -1010,3 +1010,106 @@ export declare function deleteR2ImageCleanly(
   urlOrKey: string,
   customCreds?: any
 ): Promise<{ success: boolean; deletedKeys: string[] }>;
+
+// --- SOURCE: src/store/useAppStore.ts & src/store/storeSelectors.ts ---
+export declare const useAppStore: {
+  <T>(selector: (state: AppState) => T): T;
+  getState: () => AppState;
+  setState: (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>), replace?: boolean) => void;
+  subscribe: (listener: (state: AppState, prevState: AppState) => void) => () => void;
+};
+export declare function useUISlice<T>(selector: (state: UISlice) => T): T;
+export declare function useDataSlice<T>(selector: (state: DataSlice) => T): T;
+export declare function useOptimisticSlice<T>(selector: (state: OptimisticSlice) => T): T;
+export declare function useStoreShallow<T>(selector: (state: AppState) => T): T;
+
+// --- SOURCE: src/lib/localDb.ts ---
+export interface LocalSyncMeta {
+  key: string;
+  value: string;
+  updatedAt: number;
+}
+export declare function bulkPersistProjects(projects: Project[]): Promise<void>;
+export declare function bulkPersistTasks(tasks: Task[]): Promise<void>;
+export declare function bulkPersistCosts(costs: Cost[]): Promise<void>;
+export declare function bulkPersistDelegations(groups: DelegationGroup[]): Promise<void>;
+export declare function upsertLocalRecord(
+  collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
+  item: any
+): Promise<void>;
+export declare function patchLocalRecord(
+  collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
+  id: string,
+  patch: Record<string, any>
+): Promise<void>;
+export declare function deleteLocalRecord(
+  collectionName: 'taka_projects' | 'taka_tasks' | 'taka_costs' | 'taka_delegations',
+  id: string
+): Promise<void>;
+export declare function getLocalProjects(year?: string, store?: string): Promise<Project[]>;
+export declare function getLocalTasksForProjects(
+  projectIdsOrCodes: string[],
+  year?: string | number | null,
+  store?: string | null
+): Promise<Task[]>;
+export declare function getLocalTasks(year?: string): Promise<Task[]>;
+export declare function getLocalCosts(year?: string): Promise<Cost[]>;
+export declare function getLocalDelegations(year?: string): Promise<DelegationGroup[]>;
+export declare function getLocalDelegationsForProjects(
+  projectIdsOrCodes: string[],
+  year?: string | number | null,
+  store?: string | null
+): Promise<DelegationGroup[]>;
+export declare function getLocalDelegationsForTasks(taskIds: string[]): Promise<DelegationGroup[]>;
+export declare function clearDexieDatabase(): Promise<void>;
+
+// --- SOURCE: src/lib/syncQueue.ts ---
+export interface PendingUpdate {
+  id: string;
+  collectionPath: string;
+  action: 'set' | 'update' | 'delete';
+  docId: string;
+  data: any;
+  timestamp: number;
+  retryCount?: number;
+}
+export declare function addPendingUpdate(update: Omit<PendingUpdate, 'id' | 'timestamp'>): Promise<any>;
+export declare function getPendingUpdates(): Promise<PendingUpdate[]>;
+export declare function removePendingUpdate(id: string): Promise<any>;
+export declare function clearPendingUpdates(): Promise<any>;
+export declare function processPendingSync(): Promise<{ synced: number; failed: number }>;
+export declare const syncQueueManager: {
+  addToQueue: (collectionName: string, docId: string, action: 'set' | 'update' | 'delete', data: any) => Promise<void>;
+  bulkAddToQueue: (items: Array<{ collectionName: string; docId: string; action: 'set' | 'update' | 'delete'; data: any }>) => Promise<void>;
+  getQueueStatus: () => Promise<{
+    totalPending: number;
+    unsynced: number;
+    lastSyncTime: number;
+    isProcessing: boolean;
+    pendingUpdates: Array<{ docId: string; action: string; retryCount: number; collection: string }>;
+  }>;
+  clearQueue: () => Promise<void>;
+  processPendingSync: () => Promise<{ synced: number; failed: number }>;
+};
+
+// --- SOURCE: src/lib/storageUtils.ts ---
+export declare function extractStorageUrls(item: any): string[];
+export declare function deleteStorageFiles(urls: string[]): Promise<void>;
+
+// --- SOURCE: src/lib/undoManager.ts ---
+export interface UndoAction {
+  description: string;
+  revert: () => Promise<void>;
+  redo?: () => Promise<void>;
+  timestamp?: number;
+}
+export declare const undoManager: {
+  startBatch: (description: string) => void;
+  commitBatch: (skipLog?: boolean) => void;
+  cancelBatch: () => void;
+  push: (action: UndoAction, skipLog?: boolean) => void;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
+  clear: () => void;
+};
+
