@@ -141,7 +141,7 @@ src/components/
 | :--- | :--- | :--- | :--- | :--- |
 | `general` | Tổng quan dự án | `src/components/GeneralTab.tsx` | `GeneralTabParts/ProjectTableView.tsx`, `GeneralFilterToolbar.tsx`, `useGeneralData.ts` | `ProjectModal`, `ProjectQuickNavModal` |
 | `detail` | Chi tiết công việc | `src/components/DetailTab.tsx` | `DetailTabParts/DetailTableView.tsx`, `DetailFilterToolbar.tsx`, `DetailMobileView.tsx`, `detailTaskMoveService.ts`, `useDetailData.ts`, `useDetailTaskReorder.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal`, `TaskModularModal`, `FullReplaceImport` |
-| `gantt` | Biểu đồ tiến độ Gantt | `src/components/GanttTab.tsx` | `Gantt/GanttTimeline.tsx`, `GanttProjectRow.tsx`, `GanttTaskRow.tsx`, `useGanttDependencies.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal` |
+| `gantt` | Biểu đồ tiến độ Gantt | `src/components/GanttTab.tsx` | `Gantt/GanttTableView.tsx`, `GanttTimeline.tsx`, `GanttProjectRow.tsx`, `GanttTaskRow.tsx`, `useGanttProjectsFilter.ts`, `useGanttRowVirtualizer.ts`, `useGanttDependencies.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal` |
 | `calendar` | Lịch tiến độ công việc | `src/components/CalendarTab.tsx` | `CalendarTabParts/CalendarMonthlyView.tsx`, `useCalendarEvents.ts` | `CalendarSyncModal`, `TaskModal` |
 | `budget` | Quản lý ngân sách | `src/components/BudgetTab.tsx` | `BudgetParts/BudgetTableView.tsx`, `BudgetFilterToolbar.tsx`, `BudgetTreeRow.tsx`, `useBudgetData.ts` | `BudgetLinkModal` (kèm `BudgetLinkParentColumn.tsx`, `BudgetLinkChildColumn.tsx`) |
 | `cost` | Chi phí thực tế | `src/components/CostTab.tsx` | `CostParts/CostTableView.tsx`, `CostFilterToolbar.tsx`, `useCostData.ts` | `CostItemModal`, `CostExportModal` |
