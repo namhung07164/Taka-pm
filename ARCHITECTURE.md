@@ -1,6 +1,11 @@
 # Taka-PM System Architecture & Quick Lookup Guide
 
 > 📌 **MỤC ĐÍCH**: Bản đồ kiến trúc kỹ thuật dành cho AI Agent và Developer để định vị file submodule, tái sử dụng các hàm có sẵn trong `src/lib/` & `src/hooks/`, và tuyệt đối chống viết lại code trùng lặp.
+> 
+> 📖 **SINGLE SOURCE OF TRUTH**: 
+> 1. Đọc **`ARCHITECTURE.md`** trước tiên để nắm vị trí thư mục và phân bổ module.
+> 2. Tra cứu **`src/api-contracts.ts`** thứ hai – từ điển kiểu dữ liệu, interface, enums, Zustand stores và chữ ký hàm API/Services của toàn bộ hệ thống.
+
 
 ---
 
@@ -154,29 +159,22 @@ src/components/
 
 ---
 
-## 5. Quy Tắc Tác Nghiệp Nhanh Cho AI (Quick Lookup Protocol)
+## 5. Quy Tắc Tác Nghiệp Nhanh Cho AI (Quick Lookup Protocol & 3-Step Workflow)
 
 Khi nhận bất kỳ yêu cầu sửa lỗi (hotfix), tối ưu hiệu năng hoặc thêm tính năng mới:
 
-1. **Bước 1: Tra cứu Bản Đồ Điều Hướng (Mục 4)**:
-   - Xác định chính xác `TabId` liên quan.
-   - **Chỉ mở các file trong thư mục `*Parts/`** của phân hệ đó để chỉnh sửa.
-   - **TUYỆT ĐỐI KHÔNG** nhồi code mới vào file Container chính (`<TabName>.tsx`). Container chính chỉ làm nhiệm vụ kết nối và điều phối.
+1. **Bước 1: Check Contracts (`src/api-contracts.ts`) & Map (`ARCHITECTURE.md`)**:
+   - Đọc `ARCHITECTURE.md` để định vị đúng phân hệ và file submodule trong `*Parts/`.
+   - Tra cứu `src/api-contracts.ts` để kiểm tra các interface, enum, Zustand state/action hoặc API service có sẵn. Tái sử dụng tối đa, cấm viết lại hàm đã tồn tại hoặc tự suy đoán attributes (Zero Hallucination).
 
-2. **Bước 2: Tái sử dụng Core Services (Mục 2) & Hooks (Mục 3)**:
-   - **TUYỆT ĐỐI CẤM** viết lại các hàm tính toán ngày, tính tiền, phân tích tiền nhiệm hay ghi database.
-   - Thao tác ghi dữ liệu **BẮT BUỘC** import từ `src/lib/firestoreWrites.ts` và dùng các hàm chuẩn như `saveTaskStateUnified`, `saveCostWithAtomicSummary`, `calculateProjectComputedDates`.
-   - Luôn tuân thủ nguyên tắc 4 Khóa Định Danh (Mục 1.3) khi liên kết task, cost, delegation với project.
+2. **Bước 2: Code Implementation (< 500 dòng/file)**:
+   - **Chỉ mở các file submodule trong thư mục `*Parts/`** để chỉnh sửa. TUYỆT ĐỐI KHÔNG nhồi code mới vào file Container chính (`<TabName>.tsx`).
+   - Thao tác ghi dữ liệu BẮT BUỘC import từ `src/lib/firestoreWrites.ts` và dùng các hàm chuẩn (`saveTaskStateUnified`, `saveCostWithAtomicSummary`...).
+   - Bắt buộc giữ file < 500 dòng code (`AGENTS.md` Rule 12). Đảm bảo 100% UI bằng tiếng Anh Enterprise.
 
-3. **Bước 3: Hiệu Năng Đồ Họa & Modal Kéo Thả**:
-   - Đối với Konva Canvas (Layout & Picture Mapping): Luôn đặt `listening={false}` & `perfectDrawEnabled={false}` trên các shape tĩnh; dùng Direct Node Transform + `batchDraw()` thay vì ép vẽ lại toàn bộ layer (`drawScene()`).
-   - Mọi modal (`ProjectModal`, `TaskModal`, `BudgetLinkModal`...) bắt buộc hỗ trợ kéo thả (`dragControls` từ `motion/react`) và bọc `lazyWithRetry` mount JIT khi mở.
+3. **Bước 3: Auto-Sync Contracts & Architecture**:
+   - Nếu có thêm/sửa/xóa bất kỳ `interface`, `type`, Zustand state/action, hoặc hàm API nào ➔ **Bắt buộc cập nhật ngay vào `src/api-contracts.ts`**.
+   - Nếu có tạo thêm module hoặc thư mục tính năng mới ➔ **Bắt buộc cập nhật ngay vào `ARCHITECTURE.md`**.
+   - Chạy `lint_applet` (`tsc --noEmit`) và `compile_applet` để xác minh 0 lỗi.
 
-4. **Bước 4: Tuân Thủ Kỷ Luật Trần File 500 Dòng (`AGENTS.md` Rule 12)**:
-   - Bất kỳ file component, hook hoặc service nào nếu sau khi viết vượt quá **500 dòng**, bắt buộc phải băm nhỏ/tách submodule độc lập ngay lập tức.
-   - Đảm bảo 100% nhãn, tiêu đề, trạng thái trên UI bằng tiếng Anh chuyên nghiệp chuẩn Enterprise.
-
-5. **Bước 5: Kiểm Tra Biên Dịch & Kỷ Luật Không Spam Tài Liệu (`AGENTS.md` Rule 13)**:
-   - Sau khi hoàn thành, bắt buộc chạy `lint_applet` (`tsc --noEmit`) và `compile_applet` để xác minh 0 lỗi.
-   - Tuyệt đối không tự động viết log, tóm tắt, hay cập nhật các file tài liệu ngoài mã nguồn.
 

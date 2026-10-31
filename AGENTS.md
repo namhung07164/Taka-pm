@@ -2,9 +2,22 @@
 
 > ⛔ **QUY TẮC BẤT KHẢ XÂM PHẠM**: Toàn bộ logic nghiệp vụ, UI/UX, tính năng và luồng dữ liệu TUYỆT ĐỐI KHÔNG ĐƯỢC XÓA, DISABLE HAY LÀM SUY GIẢM khi cập nhật, trừ khi người dùng yêu cầu rõ ràng. Mọi thay đổi phải là mở rộng (additive) hoặc tối ưu (optimization).
 
-## 1. On-Demand Business Logic
-- **Kho quy chuẩn**: `BUSINESS_LOGIC.md` lưu trữ toàn bộ công thức tài chính, schema, RBAC và quy tắc nghiệp vụ.
-- **Quy trình**: Tác vụ UI/màu sắc không cần đọc. Tác vụ can thiệp sâu vào tính toán, phân quyền hoặc nghiệp vụ (Budget, Gantt, RBAC) **bắt buộc** dùng `view_file` tra cứu `BUSINESS_LOGIC.md` qua Navigation Index trước khi sửa code. Trước khi thêm tính năng hoặc sửa code, bắt buộc đọc ARCHITECTURE.md để định vị đúng file submodule và tái sử dụng các hàm có sẵn trong src/lib/.
+## 1. On-Demand Business Logic & Operating Protocol
+
+### 1.1. Nguồn Tham Chiếu Tối Thượng (Single Source of Truth)
+1. **Đọc `ARCHITECTURE.md` trước tiên:** Để nắm vị trí thư mục, phân bổ module và luồng nghiệp vụ chính. Không tự ý tạo thư mục mới lệch khỏi cấu trúc này.
+2. **Tra cứu `src/api-contracts.ts` thứ hai:** Từ điển chứa toàn bộ `interface`, `type`, `enum`, cấu trúc Zustand Store (State & Actions) và chữ ký hàm API/Services.
+   - Khi cần gọi Zustand store hoặc API từ module khác, chỉ cần tra cứu kiểu và tên hàm trong `src/api-contracts.ts`. **KHÔNG** đọc toàn bộ file thực thi trừ khi cần sửa logic bên trong nó.
+   - **Chống bịa đặt (Zero Hallucination):** Tuyệt đối không tự suy đoán tên hàm trong Zustand store hoặc thuộc tính của dữ liệu nếu chưa kiểm tra trong `src/api-contracts.ts`.
+3. **Kho quy chuẩn nghiệp vụ (`BUSINESS_LOGIC.md`):** Lưu trữ toàn bộ công thức tài chính, schema, RBAC. Tác vụ can thiệp sâu vào tính toán, phân quyền hoặc nghiệp vụ (Budget, Gantt, RBAC) **bắt buộc** dùng `view_file` tra cứu `BUSINESS_LOGIC.md` qua Navigation Index trước khi sửa code.
+
+### 1.2. Quy Trình 3 Bước Khi Thực Hiện Yêu Cầu (Workflow)
+- **Bước 1 (Check Contracts):** Kiểm tra `src/api-contracts.ts` xem đã có sẵn `type/interface`, action trong Zustand store hoặc hàm API nào phục vụ được yêu cầu chưa. Tái sử dụng tối đa những gì đã có.
+- **Bước 2 (Code Implementation):** Viết code tuân thủ nghiêm ngặt quy tắc mỗi file dưới 500 dòng, dùng TypeScript strict mode (không dùng `any`), tách biệt rõ UI Component và Zustand Store.
+- **Bước 3 (Auto-Sync Contracts & Architecture):**
+  - Nếu có thêm/sửa/xóa bất kỳ `interface`, `type`, Zustand state/action, hoặc hàm API nào -> **Bắt buộc cập nhật ngay vào `src/api-contracts.ts`** trong cùng một lượt trả lời.
+  - Nếu có tạo thêm module hoặc thư mục tính năng mới -> **Bắt buộc cập nhật ngay vào `ARCHITECTURE.md`**.
+
 
 ## 2. Core Architecture & Build Constraints
 - **Safe Boot**: Luôn boot tại tab General; cấm lưu `taka_last_tab` vào `localStorage`.
