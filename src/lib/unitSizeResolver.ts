@@ -117,15 +117,80 @@ export interface MatchedUnitSizeResult {
   versionYear?: string;
 }
 
+const _unitsArraySigCache = new WeakMap<object, string>();
+const _versionsArraySigCache = new WeakMap<object, string>();
+const _storeLocSigCache = new WeakMap<object, string>();
+
+function getUnitsSizeSig(units?: UnitShape[] | null): string {
+  if (!Array.isArray(units) || units.length === 0) return '';
+  const cached = _unitsArraySigCache.get(units);
+  if (cached !== undefined) return cached;
+  let s = '';
+  for (let i = 0; i < units.length; i++) {
+    const u = units[i];
+    if (!u) continue;
+    const sz = u.sizeM2 ?? u.size ?? '';
+    s += `${u.id || ''}:${u.name || ''}:${sz};`;
+  }
+  _unitsArraySigCache.set(units, s);
+  return s;
+}
+
+function getVersionsSizeSig(versions?: MapVersion[] | null): string {
+  if (!Array.isArray(versions) || versions.length === 0) return '';
+  const cached = _versionsArraySigCache.get(versions);
+  if (cached !== undefined) return cached;
+  let s = '';
+  for (let i = 0; i < versions.length; i++) {
+    const v = versions[i];
+    if (!v) continue;
+    let usStr = '';
+    if (v.unitSizes) {
+      const keys = Object.keys(v.unitSizes).sort();
+      for (let j = 0; j < keys.length; j++) {
+        const k = keys[j];
+        usStr += `${k}=${v.unitSizes[k]},`;
+      }
+    }
+    const vUnitsStr = getUnitsSizeSig(v.mapUnits);
+    s += `${v.id || ''}:${v.year || ''}:${v.name || ''}:[${usStr}]:[${vUnitsStr}];`;
+  }
+  _versionsArraySigCache.set(versions, s);
+  return s;
+}
+
+export function selectUnitSizeSignature(state: {
+  store?: string;
+  location?: string;
+  activeMapVersionId?: string | null;
+  mapUnits?: UnitShape[];
+  mapVersions?: MapVersion[];
+  storeLocationData?: Record<string, any>;
+}): string {
+  let locDataSig = '';
+  const sld = state.storeLocationData;
+  if (sld && typeof sld === 'object') {
+    const cached = _storeLocSigCache.get(sld);
+    if (cached !== undefined) {
+      locDataSig = cached;
+    } else {
+      const keys = Object.keys(sld).sort();
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        const part = sld[k];
+        if (!part) continue;
+        locDataSig += `${k}{${part.activeMapVersionId || ''}|${getUnitsSizeSig(part.mapUnits)}|${getVersionsSizeSig(part.mapVersions)}}`;
+      }
+      _storeLocSigCache.set(sld, locDataSig);
+    }
+  }
+  return `${state.store || ''}|${state.location || ''}|${state.activeMapVersionId || ''}|${getUnitsSizeSig(state.mapUnits)}|${getVersionsSizeSig(state.mapVersions)}|${locDataSig}`;
+}
+
 interface ResolverCachedIndex {
-  storeLocationDataRef: any;
-  mapUnitsRef: any;
-  mapVersionsRef: any;
-  activeMapVersionIdRef: any;
+  unitSizeSig: string;
   unitInfoRef: any;
   projectLinkRef: any;
-  storeRef: any;
-  locationRef: any;
   localBackupRef: any;
   allPartitions: Record<string, { mapUnits: UnitShape[]; mapVersions: MapVersion[]; activeMapVersionId: string | null }>;
   partitionKeysByStore: { HCM: Array<{ key: string; loc: string }>; HN: Array<{ key: string; loc: string }> };
@@ -138,16 +203,12 @@ interface ResolverCachedIndex {
 let _resolverIndex: ResolverCachedIndex | null = null;
 
 function getOrBuildResolverIndex(state: ReturnType<typeof useDataStore.getState>): ResolverCachedIndex {
+  const currentSig = selectUnitSizeSignature(state);
   if (
     _resolverIndex &&
-    _resolverIndex.storeLocationDataRef === state.storeLocationData &&
-    _resolverIndex.mapUnitsRef === state.mapUnits &&
-    _resolverIndex.mapVersionsRef === state.mapVersions &&
-    _resolverIndex.activeMapVersionIdRef === state.activeMapVersionId &&
+    _resolverIndex.unitSizeSig === currentSig &&
     _resolverIndex.unitInfoRef === state.unitInfo &&
     _resolverIndex.projectLinkRef === state.projectLink &&
-    _resolverIndex.storeRef === state.store &&
-    _resolverIndex.locationRef === state.location &&
     _resolverIndex.localBackupRef === _cachedLocalBackup
   ) {
     return _resolverIndex;
@@ -202,14 +263,9 @@ function getOrBuildResolverIndex(state: ReturnType<typeof useDataStore.getState>
   });
 
   _resolverIndex = {
-    storeLocationDataRef: state.storeLocationData,
-    mapUnitsRef: state.mapUnits,
-    mapVersionsRef: state.mapVersions,
-    activeMapVersionIdRef: state.activeMapVersionId,
+    unitSizeSig: currentSig,
     unitInfoRef: state.unitInfo,
     projectLinkRef: state.projectLink,
-    storeRef: state.store,
-    locationRef: state.location,
     localBackupRef: _cachedLocalBackup,
     allPartitions,
     partitionKeysByStore,

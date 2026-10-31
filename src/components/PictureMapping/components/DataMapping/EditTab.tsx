@@ -16,6 +16,7 @@ import { DynamicUnitSummaryTable } from './DynamicUnitSummaryTable';
 import { DebouncedSearchInput } from '../../../DebouncedSearchInput';
 import { getUnitEffectiveSizeM2, syncUnitSizeToMatchedProjects } from '../../../../lib/unitSizeResolver';
 import { EditTabInspector } from './EditTabParts/EditTabInspector';
+import { EditCanvasUnitShape } from './EditTabParts/EditCanvasUnitShape';
 
 import { extractR2Key, resolveR2UrlToHttp } from '../../lib/r2Upload';
 import { deleteR2StorageFiles } from '../../../../lib/r2StorageUtils';
@@ -690,6 +691,77 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
       if (!magneticGrid) return val;
       return Math.round(val / gridSize) * gridSize;
   };
+
+  const editCanvasStateRef = useRef({ units, activeTool, magneticGrid, gridSize, handleSetUnitsWithHistory });
+  editCanvasStateRef.current = { units, activeTool, magneticGrid, gridSize, handleSetUnitsWithHistory };
+
+  const handleSelectCanvasUnit = useCallback((unitId: string, unit: UnitShape) => {
+    try {
+      if (editCanvasStateRef.current.activeTool === 'select') setSelectedId(unitId);
+    } catch (err) {
+      console.error('Defensive Check: Error selecting unit shape:', err, unit);
+    }
+  }, []);
+
+  const handleDragEndCanvasUnit = useCallback((unitId: string, rawX: number, rawY: number) => {
+    const { units: curUnits, magneticGrid: mag, gridSize: gs, handleSetUnitsWithHistory: commitUnits } = editCanvasStateRef.current;
+    const snap = (v: number) => (mag ? Math.round(v / gs) * gs : v);
+    const newUnits = curUnits.map((u) => (u.id === unitId ? { ...u, x: snap(rawX), y: snap(rawY) } : u));
+    commitUnits(newUnits);
+  }, []);
+
+  const handleTransformEndCanvasUnit = useCallback((unit: UnitShape, node: any) => {
+    const { units: curUnits, magneticGrid: mag, gridSize: gs, handleSetUnitsWithHistory: commitUnits } = editCanvasStateRef.current;
+    const snap = (v: number) => (mag ? Math.round(v / gs) * gs : v);
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+    node.scaleX(1);
+    node.scaleY(1);
+
+    if (unit.type === 'rect') {
+      const newUnits = curUnits.map((u) =>
+        u.id === unit.id
+          ? {
+              ...u,
+              x: snap(node.x()),
+              y: snap(node.y()),
+              width: Math.max(5, snap((node.width() as number) * scaleX)),
+              height: Math.max(5, snap((node.height() as number) * scaleY)),
+              rotation: node.rotation(),
+            }
+          : u
+      );
+      commitUnits(newUnits);
+    } else if (unit.type === 'circle') {
+      const newUnits = curUnits.map((u) =>
+        u.id === unit.id
+          ? {
+              ...u,
+              x: snap(node.x()),
+              y: snap(node.y()),
+              radius: Math.max(5, snap(((node as any).radius() as number) * scaleX)),
+              rotation: node.rotation(),
+            }
+          : u
+      );
+      commitUnits(newUnits);
+    } else if (unit.type === 'polygon') {
+      const pts = unit.points || [];
+      const newPoints = pts.map((p, i) => (i % 2 === 0 ? p * scaleX : p * scaleY));
+      const newUnits = curUnits.map((u) =>
+        u.id === unit.id
+          ? {
+              ...u,
+              x: snap(node.x()),
+              y: snap(node.y()),
+              points: newPoints,
+              rotation: node.rotation(),
+            }
+          : u
+      );
+      commitUnits(newUnits);
+    }
+  }, []);
 
   const handleMouseDown = (e: any) => {
     if (alignStep !== 'none') {
@@ -1734,245 +1806,25 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
                                 opacity={0.3}
                             />
                         )}
-                        {units.map((unit) => {
-                            const editFill = (unit.fill && unit.fill !== 'rgba(0, 0, 0, 0.001)' && unit.fill !== 'transparent' && !unit.fill.startsWith('rgba(0,0,0,0')) ? unit.fill : '#3b82f6';
-                            const isUnitSelected = selectedId === unit.id;
-                            return (
-                            <React.Fragment key={unit.id}>
-                                {unit.visible && unit.type === 'rect' && (
-                                    <Rect
-                                        id={unit.id}
-                                        x={unit.x}
-                                        y={unit.y}
-                                        width={unit.width}
-                                        height={unit.height}
-                                        fill={editFill}
-                                        opacity={unit.opacity ?? 0.5}
-                                        rotation={unit.rotation || 0}
-                                        stroke={isUnitSelected ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
-                                        strokeWidth={isUnitSelected ? 3 : 2}
-                                        shadowEnabled={isUnitSelected}
-                                        shadowBlur={isUnitSelected ? 10 : 0}
-                                        shadowColor="#3b82f6"
-                                        shadowForStrokeEnabled={false}
-                                        perfectDrawEnabled={false}
-                                        draggable={activeTool === 'select' && !unit.locked}
-                                        onClick={() => {
-                                            try {
-                                                if (activeTool === 'select') setSelectedId(unit.id);
-                                            } catch (err) {
-                                                console.error("Defensive Check: Error selecting unit shape (rect):", err, unit);
-                                            }
-                                        }}
-                                        onDragEnd={(e) => {
-                                            const newUnits = units.map(u => 
-                                                u.id === unit.id ? { ...u, x: snapToGrid(e.target.x()), y: snapToGrid(e.target.y()) } : u
-                                            );
-                                            handleSetUnitsWithHistory(newUnits);
-                                        }}
-                                        onTransformEnd={(e) => {
-                                            const node = e.target;
-                                            const scaleX = node.scaleX();
-                                            const scaleY = node.scaleY();
-                                            node.scaleX(1);
-                                            node.scaleY(1);
-                                            const newUnits = units.map(u => {
-                                                if(u.id === unit.id) {
-                                                    return {
-                                                        ...u,
-                                                        x: snapToGrid(node.x()),
-                                                        y: snapToGrid(node.y()),
-                                                        width: Math.max(5, snapToGrid((node.width() as number) * scaleX)),
-                                                        height: Math.max(5, snapToGrid((node.height() as number) * scaleY)),
-                                                        rotation: node.rotation(),
-                                                    }
-                                                }
-                                                return u;
-                                            });
-                                            handleSetUnitsWithHistory(newUnits);
-                                        }}
-                                    />
-                                )}
-                                {unit.visible && unit.type === 'circle' && (
-                                    <Circle
-                                        id={unit.id}
-                                        x={unit.x}
-                                        y={unit.y}
-                                        radius={unit.radius}
-                                        fill={editFill}
-                                        opacity={unit.opacity ?? 0.5}
-                                        rotation={unit.rotation || 0}
-                                        stroke={isUnitSelected ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
-                                        strokeWidth={isUnitSelected ? 3 : 2}
-                                        shadowEnabled={isUnitSelected}
-                                        shadowBlur={isUnitSelected ? 10 : 0}
-                                        shadowColor="#3b82f6"
-                                        shadowForStrokeEnabled={false}
-                                        perfectDrawEnabled={false}
-                                        draggable={activeTool === 'select' && !unit.locked}
-                                        onClick={() => {
-                                            try {
-                                                if (activeTool === 'select') setSelectedId(unit.id);
-                                            } catch (err) {
-                                                console.error("Defensive Check: Error selecting unit shape (circle):", err, unit);
-                                            }
-                                        }}
-                                        onDragEnd={(e) => {
-                                            const newUnits = units.map(u => 
-                                                u.id === unit.id ? { ...u, x: snapToGrid(e.target.x()), y: snapToGrid(e.target.y()) } : u
-                                            );
-                                            handleSetUnitsWithHistory(newUnits);
-                                        }}
-                                        onTransformEnd={(e) => {
-                                            const node = e.target;
-                                            const scaleX = node.scaleX();
-                                            node.scaleX(1);
-                                            node.scaleY(1);
-                                            const newUnits = units.map(u => {
-                                                if(u.id === unit.id) {
-                                                    return {
-                                                        ...u,
-                                                        x: snapToGrid(node.x()),
-                                                        y: snapToGrid(node.y()),
-                                                        radius: Math.max(5, snapToGrid(((node as any).radius() as number) * scaleX)),
-                                                        rotation: node.rotation(),
-                                                    }
-                                                }
-                                                return u;
-                                            });
-                                            handleSetUnitsWithHistory(newUnits);
-                                        }}
-                                    />
-                                )}
-                                {unit.visible && unit.type === 'polygon' && (
-                                    <Line
-                                        id={unit.id}
-                                        x={unit.x || 0}
-                                        y={unit.y || 0}
-                                        points={unit.points}
-                                        fill={editFill}
-                                        opacity={unit.opacity ?? 0.5}
-                                        rotation={unit.rotation || 0}
-                                        stroke={isUnitSelected ? '#3b82f6' : 'rgba(0,0,0,0.3)'}
-                                        strokeWidth={isUnitSelected ? 3 : 2}
-                                        shadowEnabled={isUnitSelected}
-                                        shadowBlur={isUnitSelected ? 10 : 0}
-                                        shadowColor="#3b82f6"
-                                        shadowForStrokeEnabled={false}
-                                        perfectDrawEnabled={false}
-                                        closed
-                                        draggable={activeTool === 'select' && !unit.locked}
-                                        onClick={() => {
-                                            try {
-                                                if (activeTool === 'select') setSelectedId(unit.id);
-                                            } catch (err) {
-                                                console.error("Defensive Check: Error selecting unit shape (polygon):", err, unit);
-                                            }
-                                        }}
-                                        onDragEnd={(e) => {
-                                            const newUnits = units.map(u => 
-                                                u.id === unit.id ? { ...u, x: snapToGrid(e.target.x()), y: snapToGrid(e.target.y()) } : u
-                                            );
-                                            handleSetUnitsWithHistory(newUnits);
-                                        }}
-                                        onTransformEnd={(e) => {
-                                            const node = e.target;
-                                            const scaleX = node.scaleX();
-                                            const scaleY = node.scaleY();
-                                            node.scaleX(1);
-                                            node.scaleY(1);
-                                            
-                                            // Scale the points
-                                            const pts = unit.points || [];
-                                            const newPoints = pts.map((p, i) => i % 2 === 0 ? p * scaleX : p * scaleY);
-                                            
-                                            const newUnits = units.map(u => {
-                                                if(u.id === unit.id) {
-                                                    return {
-                                                        ...u,
-                                                        x: snapToGrid(node.x()),
-                                                        y: snapToGrid(node.y()),
-                                                        points: newPoints,
-                                                        rotation: node.rotation(),
-                                                    }
-                                                }
-                                                return u;
-                                            });
-                                            handleSetUnitsWithHistory(newUnits);
-                                        }}
-                                    />
-                                )}
-                                {unit.visible && unit.name && scale > 0.4 && (() => {
-                                    const uInfo = summaryMap.get(unit.name);
-                                    const sizeLabel = uInfo?.size ? `${unit.name}\n${uInfo.size} SQM` : unit.name;
-                                    
-                                    let minPtX = Infinity;
-                                    let maxPtX = -Infinity;
-                                    let minPtY = Infinity;
-                                    let maxPtY = -Infinity;
-                                    if (unit.points && unit.points.length >= 2) {
-                                        for (let i = 0; i < unit.points.length; i += 2) {
-                                            const px = unit.points[i];
-                                            const py = unit.points[i + 1];
-                                            if (px < minPtX) minPtX = px;
-                                            if (px > maxPtX) maxPtX = px;
-                                            if (py < minPtY) minPtY = py;
-                                            if (py > maxPtY) maxPtY = py;
-                                        }
-                                    }
-                                    const hasPts = minPtX !== Infinity;
-                                    
-                                    const textX = unit.type === 'rect' 
-                                        ? (unit.x || 0) 
-                                        : (unit.type === 'circle' 
-                                            ? (unit.x || 0) - (unit.radius || 0) 
-                                            : (hasPts ? (unit.x || 0) + minPtX : (unit.x || 0)));
-                                            
-                                    const textY = unit.type === 'rect' 
-                                        ? (unit.y || 0) 
-                                        : (unit.type === 'circle' 
-                                            ? (unit.y || 0) - (unit.radius || 0) 
-                                            : (hasPts ? (unit.y || 0) + minPtY : (unit.y || 0)));
-                                            
-                                    const textWidth = unit.type === 'rect' 
-                                        ? Math.max(10, Math.abs(unit.width || 50)) 
-                                        : (unit.type === 'circle' 
-                                            ? Math.max(10, (unit.radius || 20) * 2) 
-                                            : (hasPts ? Math.max(20, maxPtX - minPtX) : 100));
-                                            
-                                    const textHeight = unit.type === 'rect' 
-                                        ? Math.max(10, Math.abs(unit.height || 30)) 
-                                        : (unit.type === 'circle' 
-                                            ? Math.max(10, (unit.radius || 20) * 2) 
-                                            : (hasPts ? Math.max(20, maxPtY - minPtY) : 30));
-                                            
-                                    const quantizedScale = Math.max(0.5, Math.round((scale || 1) * 4) / 4);
-                                    const calcFontSize = unit.type === 'rect' 
-                                        ? Math.max(9, Math.min(Math.abs(unit.width || 50), Math.abs(unit.height || 50)) * 0.2) 
-                                        : (unit.type === 'circle' 
-                                            ? Math.max(9, (unit.radius || 20) * 0.4) 
-                                            : Math.max(9, 12 / quantizedScale));
-
-                                    return (
-                                        <Text
-                                            text={sizeLabel}
-                                            x={textX}
-                                            y={textY}
-                                            width={textWidth}
-                                            height={textHeight}
-                                            rotation={unit.rotation || 0}
-                                            align="center"
-                                            verticalAlign="middle"
-                                            fontSize={calcFontSize}
-                                            fill="#ffffff"
-                                            fontStyle="bold"
-                                            perfectDrawEnabled={false}
-                                            listening={false}
-                                        />
-                                    );
-                                })()}
-                            </React.Fragment>
-                        );})}
+                        {(() => {
+                            const showUnitLabels = scale > 0.4;
+                            const quantizedScale = Math.max(0.5, Math.round((scale || 1) * 4) / 4);
+                            const isSelectTool = activeTool === 'select';
+                            return units.map((unit) => (
+                                <EditCanvasUnitShape
+                                    key={unit.id}
+                                    unit={unit}
+                                    isSelected={selectedId === unit.id}
+                                    isSelectTool={isSelectTool}
+                                    showLabel={showUnitLabels}
+                                    quantizedScale={quantizedScale}
+                                    sizeValue={unit.name ? summaryMap.get(unit.name)?.size : undefined}
+                                    onSelectUnit={handleSelectCanvasUnit}
+                                    onDragEndUnit={handleDragEndCanvasUnit}
+                                    onTransformEndUnit={handleTransformEndCanvasUnit}
+                                />
+                            ));
+                        })()}
                         
                         {isDrawing && newShape && newShape.type === 'rect' && (
                            <Rect

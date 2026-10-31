@@ -42,6 +42,110 @@ const AVAILABLE_LABELS = [
     'HCM Sales Effi'
 ];
 
+const ReviewCanvasUnitShape = React.memo(function ReviewCanvasUnitShape({
+  unit,
+  isSelected,
+  showLabel,
+  quantizedScale,
+  reviewLabelColors,
+}: {
+  unit: any;
+  isSelected: boolean;
+  showLabel: boolean;
+  quantizedScale: number;
+  reviewLabelColors?: Record<string, string>;
+}) {
+  const { displayColor, displayOpacity, bbox } = unit;
+  const strokeColor = unit.hasMatchedColor ? (isSelected ? '#f59e0b' : '#ffffff') : '#64748b';
+  const strokeWidth = isSelected ? 2.5 : 1.2;
+
+  return (
+    <>
+      {unit.type === 'rect' && (
+        <Rect
+          x={unit.x}
+          y={unit.y}
+          width={unit.width}
+          height={unit.height}
+          fill={unit.hasMatchedColor ? displayColor : 'rgba(0, 0, 0, 0.001)'}
+          opacity={displayOpacity}
+          rotation={unit.rotation || 0}
+          stroke={strokeColor}
+          strokeWidth={strokeWidth}
+          strokeScaleEnabled={false}
+          perfectDrawEnabled={false}
+          listening={false}
+        />
+      )}
+      {unit.type === 'circle' && (
+        <Circle
+          x={unit.x}
+          y={unit.y}
+          radius={unit.radius}
+          fill={unit.hasMatchedColor ? displayColor : 'rgba(0, 0, 0, 0.001)'}
+          opacity={displayOpacity}
+          rotation={unit.rotation || 0}
+          stroke={strokeColor}
+          strokeWidth={strokeWidth}
+          strokeScaleEnabled={false}
+          perfectDrawEnabled={false}
+          listening={false}
+        />
+      )}
+      {unit.type === 'polygon' && (
+        <Line
+          x={unit.x || 0}
+          y={unit.y || 0}
+          points={unit.points}
+          fill={unit.hasMatchedColor ? displayColor : 'rgba(0, 0, 0, 0.001)'}
+          opacity={displayOpacity}
+          rotation={unit.rotation || 0}
+          stroke={strokeColor}
+          strokeWidth={strokeWidth}
+          strokeScaleEnabled={false}
+          perfectDrawEnabled={false}
+          closed
+          listening={false}
+        />
+      )}
+
+      {showLabel && bbox && (
+        <Group
+          x={bbox.x}
+          y={bbox.y}
+          width={bbox.width}
+          height={bbox.height}
+          rotation={unit.rotation || 0}
+          listening={false}
+        >
+          {(() => {
+            const lines = unit.sizeLabelLines || [];
+            const fontSize = Math.max(7, Math.min(18, 10 / quantizedScale));
+            const lineHeight = fontSize * 1.2;
+            const totalHeight = lines.length * lineHeight;
+            const startY = (bbox.height - totalHeight) / 2;
+            return lines.map((line: any, i: number) => (
+              <Text
+                key={i}
+                x={0}
+                y={startY + i * lineHeight}
+                width={bbox.width}
+                text={line.text}
+                fill={reviewLabelColors?.[line.key] || '#ffffff'}
+                align="center"
+                fontSize={fontSize}
+                fontStyle="bold"
+                listening={false}
+                perfectDrawEnabled={false}
+              />
+            ));
+          })()}
+        </Group>
+      )}
+    </>
+  );
+});
+
 function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: initialActiveVersionId, store: propStore, location: propLocation }: ReviewTabProps) {
   const projects = useAppStore(state => state.projects);
   const tasks = useAppStore(state => state.tasks);
@@ -436,161 +540,6 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
   const handleExportR2 = () => handleExportClick('r2_jpeg');
 
   const unitMap = React.useMemo(() => new Map(units.map(u => [u.id, u])), [units]);
-
-  const appProjects = useAppStore(state => state.projects);
-  const appTasks = useAppStore(state => state.tasks);
-  const appDelegationGroups = useAppStore(state => state.delegationGroups);
-
-  const aggregatedData = React.useMemo(() => {
-    const dataMap: Record<string, any> = {};
-
-    units.forEach((u) => {
-      const uName = (u.name || '').toLowerCase();
-      if (!uName) return;
-      dataMap[uName] = {
-        name: u.name || '',
-        id: u.id,
-        unit: u.name || '',
-        size: 0,
-        sales: 0,
-        salesAmount: 0,
-        salesByCp: 0,
-        salesByHcmcate: 0,
-        profit: 0,
-        profitAmount: 0,
-        profitByCp: 0,
-        profitByHcmcate: 0,
-        margin: 0,
-        marginByCp: 0,
-        hcmSalesEffi: 0,
-        hcmMargin: 0,
-        mdStatus: "",
-        mdNotes: "",
-        task: "",
-        projectStatus: "",
-        actStatus: "",
-        startDate: "",
-        endDate: "",
-        status: "",
-        vendorCode: "",
-        brandCode: "",
-        brandName: "",
-        classCode: "",
-        floor: "",
-        appProjectStatus: "",
-        appProjectBudget: 0,
-        appProjectActual: 0,
-        appProjectCode: "",
-        appProjectYear: "",
-      };
-    });
-
-    summaryData.forEach((sumData) => {
-      const key = sumData.unit?.toLowerCase();
-      if (key && dataMap[key]) {
-        dataMap[key].size = sumData.size || 0;
-        dataMap[key].sales = sumData.salesAmount || 0;
-        dataMap[key].salesAmount = sumData.salesAmount || 0;
-        dataMap[key].salesByCp = sumData.salesByCp || 0;
-        dataMap[key].salesByHcmcate = sumData.salesByHcmcate || 0;
-        dataMap[key].profit = sumData.profitAmount || 0;
-        dataMap[key].profitAmount = sumData.profitAmount || 0;
-        dataMap[key].profitByCp = sumData.profitByCp || 0;
-        dataMap[key].profitByHcmcate = sumData.profitByHcmcate || 0;
-        dataMap[key].margin = sumData.margin || 0;
-        dataMap[key].marginByCp = sumData.marginByCp || 0;
-        dataMap[key].hcmSalesEffi = sumData.hcmSalesEffi || 0;
-        dataMap[key].hcmMargin = sumData.hcmMargin || 0;
-        dataMap[key].mdStatus = sumData.mdStatus || "";
-        dataMap[key].mdNotes = sumData.mdNotes || "";
-        dataMap[key].task = sumData.task || "";
-        dataMap[key].projectStatus = sumData.projectStatus || "";
-        dataMap[key].actStatus = sumData.actStatus || "";
-        dataMap[key].startDate = sumData.startDate || "";
-        dataMap[key].endDate = sumData.endDate || "";
-        dataMap[key].status = sumData.status || "";
-        dataMap[key].vendorCode = sumData.vendorCode || "";
-        dataMap[key].brandCode = sumData.brandCode || "";
-        dataMap[key].brandName = sumData.brandName || "";
-        dataMap[key].classCode = sumData.classCode || "";
-        dataMap[key].floor = (sumData as any).floor || "";
-      }
-    });
-
-    const enrichedProjects = enrichProjects(appProjects || [], appTasks || [], appDelegationGroups || []);
-    enrichedProjects.forEach((p) => {
-      if (!p.code && !p.linkCodes) return;
-
-      const pMeta = extractProjectMetadata(p);
-      if (!projectMatchesScope(pMeta, { store, location, year: effectiveYear })) return;
-
-      const pCodes = extractAllProjectCodes(p);
-      const status = getStatus(
-        p.computedTakStart || p.start,
-        p.computedTakCompl || p.handover,
-        p.computedOpening || p.opening,
-        p.code
-      );
-      const actStatus = (p as any).computedActStatus || (p as any).actStatus || computeProjectActStatus(p, appDelegationGroups);
-      const detailStr = p.detail || '';
-      const descStr = p.detail || (p as any).description || '';
-      const partyStr = p.party || (p as any).contractor || '';
-      const mdStatusStr = p.mdStatus || '';
-
-      const targetUnitKeys = new Set<string>();
-      Object.keys(dataMap).forEach(uKey => {
-        const uEntry = dataMap[uKey];
-        if (!uEntry) return;
-        const uStore = (uEntry.store || store || '').toUpperCase().trim();
-        const uLoc = (uEntry.location || location || '').toUpperCase().trim();
-        const uYr = String(uEntry.year || effectiveYear || '').trim();
-
-        if (pMeta.store && uStore && pMeta.store !== uStore) return;
-        const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
-        if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
-        if (pMeta.year && uYr && pMeta.year !== uYr) return;
-
-        const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
-        if (isExactCode || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
-          targetUnitKeys.add(uKey);
-        }
-      });
-
-      targetUnitKeys.forEach((code) => {
-        if (dataMap[code]) {
-          dataMap[code].hasAppProject = true;
-          dataMap[code].appProjectStatus = status;
-          dataMap[code].appProjectBudget = p.budget || 0;
-          dataMap[code].appProjectActual = p.actual || 0;
-          dataMap[code].appProjectCode = String(p.code || code);
-          dataMap[code].appProjectYear = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
-          dataMap[code].year = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
-
-          dataMap[code].appProjectMdStatus = mdStatusStr;
-          dataMap[code].appMdStatus = mdStatusStr;
-
-          dataMap[code].appProjectActStatus = actStatus;
-          dataMap[code].appActStatus = actStatus;
-
-          dataMap[code].appProjectDetail = detailStr;
-          dataMap[code].appDetail = detailStr;
-
-          dataMap[code].appProjectDescription = descStr;
-          dataMap[code].appDescription = descStr;
-
-          dataMap[code].appProjectParty = partyStr;
-          dataMap[code].appParty = partyStr;
-
-          if (!dataMap[code].projectStatus) dataMap[code].projectStatus = status;
-          if (!dataMap[code].task) dataMap[code].task = (p as any).title || (p as any).name || '';
-          if (!dataMap[code].startDate && (p.computedTakStart || p.start)) dataMap[code].startDate = p.computedTakStart || p.start;
-          if (!dataMap[code].endDate && (p.computedOpening || p.opening)) dataMap[code].endDate = p.computedOpening || p.opening;
-        }
-      });
-    });
-
-    return dataMap;
-  }, [units, summaryData, appProjects, appTasks, appDelegationGroups, effectiveYear, store]);
 
   const applyAllDynamicRules = () => {
     try {
@@ -1021,97 +970,20 @@ function ReviewTab({ units, setUnits, versions, setVersions, activeVersionId: in
                 scaleY={activeVersion?.imageScale || 1}
                 rotation={activeVersion?.backgroundRotation || 0}
               />}
-              {styledUnits.map((unit: any) => {
-                const { displayColor, displayOpacity, bbox } = unit;
-                
-                return (
-                  <React.Fragment key={unit.id}>
-                    {unit.type === 'rect' && (
-                      <Rect
-                        x={unit.x}
-                        y={unit.y}
-                        width={unit.width}
-                        height={unit.height}
-                        fill={unit.hasMatchedColor ? displayColor : 'rgba(0, 0, 0, 0.001)'}
-                        opacity={displayOpacity}
-                        rotation={unit.rotation || 0}
-                        stroke={unit.hasMatchedColor ? (selectedReviewUnitId === unit.id ? '#f59e0b' : '#ffffff') : '#64748b'}
-                        strokeWidth={selectedReviewUnitId === unit.id ? 2.5 : 1.2}
-                        strokeScaleEnabled={false}
-                        perfectDrawEnabled={false}
-                        listening={false}
-                      />
-                    )}
-                    {unit.type === 'circle' && (
-                      <Circle
-                        x={unit.x}
-                        y={unit.y}
-                        radius={unit.radius}
-                        fill={unit.hasMatchedColor ? displayColor : 'rgba(0, 0, 0, 0.001)'}
-                        opacity={displayOpacity}
-                        rotation={unit.rotation || 0}
-                        stroke={unit.hasMatchedColor ? (selectedReviewUnitId === unit.id ? '#f59e0b' : '#ffffff') : '#64748b'}
-                        strokeWidth={selectedReviewUnitId === unit.id ? 2.5 : 1.2}
-                        strokeScaleEnabled={false}
-                        perfectDrawEnabled={false}
-                        listening={false}
-                      />
-                    )}
-                    {unit.type === 'polygon' && (
-                      <Line
-                        x={unit.x || 0}
-                        y={unit.y || 0}
-                        points={unit.points}
-                        fill={unit.hasMatchedColor ? displayColor : 'rgba(0, 0, 0, 0.001)'}
-                        opacity={displayOpacity}
-                        rotation={unit.rotation || 0}
-                        stroke={unit.hasMatchedColor ? (selectedReviewUnitId === unit.id ? '#f59e0b' : '#ffffff') : '#64748b'}
-                        strokeWidth={selectedReviewUnitId === unit.id ? 2.5 : 1.2}
-                        strokeScaleEnabled={false}
-                        perfectDrawEnabled={false}
-                        closed
-                        listening={false}
-                      />
-                    )}
-                    
-                    {/* Unit Label - only show if scale is large enough to be readable */}
-                    {scale > 0.3 && bbox && (
-                      <Group
-                        x={bbox.x}
-                        y={bbox.y}
-                        width={bbox.width}
-                        height={bbox.height}
-                        rotation={unit.rotation || 0}
-                        listening={false}
-                      >
-                        {(() => {
-                          const lines = unit.sizeLabelLines || [];
-                          const quantizedScale = Math.max(0.3, Math.round(scale * 4) / 4);
-                          const fontSize = Math.max(7, Math.min(18, 10 / quantizedScale));
-                          const lineHeight = fontSize * 1.2;
-                          const totalHeight = lines.length * lineHeight;
-                          const startY = (bbox.height - totalHeight) / 2;
-                          return lines.map((line: any, i: number) => (
-                            <Text
-                              key={i}
-                              x={0}
-                              y={startY + i * lineHeight}
-                              width={bbox.width}
-                              text={line.text}
-                              fill={reviewLabelColors?.[line.key] || '#ffffff'}
-                              align="center"
-                              fontSize={fontSize}
-                              fontStyle="bold"
-                              listening={false}
-                              perfectDrawEnabled={false}
-                            />
-                          ));
-                        })()}
-                      </Group>
-                    )}
-                  </React.Fragment>
-                );
-              })}
+              {(() => {
+                const showReviewLabels = scale > 0.3;
+                const quantizedScale = Math.max(0.3, Math.round(scale * 4) / 4);
+                return styledUnits.map((unit: any) => (
+                  <ReviewCanvasUnitShape
+                    key={unit.id}
+                    unit={unit}
+                    isSelected={selectedReviewUnitId === unit.id}
+                    showLabel={showReviewLabels}
+                    quantizedScale={quantizedScale}
+                    reviewLabelColors={reviewLabelColors}
+                  />
+                ));
+              })()}
             </Layer>
           </Stage>
         </div>

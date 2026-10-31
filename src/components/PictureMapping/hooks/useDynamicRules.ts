@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useCallback, useRef } from "react";
 import { UnitShape, MapVersion, GroupRule } from '../components/DataMapping/types';
 import { SummaryDataItem, calculateSummaryData } from '../lib/summaryData';
 import { useAppStore } from '../../../store/useAppStore';
+import { useEnrichedData } from '../../../hooks/useEnrichedData';
 import { useDataStore } from '../DataContext';
 import {
-  enrichProjects,
   getStatus,
   computeProjectActStatus,
   extractAllProjectCodes,
@@ -175,8 +175,8 @@ export function useDynamicRules(
   const autoEvaluate = options.autoEvaluate ?? false;
   const onDirtyChange = options.onDirtyChange;
 
-  // Reactively track projects and tasks from Zustand Global Store
-  const projects = useAppStore((state) => state.projects || []);
+  // Reactively track enriched projects (singleton cached) and tasks from Zustand Global Store
+  const { enrichedProjects } = useEnrichedData();
   const tasks = useAppStore((state) => state.tasks || []);
   const delegationGroups = useAppStore((state) => state.delegationGroups || []);
   const globalYearFilter = useAppStore((state) => state.globalYearFilter);
@@ -194,8 +194,6 @@ export function useDynamicRules(
   const projectLink = useDataStore((state) => state.projectLink);
   const basePlan = useDataStore((state) => state.basePlan);
   const storeUnits = useDataStore((state) => state.units);
-
-  const enrichedProjects = useMemo(() => enrichProjects(projects, tasks, delegationGroups), [projects, tasks, delegationGroups]);
 
   const internalSummaryData = useMemo(() => {
     if (options.summaryData && options.summaryData.length > 0) {
