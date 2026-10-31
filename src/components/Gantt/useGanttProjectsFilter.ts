@@ -422,6 +422,10 @@ export function useGanttProjectsFilter({
 
   const [visibleCount, setVisibleCount] = useState(20);
 
+  useEffect(() => {
+    setVisibleCount(20);
+  }, [globalYearFilter, effectiveStore, globalLocationFilter, filterProjectStatus, deferredSearchTerm]);
+
   const sortedProjects = useMemo(() => {
     return [...filteredProjects].sort((a, b) => {
       const startA = a.computedTakStart || '9999-12-31';
@@ -431,13 +435,24 @@ export function useGanttProjectsFilter({
     });
   }, [filteredProjects]);
 
-  const isPrintPreview = useAppStore(state => state.isPrintPreview);
-  const isExportingPDF = useAppStore(state => state.isExportingPDF);
+  const ganttTabFocusTaskId = useAppStore(state => state.ganttTabFocusTaskId);
+  useEffect(() => {
+    if (!ganttTabFocusTaskId) return;
+    const cleanId = String(ganttTabFocusTaskId).replace('task-', '').trim();
+    const targetTask = tasks.find(t => String(t.id) === cleanId);
+    if (!targetTask) return;
+    const projIdx = sortedProjects.findIndex(
+      p => (p.id && String(p.id) === String(targetTask.projectId)) ||
+           (p.code && targetTask.projectCode && p.code.trim().toUpperCase() === targetTask.projectCode.trim().toUpperCase())
+    );
+    if (projIdx >= visibleCount) {
+      setVisibleCount(Math.min(sortedProjects.length, projIdx + 5));
+    }
+  }, [ganttTabFocusTaskId, tasks, sortedProjects, visibleCount]);
 
   const paginatedProjects = useMemo(() => {
-    if (isPrintPreview || isExportingPDF) return sortedProjects;
     return sortedProjects.slice(0, visibleCount);
-  }, [sortedProjects, visibleCount, isPrintPreview, isExportingPDF]);
+  }, [sortedProjects, visibleCount]);
 
   const handleLoadMore = useCallback(() => {
     setVisibleCount(prev => Math.min(prev + 20, sortedProjects.length));

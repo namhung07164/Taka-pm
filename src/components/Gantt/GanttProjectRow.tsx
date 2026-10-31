@@ -157,50 +157,9 @@ export const GanttProjectRow: React.FC<GanttProjectRowProps> = React.memo(({
         <div className="w-10 px-0.5 h-full flex items-center justify-center gap-0.5 shrink-0 border-r border-slate-200 dark:border-slate-800 box-border">
           {isEditMode && (() => {
             const pKey = String(p.id || p.no);
-            const pCodeNorm = String(p.code || '').trim().toLowerCase();
-            const pYearNorm = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
-            const pStoreNorm = p.store ? String(p.store).trim().toLowerCase() : '';
-            const allStoreTasks = useAppStore.getState().tasks || [];
-
-            const taskMap = new Map<string, Task>();
-            (projectTasks || []).forEach(t => { if (t && t.id && !t.isDeleted) taskMap.set(t.id, t); });
-
-            allStoreTasks.forEach(t => {
-              if (!t || !t.id || t.isDeleted) return;
-              if (p.id && String(t.projectId) === String(p.id)) {
-                taskMap.set(t.id, t);
-                return;
-              }
-              if (t.projectCode) {
-                const codes = String(t.projectCode).trim().toLowerCase().split(/[,;/]+/).map(s => s.trim());
-                if (codes.includes(pCodeNorm)) {
-                  if (pYearNorm && t.projectYear && String(t.projectYear).trim() !== pYearNorm) return;
-                  if (pStoreNorm && t.projectStore && String(t.projectStore).trim().toLowerCase() !== pStoreNorm) return;
-                  taskMap.set(t.id, t);
-                }
-              }
-            });
-
-            const parentIdSet = new Set(Array.from(taskMap.keys()));
-            const parentCodeSet = new Set(
-              Array.from(taskMap.values())
-                .map(t => t.taskCodePhu ? String(t.taskCodePhu).trim().toLowerCase() : '')
-                .filter(Boolean)
-            );
-
-            allStoreTasks.forEach(t => {
-              if (!t || !t.id || t.isDeleted || taskMap.has(String(t.id))) return;
-              const rawParent = t.parentTaskId || (t as any).parentId;
-              if (rawParent) {
-                const rawStr = String(rawParent).trim().toLowerCase();
-                if (parentIdSet.has(String(rawParent)) || parentCodeSet.has(rawStr)) {
-                  taskMap.set(String(t.id), t);
-                }
-              }
-            });
-
-            const allProjectTasks = Array.from(taskMap.values());
-            const pTaskIds = allProjectTasks.map(t => String(t.id)).filter(Boolean);
+            const pTaskIds = (projectTasks || [])
+              .filter(t => t && t.id && !t.isDeleted)
+              .map(t => String(t.id));
             const sTaskSet = selectedTaskSet || new Set((selectedTaskIds || []).map(String));
             const isAllTasksSelected = pTaskIds.length > 0 && pTaskIds.every(id => sTaskSet.has(id));
             const isSomeTasksSelected = !isAllTasksSelected && pTaskIds.some(id => sTaskSet.has(id));

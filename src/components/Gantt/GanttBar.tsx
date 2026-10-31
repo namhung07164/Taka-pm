@@ -190,7 +190,7 @@ export const GanttBar = React.memo(function GanttBar({
         onMouseEnter={handleBarMouseEnter}
         onMouseLeave={handleBarMouseLeave}
         className={cn(
-          "absolute top-1.5 bottom-1.5 flex items-center transition-all cursor-pointer select-none group shadow-2xs before:absolute before:-inset-y-1.5 before:-inset-x-1 before:content-['']",
+          "gantt-bar absolute top-1.5 bottom-1.5 flex items-center transition-shadow cursor-pointer select-none group shadow-2xs before:absolute before:-inset-y-1.5 before:-inset-x-1 before:content-['']",
           isMilestone ? "w-4 h-4 rotate-45 rounded-[2px] mt-1.5 shadow-md z-20" : "h-6 rounded-md",
           !customColor && barColor,
           isSimulation && "border-2 border-dashed border-purple-400 opacity-80",

@@ -72,7 +72,8 @@ export function GanttTab({
     globalYearFilter, setGlobalYearFilter, effectiveStore, setGlobalStoreFilter,
     globalLocationFilter, setGlobalLocationFilter, filterProjectStatus, onStatusFilterChange,
     searchTerm, setSearchTerm, deferredSearchTerm, uniqueYears, uniqueStores,
-    locationOptions, getGroupTasksForProject, paginatedProjects
+    locationOptions, getGroupTasksForProject, sortedProjects, paginatedProjects,
+    visibleCount, handleLoadMore
   } = useGanttProjectsFilter({ projects, tasks, delegationGroups, currentUser });
 
   // 2. Timeline and Date Offset Calculations
@@ -97,6 +98,7 @@ export function GanttTab({
     setIsTaskModularModalOpen, expandedModularTasks, setExpandedModularTasks,
     expandedModularSet, toggleModularParent, sumMode, setSumMode, computedSum,
     isHighlightDelegationOn, setIsHighlightDelegationOn, isEditMode, setIsEditMode,
+    showPredecessorLines, setShowPredecessorLines,
     isHideMode, setIsHideMode, hiddenRows, setHiddenRows, hiddenRowsSet,
     toggleHideRow, getRowVisibilityClass
   } = useGanttBatchOps({
@@ -123,7 +125,7 @@ export function GanttTab({
   });
 
   // 6. Dependencies and Tooltips
-  const { activeTooltip, setActiveTooltip, dependencyLines } = useGanttDependencies({
+  const { activeTooltip, setActiveTooltip, dependencyLines, allCodesMap } = useGanttDependencies({
     tasks, projects, delegationGroups, visibleGanttRows, startDate,
     dayWidth: effectiveDayWidth,
     sideWidth: effectiveSideWidth,
@@ -132,7 +134,8 @@ export function GanttTab({
     showFinish: visibleColumns.includes('finish'),
     showParty: visibleColumns.includes('party'),
     showDuration: visibleColumns.includes('duration'),
-    showPredecessor: visibleColumns.includes('predecessor')
+    showPredecessor: visibleColumns.includes('predecessor'),
+    showPredecessorLines,
   });
 
   // 7. Drag & Drop Task Reordering
@@ -167,11 +170,14 @@ export function GanttTab({
     window.addEventListener('mouseup', onMouseUp);
   }, [sideWidth]);
 
-  // Auto-scroll to Today on tab mount
+  // Auto-scroll to Today ONCE on initial tab mount (without re-snapping when tasks load or user pans)
+  const hasInitialScrolledTodayRef = useRef(false);
   useEffect(() => {
+    if (hasInitialScrolledTodayRef.current) return;
+    hasInitialScrolledTodayRef.current = true;
     const timer = setTimeout(() => {
       handleTodayClick();
-    }, 250);
+    }, 180);
     return () => clearTimeout(timer);
   }, [handleTodayClick]);
 
@@ -212,7 +218,10 @@ export function GanttTab({
   ) && !isArchiveYear;
 
   return (
-    <div className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm min-h-0">
+    <div
+      data-gesture-ignore="true"
+      className="flex flex-col flex-grow bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-sm min-h-0 overscroll-x-contain"
+    >
       {/* Top Filter & Toolbar */}
       <GanttToolbar
         globalYearFilter={globalYearFilter}
@@ -250,6 +259,8 @@ export function GanttTab({
         setIsHideMode={setIsHideMode}
         hiddenRows={hiddenRows}
         setHiddenRows={setHiddenRows}
+        showPredecessorLines={showPredecessorLines}
+        setShowPredecessorLines={setShowPredecessorLines}
         handleExportToPDF={handleExportToPDF}
         isExporting={isExporting}
         tempStartDate={tempStartDate}
@@ -345,6 +356,8 @@ export function GanttTab({
         dependencyLines={dependencyLines}
         computedSum={computedSum}
         isExporting={isExporting}
+        allCodesMap={allCodesMap}
+        isHighlightDelegationOn={isHighlightDelegationOn}
         onNavigateToTaskDetail={onNavigateToTaskDetail}
         onNavigateToLayout={onNavigateToLayout}
         paginatedProjects={paginatedProjects}
@@ -352,6 +365,17 @@ export function GanttTab({
         setExpandedModularTasks={setExpandedModularTasks}
         getGroupTasksForProject={getGroupTasksForProject}
       />
+
+      {visibleCount < sortedProjects.length && (
+        <div className="py-3 text-center bg-slate-50/90 dark:bg-[#18181a]/90 border-t border-slate-200 dark:border-[#444446] rounded-b-xl print:hidden hide-on-actual-print shrink-0">
+          <button
+            onClick={handleLoadMore}
+            className="px-6 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold rounded-full shadow-xs transition-colors text-xs sm:text-sm cursor-pointer active:scale-95 touch-manipulation"
+          >
+            Load More Projects ({sortedProjects.length - visibleCount} remaining)
+          </button>
+        </div>
+      )}
 
       {/* Task Modular Grouping Modal */}
       {isTaskModularModalOpen && (

@@ -88,6 +88,15 @@ export function useGanttZoomAndPan({
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const targetEl = e.target as HTMLElement;
 
+    // On touch devices (iOS / iPad / Android), mainScrollRef already uses native hardware-accelerated
+    // inertial scrolling (overflow-auto). Only intercept touch if dragging the sticky topScrollRef header.
+    if (e.pointerType === 'touch') {
+      const isInsideTopHeader = Boolean(topScrollRef.current && topScrollRef.current.contains(targetEl));
+      if (!isInsideTopHeader) {
+        return;
+      }
+    }
+
     // Ignore clicks on interactive components or month resize dividers
     if (
       targetEl.closest('button') ||
@@ -108,7 +117,9 @@ export function useGanttZoomAndPan({
       if (!scrollEl) return;
 
       isDraggingRef.current = true;
-      setIsPanning(true);
+      if (e.pointerType !== 'touch') {
+        setIsPanning(true);
+      }
 
       dragStartRef.current = {
         x: e.clientX,
@@ -121,7 +132,7 @@ export function useGanttZoomAndPan({
         e.preventDefault();
       }
     }
-  }, [mainScrollRef]);
+  }, [mainScrollRef, topScrollRef]);
 
   useEffect(() => {
     const handlePointerMove = (e: PointerEvent) => {

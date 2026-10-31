@@ -129,14 +129,21 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
   const isDragging = draggingTaskIds.includes(t.id);
   const isFocused = initialFocusTaskId === t.id || ganttTabFocusTaskId === t.id;
 
-  const userRole = currentUser ? getUserDelegationRoleForTask(t, currentUser, delegationGroups || []) : null;
+  const userRole = currentUser && isHighlightDelegationOn
+    ? getUserDelegationRoleForTask(t, currentUser, delegationGroups || [])
+    : null;
   const highlightRole = isHighlightDelegationOn ? userRole : null;
 
   const planStatus = getTaskStatus(t.start, t.finish);
-  const linkedGroup = delegationGroupByTaskId?.get(t.id) || (delegationGroups || []).find((g: any) => g.taskId === t.id || g.parentTaskId === t.id);
+  const linkedGroup = delegationGroupByTaskId
+    ? delegationGroupByTaskId.get(t.id)
+    : (delegationGroups || []).find((g: any) => g.taskId === t.id || g.parentTaskId === t.id);
   const actStatusObj = resolveActualStatus(planStatus, linkedGroup?.subTasks || []);
-  const actPrg = computeActProgressPercent([t], delegationGroups || []);
-  const taskCode = taskCodeMap?.get(t.id) || t.taskCodePhu || computeTaskCode(projects, tasks, t);
+  const actPrg = linkedGroup ? computeActProgressPercent([t], [linkedGroup]) : computeActProgressPercent([t], []);
+  const taskCode =
+    taskCodeMap?.get(t.id) ||
+    t.taskCodePhu ||
+    (p.code ? `${p.code}#${(taskIndex ?? 0) + 1}` : computeTaskCode(projects, tasks, t));
 
   // Compute accurate lifecycle status taking into account runningStatus, delegation, approvals, progress, and dates
   let effectiveStatus = planStatus;
@@ -170,9 +177,11 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
     return childTasks
       .filter((ct) => {
         const plSt = getTaskStatus(ct.start, ct.finish);
-        const lg = delegationGroupByTaskId?.get(ct.id) || (delegationGroups || []).find((g: any) => g.taskId === ct.id || g.parentTaskId === ct.id);
+        const lg = delegationGroupByTaskId
+          ? delegationGroupByTaskId.get(ct.id)
+          : (delegationGroups || []).find((g: any) => g.taskId === ct.id || g.parentTaskId === ct.id);
         const actStObj = resolveActualStatus(plSt, lg?.subTasks || []);
-        const prg = computeActProgressPercent([ct], delegationGroups || []);
+        const prg = lg ? computeActProgressPercent([ct], [lg]) : computeActProgressPercent([ct], []);
         const running = (ct.runningStatus || '').toLowerCase();
         const actLabel = (actStObj.label || '').toLowerCase();
 
@@ -196,9 +205,10 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
 
         return false;
       })
-      .map((ct) => {
-        const ctPrg = computeActProgressPercent([ct], delegationGroups || []);
-        const ctCode = ct.taskCodePhu || taskCodeMap?.get(ct.id) || computeTaskCode(projects, tasks, ct);
+      .map((ct, idx) => {
+        const lg = delegationGroupByTaskId ? delegationGroupByTaskId.get(ct.id) : undefined;
+        const ctPrg = lg ? computeActProgressPercent([ct], [lg]) : computeActProgressPercent([ct], []);
+        const ctCode = ct.taskCodePhu || taskCodeMap?.get(ct.id) || (p.code ? `${p.code}#${idx + 1}` : '');
         return {
           id: String(ct.id),
           name: ct.name,
@@ -209,7 +219,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
           duration: ct.duration,
         };
       });
-  }, [hasChildren, childTasks, delegationGroups, projects, tasks]);
+  }, [hasChildren, childTasks, delegationGroupByTaskId, delegationGroups, p.code, taskCodeMap]);
 
   const extraVars = {
     actStatus: effectiveStatus,
@@ -255,7 +265,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
       onDragLeave={(e) => isEditMode && handleTaskDragLeave(e, t.id)}
       onDrop={(e) => isEditMode && handleTaskDrop(e, t, p)}
       className={cn(
-        "flex h-10 min-h-[40px] border-b border-slate-100 dark:border-slate-800 transition-all duration-700 relative group",
+        "flex h-10 min-h-[40px] border-b border-slate-100 dark:border-slate-800 transition-colors duration-200 relative group",
         getRowVisibilityClass(`task-${t.id}`),
         isSelected ? "bg-blue-50/50 dark:bg-blue-950/30" : "hover:bg-slate-50/80 dark:hover:bg-slate-800/40",
         isEditMode && !isParentTask && "cursor-grab active:cursor-grabbing hover:bg-blue-50/70 dark:hover:bg-blue-900/30",
@@ -419,6 +429,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
     prev.isModularExpanded === next.isModularExpanded &&
     prev.toggleModularParent === next.toggleModularParent &&
     prev.isEditMode === next.isEditMode &&
+    prev.isHighlightDelegationOn === next.isHighlightDelegationOn &&
     prev.canWrite === next.canWrite &&
     prev.isHideMode === next.isHideMode &&
     prev.sideWidth === next.sideWidth &&

@@ -61,6 +61,8 @@ interface GanttTableViewProps {
   handleTaskDragEnd: () => void;
   dragOverTaskId: string | null; dropPosition: 'before' | 'after' | null;
   dependencyLines: DependencyLine[]; computedSum: number | null; isExporting: boolean;
+  allCodesMap?: Map<string, string>;
+  isHighlightDelegationOn?: boolean;
   onNavigateToTaskDetail?: (taskId: string) => void;
   onNavigateToLayout?: (store: string, location: string, projectCode?: string, sourceTaskId?: string) => void;
   paginatedProjects?: Project[]; expandedModularTasks?: string[];
@@ -80,7 +82,8 @@ export function GanttTableView({
   toggleModularParent, handleGroupModularTasks, handleUnlinkModularTasks, handleTogglePin,
   initialFocusTaskId, ganttTabFocusTaskId, draggingTaskIds, handleTaskDragStart, handleTaskDragOver,
   handleContainerDragOver, handleTaskDragLeave, handleTaskDrop, handleTaskDragEnd, dragOverTaskId,
-  dropPosition, dependencyLines, computedSum, isExporting, onNavigateToTaskDetail, onNavigateToLayout,
+  dropPosition, dependencyLines, computedSum, isExporting, allCodesMap, isHighlightDelegationOn = false,
+  onNavigateToTaskDetail, onNavigateToLayout,
   paginatedProjects, expandedModularTasks = [], setExpandedModularTasks, getGroupTasksForProject
 }: GanttTableViewProps) {
   const { t } = useLanguage();
@@ -144,7 +147,7 @@ export function GanttTableView({
   const showStart = visibleColumns.includes('start'), showFinish = visibleColumns.includes('finish'), showParty = visibleColumns.includes('party'), showDuration = visibleColumns.includes('duration'), showPredecessor = visibleColumns.includes('predecessor');
   const startColWidth = colWidths?.start ?? 85, finishColWidth = colWidths?.finish ?? 85, partyColWidth = colWidths?.party ?? 80, durationColWidth = colWidths?.duration ?? 60, predecessorColWidth = colWidths?.predecessor ?? 90;
 
-  const taskCodeMap = useMemo(() => computeAllTaskCodes(projects, tasks), [projects, tasks]);
+  const taskCodeMap = useMemo(() => allCodesMap || computeAllTaskCodes(projects, tasks), [allCodesMap, projects, tasks]);
 
   const delegationGroupByTaskId = useMemo(() => {
     const map = new Map<string, any>();
@@ -223,10 +226,11 @@ export function GanttTableView({
   return (
     <div
       ref={tableContainerRef}
+      data-gesture-ignore="true"
       onDragOver={handleContainerDragOver}
       style={isPrintMode ? { width: `${totalChartWidth}px`, minWidth: `${totalChartWidth}px` } : undefined}
       className={cn(
-        "flex-grow flex flex-col bg-white dark:bg-[#1e1e20] relative min-h-0 select-none w-full min-w-0",
+        "flex-grow flex flex-col bg-white dark:bg-[#1e1e20] relative min-h-0 select-none w-full min-w-0 overscroll-x-contain",
         isExporting && "overflow-hidden"
       )}
     >
@@ -234,14 +238,15 @@ export function GanttTableView({
       <div
         ref={topScrollRef}
         data-print-header="true"
+        data-gesture-ignore="true"
         onScroll={handleTopScroll}
         onPointerDown={handlePointerDown}
         style={
           isPrintMode
             ? { width: `${totalChartWidth}px`, minWidth: `${totalChartWidth}px` }
-            : { position: '-webkit-sticky' as any, top: `${stickyOffset}px` }
+            : { position: '-webkit-sticky' as any, top: `${stickyOffset}px`, touchAction: 'pan-x pan-y' }
         }
-        className="sticky top-[86px] sm:top-[48px] z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-[#18181a]/95 backdrop-blur-md flex shrink-0 shadow-xs"
+        className="sticky top-[86px] sm:top-[48px] z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-[#18181a]/95 backdrop-blur-md flex shrink-0 shadow-xs overscroll-x-contain"
       >
         <GanttLeftHeader
           sideWidth={sideWidth}
@@ -269,6 +274,7 @@ export function GanttTableView({
       {/* Main Scrollable Table & Timeline Canvas */}
       <div
         ref={mainScrollRef}
+        data-gesture-ignore="true"
         onScroll={handleCombinedMainScroll}
         onPointerDown={handlePointerDown}
         onClick={(e) => {
@@ -276,9 +282,13 @@ export function GanttTableView({
             setActiveTooltip(null);
           }
         }}
-        style={isPrintMode ? { width: `${totalChartWidth}px`, minWidth: `${totalChartWidth}px` } : undefined}
+        style={
+          isPrintMode
+            ? { width: `${totalChartWidth}px`, minWidth: `${totalChartWidth}px` }
+            : { WebkitOverflowScrolling: 'touch', touchAction: 'pan-x pan-y' }
+        }
         className={cn(
-          "flex-grow overflow-auto relative z-10 flex min-h-0 w-full max-w-full min-w-0 rounded-b-xl",
+          "flex-grow overflow-auto relative z-10 flex min-h-0 w-full max-w-full min-w-0 rounded-b-xl overscroll-x-contain",
           isPanning ? "cursor-grabbing select-none" : "cursor-grab"
         )}
       >
@@ -382,7 +392,7 @@ export function GanttTableView({
                   projects={projects}
                   tasks={tasks}
                   delegationGroups={delegationGroups}
-                  isHighlightDelegationOn={false}
+                  isHighlightDelegationOn={isHighlightDelegationOn}
                   currentUser={currentUser}
                   selectedTaskSet={selectedTaskSet}
                   selectedTaskIds={selectedTaskIds}

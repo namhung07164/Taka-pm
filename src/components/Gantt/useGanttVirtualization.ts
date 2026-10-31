@@ -31,31 +31,11 @@ export function useGanttVirtualization({
   const isPrintPreview = useAppStore(state => state.isPrintPreview);
   const isExportingPDF = useAppStore(state => state.isExportingPDF);
   const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(800);
-  const scrollRafRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    const el = tableContainerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        setViewportHeight(entry.contentRect.height || 800);
-      }
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [tableContainerRef]);
+  const scrollTop = 0;
+  const viewportHeight = 800;
 
   const handleCombinedMainScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     handleMainScroll(e);
-    const top = e.currentTarget.scrollTop;
-    if (scrollRafRef.current !== null) {
-      cancelAnimationFrame(scrollRafRef.current);
-    }
-    scrollRafRef.current = requestAnimationFrame(() => {
-      setScrollTop(top);
-    });
   }, [handleMainScroll]);
 
   // Flatten Gantt Rows
@@ -285,62 +265,12 @@ export function useGanttVirtualization({
     return { totalHeight: currentOffset, rowOffsets: offsets };
   }, [flatGanttRows]);
 
-  // Virtual window slice indices
-  const { startIndex, endIndex, paddingTop, paddingBottom } = useMemo(() => {
-    if (flatGanttRows.length === 0) {
-      return { startIndex: 0, endIndex: 0, paddingTop: 0, paddingBottom: 0 };
-    }
-    if (isPrintPreview || isExportingPDF) {
-      return { startIndex: 0, endIndex: flatGanttRows.length, paddingTop: 0, paddingBottom: 0 };
-    }
-
-    const bufferPx = 300;
-    const startY = Math.max(0, scrollTop - bufferPx);
-    const endY = scrollTop + viewportHeight + bufferPx;
-
-    let s = 0;
-    let e = flatGanttRows.length;
-
-    // Binary search startIndex
-    let low = 0;
-    let high = flatGanttRows.length - 1;
-    while (low <= high) {
-      const mid = Math.floor((low + high) / 2);
-      if (rowOffsets[mid] < startY) {
-        s = mid;
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    }
-
-    // Binary search endIndex
-    low = s;
-    high = flatGanttRows.length - 1;
-    while (low <= high) {
-      const mid = Math.floor((low + high) / 2);
-      if (rowOffsets[mid] <= endY) {
-        e = mid + 1;
-        low = mid + 1;
-      } else {
-        high = mid - 1;
-      }
-    }
-
-    const topPad = rowOffsets[s] || 0;
-    const bottomPad = Math.max(0, totalHeight - (rowOffsets[e] || totalHeight));
-
-    return {
-      startIndex: s,
-      endIndex: Math.min(e, flatGanttRows.length),
-      paddingTop: topPad,
-      paddingBottom: bottomPad
-    };
-  }, [flatGanttRows.length, rowOffsets, scrollTop, viewportHeight, totalHeight, isPrintPreview, isExportingPDF]);
-
-  const visibleGanttRows = useMemo(() => {
-    return flatGanttRows.slice(startIndex, endIndex);
-  }, [flatGanttRows, startIndex, endIndex]);
+  // Render all rows simultaneously so mobile, iOS, and iPad page scrolling never clips or drops rows
+  const startIndex = 0;
+  const endIndex = flatGanttRows.length;
+  const paddingTop = 0;
+  const paddingBottom = 0;
+  const visibleGanttRows = flatGanttRows;
 
   return {
     flatGanttRows,

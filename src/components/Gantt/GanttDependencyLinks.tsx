@@ -68,9 +68,6 @@ export const GanttDependencyLinks: React.FC<GanttDependencyLinksProps> = React.m
           >
             <polygon points="8 0, 0 4, 8 8" fill="#1d4ed8" />
           </marker>
-          <filter id="gantt-dep-shadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="1" stdDeviation="1" floodColor="#000" floodOpacity="0.18" />
-          </filter>
         </defs>
 
         {dependencyLines.map((line, idx) => {
@@ -122,8 +119,7 @@ export const GanttDependencyLinks: React.FC<GanttDependencyLinksProps> = React.m
                 strokeWidth={isHovered ? "2.5" : "1.75"}
                 strokeDasharray={line.isAnimated ? "4 2" : undefined}
                 markerEnd={markerEnd}
-                filter="url(#gantt-dep-shadow)"
-                className={`transition-all duration-150 ${isHovered ? "opacity-100" : "opacity-80 hover:opacity-100"}`}
+                className={isHovered ? "opacity-100" : "opacity-85"}
               />
             </g>
           );

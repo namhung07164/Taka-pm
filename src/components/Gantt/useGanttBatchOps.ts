@@ -31,6 +31,18 @@ export function useGanttBatchOps({
   const [sumMode, setSumMode] = useState<'none' | 'duration'>('none');
   const [isHighlightDelegationOn, setIsHighlightDelegationOn] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [showPredecessorLines, setShowPredecessorLinesState] = useState<boolean>(() => {
+    const saved = safeGetItemSession('taka_gantt_show_pred_lines');
+    return saved !== null ? saved !== 'false' : true;
+  });
+
+  const setShowPredecessorLines = useCallback((val: boolean | ((prev: boolean) => boolean)) => {
+    setShowPredecessorLinesState(prev => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      safeSetItemSession('taka_gantt_show_pred_lines', String(next));
+      return next;
+    });
+  }, []);
 
   // Modular task states
   const [isTaskModularModalOpen, setIsTaskModularModalOpen] = useState(false);
@@ -291,6 +303,8 @@ export function useGanttBatchOps({
     setIsHighlightDelegationOn,
     isEditMode,
     setIsEditMode,
+    showPredecessorLines,
+    setShowPredecessorLines,
     isHideMode,
     setIsHideMode,
     hiddenRows,

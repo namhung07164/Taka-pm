@@ -1,4 +1,4 @@
-import React, { RefObject, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 
 export function useSyncScroll() {
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -6,7 +6,7 @@ export function useSyncScroll() {
   const isSyncingTop = useRef(false);
   const isSyncingMain = useRef(false);
 
-  const handleTopScroll = () => {
+  const handleTopScroll = useCallback(() => {
     if (isSyncingMain.current) {
       isSyncingMain.current = false;
       return;
@@ -15,9 +15,9 @@ export function useSyncScroll() {
       isSyncingTop.current = true;
       mainScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
     }
-  };
+  }, []);
 
-  const handleMainScroll = () => {
+  const handleMainScroll = useCallback(() => {
     if (isSyncingTop.current) {
       isSyncingTop.current = false;
     } else {
@@ -26,7 +26,7 @@ export function useSyncScroll() {
         topScrollRef.current.scrollLeft = mainScrollRef.current.scrollLeft;
       }
     }
-  };
+  }, []);
 
   return {
     topScrollRef,

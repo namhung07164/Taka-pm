@@ -206,7 +206,13 @@ export function useAppKeyboardAndTouch({
       const selection = window.getSelection();
       if (selection && selection.toString().length > 0) return;
 
-      if (touchTarget && touchTarget.closest('input, textarea, [contenteditable="true"]')) {
+      if (
+        useAppStore.getState().activeTab === 'gantt' ||
+        (touchTarget &&
+          touchTarget.closest(
+            'input, textarea, select, [contenteditable="true"], canvas, .konvajs-content, #canvas-container, [data-swipeable-active="true"], [data-gesture-ignore="true"], .overflow-x-auto, .overflow-auto, table'
+          ))
+      ) {
         return;
       }
 

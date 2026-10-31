@@ -24,6 +24,7 @@ interface UseGanttDependenciesParams {
   durationColWidth?: number;
   showPredecessor?: boolean;
   predecessorColWidth?: number;
+  showPredecessorLines?: boolean;
 }
 
 interface Point {
@@ -177,6 +178,7 @@ export function useGanttDependencies({
   durationColWidth = 50,
   showPredecessor = false,
   predecessorColWidth = 90,
+  showPredecessorLines = true,
 }: UseGanttDependenciesParams) {
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
 
@@ -191,19 +193,6 @@ export function useGanttDependencies({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTooltip]);
 
-  const taskNoMap = useMemo(() => {
-    const map = new Map<string, Task>();
-    tasks.forEach(t => {
-      if (t.taskCodePhu) {
-        map.set(String(t.taskCodePhu).trim().toUpperCase(), t);
-      }
-      if (t.id) {
-        map.set(String(t.id).trim().toUpperCase(), t);
-      }
-    });
-    return map;
-  }, [tasks]);
-
   const allCodesMap = useMemo(() => {
     return computeAllTaskCodes(projects, tasks);
   }, [projects, tasks]);
@@ -212,36 +201,14 @@ export function useGanttDependencies({
     return buildProjectLookupIndex(projects);
   }, [projects]);
 
-  const taskCodeMap = useMemo(() => {
-    const map = new Map<string, Task>();
-    tasks.forEach(t => {
-      const code = allCodesMap.get(t.id);
-      if (code) {
-        map.set(code.trim().toUpperCase(), t);
-      }
-      if (t.taskCodePhu) {
-        map.set(t.taskCodePhu.trim().toUpperCase(), t);
-      }
-    });
-    return map;
-  }, [tasks, allCodesMap]);
-
-  const delegationGroupByTaskId = useMemo(() => {
-    const map = new Map<string, any>();
-    delegationGroups.forEach(g => {
-      if (g.subTasks) {
-        g.subTasks.forEach((st: any) => {
-          if (st.taskId) {
-            map.set(st.taskId, g);
-          }
-        });
-      }
-    });
-    return map;
-  }, [delegationGroups]);
-
   const dependencyLines = useMemo(() => {
-    if (!startDate || visibleGanttRows.length === 0) return [];
+    if (!showPredecessorLines || !startDate || visibleGanttRows.length === 0) return [];
+
+    // Fast pre-check: if no visible task row has a predecessor string, skip building position maps
+    const hasAnyPredecessor = visibleGanttRows.some(
+      (row) => row.type === 'task' && row.task && Boolean(row.task.predecessor && String(row.task.predecessor).trim())
+    );
+    if (!hasAnyPredecessor) return [];
 
     const taskPosMap = new Map<string, { xStart: number; xEnd: number; yCenter: number; t: Task }>();
     const visibleTasks: Task[] = [];
@@ -249,7 +216,7 @@ export function useGanttDependencies({
     const timelineLeft = sideWidth;
 
     visibleGanttRows.forEach((row) => {
-      // GanttProjectRow is 48px, GanttTaskRow is 40px
+      if (row.isHidden) return;
       const rowHeight = row.type === 'project' ? 48 : 40;
       const yCenter = currentY + rowHeight / 2;
       currentY += rowHeight;
@@ -298,9 +265,10 @@ export function useGanttDependencies({
 
     const lines: DependencyLine[] = [];
     let laneCounter = 0;
+    const closestMatchCache = new Map<string, { xStart: number; xEnd: number; yCenter: number; t: Task } | null>();
 
     visibleGanttRows.forEach((row) => {
-      if (row.type !== 'task' || !row.task) return;
+      if (row.isHidden || row.type !== 'task' || !row.task) return;
       const succTask = row.task;
       if (!succTask.predecessor) return;
 
@@ -333,26 +301,29 @@ export function useGanttDependencies({
         if (!predPos) {
           predPos = taskPosMap.get(cleanUpper) || taskPosMap.get(tokenUpper);
         }
-        if (!predPos && visibleTasks.length > 0) {
-          // Only search visibleTasks because off-screen tasks are not in taskPosMap and cannot be drawn
-          const match = findClosestTaskMatch(
-            cleanQuery,
-            visibleTasks,
-            projects,
-            tasks,
-            succTask.projectCode,
-            650,
-            {
-              projectId: succTask.projectId,
-              projectCode: succTask.projectCode,
-              projectYear: succTask.projectYear,
-              projectStore: succTask.projectStore,
-            },
-            undefined,
-            { projectIndex, allTaskCodesMap: allCodesMap }
-          );
-          if (match && match.task) {
-            predPos = taskPosMap.get(match.task.id);
+        if (!predPos && visibleTasks.length > 0 && cleanQuery.length >= 2) {
+          const cacheKey = `${pIdScope || pCodeScope}|${cleanUpper}`;
+          if (closestMatchCache.has(cacheKey)) {
+            predPos = closestMatchCache.get(cacheKey) || undefined;
+          } else {
+            const match = findClosestTaskMatch(
+              cleanQuery,
+              visibleTasks,
+              projects,
+              tasks,
+              succTask.projectCode,
+              650,
+              {
+                projectId: succTask.projectId,
+                projectCode: succTask.projectCode,
+                projectYear: succTask.projectYear,
+                projectStore: succTask.projectStore,
+              },
+              undefined,
+              { projectIndex, allTaskCodesMap: allCodesMap }
+            );
+            predPos = match && match.task ? taskPosMap.get(match.task.id) : undefined;
+            closestMatchCache.set(cacheKey, predPos || null);
           }
         }
         if (!predPos) return;
@@ -392,6 +363,7 @@ export function useGanttDependencies({
 
     return lines;
   }, [
+    showPredecessorLines,
     visibleGanttRows,
     startDate,
     dayWidth,
@@ -417,8 +389,6 @@ export function useGanttDependencies({
     activeTooltip,
     setActiveTooltip,
     dependencyLines,
-    taskNoMap,
-    taskCodeMap,
-    delegationGroupByTaskId,
+    allCodesMap,
   };
 }

@@ -102,8 +102,9 @@ export function useMobileSwipeGestures({
       );
       if (isAnyModalOpen) return;
 
-      // Guard: form inputs, canvas, Konva floorplans, or swiping list row
+      // Guard: form inputs, canvas, Konva floorplans, Gantt chart, or swiping list row
       if (
+        activeTabRef.current === 'gantt' ||
         touchTarget.closest(
           'input, textarea, select, [contenteditable="true"], canvas, .konvajs-content, #canvas-container, [data-swipeable-active="true"], [data-gesture-ignore="true"]'
         )
@@ -111,9 +112,9 @@ export function useMobileSwipeGestures({
         return;
       }
 
-      // Guard: horizontally scrollable elements (tables, overflow-x-auto)
-      const scrollableParent = touchTarget.closest('.overflow-x-auto, table');
-      if (scrollableParent && scrollableParent.scrollWidth > scrollableParent.clientWidth + 20) {
+      // Guard: horizontally scrollable elements (tables, overflow-x-auto, overflow-auto)
+      const scrollableParent = touchTarget.closest('.overflow-x-auto, .overflow-auto, table');
+      if (scrollableParent && scrollableParent.scrollWidth > scrollableParent.clientWidth + 10) {
         return;
       }
 

@@ -64,6 +64,8 @@ export interface GanttToolbarProps {
   setIsHideMode: (val: boolean) => void;
   hiddenRows: string[];
   setHiddenRows: (rows: string[]) => void;
+  showPredecessorLines?: boolean;
+  setShowPredecessorLines?: (val: boolean | ((prev: boolean) => boolean)) => void;
   handleExportToPDF: () => void;
   isExporting: boolean;
 
@@ -134,6 +136,8 @@ export function GanttToolbar({
   setIsHideMode,
   hiddenRows,
   setHiddenRows,
+  showPredecessorLines = true,
+  setShowPredecessorLines,
   handleExportToPDF,
   isExporting,
   tempStartDate,
@@ -282,6 +286,8 @@ export function GanttToolbar({
                 setIsHideMode={setIsHideMode}
                 hiddenRows={hiddenRows}
                 setHiddenRows={setHiddenRows}
+                showPredecessorLines={showPredecessorLines}
+                setShowPredecessorLines={setShowPredecessorLines}
                 handleExportToPDF={handleExportToPDF}
                 isExporting={isExporting}
               />
