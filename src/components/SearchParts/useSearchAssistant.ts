@@ -151,21 +151,36 @@ export function useSearchAssistant({
     }
   }, [isAssistantEnabled]);
 
-  return {
-    isPopoverOpen,
-    setIsPopoverOpen,
-    showSyntaxTips,
-    setShowSyntaxTips,
-    setFilterTextForHistory,
-    matchingRecentSearches,
-    activeRecentIdx,
-    setActiveRecentIdx,
-    handleSelectRecent,
-    handleRemoveRecent,
-    handleClearAllRecent,
-    handleInsertOperator,
-    handleAssistantKeyDown,
-    openAssistantOnFocus,
-    closeAssistantOnBlur,
-  };
+  return useMemo(
+    () => ({
+      isPopoverOpen,
+      setIsPopoverOpen,
+      showSyntaxTips,
+      setShowSyntaxTips,
+      setFilterTextForHistory,
+      matchingRecentSearches,
+      activeRecentIdx,
+      setActiveRecentIdx,
+      handleSelectRecent,
+      handleRemoveRecent,
+      handleClearAllRecent,
+      handleInsertOperator,
+      handleAssistantKeyDown,
+      openAssistantOnFocus,
+      closeAssistantOnBlur,
+    }),
+    [
+      isPopoverOpen,
+      showSyntaxTips,
+      matchingRecentSearches,
+      activeRecentIdx,
+      handleSelectRecent,
+      handleRemoveRecent,
+      handleClearAllRecent,
+      handleInsertOperator,
+      handleAssistantKeyDown,
+      openAssistantOnFocus,
+      closeAssistantOnBlur,
+    ]
+  );
 }

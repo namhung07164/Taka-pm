@@ -55,6 +55,11 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
     return true;
   }, [showAssistant, onFocus, debounceMs]);
 
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const assistantRef = useRef<any>(null);
+
   const [hasValue, setHasValue] = useState(() => Boolean(value));
   const hasValueRef = useRef(hasValue);
   const [isFocused, setIsFocused] = useState(false);
@@ -76,40 +81,43 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
         inputRef.current.value = val;
       }
       handleHasValueChange(val.length > 0);
-      assistant.setFilterTextForHistory(val);
+      assistantRef.current?.setFilterTextForHistory(val);
       if (saveToHistory && isAssistantEnabled && val.trim().length >= 2) {
-        assistant.closeAssistantOnBlur(val);
+        assistantRef.current?.closeAssistantOnBlur(val);
       }
       if (val !== lastCommittedRef.current) {
         lastCommittedRef.current = val;
         startTransition(() => {
-          onChange(val);
+          onChangeRef.current(val);
         });
       }
     },
-    [onChange, isAssistantEnabled, handleHasValueChange]
+    [isAssistantEnabled, handleHasValueChange]
   );
 
-  const scheduleDebounce = useCallback((val: string) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null;
-      assistant.setFilterTextForHistory(val);
-      if (val !== lastCommittedRef.current) {
-        lastCommittedRef.current = val;
-        startTransition(() => {
-          onChange(val);
-        });
-        if (isAssistantEnabled && val.trim().length >= 2) {
-          if (historyCommitTimerRef.current) clearTimeout(historyCommitTimerRef.current);
-          historyCommitTimerRef.current = setTimeout(() => {
-            historyCommitTimerRef.current = null;
-            assistant.closeAssistantOnBlur(val);
-          }, 1400);
+  const scheduleDebounce = useCallback(
+    (val: string) => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        assistantRef.current?.setFilterTextForHistory(val);
+        if (val !== lastCommittedRef.current) {
+          lastCommittedRef.current = val;
+          startTransition(() => {
+            onChangeRef.current(val);
+          });
+          if (isAssistantEnabled && val.trim().length >= 2) {
+            if (historyCommitTimerRef.current) clearTimeout(historyCommitTimerRef.current);
+            historyCommitTimerRef.current = setTimeout(() => {
+              historyCommitTimerRef.current = null;
+              assistantRef.current?.closeAssistantOnBlur(val);
+            }, 1400);
+          }
         }
-      }
-    }, effectiveDelay);
-  }, [effectiveDelay, isAssistantEnabled, onChange]);
+      }, effectiveDelay);
+    },
+    [effectiveDelay, isAssistantEnabled]
+  );
 
   const assistant = useSearchAssistant({
     inputRef,
@@ -118,6 +126,7 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
     scheduleDebounce,
     onHasValueChange: handleHasValueChange,
   });
+  assistantRef.current = assistant;
 
   // Sync external changes (e.g. clear filters, tab changes, external reset)
   useEffect(() => {
@@ -127,10 +136,10 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
       if (inputRef.current && inputRef.current.value !== propVal) {
         inputRef.current.value = propVal;
       }
-      assistant.setFilterTextForHistory(propVal);
+      assistantRef.current?.setFilterTextForHistory(propVal);
       handleHasValueChange(Boolean(propVal));
     }
-  }, [value, assistant, handleHasValueChange]);
+  }, [value, handleHasValueChange]);
 
   // Global "/" shortcut to focus the primary visible search input on the page
   useEffect(() => {
@@ -173,7 +182,9 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     handleHasValueChange(val.length > 0);
-    assistant.setActiveRecentIdx(-1);
+    if (assistant.activeRecentIdx !== -1) {
+      assistant.setActiveRecentIdx(-1);
+    }
 
     if (!isComposingRef.current) {
       scheduleDebounce(val);
