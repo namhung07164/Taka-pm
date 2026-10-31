@@ -1,0 +1,461 @@
+import { doc, getDoc } from 'firebase/firestore';
+import { db, APP_ID } from '../../../../../lib/firebase';
+import { useAppStore } from '../../../../../store/useAppStore';
+import { useDataStore, StoreLocationRecord } from '../../../DataContext';
+import { MapVersion } from '../../DataMapping/types';
+import {
+  uploadSingleR2File,
+  purgeOldR2BackgroundImages,
+  extractR2Key,
+  getS3Sdk,
+  downloadR2JsonFile,
+  R2Credentials,
+} from '../../../lib/r2Upload';
+import type { CloudSyncScope } from '../CloudSyncManager';
+import { saveCloudBackupToFirestore } from './cloudSyncFirestoreBackup';
+
+export function sanitizeForFirestore(val: any): any {
+  if (val === undefined) return null;
+  if (val === null || typeof val !== 'object') return val;
+  if (Array.isArray(val)) return val.map(sanitizeForFirestore);
+  const out: Record<string, any> = {};
+  for (const k of Object.keys(val)) {
+    const v = val[k];
+    if (v !== undefined) {
+      out[k] = sanitizeForFirestore(v);
+    }
+  }
+  return out;
+}
+
+export function withSyncTimeout<T>(promise: Promise<T>, ms: number, fallbackMsg = 'Timeout'): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(fallbackMsg)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
+}
+
+export function getScopeName(sc: CloudSyncScope): string {
+  switch (sc) {
+    case 'edit':
+      return 'Edit';
+    case 'dynamic':
+      return 'Dynamic';
+    case 'review':
+      return 'Review';
+    case 'all':
+      return 'All';
+  }
+}
+
+export async function executeCloudUploadSync(params: {
+  creds: R2Credentials | null;
+  credsValid: { valid: boolean; reason?: string };
+  currentScope: CloudSyncScope;
+  updatedStoreLocationData: Record<string, StoreLocationRecord>;
+  currentActiveKey: string;
+  store: 'HCM' | 'HN';
+  location: string;
+  activeMapVersionId: string | null;
+  reviewSelectedLabels: string[];
+  reviewLabelColors: Record<string, string>;
+  syncStartTime: number;
+  setProgress: (val: number) => void;
+  setStatusText: (val: string) => void;
+}): Promise<void> {
+  const {
+    creds,
+    credsValid,
+    currentScope,
+    updatedStoreLocationData,
+    currentActiveKey,
+    store,
+    location,
+    activeMapVersionId,
+    reviewSelectedLabels,
+    reviewLabelColors,
+    syncStartTime,
+    setProgress,
+    setStatusText,
+  } = params;
+
+  const dataState = useDataStore.getState();
+  let existingCloudData: any = null;
+  let s3ClientInstance: any = null;
+
+  if (creds && credsValid.valid) {
+    try {
+      const { S3Client } = await getS3Sdk();
+      s3ClientInstance = new S3Client({
+        region: 'auto',
+        endpoint: `https://${creds.accountId.trim()}.r2.cloudflarestorage.com`,
+        credentials: { accessKeyId: creds.accessKeyId.trim(), secretAccessKey: creds.secretAccessKey.trim() },
+      });
+      const downloadRes = await withSyncTimeout(
+        downloadR2JsonFile<any>('mapping_config.json', creds, s3ClientInstance),
+        8000,
+        'Pre-fetch mapping_config.json timed out'
+      );
+      if (downloadRes.success && downloadRes.data) {
+        existingCloudData = downloadRes.data;
+      }
+    } catch (e) {
+      console.warn('Could not pre-fetch mapping_config.json for merge:', e);
+    }
+  }
+
+  if (!existingCloudData) {
+    try {
+      const snap = await withSyncTimeout(
+        getDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_config', 'picture_mapping_config')),
+        5000,
+        'Firestore pre-fetch timed out'
+      );
+      if (snap.exists()) {
+        existingCloudData = snap.data();
+      }
+    } catch (e) {
+      console.warn('Could not pre-fetch Firestore backup for merge:', e);
+    }
+  }
+
+  const allValidBgNames: string[] = [];
+  const cloudStoreLocationData: Record<string, StoreLocationRecord> = existingCloudData?.storeLocationData
+    ? JSON.parse(JSON.stringify(existingCloudData.storeLocationData))
+    : {};
+  const localStoreLocationData: Record<string, StoreLocationRecord> = {};
+
+  const allPartitionKeys = Array.from(
+    new Set([...Object.keys(updatedStoreLocationData), ...Object.keys(cloudStoreLocationData)])
+  );
+
+  for (const pKey of allPartitionKeys) {
+    const localPart = updatedStoreLocationData[pKey];
+    const cloudPart = cloudStoreLocationData[pKey];
+    const pStore = (pKey.split('_')[0] === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
+    const pLoc = pKey.split('_')[1] || 'L1';
+
+    const sourceUnits =
+      localPart && localPart.mapUnits !== undefined ? localPart.mapUnits : cloudPart?.mapUnits || [];
+
+    const pUnits = sourceUnits.map((u) => ({
+      ...u,
+      store: u.store || pStore,
+      location: u.location || pLoc,
+      visible: u.visible !== false,
+      locked: !!u.locked,
+      fill: u.fill && u.fill !== 'rgba(0, 0, 0, 0.001)' && u.fill !== 'transparent' ? u.fill : '#3b82f6',
+    }));
+
+    const finalVersionsList: MapVersion[] =
+      localPart && localPart.mapVersions !== undefined
+        ? localPart.mapVersions
+        : cloudPart?.mapVersions || [];
+
+    const pVersionsCloud: MapVersion[] = [];
+    const pVersionsLocal: MapVersion[] = [];
+
+    for (let i = 0; i < finalVersionsList.length; i++) {
+      const v = finalVersionsList[i];
+      const currentBg = v.backgroundUrl;
+      let r2Key = extractR2Key(currentBg) || (v as any).r2Key || null;
+      let displayUrl = currentBg;
+
+      if (
+        creds &&
+        s3ClientInstance &&
+        currentBg &&
+        (currentBg.startsWith('blob:') || currentBg.startsWith('data:'))
+      ) {
+        try {
+          setStatusText(`Đang tải ảnh nền: [${pKey}] ${v.name}...`);
+          const res = await fetch(currentBg);
+          const blob = await res.blob();
+          if (blob.size > 0) {
+            const bgName = `bg_${v.id}_${Date.now()}.jpeg`;
+            const uploadRes = await withSyncTimeout(
+              uploadSingleR2File({ name: bgName, blob }, creds, s3ClientInstance),
+              10000,
+              'Background upload timed out'
+            );
+            if (uploadRes.success) {
+              r2Key = uploadRes.name;
+              const { GetObjectCommand, getSignedUrl } = await getS3Sdk();
+              displayUrl = await getSignedUrl(
+                s3ClientInstance,
+                new GetObjectCommand({ Bucket: creds.bucketName.trim(), Key: r2Key }),
+                { expiresIn: 3600 * 24 * 7 }
+              );
+            }
+          }
+        } catch (bgErr) {
+          console.warn(`[Background Upload] Failed to upload background for ${v.name}:`, bgErr);
+        }
+      } else if (creds && s3ClientInstance && r2Key && (!displayUrl || displayUrl.startsWith('r2://'))) {
+        try {
+          const { GetObjectCommand, getSignedUrl } = await getS3Sdk();
+          displayUrl = await getSignedUrl(
+            s3ClientInstance,
+            new GetObjectCommand({ Bucket: creds.bucketName.trim(), Key: r2Key }),
+            { expiresIn: 3600 * 24 * 7 }
+          );
+        } catch (e) {
+          console.warn('Could not generate signed url for key', r2Key, e);
+        }
+      }
+
+      if (r2Key) allValidBgNames.push(r2Key);
+
+      const rawGroups = v.groups || [];
+      const deepCopiedGroups = Array.isArray(rawGroups)
+        ? rawGroups.map((g: any) => ({
+            id: g.id,
+            name: g.name,
+            color: g.color,
+            opacity: g.opacity,
+            hatchPattern: g.hatchPattern || 'none',
+            symbol: g.symbol || '',
+            category: g.category || g.paintCategory || '',
+            paintCategory: g.paintCategory || g.category || '',
+            rules: Array.isArray(g.rules)
+              ? g.rules.map((r: any) => ({
+                  field: r.field,
+                  operator: r.operator,
+                  value: r.value !== undefined ? String(r.value) : '',
+                }))
+              : [],
+          }))
+        : [];
+
+      const versionYear = String(
+        v.year ||
+          (useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all'
+            ? useAppStore.getState().globalYearFilter
+            : '2026')
+      );
+
+      pVersionsCloud.push({
+        ...v,
+        year: versionYear,
+        store: v.store || pStore,
+        location: v.location || pLoc,
+        backgroundUrl: r2Key ? `r2://${r2Key}` : displayUrl,
+        groups: deepCopiedGroups,
+        groupMappings: v.groupMappings || {},
+        isDynamicActive: true,
+        mapUnits: pUnits,
+      });
+
+      pVersionsLocal.push({
+        ...v,
+        year: versionYear,
+        store: v.store || pStore,
+        location: v.location || pLoc,
+        backgroundUrl: displayUrl,
+        groups: deepCopiedGroups,
+        groupMappings: v.groupMappings || {},
+        isDynamicActive: true,
+        mapUnits: pUnits,
+      });
+    }
+
+    const activeVerId =
+      localPart?.activeMapVersionId || cloudPart?.activeMapVersionId || (pVersionsCloud[0]?.id ?? null);
+
+    cloudStoreLocationData[pKey] = {
+      mapUnits: pUnits,
+      mapVersions: pVersionsCloud,
+      activeMapVersionId: activeVerId,
+    };
+
+    localStoreLocationData[pKey] = {
+      mapUnits: pUnits,
+      mapVersions: pVersionsLocal,
+      activeMapVersionId: activeVerId,
+    };
+  }
+
+  if (
+    creds &&
+    s3ClientInstance &&
+    (currentScope === 'edit' || currentScope === 'all') &&
+    allValidBgNames.length > 0
+  ) {
+    purgeOldR2BackgroundImages(allValidBgNames, creds, s3ClientInstance).catch((cleanErr) => {
+      console.warn('[CloudSync] Lỗi dọn dẹp ảnh nền cũ:', cleanErr);
+    });
+  }
+
+  setProgress(75);
+  setStatusText(`Đang lưu cấu hình [${getScopeName(currentScope)}] lên Cloud...`);
+
+  const activeCloudPartition =
+    cloudStoreLocationData[currentActiveKey] ||
+    Object.values(cloudStoreLocationData)[0] || {
+      mapUnits: [],
+      mapVersions: [],
+      activeMapVersionId: null,
+    };
+  const currentAppYear = useAppStore.getState().globalYearFilter;
+  const targetYear =
+    currentAppYear && currentAppYear !== 'all'
+      ? currentAppYear
+      : activeCloudPartition?.mapVersions?.[0]?.year || '2026';
+
+  const configData = {
+    ...(existingCloudData || {}),
+    storeLocationData: cloudStoreLocationData,
+    store,
+    location,
+    year: targetYear,
+    globalYearFilter: targetYear,
+    activeMapVersionId: activeCloudPartition.activeMapVersionId || activeMapVersionId,
+    reviewSelectedLabels: reviewSelectedLabels || [],
+    reviewLabelColors: reviewLabelColors || {},
+    mapUnits: activeCloudPartition.mapUnits,
+    versions: activeCloudPartition.mapVersions,
+    unitInfo: existingCloudData?.unitInfo || dataState.unitInfo,
+    classInfo: existingCloudData?.classInfo || dataState.classInfo,
+    actualClassInfo: existingCloudData?.actualClassInfo || dataState.actualClassInfo,
+    sales: existingCloudData?.sales || dataState.sales,
+    profits: existingCloudData?.profits || dataState.profits,
+    subFees: existingCloudData?.subFees || dataState.subFees,
+    mdStatus: existingCloudData?.mdStatus || dataState.mdStatus,
+    projectStatus: existingCloudData?.projectStatus || dataState.projectStatus,
+    projectLink: existingCloudData?.projectLink || dataState.projectLink,
+    basePlan: existingCloudData?.basePlan || dataState.basePlan,
+    units: existingCloudData?.units || dataState.units,
+    lastSavedScope: currentScope,
+    timestamp: Date.now(),
+  };
+
+  let r2UploadSuccess = false;
+  let r2ErrorMessage = '';
+
+  if (creds && credsValid.valid && s3ClientInstance) {
+    try {
+      const configBlob = new Blob([JSON.stringify(configData, null, 2)], { type: 'application/json' });
+      const uploadRes = await withSyncTimeout(
+        uploadSingleR2File({ name: 'mapping_config.json', blob: configBlob }, creds, s3ClientInstance),
+        10000,
+        'R2 mapping_config.json upload timed out'
+      );
+      if (uploadRes.success) {
+        r2UploadSuccess = true;
+      } else {
+        r2ErrorMessage = uploadRes.error || 'Cloudflare R2 không phản hồi';
+        console.warn(`[R2 Upload Warning] ${r2ErrorMessage}`);
+      }
+    } catch (r2Err: any) {
+      r2ErrorMessage = r2Err?.message || String(r2Err);
+      console.warn('[R2 Upload Warning]', r2ErrorMessage);
+    }
+  } else if (creds && !credsValid.valid) {
+    r2ErrorMessage = credsValid.reason || 'Cấu hình Cloudflare R2 không hợp lệ';
+    console.warn('[R2 Upload Warning]', r2ErrorMessage);
+  }
+
+  const firestoreSaveSuccess = await saveCloudBackupToFirestore({
+    cloudStoreLocationData,
+    store,
+    location,
+    targetYear,
+    activeMapVersionId: activeCloudPartition.activeMapVersionId || activeMapVersionId || null,
+    reviewSelectedLabels: configData.reviewSelectedLabels || [],
+    reviewLabelColors: configData.reviewLabelColors || {},
+    currentScope,
+    timestamp: configData.timestamp,
+  });
+
+  try {
+    const payload = JSON.stringify({
+      storeLocationData: cloudStoreLocationData,
+      store,
+      location,
+      year: targetYear,
+      globalYearFilter: targetYear,
+      activeMapVersionId: activeCloudPartition.activeMapVersionId || activeMapVersionId,
+      updatedAt: Date.now(),
+      timestamp: configData.timestamp,
+    });
+    if (payload.length < 1000000) {
+      localStorage.setItem('taka_mapping_config_backup', payload);
+    } else {
+      localStorage.removeItem('taka_mapping_config_backup');
+    }
+  } catch {
+    try {
+      localStorage.removeItem('taka_mapping_config_backup');
+    } catch (_) {}
+  }
+
+  dataState.loadFullCloudData({
+    storeLocationData: localStoreLocationData,
+    store,
+    location,
+    activeMapVersionId: activeCloudPartition.activeMapVersionId || activeMapVersionId,
+    reviewSelectedLabels: reviewSelectedLabels || [],
+    reviewLabelColors: reviewLabelColors || {},
+  });
+
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('taka_cloud_sync_updated', {
+          detail: {
+            timestamp: configData.timestamp,
+            store,
+            location,
+            storeLocationData: localStoreLocationData,
+          },
+        })
+      );
+    }
+  } catch (_evtErr) {}
+
+  setProgress(100);
+  const totalVersions = Object.values(cloudStoreLocationData).reduce(
+    (acc, p) => acc + (p.mapVersions?.length || 0),
+    0
+  );
+  const totalUnits = Object.values(cloudStoreLocationData).reduce(
+    (acc, p) => acc + (p.mapUnits?.length || 0),
+    0
+  );
+  const elapsedSec = ((Date.now() - syncStartTime) / 1000).toFixed(1);
+
+  if (r2UploadSuccess) {
+    setStatusText(
+      `Đã lưu thành công: ${totalUnits} units, ${totalVersions} versions lên Cloudflare R2 (${elapsedSec}s)!`
+    );
+    useAppStore.getState().setToast({
+      title: 'Save Cloud Success',
+      message: `Successfully saved ${totalUnits} units and ${totalVersions} versions across all floors to Cloudflare R2 & Firestore in ${elapsedSec}s!`,
+      type: 'success',
+    });
+  } else if (firestoreSaveSuccess) {
+    const warnNote = r2ErrorMessage ? ` (Lưu ý: ${r2ErrorMessage})` : '';
+    setStatusText(`Đã lưu ${totalUnits} units, ${totalVersions} versions vào Firestore Cloud (${elapsedSec}s)!`);
+    useAppStore.getState().setToast({
+      title: 'Saved to Firestore Cloud',
+      message: `Data saved successfully to Firestore Cloud in ${elapsedSec}s!${warnNote}`,
+      type: r2ErrorMessage ? 'warning' : 'success',
+    });
+  } else {
+    setStatusText(`Lỗi lưu Cloud (${elapsedSec}s): ${r2ErrorMessage || 'Không thể ghi dữ liệu'}`);
+    useAppStore.getState().setToast({
+      title: 'Save Cloud Failed',
+      message: `Could not save to Cloud: ${r2ErrorMessage || 'Permission denied or network failure'}.`,
+      type: 'error',
+    });
+  }
+}

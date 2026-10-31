@@ -1,40 +1,31 @@
 import { create } from 'zustand';
 import { UnitShape, MapVersion } from './components/DataMapping/types';
 import { useAppStore } from '../../store/useAppStore';
-import { saveLayoutConfigToDisk, getCachedLayoutConfigFromDisk, isValidLayoutConfig } from '../../lib/layoutConfigCache';
+import {
+  saveLayoutConfigToDisk,
+  getCachedLayoutConfigFromDisk,
+  isValidLayoutConfig,
+} from '../../lib/layoutConfigCache';
+import {
+  StoreLocationRecord,
+  LoadedCloudDataPayload,
+  getPartitionKey,
+  computeAllStoreUnits,
+  computeAllStoreVersions,
+  computeUpdatedUnitsAcrossLocations,
+  computeUpdatedVersionsAcrossLocations,
+  buildFullCloudDataStateUpdate,
+} from './dataContextHelpers';
 
-export interface StoreLocationRecord {
-  mapUnits: UnitShape[];
-  mapVersions: MapVersion[];
-  activeMapVersionId: string | null;
-}
-
-export interface LoadedCloudDataPayload {
-  storeLocationData: Record<string, StoreLocationRecord>;
-  store?: 'HCM' | 'HN';
-  location?: string;
-  mapUnits?: UnitShape[];
-  mapVersions?: MapVersion[];
-  activeMapVersionId?: string | null;
-  reviewSelectedLabels?: string[];
-  reviewLabelColors?: Record<string, string>;
-  unitInfo?: any[];
-  classInfo?: any[];
-  actualClassInfo?: any[];
-  sales?: any[];
-  profits?: any[];
-  subFees?: any[];
-  mdStatus?: any[];
-  projectStatus?: any[];
-  projectLink?: any[];
-  basePlan?: any[];
-  units?: any[];
-}
-
-const getPartitionKey = (store: string, location: string) => `${store}_${location}`;
+export type { StoreLocationRecord, LoadedCloudDataPayload };
 
 let backupTimeout: any = null;
-export function autoBackupStoreLocationData(data: Record<string, StoreLocationRecord>, store: string, location: string, activeMapVersionId?: string | null) {
+export function autoBackupStoreLocationData(
+  data: Record<string, StoreLocationRecord>,
+  store: string,
+  location: string,
+  activeMapVersionId?: string | null
+) {
   if (typeof window === 'undefined') return;
   if (!isValidLayoutConfig({ storeLocationData: data })) return;
   if (backupTimeout) clearTimeout(backupTimeout);
@@ -49,7 +40,6 @@ export function autoBackupStoreLocationData(data: Record<string, StoreLocationRe
       activeMapVersionId,
     };
     if (!isValidLayoutConfig(backupObj)) return;
-    // Persist to unlimited Disk Cache (IndexedDB + CacheStorage API) without bumping cloud timestamp
     saveLayoutConfigToDisk(backupObj).catch(() => {});
   }, 1200);
 }
@@ -125,25 +115,7 @@ interface DataStoreState {
   setBasePlan: (plan: any[]) => void;
   units: any[];
   setUnits: (units: any[]) => void;
-  loadFullCloudData: (payload: {
-    storeLocationData: Record<string, StoreLocationRecord>;
-    store?: 'HCM' | 'HN';
-    location?: string;
-    activeMapVersionId?: string | null;
-    reviewSelectedLabels?: string[];
-    reviewLabelColors?: Record<string, string>;
-    unitInfo?: any[];
-    classInfo?: any[];
-    actualClassInfo?: any[];
-    sales?: any[];
-    profits?: any[];
-    subFees?: any[];
-    mdStatus?: any[];
-    projectStatus?: any[];
-    projectLink?: any[];
-    basePlan?: any[];
-    units?: any[];
-  }) => void;
+  loadFullCloudData: (payload: LoadedCloudDataPayload) => void;
 }
 
 export const useDataStore = create<DataStoreState>((set, get) => ({
@@ -174,7 +146,6 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     const oldKey = getPartitionKey(state.store, state.location);
     const newKey = getPartitionKey(newStore, newLocation);
 
-    // Persist current active partition data only if it actually contains data or already exists
     const hasCurrentData =
       state.mapUnits.length > 0 ||
       state.mapVersions.length > 0 ||
@@ -191,11 +162,11 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
         }
       : state.storeLocationData;
 
-    // Retrieve target partition data
     const target = updatedStoreLocationData[newKey];
     const newUnits = target?.mapUnits ?? [];
     const newVersions = target?.mapVersions ?? [];
-    const newActiveVersionId = target?.activeMapVersionId ?? (newVersions.length > 0 ? newVersions[0].id : null);
+    const newActiveVersionId =
+      target?.activeMapVersionId ?? (newVersions.length > 0 ? newVersions[0].id : null);
 
     set({
       store: newStore,
@@ -213,11 +184,13 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     const target = data[currentKey];
     set({
       storeLocationData: data,
-      ...(target ? {
-        mapUnits: target.mapUnits || [],
-        mapVersions: target.mapVersions || [],
-        activeMapVersionId: target.activeMapVersionId || (target.mapVersions?.[0]?.id ?? null),
-      } : {}),
+      ...(target
+        ? {
+            mapUnits: target.mapUnits || [],
+            mapVersions: target.mapVersions || [],
+            activeMapVersionId: target.activeMapVersionId || (target.mapVersions?.[0]?.id ?? null),
+          }
+        : {}),
     });
     autoBackupStoreLocationData(data, state.store, state.location, state.activeMapVersionId);
   },
@@ -227,18 +200,20 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     const targetStore = payload.store || state.store;
     const targetLocation = (payload.location || state.location).toUpperCase().trim();
     const pKey = getPartitionKey(targetStore, targetLocation);
-    
+
     const storeLocationData = payload.storeLocationData || state.storeLocationData;
     const target = storeLocationData[pKey];
-    
-    // Strict priority: use partition data for this exact store & floor first, fallback to root legacy only if partition is empty
-    const mapUnits = (target?.mapUnits && Array.isArray(target.mapUnits) && target.mapUnits.length > 0) 
-      ? target.mapUnits 
-      : (payload.mapUnits || []);
-    const mapVersions = (target?.mapVersions && Array.isArray(target.mapVersions) && target.mapVersions.length > 0) 
-      ? target.mapVersions 
-      : (payload.mapVersions || []);
-    const activeMapVersionId = target?.activeMapVersionId || payload.activeMapVersionId || (mapVersions[0]?.id ?? null);
+
+    const mapUnits =
+      target?.mapUnits && Array.isArray(target.mapUnits) && target.mapUnits.length > 0
+        ? target.mapUnits
+        : payload.mapUnits || [];
+    const mapVersions =
+      target?.mapVersions && Array.isArray(target.mapVersions) && target.mapVersions.length > 0
+        ? target.mapVersions
+        : payload.mapVersions || [];
+    const activeMapVersionId =
+      target?.activeMapVersionId || payload.activeMapVersionId || (mapVersions[0]?.id ?? null);
 
     set({
       store: targetStore,
@@ -300,7 +275,7 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
   mapUnits: [],
   setMapUnits: (mapUnits) => {
     const state = get();
-    const taggedUnits = mapUnits.map(u => ({
+    const taggedUnits = mapUnits.map((u) => ({
       ...u,
       store: u.store || state.store,
       location: u.location || state.location,
@@ -309,22 +284,26 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     const newStoreLocationData = {
       ...state.storeLocationData,
       [key]: {
-        ...(state.storeLocationData[key] || { mapVersions: state.mapVersions, activeMapVersionId: state.activeMapVersionId }),
+        ...(state.storeLocationData[key] || {
+          mapVersions: state.mapVersions,
+          activeMapVersionId: state.activeMapVersionId,
+        }),
         mapUnits: taggedUnits,
       },
     };
-    set({
-      mapUnits: taggedUnits,
-      storeLocationData: newStoreLocationData,
-    });
+    set({ mapUnits: taggedUnits, storeLocationData: newStoreLocationData });
     autoBackupStoreLocationData(newStoreLocationData, state.store, state.location, state.activeMapVersionId);
   },
 
   mapVersions: [],
   setMapVersions: (mapVersions) => {
     const state = get();
-    const appYear = String(useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026');
-    const taggedVersions = mapVersions.map(v => ({
+    const appYear = String(
+      useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all'
+        ? useAppStore.getState().globalYearFilter
+        : '2026'
+    );
+    const taggedVersions = mapVersions.map((v) => ({
       ...v,
       store: v.store || state.store,
       location: v.location || state.location,
@@ -334,25 +313,24 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
     const newStoreLocationData = {
       ...state.storeLocationData,
       [key]: {
-        ...(state.storeLocationData[key] || { mapUnits: state.mapUnits, activeMapVersionId: state.activeMapVersionId }),
+        ...(state.storeLocationData[key] || {
+          mapUnits: state.mapUnits,
+          activeMapVersionId: state.activeMapVersionId,
+        }),
         mapVersions: taggedVersions,
       },
     };
-    set({
-      mapVersions: taggedVersions,
-      storeLocationData: newStoreLocationData,
-    });
+    set({ mapVersions: taggedVersions, storeLocationData: newStoreLocationData });
     autoBackupStoreLocationData(newStoreLocationData, state.store, state.location, state.activeMapVersionId);
   },
 
   activeMapVersionId: null,
   setActiveMapVersionId: (activeMapVersionId) => {
     const state = get();
-    // Identify which partition this version belongs to
     let targetKey = getPartitionKey(state.store, state.location);
     if (activeMapVersionId) {
       for (const pKey in state.storeLocationData) {
-        if (state.storeLocationData[pKey]?.mapVersions?.some(v => v.id === activeMapVersionId)) {
+        if (state.storeLocationData[pKey]?.mapVersions?.some((v) => v.id === activeMapVersionId)) {
           targetKey = pKey;
           break;
         }
@@ -375,203 +353,21 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
   reviewLabelColors: {},
   setReviewLabelColors: (reviewLabelColors) => set({ reviewLabelColors }),
 
-  getAllStoreUnits: (targetStore) => {
-    const state = get();
-    const currentStore = targetStore || state.store;
-    const currentKey = getPartitionKey(state.store, state.location);
-
-    const mergedData = {
-      ...state.storeLocationData,
-      [currentKey]: {
-        ...(state.storeLocationData[currentKey] || {}),
-        mapUnits: state.mapUnits,
-        mapVersions: state.mapVersions,
-        activeMapVersionId: state.activeMapVersionId,
-      },
-    };
-
-    const allUnits: UnitShape[] = [];
-    const seenIds = new Set<string>();
-
-    for (const key in mergedData) {
-      if (key.startsWith(`${currentStore}_`)) {
-        const partition = mergedData[key];
-        const loc = (key.split('_')[1] || state.location).toUpperCase().trim();
-        if (partition?.mapUnits) {
-          for (const u of partition.mapUnits) {
-            const compositeKey = `${key}_${u.id || u.name}`;
-            if (!seenIds.has(compositeKey)) {
-              seenIds.add(compositeKey);
-              allUnits.push({
-                ...u,
-                store: u.store || currentStore,
-                location: (u.location || loc).toUpperCase().trim(),
-              });
-            }
-          }
-        }
-      }
-    }
-    return allUnits;
-  },
-
-  getAllStoreVersions: (targetStore) => {
-    const state = get();
-    const currentStore = targetStore || state.store;
-    const currentKey = getPartitionKey(state.store, state.location);
-
-    const mergedData = { ...state.storeLocationData };
-    if (!mergedData[currentKey] && state.mapVersions && state.mapVersions.length > 0) {
-      mergedData[currentKey] = {
-        mapUnits: state.mapUnits || [],
-        mapVersions: state.mapVersions || [],
-        activeMapVersionId: state.activeMapVersionId,
-      };
-    }
-
-    const allVersions: MapVersion[] = [];
-    const seenIds = new Set<string>();
-
-    for (const key in mergedData) {
-      if (key.startsWith(`${currentStore}_`)) {
-        const partition = mergedData[key];
-        const loc = key.split('_')[1] || state.location || 'L1';
-        const appYear = String(useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026');
-        if (partition?.mapVersions) {
-          for (const v of partition.mapVersions) {
-            if (!seenIds.has(v.id)) {
-              seenIds.add(v.id);
-              const resolvedLoc = (v.location && String(v.location).trim()) 
-                ? String(v.location).trim().toUpperCase() 
-                : (v.name?.match(/(b\d|l\d|\d+f|gf|ug)/i)?.[1]?.toUpperCase() || loc);
-              const resolvedYear = (v.year && String(v.year).trim()) 
-                ? String(v.year).trim() 
-                : (v.name?.match(/(202\d|203\d)/i)?.[1] || appYear);
-              
-              allVersions.push({
-                ...v,
-                store: v.store || currentStore,
-                location: resolvedLoc,
-                year: resolvedYear,
-              });
-            }
-          }
-        }
-      }
-    }
-    return allVersions;
-  },
+  getAllStoreUnits: (targetStore) => computeAllStoreUnits(get(), targetStore),
+  getAllStoreVersions: (targetStore) => computeAllStoreVersions(get(), targetStore),
 
   updateStoreUnitsAcrossLocations: (updatedUnits, targetStore) => {
     const state = get();
-    const currentStore = targetStore || state.store;
-    const currentKey = getPartitionKey(state.store, state.location);
-
-    const unitsByPartition: Record<string, UnitShape[]> = {};
-    for (const u of updatedUnits) {
-      const uStore = u.store || currentStore;
-      const uLoc = (u.location && String(u.location).trim()) 
-        ? String(u.location).trim().toUpperCase() 
-        : (u.name?.match(/(b\d|l\d|\d+f|gf|ug)/i)?.[1]?.toUpperCase() || state.location || 'L1');
-      const pKey = getPartitionKey(uStore, uLoc);
-      if (!unitsByPartition[pKey]) unitsByPartition[pKey] = [];
-      unitsByPartition[pKey].push({ ...u, store: uStore, location: uLoc });
-    }
-
-    const updatedStoreLocationData = { ...state.storeLocationData };
-    for (const pKey in updatedStoreLocationData) {
-      if (pKey.startsWith(`${currentStore}_`)) {
-        updatedStoreLocationData[pKey] = {
-          ...(updatedStoreLocationData[pKey] || { mapVersions: [], activeMapVersionId: null }),
-          mapUnits: unitsByPartition[pKey] || [],
-        };
-      }
-    }
-    for (const pKey in unitsByPartition) {
-      if (!updatedStoreLocationData[pKey]) {
-        updatedStoreLocationData[pKey] = {
-          mapVersions: [],
-          activeMapVersionId: null,
-          mapUnits: unitsByPartition[pKey],
-        };
-      }
-    }
-
-    const activeUnits = updatedStoreLocationData[currentKey]?.mapUnits || [];
-
-    set({
-      storeLocationData: updatedStoreLocationData,
-      mapUnits: activeUnits,
-    });
-    autoBackupStoreLocationData(updatedStoreLocationData, state.store, state.location, state.activeMapVersionId);
+    const res = computeUpdatedUnitsAcrossLocations(state, updatedUnits, targetStore);
+    set(res);
+    autoBackupStoreLocationData(res.storeLocationData, state.store, state.location, state.activeMapVersionId);
   },
 
   updateStoreVersionsAcrossLocations: (updatedVersions, targetStore) => {
     const state = get();
-    const currentStore = targetStore || state.store;
-    const currentKey = getPartitionKey(state.store, state.location);
-    const appYear = String(useAppStore.getState().globalYearFilter && useAppStore.getState().globalYearFilter !== 'all' ? useAppStore.getState().globalYearFilter : '2026');
-
-    const versionsByPartition: Record<string, MapVersion[]> = {};
-    for (const v of updatedVersions) {
-      const vStore = v.store || currentStore;
-      const vLoc = (v.location && String(v.location).trim()) 
-        ? String(v.location).trim().toUpperCase() 
-        : (v.name?.match(/(b\d|l\d|\d+f|gf|ug)/i)?.[1]?.toUpperCase() || state.location || 'L1');
-      const vYr = (v.year && String(v.year).trim()) 
-        ? String(v.year).trim() 
-        : (v.name?.match(/(202\d|203\d)/i)?.[1] || appYear);
-
-      const pKey = getPartitionKey(vStore, vLoc);
-      if (!versionsByPartition[pKey]) versionsByPartition[pKey] = [];
-      versionsByPartition[pKey].push({
-        ...v,
-        store: vStore,
-        location: vLoc,
-        year: vYr,
-      });
-    }
-
-    const updatedStoreLocationData = { ...state.storeLocationData };
-    for (const pKey in updatedStoreLocationData) {
-      if (pKey.startsWith(`${currentStore}_`)) {
-        const existing = updatedStoreLocationData[pKey];
-        const newVers = versionsByPartition[pKey] || [];
-        updatedStoreLocationData[pKey] = {
-          ...(existing || { mapUnits: [] }),
-          mapVersions: newVers,
-          activeMapVersionId: existing?.activeMapVersionId && newVers.some(v => v.id === existing.activeMapVersionId)
-            ? existing.activeMapVersionId
-            : (newVers[0]?.id || null),
-        };
-      }
-    }
-    for (const pKey in versionsByPartition) {
-      if (!updatedStoreLocationData[pKey]) {
-        const newVers = versionsByPartition[pKey];
-        updatedStoreLocationData[pKey] = {
-          mapUnits: [],
-          activeMapVersionId: newVers[0]?.id || null,
-          mapVersions: newVers,
-        };
-      }
-    }
-
-    const activePartition = updatedStoreLocationData[currentKey];
-    const activeVersions = activePartition?.mapVersions || [];
-    
-    // Preserve current state.activeMapVersionId if it still exists in updatedVersions
-    const isCurrentActiveValid = state.activeMapVersionId && updatedVersions.some(v => v.id === state.activeMapVersionId);
-    const activeVersionId = isCurrentActiveValid
-      ? state.activeMapVersionId
-      : (activePartition?.activeMapVersionId || (activeVersions[0]?.id ?? null));
-
-    set({
-      storeLocationData: updatedStoreLocationData,
-      mapVersions: activeVersions,
-      activeMapVersionId: activeVersionId,
-    });
-    autoBackupStoreLocationData(updatedStoreLocationData, state.store, state.location, activeVersionId);
+    const res = computeUpdatedVersionsAcrossLocations(state, updatedVersions, targetStore);
+    set(res);
+    autoBackupStoreLocationData(res.storeLocationData, state.store, state.location, res.activeMapVersionId);
   },
 
   syncGroupsToAllStoreLocations: (groups, targetStore) => {
@@ -583,24 +379,18 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
       if (pKey.startsWith(`${currentStore}_`)) {
         const partition = updatedStoreLocationData[pKey];
         if (partition?.mapVersions) {
-          const newVersions = partition.mapVersions.map((v) => ({
-            ...v,
-            groups,
-          }));
           updatedStoreLocationData[pKey] = {
             ...partition,
-            mapVersions: newVersions,
+            mapVersions: partition.mapVersions.map((v) => ({ ...v, groups })),
           };
         }
       }
     }
 
     const currentKey = getPartitionKey(state.store, state.location);
-    const activeVersions = updatedStoreLocationData[currentKey]?.mapVersions || state.mapVersions;
-
     set({
       storeLocationData: updatedStoreLocationData,
-      mapVersions: activeVersions,
+      mapVersions: updatedStoreLocationData[currentKey]?.mapVersions || state.mapVersions,
     });
   },
 
@@ -632,68 +422,10 @@ export const useDataStore = create<DataStoreState>((set, get) => ({
   setUnits: (units) => set({ units }),
 
   loadFullCloudData: (payload) => {
-    const state = get();
-    const storeLocationData = payload.storeLocationData || {};
-
-    let activeStore = (payload.store || state.store) as 'HCM' | 'HN';
-    let activeLoc = payload.location || state.location;
-    let activeKey = getPartitionKey(activeStore, activeLoc);
-
-    if (!storeLocationData[activeKey]) {
-      const keys = Object.keys(storeLocationData);
-      if (keys.length > 0) {
-        const firstKey = keys[0];
-        const parts = firstKey.split('_');
-        activeStore = (parts[0] === 'HN' ? 'HN' : 'HCM') as 'HCM' | 'HN';
-        activeLoc = parts[1] || 'L1';
-        activeKey = firstKey;
-      }
-    }
-
-    const targetPartition = storeLocationData[activeKey] || {
-      mapUnits: [],
-      mapVersions: [],
-      activeMapVersionId: null,
-    };
-
-    const targetUnits = targetPartition.mapUnits || [];
-    const targetVersions = targetPartition.mapVersions || [];
-    const targetActiveVerId = payload.activeMapVersionId || targetPartition.activeMapVersionId || (targetVersions[0]?.id ?? null);
-
-    set({
-      isCloudLoaded: true,
-      store: activeStore,
-      location: activeLoc,
-      storeLocationData,
-      mapUnits: targetUnits,
-      mapVersions: targetVersions,
-      activeMapVersionId: targetActiveVerId,
-      ...(payload.reviewSelectedLabels ? { reviewSelectedLabels: payload.reviewSelectedLabels } : {}),
-      ...(payload.reviewLabelColors ? { reviewLabelColors: payload.reviewLabelColors } : {}),
-      ...(payload.unitInfo ? { unitInfo: payload.unitInfo } : {}),
-      ...(payload.classInfo ? { classInfo: payload.classInfo } : {}),
-      ...(payload.actualClassInfo ? { actualClassInfo: payload.actualClassInfo } : {}),
-      ...(payload.sales ? { sales: payload.sales } : {}),
-      ...(payload.profits ? { profits: payload.profits } : {}),
-      ...(payload.subFees ? { subFees: payload.subFees } : {}),
-      ...(payload.mdStatus ? { mdStatus: payload.mdStatus } : {}),
-      ...(payload.projectStatus ? { projectStatus: payload.projectStatus } : {}),
-      ...(payload.projectLink ? { projectLink: payload.projectLink } : {}),
-      ...(payload.basePlan ? { basePlan: payload.basePlan } : {}),
-      ...(payload.units ? { units: payload.units } : {}),
-    });
-
-    saveLayoutConfigToDisk({
-      ...payload,
-      storeLocationData,
-      store: activeStore,
-      location: activeLoc,
-      activeMapVersionId: targetActiveVerId,
-    }).catch(() => {});
+    set(buildFullCloudDataStateUpdate(get(), payload));
   },
 }));
 
-// Hydrate useDataStore from Persistent Disk Cache (CacheStorage / IndexedDB) immediately on startup
 if (typeof window !== 'undefined') {
   setTimeout(async () => {
     try {
@@ -707,4 +439,3 @@ if (typeof window !== 'undefined') {
     } catch (_e) {}
   }, 0);
 }
-
