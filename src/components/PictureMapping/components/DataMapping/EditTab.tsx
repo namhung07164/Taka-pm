@@ -19,9 +19,6 @@ import { EditTabInspector } from './EditTabParts/EditTabInspector';
 
 import { extractR2Key, resolveR2UrlToHttp } from '../../lib/r2Upload';
 import { deleteR2StorageFiles } from '../../../../lib/r2StorageUtils';
-import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 interface EditTabProps {
   units: UnitShape[];
@@ -624,6 +621,8 @@ function EditTab({ units, setUnits, versions, setVersions, activeVersionId, setA
 
   const convertPdfToImage = async (file: File): Promise<string> => {
     try {
+      const pdfjsLib = await import('pdfjs-dist/build/pdf.mjs');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
       const arrayBuffer = await file.arrayBuffer();
       const loadingTask = pdfjsLib.getDocument({ 
         data: arrayBuffer,
