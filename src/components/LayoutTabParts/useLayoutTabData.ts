@@ -13,6 +13,7 @@ import {
   computeAvailableLayoutYears,
   computeAvailableLayoutLocations
 } from './layoutTabSearchUtils';
+import { resolvePriorityProjectLayout } from './layoutPriorityResolver';
 
 export interface UseLayoutTabDataProps {
   propInitialStore?: string;
@@ -28,8 +29,6 @@ export function useLayoutTabData({
   onClearFocus,
 }: UseLayoutTabDataProps) {
   const layoutTabFilters = useAppStore(state => state.layoutTabFilters);
-  const initialStore = propInitialStore !== undefined ? propInitialStore : (layoutTabFilters?.store || 'all');
-  const initialLocation = propInitialLocation !== undefined ? propInitialLocation : (layoutTabFilters?.location || 'all');
   const initialProjectCode = propInitialProjectCode !== undefined ? propInitialProjectCode : (layoutTabFilters?.projectCode || '');
 
   const { enrichedProjects: projects, filteredTasks: tasks } = useEnrichedData();
@@ -37,6 +36,7 @@ export function useLayoutTabData({
   const permissionMatrix = useAppStore(state => state.permissionMatrix);
   const locations = useAppStore(state => state.locations);
   const locationVisibility = useAppStore(state => state.locationVisibility);
+  const pinnedProjects = useAppStore(state => state.pinnedProjects);
 
   const globalStoreFilter = useAppStore(state => state.globalStoreFilter);
   const setGlobalStoreFilter = useAppStore(state => state.setGlobalStoreFilter);
@@ -44,20 +44,16 @@ export function useLayoutTabData({
   const setGlobalLocationFilter = useAppStore(state => state.setGlobalLocationFilter);
 
   const [projectCodeFilter, setProjectCodeFilter] = useState(initialProjectCode);
+  void projectCodeFilter;
   
   const isAdmin = currentUser.role === 'admin';
+  const roleStr = String(currentUser?.role || '');
   const role = (
-    currentUser?.role === 'admin'
-      ? 'admin'
-      : (currentUser?.role as string)?.toUpperCase() === 'CP'
-      ? 'CP'
-      : (currentUser?.role as string)?.toLowerCase() === 'manager'
-      ? 'Manager'
-      : (currentUser?.role as string)?.toLowerCase() === 'staff'
-      ? 'Staff'
-      : (currentUser?.role as string)?.toLowerCase() === 'external'
-      ? 'External'
-      : currentUser?.role || 'viewer'
+    isAdmin ? 'admin' : roleStr.toUpperCase() === 'CP' ? 'CP'
+      : roleStr.toLowerCase() === 'manager' ? 'Manager'
+      : roleStr.toLowerCase() === 'staff' ? 'Staff'
+      : roleStr.toLowerCase() === 'external' ? 'External'
+      : (currentUser?.role || 'viewer')
   ) as AppRole;
   const isPartyRestricted = !isAdmin && currentUser?.byPartyAccess === true && currentUser?.partyPermissions?.['all'] !== true;
   const globalYearFilter = useAppStore(state => state.globalYearFilter);
@@ -65,15 +61,45 @@ export function useLayoutTabData({
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const canWrite = (isAdmin || !!permissionMatrix[role]?.Write?.layout) && !isArchiveYear;
 
-  const allowedStores = useMemo(() => {
-    return getUserAllowedStores(currentUser);
-  }, [currentUser]);
-  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
-  const activeStore = effectiveStore === 'all' ? (allowedStores[0] || '') : (allowedStores.includes(effectiveStore) ? effectiveStore : (allowedStores[0] || ''));
-
+  const allowedStores = useMemo(() => getUserAllowedStores(currentUser), [currentUser]);
   const getAllStoreVersions = useDataStore((state) => state.getAllStoreVersions);
   const storeLocationData = useDataStore((state) => state.storeLocationData);
   const mapVersions = useDataStore((state) => state.mapVersions);
+  const unitInfo = useDataStore((state) => state.unitInfo);
+
+  // Capture General tab filter scope at mount time so priority evaluation isn't skewed after Layout tab mutates global filters
+  const mountScopeRef = useRef({ store: globalStoreFilter, year: globalYearFilter });
+  const hasSyncedInitialPriorityRef = useRef(false);
+  const hasSyncedConfiguredPriorityRef = useRef(false);
+
+  const activeStoreParam = propInitialStore !== undefined ? propInitialStore : (layoutTabFilters?.store || '');
+  const activeLocParam = propInitialLocation !== undefined ? propInitialLocation : (layoutTabFilters?.location || '');
+  const activeCodeParam = propInitialProjectCode !== undefined ? propInitialProjectCode : (layoutTabFilters?.projectCode || '');
+  const hasExplicitFocusParams = Boolean(
+    (activeStoreParam && activeStoreParam.toLowerCase() !== 'all') ||
+    (activeLocParam && activeLocParam.toLowerCase() !== 'all') ||
+    activeCodeParam
+  );
+
+  const priorityProjectLayout = useMemo(() => {
+    if (hasExplicitFocusParams) return null;
+    return resolvePriorityProjectLayout({
+      projects, tasks, currentUser, allowedStores, pinnedProjects,
+      initialStoreFilter: mountScopeRef.current.store,
+      initialYearFilter: mountScopeRef.current.year,
+      locationVisibility, locations, storeLocationData, getAllStoreVersions,
+      unitInfo: unitInfo || [], isAdmin, isPartyRestricted, role,
+    });
+  }, [
+    hasExplicitFocusParams, projects, tasks, currentUser, allowedStores, pinnedProjects,
+    locationVisibility, locations, storeLocationData, getAllStoreVersions, mapVersions,
+    unitInfo, isAdmin, isPartyRestricted, role,
+  ]);
+
+  const effectiveStore = getEffectiveStoreFilter(globalStoreFilter, currentUser);
+  const activeStore = (!hasSyncedInitialPriorityRef.current && !hasExplicitFocusParams && priorityProjectLayout?.store && allowedStores.includes(priorityProjectLayout.store))
+    ? priorityProjectLayout.store
+    : (effectiveStore === 'all' ? (priorityProjectLayout?.store || allowedStores[0] || '') : (allowedStores.includes(effectiveStore) ? effectiveStore : (allowedStores[0] || '')));
 
   // Stable memoized versions for activeStore to prevent reference churn across partition updates
   const prevStoreVersionsRef = useRef<any[]>([]);
@@ -84,9 +110,7 @@ export function useLayoutTabData({
       const vers = getAllStoreVersions((activeStore === 'HN' ? 'HN' : 'HCM'));
       if (!Array.isArray(vers)) return [];
       const sig = `${activeStore}_${vers.map(v => `${v?.id || ''}_${v?.backgroundUrl || ''}`).join('|')}`;
-      if (sig === prevStoreVersionsKeyRef.current) {
-        return prevStoreVersionsRef.current;
-      }
+      if (sig === prevStoreVersionsKeyRef.current) return prevStoreVersionsRef.current;
       prevStoreVersionsKeyRef.current = sig;
       prevStoreVersionsRef.current = vers;
       return vers;
@@ -95,188 +119,194 @@ export function useLayoutTabData({
     }
   }, [getAllStoreVersions, activeStore, storeLocationData, mapVersions]);
 
-  // Initial params sync effect - runs on mount or when props / layoutTabFilters change!
   const hasSyncedInitialRef = useRef(false);
   const lastInitialPropKeyRef = useRef('');
-
-  // Track whether filter changes came from initial deep-link/notification props
   const isSyncingInitialPropsRef = useRef(false);
 
   useEffect(() => {
-    const activeStoreParam = propInitialStore !== undefined ? propInitialStore : (layoutTabFilters?.store || '');
-    const activeLocParam = propInitialLocation !== undefined ? propInitialLocation : (layoutTabFilters?.location || '');
-    const activeCodeParam = propInitialProjectCode !== undefined ? propInitialProjectCode : (layoutTabFilters?.projectCode || '');
     const filterTs = (layoutTabFilters as any)?._ts || '';
-
     const propKey = `${activeStoreParam}_${activeLocParam}_${activeCodeParam}_${filterTs}`;
-    if (hasSyncedInitialRef.current && propKey === lastInitialPropKeyRef.current) {
+
+    if (hasExplicitFocusParams) {
+      if (hasSyncedInitialRef.current && propKey === lastInitialPropKeyRef.current) return;
+      hasSyncedInitialRef.current = true;
+      hasSyncedInitialPriorityRef.current = true;
+      hasSyncedConfiguredPriorityRef.current = true;
+      lastInitialPropKeyRef.current = propKey;
+      isSyncingInitialPropsRef.current = true;
+
+      const normalizedStoreParam = activeStoreParam && activeStoreParam !== 'all' ? activeStoreParam.toUpperCase().trim() : '';
+      if (normalizedStoreParam && allowedStores.includes(normalizedStoreParam)) {
+        setGlobalStoreFilter(normalizedStoreParam);
+      }
+
+      const targetLoc = resolveInitialTargetLocation(
+        activeLocParam, activeCodeParam, projects, tasks, allStoreVersions, unitInfo || [],
+        (normalizedStoreParam && allowedStores.includes(normalizedStoreParam)) ? normalizedStoreParam : activeStore
+      );
+
+      if (targetLoc && targetLoc.toLowerCase() !== 'all') {
+        setIsLiveMapMode(true);
+        setGlobalLocationFilter([targetLoc.toUpperCase().trim()]);
+      } else if (activeLocParam && activeLocParam !== 'all' && activeLocParam !== 'ALL') {
+        setIsLiveMapMode(true);
+        setGlobalLocationFilter([activeLocParam.toUpperCase().trim()]);
+      }
+
+      if (activeCodeParam) {
+        setProjectCodeFilter(activeCodeParam);
+        setUnitSearchInput(activeCodeParam);
+        setTargetUnitSearch(activeCodeParam);
+        setIsLiveMapMode(true);
+      }
       return;
     }
-    hasSyncedInitialRef.current = true;
-    lastInitialPropKeyRef.current = propKey;
-    isSyncingInitialPropsRef.current = true;
 
-    const normalizedStoreParam =
-      activeStoreParam && activeStoreParam !== 'all'
-        ? activeStoreParam.toUpperCase().trim()
-        : '';
+    // Open layout of the highest-priority project on General tab that has a layout
+    if (priorityProjectLayout) {
+      const shouldSyncPriority =
+        !hasSyncedInitialPriorityRef.current ||
+        (!hasSyncedConfiguredPriorityRef.current && priorityProjectLayout.hasConfiguredData);
 
-    if (normalizedStoreParam && allowedStores.includes(normalizedStoreParam)) {
-      setGlobalStoreFilter(normalizedStoreParam);
+      if (shouldSyncPriority) {
+        hasSyncedInitialRef.current = true;
+        hasSyncedInitialPriorityRef.current = true;
+        if (priorityProjectLayout.hasConfiguredData) {
+          hasSyncedConfiguredPriorityRef.current = true;
+        }
+        lastInitialPropKeyRef.current = propKey;
+        isSyncingInitialPropsRef.current = true;
+
+        if (priorityProjectLayout.store && allowedStores.includes(priorityProjectLayout.store)) {
+          setGlobalStoreFilter(priorityProjectLayout.store);
+        }
+        if (priorityProjectLayout.location) {
+          setIsLiveMapMode(true);
+          setGlobalLocationFilter([priorityProjectLayout.location]);
+        }
+        if (priorityProjectLayout.year) {
+          setGlobalYearFilter(priorityProjectLayout.year);
+        }
+      }
     }
+  }, [
+    hasExplicitFocusParams, activeStoreParam, activeLocParam, activeCodeParam, layoutTabFilters,
+    priorityProjectLayout, projects, tasks, allStoreVersions, unitInfo, activeStore, allowedStores,
+    setGlobalStoreFilter, setGlobalLocationFilter, setGlobalYearFilter,
+  ]);
 
-    const unitInfo = useDataStore.getState().unitInfo || [];
-    const targetLoc = resolveInitialTargetLocation(
-      activeLocParam,
-      activeCodeParam,
-      projects,
-      tasks,
-      allStoreVersions,
-      unitInfo,
-      (normalizedStoreParam && allowedStores.includes(normalizedStoreParam)) ? normalizedStoreParam : activeStore
-    );
-
-    if (targetLoc && targetLoc.toLowerCase() !== 'all') {
-      setIsLiveMapMode(true);
-      setGlobalLocationFilter([targetLoc.toUpperCase().trim()]);
-    } else if (activeLocParam && activeLocParam !== 'all' && activeLocParam !== 'ALL') {
-      setIsLiveMapMode(true);
-      setGlobalLocationFilter([activeLocParam.toUpperCase().trim()]);
-    }
-
-    if (activeCodeParam) {
-      setProjectCodeFilter(activeCodeParam);
-      setUnitSearchInput(activeCodeParam);
-      setTargetUnitSearch(activeCodeParam);
-      setIsLiveMapMode(true);
-    }
-  }, [propInitialStore, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions, activeStore, allowedStores, setGlobalStoreFilter, setGlobalLocationFilter]);
-
-  // Available years: based on user permissions, projects, tasks, and store versions
   const prevAvailableYearsRef = useRef<string[]>([]);
   const prevAvailableYearsKeyRef = useRef<string>('');
 
   const availableYears = useMemo(() => {
     const finalYears = computeAvailableLayoutYears({
-      projects,
-      tasks,
-      allStoreVersions,
-      activeStore,
-      isAdmin,
-      isPartyRestricted,
-      role,
+      projects, tasks, allStoreVersions, activeStore, isAdmin, isPartyRestricted, role,
     });
     const key = finalYears.join('|');
-    if (key === prevAvailableYearsKeyRef.current) {
-      return prevAvailableYearsRef.current;
-    }
+    if (key === prevAvailableYearsKeyRef.current) return prevAvailableYearsRef.current;
     prevAvailableYearsKeyRef.current = key;
     prevAvailableYearsRef.current = finalYears;
     return finalYears;
   }, [allStoreVersions, projects, tasks, activeStore, isAdmin, isPartyRestricted, role]);
 
   const effectiveYear = useMemo(() => {
+    if (!hasSyncedInitialPriorityRef.current && !hasExplicitFocusParams && priorityProjectLayout?.year && availableYears.includes(priorityProjectLayout.year)) {
+      return priorityProjectLayout.year;
+    }
     if (globalYearFilter && globalYearFilter !== 'all' && availableYears.includes(globalYearFilter)) {
       return globalYearFilter;
     }
-    const currentCalendarYear = String(new Date().getFullYear());
-    if (availableYears.includes(currentCalendarYear)) {
-      return currentCalendarYear;
+    if (priorityProjectLayout?.year && availableYears.includes(priorityProjectLayout.year)) {
+      return priorityProjectLayout.year;
     }
+    const currentCalendarYear = String(new Date().getFullYear());
+    if (availableYears.includes(currentCalendarYear)) return currentCalendarYear;
     return availableYears[0] || '';
-  }, [globalYearFilter, availableYears]);
+  }, [globalYearFilter, availableYears, hasExplicitFocusParams, priorityProjectLayout]);
 
-  // Layout tab requires specific year selection (no 'all' option allowed)
   useEffect(() => {
     if (availableYears.length > 0 && (!globalYearFilter || globalYearFilter === 'all' || !availableYears.includes(globalYearFilter))) {
       setGlobalYearFilter(effectiveYear);
     }
   }, [globalYearFilter, availableYears, effectiveYear, setGlobalYearFilter]);
 
-  // Layout tab only supports store-specific floor plans (HCM, HN), hide all-stores
   useEffect(() => {
     if (allowedStores.length > 0 && (!globalStoreFilter || globalStoreFilter === 'all' || !allowedStores.includes(globalStoreFilter))) {
-      setGlobalStoreFilter(allowedStores[0]);
+      const targetDefaultStore =
+        (!hasExplicitFocusParams && priorityProjectLayout?.store && allowedStores.includes(priorityProjectLayout.store))
+          ? priorityProjectLayout.store
+          : allowedStores[0];
+      setGlobalStoreFilter(targetDefaultStore);
     }
-  }, [globalStoreFilter, allowedStores, setGlobalStoreFilter]);
+  }, [globalStoreFilter, allowedStores, hasExplicitFocusParams, priorityProjectLayout, setGlobalStoreFilter]);
 
-  // Danh sách location của Tab Layout (Cached to prevent array reference churn)
   const prevAvailableLocationsRef = useRef<string[]>([]);
   const prevAvailableLocationsKeyRef = useRef<string>('');
 
   const availableLocations = useMemo(() => {
     const sorted = computeAvailableLayoutLocations({
-      allStoreVersions,
-      storeLocationData,
-      activeStore,
-      currentUser,
-      locationVisibility,
-      locations,
-      isPartyRestricted,
-      role,
-      projects,
-      tasks,
-      effectiveYear,
+      allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility,
+      locations, isPartyRestricted, role, projects, tasks, effectiveYear,
     });
     const key = sorted.join('|');
-    if (key === prevAvailableLocationsKeyRef.current) {
-      return prevAvailableLocationsRef.current;
-    }
+    if (key === prevAvailableLocationsKeyRef.current) return prevAvailableLocationsRef.current;
     prevAvailableLocationsKeyRef.current = key;
     prevAvailableLocationsRef.current = sorted;
     return sorted;
   }, [allStoreVersions, storeLocationData, activeStore, currentUser, locationVisibility, locations, isPartyRestricted, role, projects, tasks, effectiveYear]);
 
-  // Ensure globalLocationFilter is never 'all' or empty in Layout tab
   useEffect(() => {
     if (availableLocations.length > 0) {
       const currentLoc = (globalLocationFilter[0] || '').toUpperCase().trim();
+      const priorityLoc = (!hasExplicitFocusParams && priorityProjectLayout?.location)
+        ? availableLocations.find(l => l.toUpperCase().trim() === priorityProjectLayout.location.toUpperCase().trim())
+        : undefined;
+      const initialTargetLoc = resolveInitialTargetLocation(
+        propInitialLocation || layoutTabFilters?.location || '',
+        propInitialProjectCode || layoutTabFilters?.projectCode || '',
+        projects, tasks, allStoreVersions, unitInfo || []
+      );
+      const validInitialTargetLoc = initialTargetLoc && availableLocations.includes(initialTargetLoc) ? initialTargetLoc : undefined;
+
       if (!currentLoc || currentLoc === 'ALL') {
-        const initialTargetLoc = resolveInitialTargetLocation(
-          propInitialLocation || layoutTabFilters?.location || '', 
-          propInitialProjectCode || layoutTabFilters?.projectCode || '', 
-          projects, 
-          tasks, 
-          allStoreVersions, 
-          useDataStore.getState().unitInfo || []
-        );
-        if (initialTargetLoc && availableLocations.includes(initialTargetLoc)) {
-          setGlobalLocationFilter([initialTargetLoc]);
+        if (validInitialTargetLoc) {
+          setGlobalLocationFilter([validInitialTargetLoc]);
+          return;
+        }
+        if (priorityLoc) {
+          setGlobalLocationFilter([priorityLoc]);
           return;
         }
       }
       const matched = availableLocations.find(l => l.toUpperCase().trim() === currentLoc);
       if (matched) {
-        if (globalLocationFilter[0] !== matched) {
-          setGlobalLocationFilter([matched]);
-        }
+        if (globalLocationFilter[0] !== matched) setGlobalLocationFilter([matched]);
       } else {
-        const initialTargetLoc = resolveInitialTargetLocation(
-          propInitialLocation || layoutTabFilters?.location || '', 
-          propInitialProjectCode || layoutTabFilters?.projectCode || '', 
-          projects, 
-          tasks, 
-          allStoreVersions, 
-          useDataStore.getState().unitInfo || []
-        );
-        if (initialTargetLoc && availableLocations.includes(initialTargetLoc)) {
-          setGlobalLocationFilter([initialTargetLoc]);
-        } else {
-          setGlobalLocationFilter([availableLocations[0]]);
-        }
+        setGlobalLocationFilter([validInitialTargetLoc || priorityLoc || availableLocations[0]]);
       }
     }
-  }, [availableLocations, globalLocationFilter, setGlobalLocationFilter, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions]);
+  }, [availableLocations, globalLocationFilter, setGlobalLocationFilter, propInitialLocation, propInitialProjectCode, layoutTabFilters, projects, tasks, allStoreVersions, unitInfo, hasExplicitFocusParams, priorityProjectLayout]);
 
   const locFilterStr = useMemo(() => {
+    if (!hasSyncedInitialPriorityRef.current && !hasExplicitFocusParams && priorityProjectLayout?.location) {
+      const matchedPriority = availableLocations.find(
+        l => l.toUpperCase().trim() === priorityProjectLayout.location.toUpperCase().trim()
+      );
+      return matchedPriority || priorityProjectLayout.location;
+    }
     const currentLoc = (globalLocationFilter[0] || '').toUpperCase().trim();
     if (currentLoc && currentLoc !== 'ALL') {
       const matched = availableLocations.find(l => l.toUpperCase().trim() === currentLoc);
-      if (matched) return matched;
-      return currentLoc;
+      return matched || currentLoc;
+    }
+    if (priorityProjectLayout?.location) {
+      const matchedPriority = availableLocations.find(
+        l => l.toUpperCase().trim() === priorityProjectLayout.location.toUpperCase().trim()
+      );
+      if (matchedPriority) return matchedPriority;
     }
     return availableLocations[0] || '';
-  }, [globalLocationFilter, availableLocations]);
+  }, [globalLocationFilter, availableLocations, hasExplicitFocusParams, priorityProjectLayout]);
   const [isLiveMapMode, setIsLiveMapMode] = useState(true);
   const [isFullscreenView, setIsFullscreenView] = useState(false);
 
