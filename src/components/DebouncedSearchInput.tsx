@@ -122,16 +122,13 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
   // Sync external changes (e.g. clear filters, tab changes, external reset)
   useEffect(() => {
     const propVal = value || '';
-    if (inputRef.current) {
-      const currentNative = inputRef.current.value;
-      if (currentNative !== propVal) {
-        if (!isFocusedRef.current || propVal === '') {
-          inputRef.current.value = propVal;
-          lastCommittedRef.current = propVal;
-          assistant.setFilterTextForHistory(propVal);
-          handleHasValueChange(Boolean(propVal));
-        }
+    if (propVal !== lastCommittedRef.current) {
+      lastCommittedRef.current = propVal;
+      if (inputRef.current && inputRef.current.value !== propVal) {
+        inputRef.current.value = propVal;
       }
+      assistant.setFilterTextForHistory(propVal);
+      handleHasValueChange(Boolean(propVal));
     }
   }, [value, assistant, handleHasValueChange]);
 
