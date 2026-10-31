@@ -192,8 +192,6 @@ export async function executeTaskSave({
     let finalFormData = { ...formData };
     finalFormData.start = finalFormData.start || todayDate;
     finalFormData.finish = finalFormData.finish || finalFormData.start || todayDate;
-    finalFormData.baselineStart = finalFormData.baselineStart || finalFormData.start || todayDate;
-    finalFormData.baselineFinish = finalFormData.baselineFinish || finalFormData.finish || todayDate;
     finalFormData.duration = (finalFormData.duration === undefined || finalFormData.duration === null || String(finalFormData.duration).trim() === '') ? "0" : String(finalFormData.duration);
     if (parseFloat(finalFormData.duration) < 0) {
       finalFormData.duration = "0";
@@ -209,6 +207,8 @@ export async function executeTaskSave({
         }
       }
     }
+    finalFormData.baselineStart = task?.baselineStart || finalFormData.start || todayDate;
+    finalFormData.baselineFinish = task?.baselineFinish || finalFormData.finish || todayDate;
     if (!finalFormData.party) finalFormData.party = currentProject?.party || 'Takashimaya';
 
     if (cloudStatus === 'offline') {
@@ -333,6 +333,8 @@ export async function executeTaskSave({
           const scheduledUpdatedTask = updatesToDependents.find(d => d.id === dataToSave.id);
           if (scheduledUpdatedTask) {
             dataToSave = { ...(scheduledUpdatedTask as any) };
+            if (!task?.baselineStart) dataToSave.baselineStart = dataToSave.start;
+            if (!task?.baselineFinish) dataToSave.baselineFinish = dataToSave.finish;
             delete dataToSave._isVirtualSummary;
             optimisticList[0] = dataToSave;
           }

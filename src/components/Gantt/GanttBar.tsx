@@ -165,10 +165,10 @@ export const GanttBar = React.memo(function GanttBar({
   const offsetDays = getExactDays(startDate, dStart);
   const durationDays = Math.max(getExactDays(dStart, dEnd) + 1, 1);
   const leftPx = offsetDays * dayWidth;
-  const widthPx = isMilestone ? 16 : Math.max(durationDays * dayWidth, 8);
+  const widthPx = isMilestone ? 14 : Math.max(durationDays * dayWidth, 8);
 
   const barColor = isMilestone 
-    ? "bg-[#f97316] border border-[#ea580c]" 
+    ? "bg-[#f97316] border-2 border-white dark:border-slate-900 ring-1 ring-[#ea580c]" 
     : getBarColor(status, extraVars?.duration);
 
   const actProgress = extraVars?.actPrg ?? 0;
@@ -190,19 +190,21 @@ export const GanttBar = React.memo(function GanttBar({
         onMouseEnter={handleBarMouseEnter}
         onMouseLeave={handleBarMouseLeave}
         className={cn(
-          "gantt-bar absolute top-1.5 bottom-1.5 flex items-center transition-shadow cursor-pointer select-none group shadow-2xs before:absolute before:-inset-y-1.5 before:-inset-x-1 before:content-['']",
-          isMilestone ? "w-4 h-4 rotate-45 rounded-[2px] mt-1.5 shadow-md z-20" : "h-6 rounded-md",
-          !customColor && barColor,
+          "gantt-bar absolute flex items-center transition-shadow cursor-pointer select-none group shadow-2xs before:absolute before:-inset-y-1.5 before:-inset-x-1 before:content-['']",
+          isMilestone
+            ? "top-1/2 -translate-y-1/2 -ml-[7px] w-3.5 h-3.5 rotate-45 rounded-[2px] shadow-md z-20"
+            : "top-1.5 bottom-1.5 h-6 rounded-md",
+          (isMilestone || !customColor) && barColor,
           isSimulation && "border-2 border-dashed border-purple-400 opacity-80",
           extraVars?.highlight === 'assignee' && "ring-2 ring-emerald-400 ring-offset-1",
           extraVars?.highlight === 'creator' && "ring-2 ring-blue-400 ring-offset-1",
           isPinned && "ring-2 ring-blue-500 shadow-md",
-          isHovered && "brightness-110 shadow-md scale-[1.01]"
+          isHovered && "brightness-110 shadow-md scale-[1.03]"
         )}
         style={{
           left: `${leftPx}px`,
           width: `${widthPx}px`,
-          zIndex: isPinned ? 30 : isHovered ? 20 : 10,
+          zIndex: isPinned ? 30 : isHovered ? 25 : isMilestone ? 20 : 10,
           ...(customColor && !isMilestone ? { backgroundColor: customColor, borderColor: customColor } : {})
         }}
       >
@@ -274,6 +276,16 @@ export const GanttBar = React.memo(function GanttBar({
           );
         })()}
       </div>
+
+      {/* External Label for Milestone Diamond (un-rotated sibling) */}
+      {isMilestone && label && (
+        <div
+          className="absolute top-1/2 -translate-y-1/2 flex items-center gap-1 whitespace-nowrap pointer-events-none z-20 px-1.5 py-0.5 rounded bg-white/90 dark:bg-[#1e1e20]/90 text-[10px] font-bold text-amber-700 dark:text-amber-300 border border-amber-500/30 leading-none shadow-2xs"
+          style={{ left: `${leftPx + 12}px` }}
+        >
+          <span>{label}</span>
+        </div>
+      )}
 
       {/* Floating Date Drag Indicator Badge */}
       {isDraggingDate && (

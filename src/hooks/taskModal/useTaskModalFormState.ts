@@ -193,6 +193,8 @@ export function useTaskModalFormState({
                           finish: calcResult.finish,
                           duration: calcResult.duration,
                           durationManual: calcResult.durationManual,
+                          ...(!task?.baselineStart ? { baselineStart: calcResult.start } : {}),
+                          ...(!task?.baselineFinish ? { baselineFinish: calcResult.finish } : {}),
                         }));
                       }
                     }
@@ -211,10 +213,10 @@ export function useTaskModalFormState({
             updated.duration = calcResult.duration;
             updated.durationManual = calcResult.durationManual;
 
-            if (!task?.baselineStart && !formData.baselineStart) {
+            if (!task?.baselineStart) {
               updated.baselineStart = calcResult.start;
             }
-            if (!task?.baselineFinish && !formData.baselineFinish) {
+            if (!task?.baselineFinish) {
               updated.baselineFinish = calcResult.finish;
             }
           }
@@ -250,8 +252,8 @@ export function useTaskModalFormState({
             finish: calcResult.finish,
             duration: calcResult.duration,
             durationManual: calcResult.durationManual,
-            ...(!task?.baselineStart && !prev.baselineStart ? { baselineStart: calcResult.start } : {}),
-            ...(!task?.baselineFinish && !prev.baselineFinish ? { baselineFinish: calcResult.finish } : {})
+            ...(!task?.baselineStart ? { baselineStart: calcResult.start } : {}),
+            ...(!task?.baselineFinish ? { baselineFinish: calcResult.finish } : {})
           }));
           useAppStore.getState().setToast({
             title: t("Dates Synced") || "Dates Synced",
@@ -304,10 +306,10 @@ export function useTaskModalFormState({
       }
     }
 
-    if (!task?.baselineStart && !formData.baselineStart && nextData.start) {
+    if (!task?.baselineStart && nextData.start) {
       nextData.baselineStart = nextData.start;
     }
-    if (!task?.baselineFinish && !formData.baselineFinish && nextData.finish) {
+    if (!task?.baselineFinish && nextData.finish) {
       nextData.baselineFinish = nextData.finish;
     }
 
@@ -326,7 +328,10 @@ export function useTaskModalFormState({
           const f = new Date(s.getTime() + days * 24 * 60 * 60 * 1000);
           nextData.finish = formatToDatetimeLocal(f);
 
-          if (!task?.baselineFinish && !formData.baselineFinish && nextData.finish) {
+          if (!task?.baselineStart && nextData.start) {
+            nextData.baselineStart = nextData.start;
+          }
+          if (!task?.baselineFinish && nextData.finish) {
             nextData.baselineFinish = nextData.finish;
           }
         }

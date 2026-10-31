@@ -196,6 +196,15 @@ export function FullReplaceImport({
           }
         }
 
+        if (collectionName === 'taka_tasks') {
+          if (!recordToSave.baselineStart && recordToSave.start) {
+            recordToSave.baselineStart = recordToSave.start;
+          }
+          if (!recordToSave.baselineFinish && recordToSave.finish) {
+            recordToSave.baselineFinish = recordToSave.finish;
+          }
+        }
+
         writeOps.push({
           collectionName,
           docId: finalId,

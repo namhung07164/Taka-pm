@@ -10,6 +10,7 @@ import { FixedProjectInput } from '../FixedProjectInput';
 import { ViewMode } from './ganttTypes';
 import { GanttToolbarActions } from './GanttToolbarActions';
 import { GanttToolbarDateFilter } from './GanttToolbarDateFilter';
+import { GanttColorLegend } from './GanttColorLegend';
 
 const GANTT_AVAILABLE_COLUMNS = [
   { id: 'start', label: 'Start' },
@@ -335,6 +336,8 @@ export function GanttToolbar({
             onAddColumn={handleToggleColumn}
           />
         </div>
+
+        <GanttColorLegend />
 
         {/* Task loading spinner */}
         {isTasksLoading && (!tasks || tasks.length === 0) && (

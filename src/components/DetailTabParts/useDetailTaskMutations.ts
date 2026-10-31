@@ -310,6 +310,8 @@ export function useDetailTaskMutations({
         newT = { ...(scheduledUpdatedTask as any) };
         delete (newT as any)._isVirtualSummary;
       }
+      if (!newT.baselineStart && newT.start) newT.baselineStart = t.baselineStart || newT.start;
+      if (!newT.baselineFinish && newT.finish) newT.baselineFinish = t.baselineFinish || newT.finish;
 
       const depUpdateMap = new Map<string, Task>();
       updatesToDependents.forEach(d => {

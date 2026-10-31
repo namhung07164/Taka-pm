@@ -112,6 +112,8 @@ export async function parseTasksFile(
       if (h === 'store' || h === 'projectstore' || h === 'project store') key = 'projectStore';
       if (h === 'start date' || h === 'startdate') key = 'start';
       if (h === 'finish date' || h === 'finishdate' || h === 'end') key = 'finish';
+      if (h === 'baseline start' || h === 'baselinestart' || h === 'baseline_start') key = 'baselineStart';
+      if (h === 'baseline finish' || h === 'baselinefinish' || h === 'baseline_finish' || h === 'baseline end' || h === 'baselineend' || h === 'baseline_end') key = 'baselineFinish';
       if (h === 'durations') key = 'duration';
       if (h === 'pic' || h === 'department') key = 'party';
       if (h === 'predecessor' || h === 'predecessors' || h === 'predecessor code' || h === 'predecessor_code' || h === 'predecessorcode' || h === 'tiền nhiệm' || h === 'tien nhiem') {
@@ -146,9 +148,9 @@ export async function parseTasksFile(
         key = 'level';
       }
 
-      if (['projectId', 'projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
+      if (['projectId', 'projectCode', 'projectYear', 'projectStore', 'name', 'start', 'finish', 'baselineStart', 'baselineFinish', 'duration', 'party', 'predecessor', 'taskCodePhu', 'orderIndex', 'delegation', 'realtimeUpdate', 'importComment', 'parentTaskId', 'parentTaskCode', 'parentTaskName', 'isParent', 'level'].includes(key)) {
         let val: any = row[i] !== undefined ? row[i] : '';
-        if (key === 'start' || key === 'finish') {
+        if (key === 'start' || key === 'finish' || key === 'baselineStart' || key === 'baselineFinish') {
           val = parseCSVDate(val);
         } else if (key === 'duration') {
           val = cleanDurationString(val);

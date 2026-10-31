@@ -32,10 +32,11 @@ export const GanttBaseline: React.FC<GanttBaselineProps> = React.memo(({
   if (!s || !e || isNaN(s.getTime()) || isNaN(e.getTime())) return null;
 
   const leftDays = getExactDays(startDate, s);
+  const isBaselineMilestone = Math.abs(e.getTime() - s.getTime()) < 3600000;
   const widthDays = Math.max(getExactDays(s, e) + 1, 1);
 
-  const leftPx = leftDays * dayWidth;
-  const widthPx = Math.max(widthDays * dayWidth, 6);
+  const leftPx = isBaselineMilestone ? leftDays * dayWidth - 4 : leftDays * dayWidth;
+  const widthPx = isBaselineMilestone ? 8 : Math.max(widthDays * dayWidth, 6);
 
   return (
     <div

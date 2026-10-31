@@ -261,11 +261,11 @@ export async function executeImportTasks({
 
       const defaultToday = getDefaultDatetimeLocal();
       const csvPred = t.predecessor !== undefined ? String(t.predecessor || '').trim().replace(/^[,;\s]+|[,;\s]+$/g, '').trim() : undefined;
+      const csvBaselineStart = t.baselineStart ? String(t.baselineStart).trim() : '';
+      const csvBaselineFinish = t.baselineFinish ? String(t.baselineFinish).trim() : '';
       if (!existing) {
         if (!t.start) t.start = defaultToday;
         if (!t.finish) t.finish = t.start || defaultToday;
-        if (!t.baselineStart) t.baselineStart = t.start || defaultToday;
-        if (!t.baselineFinish) t.baselineFinish = t.finish || defaultToday;
         if (t.duration === undefined || t.duration === null || String(t.duration).trim() === '') t.duration = "0";
       } else {
         if (!t.start) t.start = existing.start || defaultToday;
@@ -337,6 +337,9 @@ export async function executeImportTasks({
         finalTask.durationManual = true;
       }
 
+      finalTask.baselineStart = csvBaselineStart || existing?.baselineStart || finalTask.start || defaultToday;
+      finalTask.baselineFinish = csvBaselineFinish || existing?.baselineFinish || finalTask.finish || defaultToday;
+
       processedImportTasksMap.set(nameKey, finalTask);
       if (normKey) processedImportTasksMap.set(normKey, finalTask);
       if (codeKey) processedImportTasksMap.set(codeKey, finalTask);
@@ -391,8 +394,16 @@ export async function executeImportTasks({
     const tk = allTasksMap.get(tid);
     if (tk) {
       const explicitPred = importedPredById.get(tid);
+      const prevExisting = previousStates.get(tid);
+      const hadValidPrevBaseline = Boolean(
+        prevExisting?.baselineStart &&
+        prevExisting?.baselineFinish &&
+        !(prevExisting.baselineStart === prevExisting.baselineFinish && tk.start !== tk.finish)
+      );
       const stamped: Task = {
         ...tk,
+        baselineStart: hadValidPrevBaseline ? prevExisting!.baselineStart : (tk.start || tk.baselineStart),
+        baselineFinish: hadValidPrevBaseline ? prevExisting!.baselineFinish : (tk.finish || tk.baselineFinish),
         ...(!tk.isModularParent && explicitPred && (!tk.predecessor || !String(tk.predecessor).trim())
           ? { predecessor: explicitPred }
           : {}),
