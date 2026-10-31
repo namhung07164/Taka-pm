@@ -18,6 +18,7 @@ import {
 import { extractAllProjectCodes } from "./projectCodeAndScopeUtils";
 import { rollupTaskSummaries } from "../taskRollupHelpers";
 import { useDataStore } from "../../components/PictureMapping/DataContext";
+import { sortEnrichedProjects, resolveProjectDatesFromSource } from "./projectEnrichmentHelpers";
 
 // Module-level 8-slot ring buffer cache for zero-cost multi-component calls to enrichProjects
 // Prevents cache thrashing when different hooks pass rawTasks vs deduplicated baseTasks
@@ -338,61 +339,13 @@ export function enrichProjects(
       taskSummaries = rollupTaskSummaries(filteredExistingSummaries);
     }
 
-    let computedTakStart = p.computedTakStart || p.start;
-    let computedTakCompl: string | undefined = p.computedTakCompl || p.handover || (p as any).takCompl || undefined;
-    let computedOpening = p.computedOpening || (p.openingMode === 'manual' ? p.opening : '');
-
-    if (isAuthoritativeRealTasks && projectTasks.length > 0) {
-      let minStart: string | undefined = undefined;
-      let maxCompl: string | undefined = undefined;
-      let hasOpeningTask = false;
-      for (let i = 0; i < projectTasks.length; i++) {
-        const t = projectTasks[i];
-        if (t.start && (!minStart || t.start < minStart)) {
-          minStart = t.start;
-        }
-        if (t.finish && (!maxCompl || t.finish > maxCompl)) {
-          maxCompl = t.finish;
-        }
-        const name = t.name ? String(t.name).toLowerCase() : "";
-        if ((name.includes("opening") || name.includes("open")) && t.finish) {
-          if (!hasOpeningTask || t.finish > computedOpening) {
-            computedOpening = t.finish;
-            hasOpeningTask = true;
-          }
-        }
-      }
-      if (minStart) computedTakStart = minStart;
-      if (maxCompl) computedTakCompl = maxCompl;
-      if (!hasOpeningTask && p.openingMode !== 'manual') {
-        computedOpening = '';
-      }
-    } else if (taskSummaries.length > 0) {
-      let minStart: string | undefined = undefined;
-      let maxCompl: string | undefined = undefined;
-      let hasOpeningTask = false;
-      for (let i = 0; i < taskSummaries.length; i++) {
-        const ts = taskSummaries[i];
-        if (ts.start && (!minStart || ts.start < minStart)) {
-          minStart = ts.start;
-        }
-        if (ts.finish && (!maxCompl || ts.finish > maxCompl)) {
-          maxCompl = ts.finish;
-        }
-        const name = ts.name ? String(ts.name).toLowerCase() : "";
-        if ((name.includes("opening") || name.includes("open")) && ts.finish) {
-          if (!hasOpeningTask || ts.finish > computedOpening) {
-            computedOpening = ts.finish;
-            hasOpeningTask = true;
-          }
-        }
-      }
-      if (minStart) computedTakStart = minStart;
-      if (maxCompl) computedTakCompl = maxCompl;
-      if (!hasOpeningTask && p.openingMode !== 'manual') {
-        computedOpening = '';
-      }
-    }
+    const { computedTakStart, computedTakCompl, computedOpening } = isAuthoritativeRealTasks && projectTasks.length > 0
+      ? resolveProjectDatesFromSource(p, projectTasks, true)
+      : (taskSummaries.length > 0 ? resolveProjectDatesFromSource(p, taskSummaries, false) : {
+          computedTakStart: p.computedTakStart || p.start,
+          computedTakCompl: p.computedTakCompl || p.handover || (p as any).takCompl || undefined,
+          computedOpening: p.computedOpening || (p.openingMode === 'manual' ? p.opening : ''),
+        });
 
     const planProgressPercent = isAuthoritativeRealTasks && projectTasks.length > 0 
       ? computePlanProgressPercent(projectTasks)
@@ -457,44 +410,7 @@ export function enrichProjects(
     return enriched;
   });
 
-  const statusPriority: Record<string, number> = {
-    'On process': 1, 'Handover': 2, 'Upcoming': 3, 'Completed': 4, 'Canceled': 5
-  };
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayTime = today.getTime();
-
-  // Pre-compute finish timestamps in O(P) for 'On process' projects before sorting
-  const onProcessFinishDiffMap = new WeakMap<Project, number>();
-  for (let i = 0; i < enrichedProjects.length; i++) {
-    const ep = enrichedProjects[i];
-    if ((ep.computedStatus || 'Upcoming') === 'On process') {
-      const parsed = parseDateTime(ep.computedTakCompl || ep.computedOpening || ep.opening || '9999-12-31');
-      if (parsed) onProcessFinishDiffMap.set(ep, Math.abs(parsed.getTime() - todayTime));
-    }
-  }
-
-  enrichedProjects.sort((a, b) => {
-    const statusA = a.computedStatus || 'Upcoming';
-    const statusB = b.computedStatus || 'Upcoming';
-    const priorityA = statusPriority[statusA] || 99;
-    const priorityB = statusPriority[statusB] || 99;
-    if (priorityA !== priorityB) return priorityA - priorityB;
-
-    if (statusA === 'On process') {
-      const diffA = onProcessFinishDiffMap.get(a);
-      const diffB = onProcessFinishDiffMap.get(b);
-      if (diffA !== undefined && diffB !== undefined && diffA !== diffB) return diffA - diffB;
-    }
-
-    const startA = a.computedTakStart || '9999-12-31';
-    const startB = b.computedTakStart || '9999-12-31';
-    if (startA < startB) return -1;
-    if (startA > startB) return 1;
-
-    return String(a.code || '').localeCompare(String(b.code || '')) || String(a.year || '').localeCompare(String(b.year || ''));
-  });
+  sortEnrichedProjects(enrichedProjects);
 
   if (_enrichCacheRing.length >= ENRICH_CACHE_MAX) _enrichCacheRing.shift();
   _enrichCacheRing.push({

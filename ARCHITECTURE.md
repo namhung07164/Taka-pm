@@ -176,6 +176,7 @@ Khi nhận bất kỳ yêu cầu sửa lỗi (hotfix), tối ưu hiệu năng ho
    - Bất kỳ file component, hook hoặc service nào nếu sau khi viết vượt quá **500 dòng**, bắt buộc phải băm nhỏ/tách submodule độc lập ngay lập tức.
    - Đảm bảo 100% nhãn, tiêu đề, trạng thái trên UI bằng tiếng Anh chuyên nghiệp chuẩn Enterprise.
 
-5. **Bước 5: Đồng Bộ Mã Nguồn (`AGENTS.md` Rule 13)**:
-   - Sau khi hoàn thành và chạy `compile_applet` / `lint_applet` thành công, đồng bộ ngay các file sửa/tạo mới vào `TAKASHIMAYA_FULL_SOURCE.txt`.
-   - Không spam log hoặc sửa các file tài liệu khác ngoài mã nguồn.
+5. **Bước 5: Kiểm Tra Biên Dịch & Kỷ Luật Không Spam Tài Liệu (`AGENTS.md` Rule 13)**:
+   - Sau khi hoàn thành, bắt buộc chạy `lint_applet` (`tsc --noEmit`) và `compile_applet` để xác minh 0 lỗi.
+   - Tuyệt đối không tự động viết log, tóm tắt, hay cập nhật các file tài liệu ngoài mã nguồn.
+

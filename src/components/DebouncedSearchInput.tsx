@@ -1,14 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, startTransition } from 'react';
 import { Search, X, Sparkles } from 'lucide-react';
-import {
-  cn,
-  getRecentSearches,
-  addRecentSearch,
-  removeRecentSearch,
-  clearRecentSearches,
-  stripSearchAccents,
-} from '../lib/utils';
+import { cn } from '../lib/utils';
 import { SearchAssistantPopover } from './SearchParts/SearchAssistantPopover';
+import { useSearchAssistant } from './SearchParts/useSearchAssistant';
 
 interface DebouncedSearchInputProps {
   value: string;
@@ -54,8 +48,6 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
   const isFocusedRef = useRef(false);
   const lastCommittedRef = useRef(value || '');
 
-  // Automatically disable assistant popover if custom onFocus is provided (e.g., LayoutTab unit suggestions)
-  // or inside CommandPaletteModal (debounceMs === 180) unless explicitly enabled via showAssistant.
   const isAssistantEnabled = useMemo(() => {
     if (showAssistant !== undefined) return showAssistant;
     if (onFocus) return false;
@@ -66,22 +58,66 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
   const [hasValue, setHasValue] = useState(() => Boolean(value));
   const hasValueRef = useRef(hasValue);
   const [isFocused, setIsFocused] = useState(false);
-  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
-  const [showSyntaxTips, setShowSyntaxTips] = useState(false);
-  const [filterTextForHistory, setFilterTextForHistory] = useState(() => value || '');
-  const [recentSearches, setRecentSearches] = useState<string[]>(() => getRecentSearches());
-  const [activeRecentIdx, setActiveRecentIdx] = useState<number>(-1);
 
-  const matchingRecentSearches = useMemo(() => {
-    const q = stripSearchAccents(filterTextForHistory);
-    if (!q) return recentSearches.slice(0, 5);
-    return recentSearches
-      .filter((item) => {
-        const normItem = stripSearchAccents(item);
-        return normItem.includes(q) && normItem !== q;
-      })
-      .slice(0, 5);
-  }, [recentSearches, filterTextForHistory]);
+  const handleHasValueChange = useCallback((nextHas: boolean) => {
+    if (hasValueRef.current !== nextHas) {
+      hasValueRef.current = nextHas;
+      setHasValue(nextHas);
+    }
+  }, []);
+
+  const commitValueImmediately = useCallback(
+    (val: string, saveToHistory = false) => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      if (inputRef.current && inputRef.current.value !== val) {
+        inputRef.current.value = val;
+      }
+      handleHasValueChange(val.length > 0);
+      assistant.setFilterTextForHistory(val);
+      if (saveToHistory && isAssistantEnabled && val.trim().length >= 2) {
+        assistant.closeAssistantOnBlur(val);
+      }
+      if (val !== lastCommittedRef.current) {
+        lastCommittedRef.current = val;
+        startTransition(() => {
+          onChange(val);
+        });
+      }
+    },
+    [onChange, isAssistantEnabled, handleHasValueChange]
+  );
+
+  const scheduleDebounce = useCallback((val: string) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      assistant.setFilterTextForHistory(val);
+      if (val !== lastCommittedRef.current) {
+        lastCommittedRef.current = val;
+        startTransition(() => {
+          onChange(val);
+        });
+        if (isAssistantEnabled && val.trim().length >= 2) {
+          if (historyCommitTimerRef.current) clearTimeout(historyCommitTimerRef.current);
+          historyCommitTimerRef.current = setTimeout(() => {
+            historyCommitTimerRef.current = null;
+            assistant.closeAssistantOnBlur(val);
+          }, 1400);
+        }
+      }
+    }, effectiveDelay);
+  }, [effectiveDelay, isAssistantEnabled, onChange]);
+
+  const assistant = useSearchAssistant({
+    inputRef,
+    isAssistantEnabled,
+    commitValueImmediately,
+    scheduleDebounce,
+    onHasValueChange: handleHasValueChange,
+  });
 
   // Sync external changes (e.g. clear filters, tab changes, external reset)
   useEffect(() => {
@@ -92,16 +128,12 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
         if (!isFocusedRef.current || propVal === '') {
           inputRef.current.value = propVal;
           lastCommittedRef.current = propVal;
-          setFilterTextForHistory(propVal);
-          const nextHas = Boolean(propVal);
-          if (hasValueRef.current !== nextHas) {
-            hasValueRef.current = nextHas;
-            setHasValue(nextHas);
-          }
+          assistant.setFilterTextForHistory(propVal);
+          handleHasValueChange(Boolean(propVal));
         }
       }
     }
-  }, [value]);
+  }, [value, assistant, handleHasValueChange]);
 
   // Global "/" shortcut to focus the primary visible search input on the page
   useEffect(() => {
@@ -120,11 +152,10 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
       }
       const el = inputRef.current;
       if (!el || el.offsetParent === null) return;
-      // Only let the first visible search input on screen handle "/"
       const allVisibleInputs = Array.from(
         document.querySelectorAll<HTMLInputElement>('input[data-smart-search-bar="true"]')
-      ).filter((node) => node.offsetParent !== null && !node.disabled);
-      if (allVisibleInputs[0] === el) {
+      ).filter((inp) => inp.offsetParent !== null);
+      if (allVisibleInputs.length > 0 && allVisibleInputs[0] === el) {
         e.preventDefault();
         el.focus();
         el.select();
@@ -137,79 +168,15 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
   // Clean up pending timers on unmount
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      if (historyCommitTimerRef.current) {
-        clearTimeout(historyCommitTimerRef.current);
-        historyCommitTimerRef.current = null;
-      }
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (historyCommitTimerRef.current) clearTimeout(historyCommitTimerRef.current);
     };
   }, []);
 
-  const recordToHistoryDeferred = useCallback((val: string) => {
-    if (!isAssistantEnabled) return;
-    if (historyCommitTimerRef.current) clearTimeout(historyCommitTimerRef.current);
-    const trimmed = val.trim();
-    if (trimmed.length < 2) return;
-    historyCommitTimerRef.current = setTimeout(() => {
-      historyCommitTimerRef.current = null;
-      setRecentSearches(addRecentSearch(trimmed));
-    }, 1400);
-  }, [isAssistantEnabled]);
-
-  const commitValueImmediately = useCallback(
-    (val: string, saveToHistory = false) => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      if (inputRef.current && inputRef.current.value !== val) {
-        inputRef.current.value = val;
-      }
-      const nextHas = val.length > 0;
-      if (hasValueRef.current !== nextHas) {
-        hasValueRef.current = nextHas;
-        setHasValue(nextHas);
-      }
-      setFilterTextForHistory(val);
-      if (saveToHistory && isAssistantEnabled && val.trim().length >= 2) {
-        setRecentSearches(addRecentSearch(val.trim()));
-      }
-      if (val !== lastCommittedRef.current) {
-        lastCommittedRef.current = val;
-        startTransition(() => {
-          onChange(val);
-        });
-      }
-    },
-    [onChange, isAssistantEnabled]
-  );
-
-  const scheduleDebounce = (val: string) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null;
-      setFilterTextForHistory(val);
-      if (val !== lastCommittedRef.current) {
-        lastCommittedRef.current = val;
-        startTransition(() => {
-          onChange(val);
-        });
-        recordToHistoryDeferred(val);
-      }
-    }, effectiveDelay);
-  };
-
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
-    const nextHas = val.length > 0;
-    if (nextHas !== hasValueRef.current) {
-      hasValueRef.current = nextHas;
-      setHasValue(nextHas);
-    }
-    setActiveRecentIdx(-1);
+    handleHasValueChange(val.length > 0);
+    assistant.setActiveRecentIdx(-1);
 
     if (!isComposingRef.current) {
       scheduleDebounce(val);
@@ -229,30 +196,19 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
   const handleInternalFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     isFocusedRef.current = true;
     setIsFocused(true);
-    if (isAssistantEnabled) {
-      setRecentSearches(getRecentSearches());
-      setFilterTextForHistory(inputRef.current?.value || '');
-      setIsPopoverOpen(true);
-      setActiveRecentIdx(-1);
-    }
+    assistant.openAssistantOnFocus(inputRef.current?.value || '');
     onFocus?.(e);
   };
 
   const handleInternalBlur = (e: React.FocusEvent<HTMLInputElement>) => {
     isFocusedRef.current = false;
     setIsFocused(false);
-    setIsPopoverOpen(false);
-    setShowSyntaxTips(false);
-    setActiveRecentIdx(-1);
-
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
     const val = inputRef.current?.value || '';
-    if (isAssistantEnabled && val.trim().length >= 2) {
-      setRecentSearches(addRecentSearch(val.trim()));
-    }
+    assistant.closeAssistantOnBlur(val);
     if (val !== lastCommittedRef.current) {
       lastCommittedRef.current = val;
       startTransition(() => {
@@ -263,53 +219,26 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
   };
 
   const handleInternalKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (isAssistantEnabled && isPopoverOpen && matchingRecentSearches.length > 0) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setActiveRecentIdx((prev) =>
-          prev < matchingRecentSearches.length - 1 ? prev + 1 : 0
-        );
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setActiveRecentIdx((prev) =>
-          prev > 0 ? prev - 1 : matchingRecentSearches.length - 1
-        );
-        return;
-      }
+    if (assistant.handleAssistantKeyDown(e)) {
+      return;
     }
 
     if (e.key === 'Enter') {
-      if (
-        isAssistantEnabled &&
-        isPopoverOpen &&
-        activeRecentIdx >= 0 &&
-        activeRecentIdx < matchingRecentSearches.length
-      ) {
-        e.preventDefault();
-        const chosen = matchingRecentSearches[activeRecentIdx];
-        commitValueImmediately(chosen, true);
-        setIsPopoverOpen(false);
-        setActiveRecentIdx(-1);
-        return;
-      }
-
       const val = inputRef.current?.value || '';
       commitValueImmediately(val, true);
-      setIsPopoverOpen(false);
+      assistant.setIsPopoverOpen(false);
     } else if (e.key === 'Escape') {
       const currentVal = inputRef.current?.value || '';
       if (currentVal.length > 0) {
         e.preventDefault();
         e.stopPropagation();
         commitValueImmediately('', false);
-        setIsPopoverOpen(false);
+        assistant.setIsPopoverOpen(false);
         return;
       }
-      if (isPopoverOpen) {
+      if (assistant.isPopoverOpen) {
         e.preventDefault();
-        setIsPopoverOpen(false);
+        assistant.setIsPopoverOpen(false);
         inputRef.current?.blur();
         return;
       }
@@ -323,68 +252,6 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
     commitValueImmediately('', false);
     inputRef.current?.focus();
   };
-
-  const handleSelectRecent = useCallback(
-    (query: string) => {
-      commitValueImmediately(query, true);
-      setIsPopoverOpen(false);
-      setActiveRecentIdx(-1);
-    },
-    [commitValueImmediately]
-  );
-
-  const handleRemoveRecent = useCallback((query: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setRecentSearches(removeRecentSearch(query));
-  }, []);
-
-  const handleClearAllRecent = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setRecentSearches(clearRecentSearches());
-  }, []);
-
-  const handleInsertOperator = useCallback(
-    (operatorType: 'and' | 'or' | 'exact' | 'exclude') => {
-      const el = inputRef.current;
-      if (!el) return;
-      const cur = el.value;
-      let next = cur;
-
-      if (operatorType === 'and') {
-        next = cur.trim() ? `${cur.trimEnd()} + ` : '';
-      } else if (operatorType === 'or') {
-        next = cur.trim() ? `${cur.trimEnd()}, ` : '';
-      } else if (operatorType === 'exclude') {
-        next = cur.trim() ? `${cur.trimEnd()} -` : '-';
-      } else if (operatorType === 'exact') {
-        const trimmed = cur.trim();
-        if (trimmed && !trimmed.startsWith('"')) {
-          next = `"${trimmed}"`;
-        } else {
-          next = cur ? `${cur} ""` : '""';
-        }
-      }
-
-      el.value = next;
-      const nextHas = next.length > 0;
-      if (hasValueRef.current !== nextHas) {
-        hasValueRef.current = nextHas;
-        setHasValue(nextHas);
-      }
-      setFilterTextForHistory(next);
-      el.focus();
-      if (operatorType === 'exact' && next.endsWith('""')) {
-        const pos = next.length - 1;
-        el.setSelectionRange(pos, pos);
-      } else {
-        el.setSelectionRange(next.length, next.length);
-      }
-      scheduleDebounce(next);
-    },
-    []
-  );
 
   return (
     <div
@@ -424,7 +291,6 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
         data-global-search-input={dataGlobalSearch}
         data-smart-search-bar={isAssistantEnabled ? 'true' : undefined}
         className={cn(
-          // text-[16px] prevents iOS Safari viewport auto-zoom & jitter on mobile devices; sm:text-xs / md:text-sm for desktop
           'w-full pl-9 pr-14 py-1.5 sm:py-2 text-[16px] sm:text-xs md:text-sm bg-white dark:bg-[#131314] border rounded-xl text-slate-800 dark:text-[#e3e3e3] placeholder:text-slate-400 dark:placeholder:text-[#737373] focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-blue-400/50 transition-colors duration-150 [overflow-anchor:none]',
           hasValue
             ? 'border-blue-400/80 dark:border-blue-500/60 bg-blue-50/15 dark:bg-blue-950/10'
@@ -445,14 +311,14 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
               if (!isFocusedRef.current) {
                 inputRef.current?.focus();
               }
-              setShowSyntaxTips((prev) => !prev);
-              setIsPopoverOpen(true);
+              assistant.setShowSyntaxTips((prev) => !prev);
+              assistant.setIsPopoverOpen(true);
             }}
             title="Smart search syntax & recent searches"
             aria-label="Smart search syntax"
             className={cn(
               'w-6 h-6 sm:w-6 sm:h-6 hidden sm:flex items-center justify-center rounded-md transition-colors cursor-pointer active:scale-95 touch-manipulation',
-              showSyntaxTips
+              assistant.showSyntaxTips
                 ? 'text-blue-600 dark:text-[#8ab4f8] bg-blue-100/80 dark:bg-blue-950/60'
                 : 'text-slate-400 hover:text-blue-600 dark:text-[#838383] dark:hover:text-[#8ab4f8] hover:bg-slate-100 dark:hover:bg-[#28282a]'
             )}
@@ -487,16 +353,16 @@ export const DebouncedSearchInput: React.FC<DebouncedSearchInputProps> = ({
       {/* Recent Searches & Smart Syntax Popover */}
       {isAssistantEnabled && (
         <SearchAssistantPopover
-          isOpen={isPopoverOpen}
-          recentSearches={matchingRecentSearches}
-          activeIndex={activeRecentIdx}
+          isOpen={assistant.isPopoverOpen}
+          recentSearches={assistant.matchingRecentSearches}
+          activeIndex={assistant.activeRecentIdx}
           hasText={hasValue}
-          showSyntaxTips={showSyntaxTips}
-          onSelectRecent={handleSelectRecent}
-          onRemoveRecent={handleRemoveRecent}
-          onClearAllRecent={handleClearAllRecent}
-          onInsertOperator={handleInsertOperator}
-          onSetActiveIndex={setActiveRecentIdx}
+          showSyntaxTips={assistant.showSyntaxTips}
+          onSelectRecent={assistant.handleSelectRecent}
+          onRemoveRecent={assistant.handleRemoveRecent}
+          onClearAllRecent={assistant.handleClearAllRecent}
+          onInsertOperator={assistant.handleInsertOperator}
+          onSetActiveIndex={assistant.setActiveRecentIdx}
         />
       )}
     </div>

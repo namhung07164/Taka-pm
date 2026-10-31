@@ -76,16 +76,9 @@
 - **Thư Viện Nặng & Code Splitting**: Cấm import tĩnh các thư viện nặng (`xlsx`, `html2canvas`, `konva`, `jspdf`) vào bundle chính. Bắt buộc dùng `await import(...)` hoặc `React.lazy` để file bundle chính luôn dưới 1MB, tối ưu thời gian khởi động (FCP) trên máy POS/di động.
 - **Form Sub-Components**: Form phức tạp tách thành các component con bọc `React.memo` để gõ phím không re-render cả modal.
 
-## 13. Quy Chuẩn Đồng Bộ Source Code (Single Source of Truth)
+## 13. Quy Chuẩn Không Cập Nhật Tài Liệu Lắt Nhắt (No Docs Spam)
+- 🛑 **CẤM Tự Động Viết Log/Tài Liệu**: Tuyệt đối KHÔNG tự động viết log, tóm tắt, hay cập nhật các file tài liệu (như `manual_usual.md`, `README.md`, v.v.) sau mỗi lần sửa/viết code. Việc thay đổi tính năng chỉ được phản ánh trực tiếp vào mã nguồn.
 
-1. 🛑 CẤM Cập Nhật Tài Liệu Lắt Nhắt (No Docs Spam)
-Tuyệt đối KHÔNG tự động viết log, tóm tắt, hay cập nhật các file tài liệu (như `manual_usual.md`, `README.md`, v.v.) sau mỗi lần sửa/viết code. Việc thay đổi tính năng chỉ được phản ánh trực tiếp vào code.
-
-2. 🔄 Cập Nhật Thẳng Vào Mã Nguồn Gốc (Update The Source)
-Sau mỗi lần tái cấu trúc, băm nhỏ file, hoặc viết thêm tính năng mới thành công, AI bắt buộc phải cập nhật (ghi đè đoạn code cũ bằng đoạn code mới) trực tiếp vào file `TAKASHIMAYA_FULL_SOURCE.txt`.
-
-3. 🎯 Nguyên Tắc "Single Source of Truth"
-File `TAKASHIMAYA_FULL_SOURCE.txt` đóng vai trò là kho lưu trữ trung tâm duy nhất chứa trạng thái code hiện tại. Bất kỳ Agent nào trước khi bắt tay vào sửa logic đều phải đảm bảo mã nguồn trong file này luôn đồng bộ với các thay đổi mới nhất để không ghi đè làm mất các bản vá lỗi (hotfix) hoặc các module vừa được tách nhỏ.
 
 ## 14. Local-First & Delta Synchronization Architecture (Dexie & Delta Pipeline)
 - **Primary Storage (Dexie.js / IndexedDB)**: Coi `src/lib/localDb.ts` (`TakaLocalDB`) và in-memory Zustand là Primary Data Source cho client. Khi boot app, luôn ưu tiên đọc cache Dexie (`bootstrapLocalStore()`) nạp ngay 100% dữ liệu trong 5ms – 10ms, triệt tiêu hoàn toàn loading spinner.
