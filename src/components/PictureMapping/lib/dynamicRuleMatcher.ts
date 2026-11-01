@@ -9,6 +9,7 @@ export interface DynamicUnitSummaryItem {
   // Real-time App Project Data (Strictly from Zustand tasks & projects)
   hasAppProject: boolean;
   appProjectCode: string;
+  appProjectName?: string;
   projectName: string;
   appProjectStatus: string; // 'On process' | 'Upcoming' | 'Completed' | 'Delay' | ''
   appProjectYear: string;
@@ -79,6 +80,8 @@ export function matchSingleRule(rule: GroupRule, data: DynamicUnitSummaryItem): 
       val = data.unitName || '';
     } else if (f === 'appprojectcode' || f === 'app: project code' || f === 'appcode') {
       val = data.hasAppProject ? (data.appProjectCode || '') : '';
+    } else if (f === 'appprojectname' || f === 'appname' || f === 'app: project name' || f === 'app: name' || f === 'projectname' || f === 'project name') {
+      val = data.hasAppProject ? (data.appProjectName || data.projectName || '') : '';
     } else if (f === 'mdstatus') {
       val = data.hasAppProject ? (data.appProjectMdStatus || '') : (data.mdStatus || '');
     } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {

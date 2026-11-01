@@ -13,6 +13,8 @@ export function matchRuleAgainstData(rule: GroupRule, data: Record<string, any>)
     val = data.hasAppProject ? (data.appProjectYear || '') : '';
   } else if (f === 'appprojectcode' || f === 'appcode' || f === 'app: project code') {
     val = data.hasAppProject ? (data.appProjectCode || '') : '';
+  } else if (f === 'appprojectname' || f === 'appname' || f === 'app: project name' || f === 'app: name' || f === 'projectname' || f === 'project name') {
+    val = data.hasAppProject ? (data.appProjectName || data.projectName || '') : '';
   } else if (f === 'appprojectfloor' || f === 'appfloor' || f === 'app: floor') {
     val = data.hasAppProject ? (data.location || data.floor || '') : '';
   } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {

@@ -240,7 +240,14 @@ export const DynamicUnitSummaryTable: React.FC<DynamicUnitSummaryTableProps> = R
                         </td>
                         <td className="px-3 py-2 text-slate-300">
                           {item.hasAppProject ? (
-                            <span className="font-bold text-blue-400">{item.appProjectCode}</span>
+                            <div className="flex flex-col">
+                              <span className="font-bold text-blue-400">{item.appProjectCode}</span>
+                              {item.projectName && (
+                                <span className="text-[10px] text-slate-400 font-sans truncate max-w-[160px]" title={item.projectName}>
+                                  {item.projectName}
+                                </span>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-slate-600">-</span>
                           )}

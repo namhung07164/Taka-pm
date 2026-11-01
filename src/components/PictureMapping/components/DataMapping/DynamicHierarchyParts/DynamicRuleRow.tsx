@@ -7,6 +7,7 @@ export const normalizeRuleField = (f: string) => {
   if (f === "appTask" || f === "app: task" || f === "app: task summarize" || f === "app: task summaries" || f === "app: tasks" || f === "taskSummaries" || f === "taskSummarize") return "appTask";
   if (f === "appYear" || f === "app: year") return "appProjectYear";
   if (f === "appCode" || f === "app: project code") return "appProjectCode";
+  if (f === "appProjectName" || f === "appName" || f === "app: project name" || f === "app: name" || f === "projectName") return "appProjectName";
   if (f === "appFloor" || f === "app: floor") return "appProjectFloor";
   if (f === "appMdStatus" || f === "app: md status" || f === "app:md status") return "appProjectMdStatus";
   if (f === "appActStatus" || f === "app: act status" || f === "app:act status") return "appProjectActStatus";
@@ -144,6 +145,7 @@ export const DynamicRuleRow = memo(function DynamicRuleRow({
           <option value="appProjectActual">App: Actual</option>
           <option value="appProjectSizeM2">App: Size (m²)</option>
           <option value="appProjectShopType">App: Shop Type</option>
+          <option value="appProjectName">App: Project Name</option>
           <option value="appProjectCode">App: Project Code</option>
           <option value="appProjectYear">App: Year</option>
         </optgroup>

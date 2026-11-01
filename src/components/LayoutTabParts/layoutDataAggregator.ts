@@ -287,6 +287,7 @@ export function buildAggregatedUnitData({
           dataMap[code].floor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
           dataMap[code].appProjectFloor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
           dataMap[code].appFloor = (p as any).floor || p.location || dataMap[code].floor || targetLoc || '';
+          dataMap[code].appProjectName = p.name || "";
           dataMap[code].projectName = p.name || "";
           dataMap[code].startDate = p.start || p.computedTakStart || "";
           dataMap[code].handoverDate = p.handover || p.computedTakCompl || "";

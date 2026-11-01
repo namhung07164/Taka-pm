@@ -70,6 +70,8 @@ export function matchRulesAgainstUnit(unit: UnitShape, rules: GroupRule[] | unde
       val = data.hasAppProject ? (data.appProjectYear || '') : '';
     } else if (f === 'appprojectcode' || f === 'appcode' || f === 'app: project code') {
       val = data.hasAppProject ? (data.appProjectCode || '') : '';
+    } else if (f === 'appprojectname' || f === 'appname' || f === 'app: project name' || f === 'app: name' || f === 'projectname' || f === 'project name') {
+      val = data.hasAppProject ? (data.appProjectName || data.projectName || '') : '';
     } else if (f === 'appprojectfloor' || f === 'appfloor' || f === 'app: floor') {
       val = data.hasAppProject ? (data.location || data.floor || '') : '';
     } else if (f === 'appprojectmdstatus' || f === 'appmdstatus' || f === 'app: md status' || f === 'app:md status') {
@@ -345,6 +347,8 @@ export function buildDataMapForYear(targetYear: string, targetStore: 'HCM' | 'HN
         dataMap[code].appProjectBudget = p.budget || 0;
         dataMap[code].appProjectActual = p.actual || 0;
         dataMap[code].appProjectCode = String(p.code);
+        dataMap[code].appProjectName = p.name || '';
+        dataMap[code].projectName = p.name || '';
         dataMap[code].appProjectYear = pYear || normalizedTargetYear;
 
         dataMap[code].appProjectMdStatus = mdStatusStr;

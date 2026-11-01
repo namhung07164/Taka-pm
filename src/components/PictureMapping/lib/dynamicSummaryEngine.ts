@@ -215,6 +215,7 @@ export function useDynamicUnitSummary({
         year: effectiveYear,
         hasAppProject: false,
         appProjectCode: '',
+        appProjectName: '',
         projectName: '',
         appProjectStatus: '',
         appProjectYear: '',
@@ -360,6 +361,7 @@ export function useDynamicUnitSummary({
         if (item && !item.isRestricted) {
           item.hasAppProject = true;
           item.appProjectCode = String(p.code || code);
+          item.appProjectName = p.name || '';
           item.projectName = p.name || '';
           item.appProjectStatus = status || '';
           item.appProjectYear = pMeta.year || effectiveYear;

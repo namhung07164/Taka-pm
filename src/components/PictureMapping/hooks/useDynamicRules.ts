@@ -179,6 +179,8 @@ export function useDynamicRules(
         appProjectBudget: 0,
         appProjectActual: 0,
         appProjectCode: '',
+        appProjectName: '',
+        projectName: '',
         appProjectYear: '',
       };
     });
@@ -312,6 +314,8 @@ export function useDynamicRules(
           dataMap[code].appProjectBudget = p.budget || 0;
           dataMap[code].appProjectActual = p.actual || 0;
           dataMap[code].appProjectCode = String(p.code || code);
+          dataMap[code].appProjectName = p.name || '';
+          dataMap[code].projectName = p.name || '';
           dataMap[code].appProjectYear = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
           dataMap[code].year = pMeta.year || (p.year ? String(p.year) : String(effectiveYear));
 
