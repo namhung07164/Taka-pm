@@ -89,6 +89,25 @@ export const LayoutLegendExportMenu: React.FC<LayoutLegendExportMenuProps> = ({
           </div>
         </button>
       )}
+
+      <button
+        type="button"
+        onClick={() => {
+          onClose();
+          window.dispatchEvent(
+            new CustomEvent('taka_open_executive_deck', {
+              detail: { mode: 'floor' },
+            })
+          );
+        }}
+        className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50/70 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 text-left transition-colors cursor-pointer border border-red-200/80 dark:border-red-800/50 mt-0.5 active:scale-95"
+      >
+        <FileText className="w-3.5 h-3.5 shrink-0 text-red-600 dark:text-red-400" />
+        <div>
+          <div className="font-bold">1-Click Executive Deck</div>
+          <div className="text-[10px] text-red-600/80 dark:text-red-300/80 font-normal">A4 Landscape Project/Floor One-Pager</div>
+        </div>
+      </button>
     </div>
   );
 };

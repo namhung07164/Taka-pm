@@ -95,6 +95,15 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
     setSelectedPresetId(presetId);
     if (presetId === "none") return;
 
+    if (presetId === "preset-executive-one-pager") {
+      window.dispatchEvent(
+        new CustomEvent("taka_open_executive_deck", {
+          detail: { mode: activeTab === "layout" ? "floor" : "project" },
+        })
+      );
+      return;
+    }
+
     const allPresets = [...BUILT_IN_PRESETS, ...customPresets];
     const found = allPresets.find(p => p.id === presetId);
     if (found) {
@@ -440,19 +449,36 @@ export const PrintOptionsPanel: React.FC<PrintOptionsPanelProps> = React.memo(({
         )}
       </div>
 
-      <button 
-        onClick={printTarget === 'excel' ? onExportToExcel : onPrintToPDF}
-        className="mt-1 w-full bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-600 dark:hover:bg-blue-500 py-2 rounded-md text-sm font-bold transition-colors shadow-sm active:scale-95 touch-manipulation flex items-center justify-center gap-2 cursor-pointer"
-        disabled={isExportingPDF}
-      >
-        {isExportingPDF 
-          ? "Processing..." 
-          : printTarget === 'excel' 
-          ? "Export to Excel" 
-          : printTarget === 'browser' 
-          ? "Open Browser Print" 
-          : "Download PDF"}
-      </button>
+      <div className="flex flex-col gap-1.5 mt-1">
+        <button 
+          onClick={printTarget === 'excel' ? onExportToExcel : onPrintToPDF}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-600 dark:hover:bg-blue-500 py-2 rounded-md text-sm font-bold transition-colors shadow-sm active:scale-95 touch-manipulation flex items-center justify-center gap-2 cursor-pointer"
+          disabled={isExportingPDF}
+        >
+          {isExportingPDF 
+            ? "Processing..." 
+            : printTarget === 'excel' 
+            ? "Export to Excel" 
+            : printTarget === 'browser' 
+            ? "Open Browser Print" 
+            : "Download PDF"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("taka_open_executive_deck", {
+                detail: { mode: activeTab === "layout" ? "floor" : "project" },
+              })
+            )
+          }
+          className="w-full bg-red-600 hover:bg-red-700 text-white py-2 rounded-md text-xs font-extrabold transition-colors shadow-sm active:scale-95 touch-manipulation flex items-center justify-center gap-1.5 cursor-pointer"
+          title="Open 1-Click Executive Project One-Pager (A4 Landscape PDF/Slide)"
+        >
+          <span>1-Click Executive Deck (A4 Slide)</span>
+        </button>
+      </div>
     </motion.div>
   );
 });

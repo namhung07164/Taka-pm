@@ -16,6 +16,20 @@ export interface PrintPreset {
 
 export const BUILT_IN_PRESETS: PrintPreset[] = [
   {
+    id: "preset-executive-one-pager",
+    name: "1-Click Executive One-Pager (A4 Landscape)",
+    isBuiltIn: true,
+    target: "pdf",
+    orientation: "landscape",
+    paperSize: "A4",
+    scaleMode: "fit-page",
+    dpi: 200,
+    watermark: "none",
+    filterHeader: true,
+    showDate: true,
+    rangeType: "entire"
+  },
+  {
     id: "preset-weekly-report",
     name: "Weekly Report",
     isBuiltIn: true,

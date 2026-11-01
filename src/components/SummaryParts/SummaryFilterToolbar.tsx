@@ -1,5 +1,5 @@
 import React, { FC, memo } from 'react';
-import { Filter, LayoutDashboard, LineChart } from 'lucide-react';
+import { Filter, LayoutDashboard, LineChart, FileText } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useLanguage } from '../../lib/LanguageContext';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
@@ -46,12 +46,12 @@ export const SummaryFilterToolbar: React.FC<SummaryFilterToolbarProps> = React.m
     <>
       {/* Sub-tab Navigation: Project Summary vs Executive Financial Dashboard */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-2 border-b border-slate-200 dark:border-[#333336] print:hidden hide-on-actual-print">
-        <div className="flex items-center gap-2 bg-slate-200/70 dark:bg-[#28282a] p-1.5 rounded-2xl">
+        <div className="flex flex-wrap items-center gap-2 bg-slate-200/70 dark:bg-[#28282a] p-1.5 rounded-2xl">
           <button
             type="button"
             onClick={() => setActiveSubTab('project_summary')}
             className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all',
+              'flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer',
               activeSubTab === 'project_summary'
                 ? 'bg-white dark:bg-[#1e1e20] text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -64,7 +64,7 @@ export const SummaryFilterToolbar: React.FC<SummaryFilterToolbarProps> = React.m
             type="button"
             onClick={() => setActiveSubTab('exec_dashboard')}
             className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all',
+              'flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer',
               activeSubTab === 'exec_dashboard'
                 ? 'bg-white dark:bg-[#1e1e20] text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -75,10 +75,27 @@ export const SummaryFilterToolbar: React.FC<SummaryFilterToolbarProps> = React.m
           </button>
         </div>
 
-        <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-          {activeSubTab === 'project_summary'
-            ? 'Báo cáo tổng hợp số lượng dự án & ngân sách theo kỳ'
-            : 'Dashboard điều hành: Quản trị giá trị thu được (EVM) & Dự báo dòng tiền (Cashflow)'}
+        <div className="flex items-center gap-3 ml-auto">
+          <button
+            type="button"
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent('taka_open_executive_deck', {
+                  detail: {
+                    mode: 'project',
+                    store: effectiveStore,
+                    year: globalYearFilter,
+                    location: globalLocationFilter.length === 1 ? globalLocationFilter[0] : 'all',
+                  },
+                })
+              )
+            }
+            className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-extrabold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 touch-manipulation shrink-0"
+            title="Generate 1-Click Executive Project One-Pager (A4 Landscape PDF/Slide)"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>1-Click Executive Deck (A4)</span>
+          </button>
         </div>
       </div>
 

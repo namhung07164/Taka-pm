@@ -27,6 +27,13 @@ const FaqChatbotModal = lazyWithRetry(
     })),
   "FaqChatbotModal"
 );
+const ExecutiveDeckModal = lazyWithRetry(
+  () =>
+    import("../PrintParts/ExecutiveDeckModal").then((m) => ({
+      default: m.ExecutiveDeckModal,
+    })),
+  "ExecutiveDeckModal"
+);
 
 interface AppGlobalOverlaysProps {
   quickNavTarget: any;
@@ -66,8 +73,31 @@ export const AppGlobalOverlays: React.FC<AppGlobalOverlaysProps> = memo(
     handleCloseTour,
     isExportingPDF,
   }) => {
+    const [execDeckPayload, setExecDeckPayload] = React.useState<any | null>(null);
+    const [isExecDeckOpen, setIsExecDeckOpen] = React.useState(false);
+
+    React.useEffect(() => {
+      const handleOpenExecDeck = (e: Event) => {
+        const detail = (e as CustomEvent).detail || {};
+        setExecDeckPayload(detail);
+        setIsExecDeckOpen(true);
+      };
+      window.addEventListener("taka_open_executive_deck", handleOpenExecDeck);
+      return () => window.removeEventListener("taka_open_executive_deck", handleOpenExecDeck);
+    }, []);
+
     return (
       <>
+        {isExecDeckOpen && (
+          <Suspense fallback={null}>
+            <ExecutiveDeckModal
+              isOpen={isExecDeckOpen}
+              initialPayload={execDeckPayload}
+              onClose={() => setIsExecDeckOpen(false)}
+            />
+          </Suspense>
+        )}
+
         {quickNavTarget && (
           <Suspense fallback={null}>
             <ProjectQuickNavModal

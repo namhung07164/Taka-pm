@@ -57,31 +57,17 @@ export function HeaderMenuDrawer({
       <div className="absolute top-10 left-0 w-64 bg-white dark:bg-[#1e1e20] border border-slate-200 dark:border-[#444446] rounded-xl shadow-2xl z-[9999] overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         <div className="py-1.5">
           <button
-            onClick={() => {
-              if (currentUser.role === 'guest') onLoginClick();
-              else onLogoutClick();
-              setIsMenuOpen(false);
-            }}
+            onClick={() => { currentUser.role === 'guest' ? onLoginClick() : onLogoutClick(); setIsMenuOpen(false); }}
             className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-bold hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446] mb-1 cursor-pointer"
           >
-            <span
-              className={cn(
-                'w-2 h-2 rounded-full',
-                currentUser.role === 'guest'
-                  ? 'bg-slate-300 dark:bg-slate-600'
-                  : 'bg-emerald-500'
-              )}
-            />
+            <span className={cn('w-2 h-2 rounded-full', currentUser.role === 'guest' ? 'bg-slate-300 dark:bg-slate-600' : 'bg-emerald-500')} />
             {currentUser.role === 'guest' ? t('Login') : t('Logout')}
           </button>
 
           {currentUser.role !== 'guest' && (
             <button
               title={t('Settings')}
-              onClick={() => {
-                onTabChange('setting');
-                setIsMenuOpen(false);
-              }}
+              onClick={() => { onTabChange('setting'); setIsMenuOpen(false); }}
               className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446] mb-1 cursor-pointer"
             >
               <Settings className="w-3.5 h-3.5 text-slate-500 dark:text-[#a3a3a3]" />
@@ -91,10 +77,7 @@ export function HeaderMenuDrawer({
 
           {currentUser.role !== 'guest' && (
             <button
-              onClick={() => {
-                onTabChange('accControl');
-                setIsMenuOpen(false);
-              }}
+              onClick={() => { onTabChange('accControl'); setIsMenuOpen(false); }}
               className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446] cursor-pointer"
             >
               {t('Acc control')}
@@ -103,10 +86,7 @@ export function HeaderMenuDrawer({
 
           {currentUser.role === 'admin' && (
             <button
-              onClick={() => {
-                onTabChange('audit');
-                setIsMenuOpen(false);
-              }}
+              onClick={() => { onTabChange('audit'); setIsMenuOpen(false); }}
               className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446] cursor-pointer"
             >
               Audit Log
@@ -114,10 +94,7 @@ export function HeaderMenuDrawer({
           )}
 
           <button
-            onClick={() => {
-              useAppStore.getState().setIsCalendarSyncModalOpen(true);
-              setIsMenuOpen(false);
-            }}
+            onClick={() => { useAppStore.getState().setIsCalendarSyncModalOpen(true); setIsMenuOpen(false); }}
             className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446] cursor-pointer"
           >
             <Calendar className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
@@ -127,9 +104,7 @@ export function HeaderMenuDrawer({
           <button
             onClick={() => {
               useAppStore.getState().setIsGanttSettingsOpen(true);
-              if (activeTab !== 'gantt') {
-                onTabChange('gantt');
-              }
+              if (activeTab !== 'gantt') onTabChange('gantt');
               setIsMenuOpen(false);
             }}
             className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center justify-between transition-colors border-b border-slate-100 dark:border-[#444446] cursor-pointer"
@@ -464,9 +439,7 @@ export function HeaderMenuDrawer({
               )}
               <button
                 onClick={() => {
-                  if (onPrintPreviewToggle) {
-                    onPrintPreviewToggle();
-                  }
+                  if (onPrintPreviewToggle) onPrintPreviewToggle();
                   setIsMenuOpen(false);
                 }}
                 className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors cursor-pointer"
@@ -474,7 +447,16 @@ export function HeaderMenuDrawer({
                 <Printer className="w-3.5 h-3.5 text-slate-500" />
                 {isPrintPreview ? 'Exit Print Preview' : 'Print Preview'}
               </button>
-
+              <button
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('taka_open_executive_deck', { detail: { mode: activeTab === 'layout' ? 'floor' : 'project' } }));
+                  setIsMenuOpen(false);
+                }}
+                className="w-full text-left px-4 py-2.5 text-xs text-red-600 dark:text-red-400 font-bold hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2.5 transition-colors cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                1-Click Executive Deck (A4)
+              </button>
               {['gantt', 'layout'].includes(activeTab) && (
                 <button
                   onClick={() => {
