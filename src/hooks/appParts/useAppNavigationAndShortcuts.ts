@@ -338,6 +338,26 @@ export function useAppNavigationAndShortcuts({
           updates.costTabSearchTerm = effectiveFilterCode || "";
           break;
         }
+        case "myWork": {
+          const focusPayload = {
+            projectId: p?.id ? String(p.id) : task?.projectId ? String(task.projectId) : undefined,
+            projectCode: p?.code || task?.projectCode || effectiveFilterCode || "",
+            projectName: p?.name || "",
+            projectStore: p?.store || task?.projectStore || "",
+            projectYear: p?.year || task?.projectYear || "",
+            taskId: task?.id ? String(task.id) : undefined,
+            taskName: task?.name || "",
+            taskCode: effectiveFilterCode || "",
+            ts: Date.now(),
+          };
+          safeSetItemSession("taka_mywork_focus", JSON.stringify(focusPayload));
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("taka-mywork-focus-changed", { detail: focusPayload }));
+          }
+          updates.isTasksRequested = true;
+          updates.isDelegationsRequested = true;
+          break;
+        }
         default:
           break;
       }

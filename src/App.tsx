@@ -366,6 +366,14 @@ export default function App() {
                       setDetailTabFilterCode("");
                       setDetailTabStoreFilter("");
                     }
+                    if (tab === "myWork") {
+                      try {
+                        sessionStorage.removeItem("taka_mywork_focus");
+                        window.dispatchEvent(new CustomEvent("taka-mywork-focus-changed", { detail: null }));
+                      } catch {
+                        // ignore storage error
+                      }
+                    }
                     handleTabChange(tab);
                   }}
                 />

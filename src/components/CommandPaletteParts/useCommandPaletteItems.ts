@@ -246,6 +246,7 @@ export function useCommandPaletteItems({
       shortcut?: string;
     }> = [
       { id: 'general', label: 'General Tab', desc: 'Project overview and master summary table', icon: LayoutDashboard, shortcut: '1' },
+      { id: 'myWork', label: 'My Work Tab', desc: 'Single-column personal focus stream & 1-click approvals', icon: CalendarCheck },
       { id: 'calendar', label: 'Calendar Tab', desc: 'Monthly project & task delivery schedule', icon: Calendar, shortcut: '2' },
       { id: 'gantt', label: 'Gantt Chart Tab', desc: 'Interactive timeline with dependencies & today pin', icon: BarChartHorizontal, shortcut: '3' },
       { id: 'detail', label: 'Task Detail Tab', desc: 'Granular task list with inline status & progress', icon: List, shortcut: '4' },

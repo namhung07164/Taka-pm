@@ -24,6 +24,7 @@ import {
   X,
   ChevronDown,
   Image,
+  CheckCircle2,
 } from "lucide-react";
 import { useLanguage } from "../lib/LanguageContext";
 import { RibbonDisplayMenu } from "./RibbonDisplayMenu";
@@ -45,7 +46,7 @@ const parentTabs: { id: ParentTabId; label: string }[] = [
 
 const childTabMap: Record<ParentTabId, TabId[]> = {
   Report: ["calendar", "layout", "summary"],
-  Index: ["general", "gantt", "detail"],
+  Index: ["general", "myWork", "gantt", "detail"],
   Financial: ["budget", "cost"],
   Delegation: ["taskDelegationCalendar", "taskDelegation"],
   Help: ["manual", "csv_export", "picture_mapping"],
@@ -165,6 +166,12 @@ export const Navigation = React.memo(function Navigation({
       label: t("General"),
       icon: LayoutDashboard,
       hidden: !canSeeModule("general"),
+    },
+    {
+      id: "myWork",
+      label: "My Work",
+      icon: CheckCircle2,
+      hidden: !(canSeeModule("general") || canSeeModule("detail") || canSeeModule("taskDelegation")),
     },
     {
       id: "gantt",

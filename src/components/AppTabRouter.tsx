@@ -10,6 +10,7 @@ import { PrintPreviewOverlay } from "./PrintPreviewOverlay";
 
 // Code Splitting - JIT Dynamic Imports for all application tabs (Rule 12)
 const GeneralTab = lazyWithRetry(() => import("./GeneralTab"), "GeneralTab");
+const MyWorkTab = lazyWithRetry(() => import("./MyWorkTab"), "MyWorkTab");
 const SummaryTab = lazyWithRetry(() => import("./SummaryTab"), "SummaryTab");
 const LayoutTab = lazyWithRetry(() => import("./LayoutTab"), "LayoutTab");
 const DetailTab = lazyWithRetry(() => import("./DetailTab"), "DetailTab");
@@ -227,6 +228,10 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = React.memo(({
                     }}
                   />
                 )}
+
+              {activeTab === "myWork" && (
+                <MyWorkTab />
+              )}
 
               {activeTab === "detail" &&
                 (currentUser.role === "admin" || permissionMatrix[userRole]?.See?.detail) && (

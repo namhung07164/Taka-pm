@@ -413,6 +413,7 @@ export function useAppNotificationsSync({
       { id: "calendar", hidden: !(canSeeModule("calendar") || canSeeModule("report")) },
       { id: "taskDelegationCalendar", hidden: !canSeeModule("taskDelegation") },
       { id: "general", hidden: !canSeeModule("general") },
+      { id: "myWork", hidden: !(canSeeModule("general") || canSeeModule("detail") || canSeeModule("taskDelegation")) },
       { id: "taskDelegation", hidden: !canSeeModule("taskDelegation") },
       { id: "detail", hidden: !canSeeModule("detail") },
       { id: "gantt", hidden: !canSeeModule("report") },
