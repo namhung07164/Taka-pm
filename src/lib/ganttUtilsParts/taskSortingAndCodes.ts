@@ -6,13 +6,68 @@ import { buildTaskNoMap, computeTaskCode, computeAllTaskCodes } from './taskCode
 export { buildTaskNoMap, computeTaskCode, computeAllTaskCodes };
 
 /**
+ * Strictly extracts an explicit 1-based subtask number from taskCodePhu,
+ * ignoring projectCode suffixes (e.g. "L1-108" -> null, "L1-108#34" -> 34).
+ */
+export function extractExplicitSubtaskNumber(
+  taskCodePhu?: string | null,
+  projectCode?: string | null
+): number | null {
+  if (!taskCodePhu) return null;
+  const str = normalizeDashes(String(taskCodePhu)).trim();
+  if (!str) return null;
+
+  const hashMatch = str.match(/#\s*(\d+)\s*$/);
+  if (hashMatch) {
+    const num = parseInt(hashMatch[1], 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  const cleanProj = projectCode ? normalizeDashes(String(projectCode)).trim() : '';
+  if (cleanProj && str.toLowerCase() === cleanProj.toLowerCase()) {
+    return null;
+  }
+
+  if (cleanProj && str.toLowerCase().startsWith(cleanProj.toLowerCase())) {
+    const remainder = str.slice(cleanProj.length).trim();
+    const remMatch = remainder.match(/^[-_.:/#\s]+(\d+)\s*$/);
+    if (remMatch) {
+      const num = parseInt(remMatch[1], 10);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    return null;
+  }
+
+  if (/^\d+$/.test(str)) {
+    const num = parseInt(str, 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  const multiHyphenMatch = str.match(/^[A-Za-z0-9]+[-_][A-Za-z0-9]+[-_.:/\s]+(\d+)\s*$/);
+  if (multiHyphenMatch) {
+    const num = parseInt(multiHyphenMatch[1], 10);
+    if (!isNaN(num) && num > 0) return num;
+  }
+
+  return null;
+}
+
+/**
  * Extracts a numeric subtask index from any taskCodePhu representation.
  * Supports "#13", "L3-304#13", "L3-304-13", "CP-01-2", "HN-TKV-SMZ2-85", "Task 13", "13", etc.
  */
-export function extractSubtaskIndex(codeOrPhu?: string | null): number | null {
+export function extractSubtaskIndex(codeOrPhu?: string | null, projectCode?: string | null): number | null {
   if (!codeOrPhu) return null;
   const str = normalizeDashes(String(codeOrPhu)).trim();
   if (!str) return null;
+
+  const explicit = extractExplicitSubtaskNumber(str, projectCode);
+  if (explicit !== null) return explicit;
+
+  const cleanProj = projectCode ? normalizeDashes(String(projectCode)).trim() : '';
+  if (cleanProj && str.toLowerCase() === cleanProj.toLowerCase()) {
+    return null;
+  }
 
   const hashMatch = str.match(/#\s*(\d+)/);
   if (hashMatch) {
@@ -37,12 +92,6 @@ export function extractSubtaskIndex(codeOrPhu?: string | null): number | null {
     if (!isNaN(num)) return num;
   }
 
-  const trailingDigitsMatch = str.match(/(\d+)\s*$/);
-  if (trailingDigitsMatch) {
-    const num = parseInt(trailingDigitsMatch[1], 10);
-    if (!isNaN(num)) return num;
-  }
-
   return null;
 }
 
@@ -53,28 +102,26 @@ export function sortGroupTasks(tasks: Task[]): Task[] {
     if (!a) return 1;
     if (!b) return -1;
 
-    const valAOrder = a.orderIndex !== undefined && a.orderIndex !== null ? Number(a.orderIndex) : null;
-    const valBOrder = b.orderIndex !== undefined && b.orderIndex !== null ? Number(b.orderIndex) : null;
+    const numA = extractExplicitSubtaskNumber(a.taskCodePhu, a.projectCode);
+    const numB = extractExplicitSubtaskNumber(b.taskCodePhu, b.projectCode);
+
+    const rawOrdA = a.orderIndex !== undefined && a.orderIndex !== null && !isNaN(Number(a.orderIndex)) ? Number(a.orderIndex) : null;
+    const rawOrdB = b.orderIndex !== undefined && b.orderIndex !== null && !isNaN(Number(b.orderIndex)) ? Number(b.orderIndex) : null;
+
+    const valAOrder = rawOrdA !== null ? rawOrdA : (numA !== null ? numA - 1 : null);
+    const valBOrder = rawOrdB !== null ? rawOrdB : (numB !== null ? numB - 1 : null);
 
     if (valAOrder !== null && valBOrder !== null && valAOrder !== valBOrder) {
       return valAOrder - valBOrder;
     }
+    if (numA !== null && numB !== null && numA !== numB) {
+      return numA - numB;
+    }
     if (valAOrder !== null && valBOrder === null) return -1;
     if (valAOrder === null && valBOrder !== null) return 1;
 
-    const codeA = a.taskCodePhu || (a.projectCode && a.orderIndex !== undefined ? `${a.projectCode}#${a.orderIndex + 1}` : a.name || '');
-    const codeB = b.taskCodePhu || (b.projectCode && b.orderIndex !== undefined ? `${b.projectCode}#${b.orderIndex + 1}` : b.name || '');
-    const numA = extractSubtaskIndex(codeA);
-    const numB = extractSubtaskIndex(codeB);
-
-    if (numA !== null && numB !== null) {
-      if (numA !== numB) return numA - numB;
-    } else if (numA !== null && numB === null) {
-      return -1;
-    } else if (numA === null && numB !== null) {
-      return 1;
-    }
-
+    const codeA = a.taskCodePhu ? String(a.taskCodePhu).trim() : '';
+    const codeB = b.taskCodePhu ? String(b.taskCodePhu).trim() : '';
     if (codeA && codeB && codeA !== codeB) {
       const codeCmp = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
       if (codeCmp !== 0) return codeCmp;

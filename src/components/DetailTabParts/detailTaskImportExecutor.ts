@@ -9,12 +9,12 @@ import {
   prepareMissingDelegationsForTasks, batchSaveTasksToFirestore
 } from '../../lib/taskImportService';
 import { healAllTasksPredecessors } from '../../lib/ganttUtils';
-import { extractSubtaskIndex } from '../../lib/ganttUtilsParts/taskSortingAndCodes';
+import { extractExplicitSubtaskNumber, extractSubtaskIndex } from '../../lib/ganttUtilsParts/taskSortingAndCodes';
 import { findAffectedProjects } from '../../lib/taskStateService';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { resolveParentChildHierarchy } from './detailTaskImportHierarchy';
 import { buildAffectedProjectsSyncOps } from './detailTaskImportProjectSync';
-import { hydrateImportContextTasks } from './detailTaskImportHydrator';
+import { hydrateImportContextTasks, lockExistingProjectTasksOrder } from './detailTaskImportHydrator';
 
 interface ExecuteImportTasksParams {
   rawParsedRowsByProject: Map<string, Array<{ rowData: any; originalCsvIndex: number }>>;
@@ -61,9 +61,12 @@ export async function executeImportTasks({
     existingTasksById.set(tsk.id, tsk);
     const prjKey = buildCanonicalProjectKey(tsk.projectCode, tsk.projectYear, tsk.projectStore, projects);
     if (tsk.name) {
-      existingTasksByName.set(`${prjKey}:::${String(tsk.name).trim().toLowerCase()}`, tsk);
+      const nameK = `${prjKey}:::${String(tsk.name).trim().toLowerCase()}`;
+      if (!existingTasksByName.has(nameK)) existingTasksByName.set(nameK, tsk);
       const norm = normalizeTaskNameForComparison(tsk.name);
-      if (norm) existingTasksByNorm.set(`${prjKey}:::norm:::${norm}`, tsk);
+      if (norm && !existingTasksByNorm.has(`${prjKey}:::norm:::${norm}`)) {
+        existingTasksByNorm.set(`${prjKey}:::norm:::${norm}`, tsk);
+      }
     }
     if (tsk.taskCodePhu) existingTasksByCode.set(`${prjKey}:::code:::${String(tsk.taskCodePhu).trim().toLowerCase()}`, tsk);
   });
@@ -72,6 +75,7 @@ export async function executeImportTasks({
   const newIds = new Set<string>();
   const tasksToImport: Task[] = [];
   const processedImportTasksMap = new Map<string, Task>();
+  const lockedExistingTasksToSave = new Map<string, Task>();
 
   // 3. Process rows project by project
   rawParsedRowsByProject.forEach((items, prjKey) => {
@@ -83,29 +87,32 @@ export async function executeImportTasks({
       return codeMatch && storeMatch && yearMatch;
     });
 
+    const exactProjCodeForGroup = String(sample?.projectCode || targetProject?.code || '').trim();
+    const canonicalGroupKey = buildCanonicalProjectKey(sample?.projectCode, sample?.projectYear, sample?.projectStore, projects);
     const projectExistingTasks = targetProject
       ? getTasksForProject(targetProject, allInitialTasks)
       : allInitialTasks.filter(t => buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects) === prjKey);
 
-    let maxExistingSubtaskNum = 0;
-    let maxExistingOrderIndex = -1;
-    projectExistingTasks.forEach(pt => {
-      if (pt.orderIndex !== undefined && pt.orderIndex !== null) {
-        const ord = Number(pt.orderIndex);
-        if (!isNaN(ord) && ord > maxExistingOrderIndex) maxExistingOrderIndex = ord;
-      }
-      if (pt.taskCodePhu) {
-        const n = extractSubtaskIndex(pt.taskCodePhu);
-        if (n !== null && n > maxExistingSubtaskNum) maxExistingSubtaskNum = n;
-      }
-    });
+    const { maxExistingSubtaskNum, maxExistingOrderIndex } = lockExistingProjectTasksOrder(
+      projectExistingTasks,
+      targetProject,
+      exactProjCodeForGroup,
+      canonicalGroupKey,
+      allInitialTasks,
+      existingTasksById,
+      existingTasksByName,
+      existingTasksByNorm,
+      existingTasksByCode,
+      lockedExistingTasksToSave,
+      previousStates
+    );
     let nextAutoNumber = Math.max(maxExistingSubtaskNum, maxExistingOrderIndex + 1);
 
     const sortedItems = [...items].sort((a, b) => {
       const codeA = String(a.rowData.taskCodePhu || '').trim();
       const codeB = String(b.rowData.taskCodePhu || '').trim();
-      const numA = extractSubtaskIndex(codeA);
-      const numB = extractSubtaskIndex(codeB);
+      const numA = extractExplicitSubtaskNumber(codeA, exactProjCodeForGroup) ?? extractSubtaskIndex(codeA, exactProjCodeForGroup);
+      const numB = extractExplicitSubtaskNumber(codeB, exactProjCodeForGroup) ?? extractSubtaskIndex(codeB, exactProjCodeForGroup);
       if (numA !== null && numB !== null) {
         if (numA !== numB) return numA - numB;
       } else if (codeA && codeB) {
@@ -131,7 +138,7 @@ export async function executeImportTasks({
       const canonicalPrjKey = buildCanonicalProjectKey(t.projectCode, t.projectYear, t.projectStore, projects);
 
       const rawCode = String(t.taskCodePhu || '').trim();
-      const explicitNum = extractSubtaskIndex(rawCode);
+      const explicitNum = extractExplicitSubtaskNumber(rawCode, exactProjectCode) ?? extractSubtaskIndex(rawCode, exactProjectCode);
       const hasExplicitSubtaskNumber = explicitNum !== null;
 
       let taskCodePhu: string;
@@ -140,9 +147,7 @@ export async function executeImportTasks({
       if (explicitNum !== null) {
         taskCodePhu = `${exactProjectCode}#${explicitNum}`;
         nextAutoNumber = Math.max(nextAutoNumber, explicitNum);
-        taskOrderIndex = t.orderIndex !== undefined && t.orderIndex !== '' && !isNaN(Number(t.orderIndex))
-          ? Number(t.orderIndex)
-          : explicitNum - 1;
+        taskOrderIndex = explicitNum - 1;
       } else if (rawCode) {
         taskCodePhu = rawCode.startsWith(exactProjectCode) ? rawCode : `${exactProjectCode}#${rawCode}`;
         nextAutoNumber += 1;
@@ -166,39 +171,24 @@ export async function executeImportTasks({
       let existing: Task | undefined = undefined;
 
       if (hasExplicitSubtaskNumber) {
-        existing = processedImportTasksMap.get(codeKey);
+        existing =
+          processedImportTasksMap.get(codeKey) ||
+          (t.id ? existingTasksById.get(t.id) : undefined) ||
+          existingTasksByCode.get(codeKey);
       } else {
-        existing = processedImportTasksMap.get(codeKey) ||
-                   processedImportTasksMap.get(nameKey) ||
-                   (normName ? processedImportTasksMap.get(normKey) : undefined);
-      }
-
-      if (!existing && t.id) {
-        existing = existingTasksById.get(t.id);
-      }
-
-      if (!existing && hasExplicitSubtaskNumber) {
-        const candidate = existingTasksByCode.get(codeKey);
-        if (candidate) {
-          const candidateNorm = normalizeTaskNameForComparison(candidate.name);
-          if (!candidateNorm || !normName || candidateNorm === normName) {
-            existing = candidate;
-          } else {
-            nextAutoNumber = Math.max(nextAutoNumber, maxExistingSubtaskNum) + 1;
-            taskCodePhu = `${exactProjectCode}#${nextAutoNumber}`;
-            taskOrderIndex = nextAutoNumber - 1;
-          }
-        }
-      }
-
-      if (!existing && !hasExplicitSubtaskNumber) {
-        if (nameKey) existing = existingTasksByName.get(nameKey);
-        if (!existing && normKey) existing = existingTasksByNorm.get(normKey);
-        if (!existing && codeKey) existing = existingTasksByCode.get(codeKey);
+        existing =
+          processedImportTasksMap.get(codeKey) ||
+          processedImportTasksMap.get(nameKey) ||
+          (normName ? processedImportTasksMap.get(normKey) : undefined) ||
+          (t.id ? existingTasksById.get(t.id) : undefined) ||
+          (nameKey ? existingTasksByName.get(nameKey) : undefined) ||
+          (normKey ? existingTasksByNorm.get(normKey) : undefined) ||
+          (codeKey ? existingTasksByCode.get(codeKey) : undefined);
       }
 
       const hasRealExistingId = Boolean(existing?.id && !String(existing.id).startsWith('ts_'));
       const id = hasRealExistingId ? existing!.id : `t_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${tasksToImport.length}`;
+      lockedExistingTasksToSave.delete(id);
 
       if (existing && hasRealExistingId) {
         if (!previousStates.has(id)) {
@@ -343,8 +333,12 @@ export async function executeImportTasks({
       processedImportTasksMap.set(nameKey, finalTask);
       if (normKey) processedImportTasksMap.set(normKey, finalTask);
       if (codeKey) processedImportTasksMap.set(codeKey, finalTask);
-      existingTasksByName.set(nameKey, finalTask);
-      if (normKey) existingTasksByNorm.set(normKey, finalTask);
+      if (!hasExplicitSubtaskNumber || !existingTasksByName.has(nameKey)) {
+        existingTasksByName.set(nameKey, finalTask);
+      }
+      if (normKey && (!hasExplicitSubtaskNumber || !existingTasksByNorm.has(normKey))) {
+        existingTasksByNorm.set(normKey, finalTask);
+      }
       existingTasksByCode.set(codeKey, finalTask);
       existingTasksById.set(finalTask.id, finalTask);
 
@@ -384,6 +378,7 @@ export async function executeImportTasks({
   const { updatedParents, allTasksMap } = rollupParentTaskDates(healedAll.updatedTasks, undefined, projects);
 
   const tasksToSaveIds = new Set<string>();
+  lockedExistingTasksToSave.forEach((_, tid) => tasksToSaveIds.add(tid));
   calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
   updatedParents.forEach(p => {
     if (p.id && !String(p.id).startsWith('ts_')) tasksToSaveIds.add(p.id);

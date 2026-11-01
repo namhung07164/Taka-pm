@@ -343,32 +343,20 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
       const existingIdLower = String(existing.id || '').trim().toLowerCase();
       const taskIdLower = taskIdStr.toLowerCase();
       const existingCleanCodePhu = String(existing.taskCodePhu || '').trim().toLowerCase().replace(/^\d+\s+/, '');
+      const tSubMatch = cleanCodePhu.match(/#\s*(\d+)\s*$/);
+      const eSubMatch = existingCleanCodePhu.match(/#\s*(\d+)\s*$/);
+      const tSubNum = tSubMatch ? parseInt(tSubMatch[1], 10) : (task.orderIndex !== undefined && task.orderIndex !== null && !isNaN(Number(task.orderIndex)) ? Number(task.orderIndex) + 1 : null);
+      const eSubNum = eSubMatch ? parseInt(eSubMatch[1], 10) : (existing.orderIndex !== undefined && existing.orderIndex !== null && !isNaN(Number(existing.orderIndex)) ? Number(existing.orderIndex) + 1 : null);
 
-      // Never merge two tasks that have distinct non-empty taskCodePhu (e.g. B1-B105#10 vs B1-B105#25)
-      if (cleanCodePhu && existingCleanCodePhu && cleanCodePhu !== existingCleanCodePhu) {
+      // Never merge two tasks that have distinct taskCodePhu or distinct subtask number / orderIndex
+      if ((cleanCodePhu && existingCleanCodePhu && cleanCodePhu !== existingCleanCodePhu) || (tSubNum !== null && eSubNum !== null && tSubNum !== eSubNum)) {
         keepAsDistinctTask();
         return;
       }
 
-      // Never merge two tasks that have distinct real Firestore IDs when one is a virtual summary or they have different orderIndex
-      const hasDistinctRealIds =
-        Boolean(taskIdLower && !taskIdLower.startsWith('ts_')) &&
-        Boolean(existingIdLower && !existingIdLower.startsWith('ts_')) &&
-        taskIdLower !== existingIdLower;
+      const hasDistinctRealIds = Boolean(taskIdLower && !taskIdLower.startsWith('ts_') && existingIdLower && !existingIdLower.startsWith('ts_') && taskIdLower !== existingIdLower);
       const isEitherVirtual = Boolean((task as any)._isVirtualSummary || (existing as any)._isVirtualSummary);
-      if (hasDistinctRealIds && isEitherVirtual) {
-        keepAsDistinctTask();
-        return;
-      }
-      if (
-        hasDistinctRealIds &&
-        task.orderIndex !== undefined &&
-        task.orderIndex !== null &&
-        existing.orderIndex !== undefined &&
-        existing.orderIndex !== null &&
-        Number(task.orderIndex) !== Number(existing.orderIndex) &&
-        (!cleanCodePhu || !existingCleanCodePhu || cleanCodePhu !== existingCleanCodePhu)
-      ) {
+      if (hasDistinctRealIds && (isEitherVirtual || Boolean(cleanCodePhu) !== Boolean(existingCleanCodePhu))) {
         keepAsDistinctTask();
         return;
       }
@@ -395,12 +383,8 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
       idRedirectMap.set(taskIdLower, existingIdLower);
       idRedirectMap.set(taskIdStr, String(existing.id).trim());
 
-      if ((!existing.comments || existing.comments.length === 0) && task.comments && task.comments.length > 0) {
-        existing.comments = task.comments;
-      }
-      if ((!existing.notes || existing.notes.length === 0) && task.notes && task.notes.length > 0) {
-        existing.notes = task.notes;
-      }
+      if ((!existing.comments || existing.comments.length === 0) && task.comments && task.comments.length > 0) existing.comments = task.comments;
+      if ((!existing.notes || existing.notes.length === 0) && task.notes && task.notes.length > 0) existing.notes = task.notes;
       if (!existing.party && task.party) existing.party = task.party;
       if (!existing.predecessor && task.predecessor) existing.predecessor = task.predecessor;
       if (!existing.delegation && task.delegation) existing.delegation = task.delegation;
@@ -414,7 +398,14 @@ export function deduplicateTasksInMemory(tasks: Task[], projects: Project[] = EM
     }
   });
 
-  const dedupedTasks = Array.from(seenMap.values());
+  const inputOrderMap = new Map<string, number>();
+  for (let i = 0; i < tasks.length; i++) {
+    const tid = tasks[i]?.id ? String(tasks[i].id).trim() : '';
+    if (tid && !inputOrderMap.has(tid)) inputOrderMap.set(tid, i);
+  }
+  const dedupedTasks = Array.from(seenMap.values()).sort(
+    (a, b) => (inputOrderMap.get(String(a.id).trim()) ?? 0) - (inputOrderMap.get(String(b.id).trim()) ?? 0)
+  );
   for (let i = 0; i < dedupedTasks.length; i++) {
     const t = dedupedTasks[i];
     const validPar = validParentByTask.get(t);

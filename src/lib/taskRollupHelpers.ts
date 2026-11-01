@@ -1,10 +1,19 @@
 import { Task } from '../types';
 import { normalizeDashes } from './utils';
 
-export function extractNumericSuffix(codeOrPhu?: string | null): number | null {
+export function extractNumericSuffix(codeOrPhu?: string | null, projectCode?: string | null): number | null {
   if (!codeOrPhu) return null;
   const str = normalizeDashes(String(codeOrPhu)).trim();
-  const m = str.match(/#\s*(\d+)/) || str.match(/[-_.:/\s]+(\d+)\s*$/) || str.match(/^(\d+)$/);
+  const cleanProj = projectCode ? normalizeDashes(String(projectCode)).trim() : '';
+  if (cleanProj && str.toLowerCase() === cleanProj.toLowerCase()) return null;
+  const hashMatch = str.match(/#\s*(\d+)\s*$/);
+  if (hashMatch) return parseInt(hashMatch[1], 10);
+  if (cleanProj && str.toLowerCase().startsWith(cleanProj.toLowerCase())) {
+    const rem = str.slice(cleanProj.length).trim();
+    const remMatch = rem.match(/^[-_.:/#\s]+(\d+)\s*$/);
+    return remMatch ? parseInt(remMatch[1], 10) : null;
+  }
+  const m = str.match(/^(\d+)$/) || str.match(/^[A-Za-z0-9]+[-_][A-Za-z0-9]+[-_.:/\s]+(\d+)\s*$/);
   return m ? parseInt(m[1], 10) : null;
 }
 
@@ -35,18 +44,16 @@ export function getPrimaryTaskScopeKey(t: Partial<Task>): string {
 }
 
 export function compareTasksForCanonicalCode(a: Task, b: Task): number {
-  const ordA = a.orderIndex !== undefined && a.orderIndex !== null ? Number(a.orderIndex) : null;
-  const ordB = b.orderIndex !== undefined && b.orderIndex !== null ? Number(b.orderIndex) : null;
+  const numA = extractNumericSuffix(a.taskCodePhu, a.projectCode);
+  const numB = extractNumericSuffix(b.taskCodePhu, b.projectCode);
+  const rawOrdA = a.orderIndex !== undefined && a.orderIndex !== null && !isNaN(Number(a.orderIndex)) ? Number(a.orderIndex) : null;
+  const rawOrdB = b.orderIndex !== undefined && b.orderIndex !== null && !isNaN(Number(b.orderIndex)) ? Number(b.orderIndex) : null;
+  const ordA = rawOrdA !== null ? rawOrdA : (numA !== null ? numA - 1 : null);
+  const ordB = rawOrdB !== null ? rawOrdB : (numB !== null ? numB - 1 : null);
   if (ordA !== null && ordB !== null && ordA !== ordB) return ordA - ordB;
+  if (numA !== null && numB !== null && numA !== numB) return numA - numB;
   if (ordA !== null && ordB === null) return -1;
   if (ordA === null && ordB !== null) return 1;
-  const codeA = a.taskCodePhu || (a.projectCode && ordA !== null ? `${a.projectCode}#${ordA + 1}` : a.name || '');
-  const codeB = b.taskCodePhu || (b.projectCode && ordB !== null ? `${b.projectCode}#${ordB + 1}` : b.name || '');
-  const numA = extractNumericSuffix(codeA);
-  const numB = extractNumericSuffix(codeB);
-  if (numA !== null && numB !== null && numA !== numB) return numA - numB;
-  if (numA !== null && numB === null) return -1;
-  if (numA === null && numB !== null) return 1;
   if (a.start && b.start && a.start !== b.start) return a.start.localeCompare(b.start);
   if (a.finish && b.finish && a.finish !== b.finish) return a.finish.localeCompare(b.finish);
   return String(a.id || '').localeCompare(String(b.id || ''));
@@ -92,7 +99,7 @@ export function deduplicateTaskSummaries(summaries: any[]): any[] {
     if (!byIndexNum.has(ord)) byIndexNum.set(ord, s);
     if (s.name) {
       const nLower = String(s.name).trim().toLowerCase().replace(/\s+/g, ' ');
-      if (nLower && (!byNameLower.has(nLower) || s.isModularParent)) byNameLower.set(nLower, s);
+      if (nLower && !byNameLower.has(nLower)) byNameLower.set(nLower, s);
     }
   }
 
@@ -159,13 +166,14 @@ export function deduplicateTaskSummaries(summaries: any[]): any[] {
       const eHasRealId = Boolean(existingIdLower && !existingIdLower.startsWith('ts_'));
       const sCode = s.taskCodePhu ? normalizeDashes(String(s.taskCodePhu)).trim().toLowerCase() : '';
       const eCode = existing.taskCodePhu ? normalizeDashes(String(existing.taskCodePhu)).trim().toLowerCase() : '';
+      const sSubNum = extractNumericSuffix(sCode) ?? (s.orderIndex !== undefined && s.orderIndex !== null ? Number(s.orderIndex) + 1 : null);
+      const eSubNum = extractNumericSuffix(eCode) ?? (existing.orderIndex !== undefined && existing.orderIndex !== null ? Number(existing.orderIndex) + 1 : null);
       const hasDistinctRealIds = sHasRealId && eHasRealId && sIdLower !== existingIdLower;
-      const hasConflictingCode = Boolean(sCode && eCode && sCode !== eCode);
+      const hasConflictingCode = Boolean((sCode && eCode && sCode !== eCode) || (sSubNum !== null && eSubNum !== null && sSubNum !== eSubNum));
       const hasConflictingOrder =
         s.orderIndex !== undefined &&
         existing.orderIndex !== undefined &&
-        Number(s.orderIndex) !== Number(existing.orderIndex) &&
-        (!sCode || !eCode || sCode !== eCode);
+        Number(s.orderIndex) !== Number(existing.orderIndex);
       const isChildOfExisting =
         (sParId && existingIdLower && sParId === existingIdLower) ||
         (eParId && sIdLower && eParId === sIdLower);

@@ -3,8 +3,10 @@ import { ensureProjectTasksLoaded } from '../../lib/taskStateService';
 import { matchProjectCode } from '../../lib/projectDatesService';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import { normalizeDashes, isTaskBelongsToProject } from '../../lib/utils';
-import { splitPredecessors } from '../../lib/ganttUtils';
+import { splitPredecessors, sortGroupTasks } from '../../lib/ganttUtils';
+import { extractExplicitSubtaskNumber } from '../../lib/ganttUtilsParts/taskSortingAndCodes';
 import { parsePredecessorToken } from '../../lib/predecessorMatchUtils';
+import { deduplicateTasksInMemory, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 
 /**
  * Ensures all existing tasks for target projects in the import file AND any external
@@ -213,4 +215,123 @@ export async function hydrateImportContextTasks(
   }
 
   return Array.from(tasksMap.values());
+}
+
+/**
+ * Freezes the current canonical order (0..N-1) and subtask codes (#1..#N) of existing tasks
+ * in a project prior to importing CSV rows so existing tasks never shift or scramble.
+ */
+export function lockExistingProjectTasksOrder(
+  projectExistingTasks: Task[],
+  targetProject: Project | undefined,
+  exactProjectCode: string,
+  canonicalPrjKey: string,
+  allInitialTasks: Task[],
+  existingTasksById: Map<string, Task>,
+  existingTasksByName: Map<string, Task>,
+  existingTasksByNorm: Map<string, Task>,
+  existingTasksByCode: Map<string, Task>,
+  lockedExistingTasksToSave: Map<string, Task>,
+  previousStates: Map<string, any>
+): { maxExistingSubtaskNum: number; maxExistingOrderIndex: number } {
+  if (!projectExistingTasks || projectExistingTasks.length === 0) {
+    return { maxExistingSubtaskNum: 0, maxExistingOrderIndex: -1 };
+  }
+
+  const { dedupedTasks } = deduplicateTasksInMemory(
+    projectExistingTasks,
+    targetProject ? [targetProject] : []
+  );
+  const orderedExisting = sortGroupTasks(dedupedTasks);
+
+  const tsIdRedirect = new Map<string, string>();
+  orderedExisting.forEach((pt, idx) => {
+    const oldId = String(pt.id || '');
+    if (oldId.startsWith('ts_') || (pt as any)._isVirtualSummary) {
+      const realId = `t_${Date.now()}_lock_${idx}_${Math.random().toString(36).slice(2, 7)}`;
+      tsIdRedirect.set(oldId, realId);
+    }
+  });
+
+  const initialIdxById = new Map<string, number>();
+  allInitialTasks.forEach((t, i) => {
+    if (t?.id) initialIdxById.set(String(t.id), i);
+  });
+
+  let maxExistingSubtaskNum = orderedExisting.length;
+  let maxExistingOrderIndex = orderedExisting.length - 1;
+
+  orderedExisting.forEach((pt, idx) => {
+    const oldId = String(pt.id || '');
+    const newId = tsIdRedirect.get(oldId) || oldId;
+    const rawParent = pt.parentTaskId ? String(pt.parentTaskId) : undefined;
+    const redirectedParent = rawParent ? (tsIdRedirect.get(rawParent) || rawParent) : undefined;
+
+    const explicitNum = extractExplicitSubtaskNumber(pt.taskCodePhu, exactProjectCode);
+    if (explicitNum !== null && explicitNum > maxExistingSubtaskNum) {
+      maxExistingSubtaskNum = explicitNum;
+    }
+    if (pt.orderIndex !== undefined && pt.orderIndex !== null && !isNaN(Number(pt.orderIndex))) {
+      const ord = Number(pt.orderIndex);
+      if (ord > maxExistingOrderIndex) maxExistingOrderIndex = ord;
+    }
+
+    const lockedOrderIndex = idx;
+    const lockedCodePhu = exactProjectCode ? `${exactProjectCode}#${idx + 1}` : (pt.taskCodePhu || '');
+
+    const needsLockUpdate =
+      oldId !== newId ||
+      Boolean((pt as any)._isVirtualSummary) ||
+      pt.orderIndex !== lockedOrderIndex ||
+      pt.taskCodePhu !== lockedCodePhu ||
+      pt.parentTaskId !== redirectedParent ||
+      (targetProject?.id && pt.projectId !== targetProject.id);
+
+    const lockedTask: Task = needsLockUpdate
+      ? {
+          ...pt,
+          id: newId,
+          orderIndex: lockedOrderIndex,
+          taskCodePhu: lockedCodePhu,
+          ...(redirectedParent ? { parentTaskId: redirectedParent } : {}),
+          ...(targetProject?.id ? { projectId: targetProject.id } : {}),
+          ...(exactProjectCode ? { projectCode: exactProjectCode } : {}),
+          ...(targetProject?.store && !pt.projectStore ? { projectStore: targetProject.store } : {}),
+          ...(targetProject?.year !== undefined && pt.projectYear === undefined ? { projectYear: Number(targetProject.year) } : {}),
+        }
+      : pt;
+    delete (lockedTask as any)._isVirtualSummary;
+
+    if (needsLockUpdate) {
+      if (!oldId.startsWith('ts_') && !previousStates.has(newId)) {
+        previousStates.set(newId, pt);
+      }
+      lockedExistingTasksToSave.set(newId, lockedTask);
+      const pos = initialIdxById.get(oldId);
+      if (pos !== undefined) {
+        allInitialTasks[pos] = lockedTask;
+      } else {
+        allInitialTasks.push(lockedTask);
+      }
+    }
+
+    existingTasksById.set(newId, lockedTask);
+    if (lockedCodePhu) {
+      existingTasksByCode.set(`${canonicalPrjKey}:::code:::${lockedCodePhu.toLowerCase()}`, lockedTask);
+    }
+    if (pt.taskCodePhu) {
+      existingTasksByCode.set(`${canonicalPrjKey}:::code:::${String(pt.taskCodePhu).trim().toLowerCase()}`, lockedTask);
+    }
+    if (lockedTask.name) {
+      const nameKey = `${canonicalPrjKey}:::${String(lockedTask.name).trim().toLowerCase()}`;
+      if (!existingTasksByName.has(nameKey)) existingTasksByName.set(nameKey, lockedTask);
+      const norm = normalizeTaskNameForComparison(lockedTask.name);
+      if (norm) {
+        const normKey = `${canonicalPrjKey}:::norm:::${norm}`;
+        if (!existingTasksByNorm.has(normKey)) existingTasksByNorm.set(normKey, lockedTask);
+      }
+    }
+  });
+
+  return { maxExistingSubtaskNum, maxExistingOrderIndex };
 }

@@ -112,7 +112,7 @@ export function buildProjectParentHierarchyIndex(groupTasks: Task[]): ProjectPar
     }
     if (t.name) {
       const nameKey = String(t.name).trim().toLowerCase();
-      if (nameKey) {
+      if (nameKey && !taskByName.has(nameKey)) {
         taskByName.set(nameKey, t);
       }
     }

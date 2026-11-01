@@ -46,7 +46,7 @@ function buildCanonicalTaskContext(tasks: Task[]): {
       }
       if (t.name && String(t.name).trim()) {
         const nLower = String(t.name).trim().toLowerCase();
-        if (!scopedTaskByName.has(`${scope}:::${nLower}`) || t.isModularParent) {
+        if (!scopedTaskByName.has(`${scope}:::${nLower}`)) {
           scopedTaskByName.set(`${scope}:::${nLower}`, t);
         }
       }

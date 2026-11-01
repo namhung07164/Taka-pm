@@ -15,6 +15,7 @@ import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import { deduplicateTasksInMemory } from '../../lib/taskDeduplicationService';
 import { filterNonOrphanTasks } from '../../lib/taskRollupService';
+import { sortGroupTasks } from '../../lib/ganttUtils';
 
 interface UseGanttProjectsFilterParams {
   projects: Project[];
@@ -316,8 +317,9 @@ export function useGanttProjectsFilter({
       }
       const { dedupedTasks } = deduplicateTasksInMemory(rawGroupTasks, [p]);
       const { cleaned } = filterNonOrphanTasks(dedupedTasks);
-      projectTasksCache.set(p, cleaned);
-      return cleaned;
+      const sorted = sortGroupTasks(cleaned);
+      projectTasksCache.set(p, sorted);
+      return sorted;
     },
     [projectTasksCache, tasksByProjectId, tasksByProject, tasksMapByCode]
   );
@@ -450,48 +452,20 @@ export function useGanttProjectsFilter({
     }
   }, [ganttTabFocusTaskId, tasks, sortedProjects, visibleCount]);
 
-  const paginatedProjects = useMemo(() => {
-    return sortedProjects.slice(0, visibleCount);
-  }, [sortedProjects, visibleCount]);
+  const paginatedProjects = useMemo(() => sortedProjects.slice(0, visibleCount), [sortedProjects, visibleCount]);
+  const handleLoadMore = useCallback(() => setVisibleCount(prev => Math.min(prev + 20, sortedProjects.length)), [sortedProjects.length]);
 
-  const handleLoadMore = useCallback(() => {
-    setVisibleCount(prev => Math.min(prev + 20, sortedProjects.length));
-  }, [sortedProjects.length]);
-
-  // Search filter operates on Project Summaries + loaded tasks first (Tri-Gate Lazy Loading).
-  // Projects remain in summarized/collapsed state until user taps Expand (+), which triggers Delta Sync task fetching.
   const lastAutoExpandedSearchRef = useRef<string>('');
   useEffect(() => {
-    const term = deferredSearchTerm.trim();
-    if (!term) {
-      lastAutoExpandedSearchRef.current = '';
-    }
+    if (!deferredSearchTerm.trim()) lastAutoExpandedSearchRef.current = '';
   }, [deferredSearchTerm]);
 
   return {
-    globalYearFilter,
-    setGlobalYearFilter,
-    globalStoreFilter,
-    setGlobalStoreFilter,
-    effectiveStore,
-    globalLocationFilter,
-    setGlobalLocationFilter,
-    filterProjectStatus,
-    onStatusFilterChange,
-    searchTerm,
-    setSearchTerm,
-    deferredSearchTerm,
-    uniqueYears,
-    uniqueStores,
-    locationOptions,
-    tasksByProject,
-    tasksMapByCode,
-    getGroupTasksForProject,
-    filteredProjects,
-    sortedProjects,
-    paginatedProjects,
-    visibleCount,
-    setVisibleCount,
-    handleLoadMore
+    globalYearFilter, setGlobalYearFilter, globalStoreFilter, setGlobalStoreFilter,
+    effectiveStore, globalLocationFilter, setGlobalLocationFilter, filterProjectStatus,
+    onStatusFilterChange, searchTerm, setSearchTerm, deferredSearchTerm,
+    uniqueYears, uniqueStores, locationOptions, tasksByProject, tasksMapByCode,
+    getGroupTasksForProject, filteredProjects, sortedProjects, paginatedProjects,
+    visibleCount, setVisibleCount, handleLoadMore
   };
 }
