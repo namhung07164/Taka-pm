@@ -22,6 +22,7 @@ export interface CsvExportR2TemplateModalProps {
   isOpen: boolean;
   onClose: () => void;
   activeTab: string;
+  targetMode?: 'source' | 'template';
   file: File | null;
   templateFile: File | null;
   mapping: Record<string, string>;
@@ -39,6 +40,7 @@ export const CsvExportR2TemplateModal: React.FC<CsvExportR2TemplateModalProps> =
   isOpen,
   onClose,
   activeTab,
+  targetMode = 'source',
   file,
   templateFile,
   mapping,
@@ -117,7 +119,7 @@ export const CsvExportR2TemplateModal: React.FC<CsvExportR2TemplateModalProps> =
     }
   }, [isOpen, creds, modalTab, fetchR2Templates]);
 
-  const handleLoadTemplate = async (item: R2TemplateItem) => {
+  const handleLoadTemplate = async (item: R2TemplateItem, forceTemplateAttached?: boolean) => {
     if (!creds) return;
     setLoading(true);
     try {
@@ -142,13 +144,18 @@ export const CsvExportR2TemplateModal: React.FC<CsvExportR2TemplateModalProps> =
           type: blob.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         });
         const isAttached =
-          activeTab === 'mass_task' &&
-          (item.fileName.toLowerCase().includes('attached') ||
-            item.fileName.toLowerCase().includes('template'));
+          forceTemplateAttached !== undefined
+            ? forceTemplateAttached
+            : targetMode === 'template' ||
+              (activeTab === 'mass_task' &&
+                (item.fileName.toLowerCase().includes('attached') ||
+                  item.fileName.toLowerCase().includes('template')));
         onLoadTemplateFile(downloadedFile, isAttached);
         useAppStore.getState().setToast({
           title: 'Tải Mẫu Thành Công',
-          message: `Đã nạp file mẫu "${item.fileName}" vào Taka Data Converter!`,
+          message: isAttached
+            ? `Đã nạp Template Attached "${item.fileName}" từ Cloud R2!`
+            : `Đã nạp file mẫu "${item.fileName}" vào Taka Data Converter!`,
         });
       }
       onClose();
@@ -278,7 +285,7 @@ export const CsvExportR2TemplateModal: React.FC<CsvExportR2TemplateModalProps> =
               <Cloud className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-800 dark:text-[#f5f5f7] flex items-center gap-2">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-[#f5f5f7] flex items-center gap-2 flex-wrap">
                 Thư Mục Mẫu Cloudflare R2
                 {creds ? (
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-300 dark:border-emerald-800">
@@ -287,6 +294,11 @@ export const CsvExportR2TemplateModal: React.FC<CsvExportR2TemplateModalProps> =
                 ) : (
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 font-bold border border-amber-300 dark:border-amber-800">
                     Not Configured
+                  </span>
+                )}
+                {activeTab === 'mass_task' && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/80 text-blue-700 dark:text-blue-300 font-bold border border-blue-300 dark:border-blue-800">
+                    {targetMode === 'template' ? 'Đích nạp: Template Attached' : 'Đích nạp: 1. Dữ liệu gốc'}
                   </span>
                 )}
               </h2>
@@ -357,6 +369,8 @@ export const CsvExportR2TemplateModal: React.FC<CsvExportR2TemplateModalProps> =
               loading={loading}
               creds={creds}
               templates={templates}
+              activeTab={activeTab}
+              targetMode={targetMode}
               onRefresh={fetchR2Templates}
               onGoToSave={() => setModalTab('save')}
               onLoadTemplate={handleLoadTemplate}

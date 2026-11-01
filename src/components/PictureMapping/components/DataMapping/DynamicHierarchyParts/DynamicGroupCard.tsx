@@ -37,8 +37,8 @@ export const DynamicGroupCard = memo(function DynamicGroupCard({
   onDeleteRule,
 }: DynamicGroupCardProps) {
   return (
-    <div className="border border-slate-700/80 rounded-lg overflow-hidden bg-slate-900/80 hover:border-brand-500/50 transition-colors">
-      <div className="px-2.5 py-1.5 bg-slate-800/90 border-b border-slate-700/80 flex items-center justify-between gap-2">
+    <div className="border border-slate-700/80 rounded-lg bg-slate-900/80 hover:border-brand-500/50 transition-colors">
+      <div className="px-2.5 py-1.5 bg-slate-800/90 rounded-t-lg border-b border-slate-700/80 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
           <div className="relative flex items-center justify-center shrink-0">
             <ColorPicker

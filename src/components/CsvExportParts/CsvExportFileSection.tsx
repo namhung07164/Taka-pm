@@ -14,6 +14,7 @@ interface CsvExportFileSectionProps {
   activeTab: string;
   error: string;
   onOpenR2Modal?: () => void;
+  onOpenR2TemplateModal?: () => void;
 }
 
 export const CsvExportFileSection: React.FC<CsvExportFileSectionProps> = ({
@@ -29,6 +30,7 @@ export const CsvExportFileSection: React.FC<CsvExportFileSectionProps> = ({
   activeTab,
   error,
   onOpenR2Modal,
+  onOpenR2TemplateModal,
 }) => {
   return (
     <div className="space-y-6">
@@ -119,18 +121,47 @@ export const CsvExportFileSection: React.FC<CsvExportFileSectionProps> = ({
               <i className="ph ph-file-plus text-blue-600 dark:text-blue-400 text-lg"></i>{' '}
               Tải lên Template Attached
             </h2>
-            {templateFile && (
-              <button
-                onClick={onCancelTemplate}
-                className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors cursor-pointer"
+            <div className="flex items-center gap-2">
+              {(onOpenR2TemplateModal || onOpenR2Modal) && (
+                <button
+                  type="button"
+                  onClick={onOpenR2TemplateModal || onOpenR2Modal}
+                  className="text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1 font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-all cursor-pointer active:scale-95"
+                  title="Chọn Template Attached từ Thư Mục Cloud R2"
+                >
+                  <Cloud className="w-3.5 h-3.5" /> Thư Mục R2
+                </button>
+              )}
+              <label
+                className="text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1 font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-[#333336] hover:bg-slate-200 dark:hover:bg-[#444448] transition-all cursor-pointer active:scale-95"
+                title="Hoặc tải file Template Attached từ máy tính"
               >
-                <i className="ph-fill ph-x-circle text-sm"></i> Hủy
-              </button>
-            )}
+                <i className="ph ph-folder-open text-sm"></i> Máy tính
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={onTemplateUpload}
+                />
+              </label>
+              {templateFile && (
+                <button
+                  type="button"
+                  onClick={onCancelTemplate}
+                  className="text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors cursor-pointer"
+                >
+                  <i className="ph-fill ph-x-circle text-sm"></i> Hủy
+                </button>
+              )}
+            </div>
           </div>
-          <label className="border-2 border-dashed border-slate-200 dark:border-[#333336] rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 dark:hover:bg-[#333336]/50 transition-colors group">
+          <button
+            type="button"
+            onClick={onOpenR2TemplateModal || onOpenR2Modal}
+            className="w-full border-2 border-dashed border-slate-200 dark:border-[#333336] rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 dark:hover:bg-[#333336]/50 transition-colors group"
+          >
             <i
-              className={`ph ${templateFile ? 'ph-file-csv' : 'ph-cloud-arrow-up'} text-4xl mb-2 transition-colors ${
+              className={`ph ${templateFile ? 'ph-file-csv' : 'ph-cloud-arrow-down'} text-4xl mb-2 transition-colors ${
                 templateFile
                   ? 'text-blue-500 dark:text-blue-400'
                   : 'text-slate-300 dark:text-slate-500 group-hover:text-blue-400'
@@ -143,15 +174,11 @@ export const CsvExportFileSection: React.FC<CsvExportFileSectionProps> = ({
                   : 'text-slate-500 dark:text-slate-400'
               }`}
             >
-              {templateFile ? templateFile.name : 'Chọn file attached (Template)'}
+              {templateFile
+                ? templateFile.name
+                : 'Chọn file attached (Template) từ Thư Mục R2'}
             </span>
-            <input
-              type="file"
-              className="hidden"
-              accept=".xlsx,.xls,.csv"
-              onChange={onTemplateUpload}
-            />
-          </label>
+          </button>
         </div>
       )}
     </div>

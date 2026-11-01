@@ -20,9 +20,11 @@ export interface R2BrowseTabViewProps {
   loading: boolean;
   creds: R2Credentials | null;
   templates: R2TemplateItem[];
+  activeTab?: string;
+  targetMode?: 'source' | 'template';
   onRefresh: () => void;
   onGoToSave: () => void;
-  onLoadTemplate: (item: R2TemplateItem) => void;
+  onLoadTemplate: (item: R2TemplateItem, forceTemplateAttached?: boolean) => void;
   onDeleteTemplate: (item: R2TemplateItem) => void;
 }
 
@@ -32,6 +34,8 @@ export const R2BrowseTabView: React.FC<R2BrowseTabViewProps> = ({
   loading,
   creds,
   templates,
+  activeTab,
+  targetMode = 'source',
   onRefresh,
   onGoToSave,
   onLoadTemplate,
@@ -130,14 +134,36 @@ export const R2BrowseTabView: React.FC<R2BrowseTabViewProps> = ({
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
-              <button
-                onClick={() => onLoadTemplate(item)}
-                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer"
-                title="Mở và nạp trực tiếp mẫu vào Taka Data Converter"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Mở
-              </button>
+              {!item.isConfigJson && activeTab === 'mass_task' && targetMode === 'template' ? (
+                <button
+                  onClick={() => onLoadTemplate(item, true)}
+                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                  title="Nạp làm Template Attached cho Mass-import Task"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Chọn Template
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => onLoadTemplate(item, false)}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                    title="Mở và nạp trực tiếp mẫu vào Taka Data Converter"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Mở
+                  </button>
+                  {!item.isConfigJson && activeTab === 'mass_task' && (
+                    <button
+                      onClick={() => onLoadTemplate(item, true)}
+                      className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-2xs cursor-pointer"
+                      title="Nạp file này vào ô Tải lên Template Attached"
+                    >
+                      Template
+                    </button>
+                  )}
+                </>
+              )}
               <button
                 onClick={() => onDeleteTemplate(item)}
                 className="p-1.5 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"

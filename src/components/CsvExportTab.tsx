@@ -9,6 +9,7 @@ import { CsvExportR2TemplateModal } from './CsvExportParts/CsvExportR2TemplateMo
 
 export default function CsvExportTab() {
   const [showR2Modal, setShowR2Modal] = useState(false);
+  const [r2ModalTarget, setR2ModalTarget] = useState<'source' | 'template'>('source');
 
   const {
     file,
@@ -74,7 +75,10 @@ export default function CsvExportTab() {
         <CsvExportHeaderTabs
           activeTab={activeTab}
           onTabChange={switchTab}
-          onOpenR2Modal={() => setShowR2Modal(true)}
+          onOpenR2Modal={() => {
+            setR2ModalTarget('source');
+            setShowR2Modal(true);
+          }}
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -97,7 +101,14 @@ export default function CsvExportTab() {
               }}
               activeTab={activeTab}
               error={error}
-              onOpenR2Modal={() => setShowR2Modal(true)}
+              onOpenR2Modal={() => {
+                setR2ModalTarget('source');
+                setShowR2Modal(true);
+              }}
+              onOpenR2TemplateModal={() => {
+                setR2ModalTarget('template');
+                setShowR2Modal(true);
+              }}
             />
 
             <CsvExportMappingTable
@@ -141,6 +152,7 @@ export default function CsvExportTab() {
           isOpen={showR2Modal}
           onClose={() => setShowR2Modal(false)}
           activeTab={activeTab}
+          targetMode={r2ModalTarget}
           file={file}
           templateFile={templateFile}
           mapping={mapping}
