@@ -70,6 +70,25 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
       <Layer id="units-interactive-layer">
         {(() => {
           const renderedImgBadgePositions: { x: number; y: number; normCode: string }[] = [];
+          const isLegendFiltered = selectedLegendGroupId !== null;
+          const selectedLegendIdLower = isLegendFiltered ? String(selectedLegendGroupId).toLowerCase() : '';
+          const selectedGroup = isLegendFiltered
+            ? activeGroups?.find(
+                (g: any) => g.id === selectedLegendGroupId || String(g.name).toLowerCase() === selectedLegendIdLower
+              )
+            : null;
+          const selectedGroupColorLower = selectedGroup?.color ? selectedGroup.color.toLowerCase() : '';
+          const defaultContrast = {
+            text: isDarkMode ? '#94a3b8' : '#64748b',
+            shapeStroke: isDarkMode ? 'rgba(100, 116, 139, 0.35)' : 'rgba(148, 163, 184, 0.45)',
+          };
+          const sqrtZoom40 = Math.sqrt(Math.max(0.4, quantizedZoom));
+          const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / sqrtZoom40));
+          const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / sqrtZoom40));
+          const imgBtnH = Math.max(11.5, Math.min(20, 14.5 / Math.sqrt(Math.max(0.45, quantizedZoom))));
+          const imgBtnW = imgBtnH * 1.26;
+          const imgIconScale = (imgBtnH * 0.78) / 24;
+
           return visibleUnits.map((unit: any) => {
             const hasColor = Boolean(unit.targetColor);
             const fillColor = isLegendColorOn && hasColor ? unit.targetColor : "rgba(0, 0, 0, 0.001)";
@@ -80,25 +99,18 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
             const uId = String(unit.id || '').toLowerCase().trim();
             const unitData = (uName && aggregatedData[uName]) || (uId && aggregatedData[uId]) || (uCode && aggregatedData[uCode]) || null;
 
-            const selectedGroup = activeGroups?.find(
-              (g: any) => g.id === selectedLegendGroupId || String(g.name).toLowerCase() === String(selectedLegendGroupId).toLowerCase()
-            );
-
-            const isLegendFiltered = selectedLegendGroupId !== null;
             const isGroupMatched = isLegendFiltered && (
               (unit.targetGroupId && unit.targetGroupId === selectedLegendGroupId) ||
-              (unit.targetGroupId && String(unit.targetGroupId).toLowerCase() === String(selectedLegendGroupId).toLowerCase()) ||
+              (unit.targetGroupId && String(unit.targetGroupId).toLowerCase() === selectedLegendIdLower) ||
               (selectedGroup && unit.targetGroupId === selectedGroup.id) ||
-              (selectedGroup && unit.targetColor && selectedGroup.color && unit.targetColor.toLowerCase() === selectedGroup.color.toLowerCase()) ||
-              (unitData?.projectStatus && String(unitData.projectStatus).toLowerCase() === String(selectedLegendGroupId).toLowerCase()) ||
-              (unitData?.status && String(unitData.status).toLowerCase() === String(selectedLegendGroupId).toLowerCase()) ||
-              (unitData?.appProjectStatus && String(unitData.appProjectStatus).toLowerCase() === String(selectedLegendGroupId).toLowerCase())
+              (selectedGroupColorLower && unit.targetColor && unit.targetColor.toLowerCase() === selectedGroupColorLower) ||
+              (unitData?.projectStatus && String(unitData.projectStatus).toLowerCase() === selectedLegendIdLower) ||
+              (unitData?.status && String(unitData.status).toLowerCase() === selectedLegendIdLower) ||
+              (unitData?.appProjectStatus && String(unitData.appProjectStatus).toLowerCase() === selectedLegendIdLower)
             );
             const isDimmed = isLegendColorOn && hasColor && isLegendFiltered && !isGroupMatched;
 
-            const contrast = isLegendColorOn && hasColor 
-              ? getContrastStyle(fillColor) 
-              : { text: isDarkMode ? '#94a3b8' : '#64748b', shapeStroke: isDarkMode ? 'rgba(100, 116, 139, 0.35)' : 'rgba(148, 163, 184, 0.45)' };
+            const contrast = isLegendColorOn && hasColor ? getContrastStyle(fillColor) : defaultContrast;
 
             // Determine if unit or project has area
             const areaVal = 
@@ -122,11 +134,9 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
             } else if (isLegendFiltered) {
               if (isGroupMatched) {
                 if (hasArea) {
-                  // User rule: "nếu unit/ project nào có diện tích thì thêm viền màu chính status đó bao xung quanh"
                   unitStroke = statusColor;
                   unitStrokeWidth = 3.5;
                 } else {
-                  // User rule: "ko thì ko có"
                   unitStroke = undefined;
                   unitStrokeWidth = 0;
                 }
@@ -179,14 +189,6 @@ export const LayoutKonvaLayers: React.FC<LayoutKonvaLayersProps> = React.memo(({
             const unitH = unit.textHeight || 30;
             const baseFont = Math.max(10, Math.min(18, Math.round(Math.min(unitW, unitH * 2.2) / 5.5)));
             const dynamicFontSize = Math.max(9, Math.min(22, Math.round(baseFont / Math.max(0.65, Math.min(quantizedZoom, 1.8)))));
-
-            const badgeRadius = Math.max(4.5, Math.min(8.5, 6.5 / Math.sqrt(Math.max(0.4, quantizedZoom))));
-            const badgeFontSize = Math.max(6.5, Math.min(10.5, 8.5 / Math.sqrt(Math.max(0.4, quantizedZoom))));
-
-            // Distinct, easily recognizable Interactive Image Button dimensions
-            const imgBtnH = Math.max(11.5, Math.min(20, 14.5 / Math.sqrt(Math.max(0.45, quantizedZoom))));
-            const imgBtnW = imgBtnH * 1.26;
-            const imgIconScale = (imgBtnH * 0.78) / 24;
 
             // Badge placement coordinates
             let badgeX = (unit.textX || unit.x || 0) + (unit.textWidth || unit.width || 100) - 8;

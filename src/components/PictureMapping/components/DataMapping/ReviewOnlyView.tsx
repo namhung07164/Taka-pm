@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useShallow } from 'zustand/react/shallow';
 import { Stage, Layer, Image as KonvaImage, Rect, Circle, Line, Text, Group } from 'react-konva';
-import useImage from 'use-image';
 import { useOffscreenImage } from '../../../../hooks/useOffscreenImage';
 import { useDataStore } from '../../DataContext';
 import { useSummaryData, generateSizeLabel, generateSizeLabelLines } from '../../lib/summaryData';
@@ -101,33 +100,67 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
   }, [version?.backgroundUrl]);
 
   const [image] = useOffscreenImage(resolvedBgUrl || version?.backgroundUrl || '', 'anonymous');
-  
+  const stageRef = useRef<any>(null);
+  const wheelRafRef = useRef<number | null>(null);
+  const wheelSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingWheelDeltaRef = useRef<number>(0);
+  const lastWheelPointerRef = useRef<{ x: number; y: number } | null>(null);
+
   const [scale, setScale] = useState(version?.backgroundScale || 1);
   const [position, setPosition] = useState(version?.backgroundPos || { x: 0, y: 0 });
 
+  useEffect(() => {
+    return () => {
+      if (wheelRafRef.current !== null) cancelAnimationFrame(wheelRafRef.current);
+      if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
+    };
+  }, []);
+
   const handleWheel = (e: any) => {
     e.evt.preventDefault();
-    const stage = e.target.getStage();
-    const oldScale = stage.scaleX();
-    const pointer = stage.getPointerPosition();
-
+    const pointer = e.target.getStage()?.getPointerPosition();
     if (!pointer) return;
+    lastWheelPointerRef.current = pointer;
+    pendingWheelDeltaRef.current += e.evt.deltaY;
 
-    const mousePointTo = {
-      x: (pointer.x - stage.x()) / oldScale,
-      y: (pointer.y - stage.y()) / oldScale,
-    };
+    if (wheelRafRef.current === null) {
+      wheelRafRef.current = requestAnimationFrame(() => {
+        wheelRafRef.current = null;
+        const curStage = stageRef.current;
+        const ptr = lastWheelPointerRef.current;
+        if (!curStage || !ptr) return;
 
-    // Smooth dampened zoom speed for desktop mouse wheels
-    const deltaY = e.evt.deltaY;
-    const zoomFactor = Math.exp(-deltaY * 0.0008);
-    const newScale = Math.max(0.05, Math.min(10, oldScale * zoomFactor));
-    setScale(newScale);
-    setPosition({
-      x: pointer.x - mousePointTo.x * newScale,
-      y: pointer.y - mousePointTo.y * newScale,
-    });
+        const deltaY = pendingWheelDeltaRef.current;
+        pendingWheelDeltaRef.current = 0;
+
+        const oldScale = curStage.scaleX();
+        const zoomFactor = Math.exp(-deltaY * 0.0008);
+        const newScale = Math.max(0.05, Math.min(10, oldScale * zoomFactor));
+        const mousePointTo = {
+          x: (ptr.x - curStage.x()) / oldScale,
+          y: (ptr.y - curStage.y()) / oldScale,
+        };
+
+        curStage.scale({ x: newScale, y: newScale });
+        curStage.position({
+          x: ptr.x - mousePointTo.x * newScale,
+          y: ptr.y - mousePointTo.y * newScale,
+        });
+        curStage.batchDraw();
+
+        if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
+        wheelSyncTimerRef.current = setTimeout(() => {
+          wheelSyncTimerRef.current = null;
+          if (!stageRef.current) return;
+          stageRef.current.batchDraw();
+          setScale(stageRef.current.scaleX());
+          setPosition({ x: stageRef.current.x(), y: stageRef.current.y() });
+        }, 120);
+      });
+    }
   };
+
+  const quantizedScale = Math.max(0.3, Math.round(scale * 4) / 4);
 
   return (
     <div className="relative mb-8 bg-[#1A1D24] rounded-xl overflow-hidden border border-slate-800 shadow-2xl">
@@ -135,9 +168,11 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
         {version.name}
       </div>
       <Stage 
+        ref={stageRef}
         width={windowSize.width - 64} 
         height={windowSize.height - 100}
         onWheel={handleWheel}
+        onDragEnd={(e) => { if (e.target === stageRef.current) setPosition({ x: e.target.x(), y: e.target.y() }); }}
         scaleX={scale}
         scaleY={scale}
         x={position.x}
@@ -147,7 +182,8 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
         <Layer>
           {image && <KonvaImage 
             image={image} 
-            listening={false} 
+            listening={false}
+            perfectDrawEnabled={false}
             x={version?.imagePos?.x || 0}
             y={version?.imagePos?.y || 0}
             scaleX={version?.imageScale || 1}
@@ -184,10 +220,10 @@ const VersionStage = ({ version, mapUnits, summaryData, selectedLabels, reviewLa
                 )}
 
                 {unit.name && scale > 0.3 && bbox && (
-                  <Group x={bbox.x} y={bbox.y} width={bbox.width} height={bbox.height} rotation={unit.rotation || 0}>
+                  <Group x={bbox.x} y={bbox.y} width={bbox.width} height={bbox.height} rotation={unit.rotation || 0} listening={false}>
                     {(() => {
                       const lines = unit.sizeLabelLines || [];
-                      const fontSize = Math.max(7, Math.min(18, 10 / scale));
+                      const fontSize = Math.max(7, Math.min(18, 10 / quantizedScale));
                       const lineHeight = fontSize * 1.2;
                       const totalHeight = lines.length * lineHeight;
                       const startY = (bbox.height - totalHeight) / 2;

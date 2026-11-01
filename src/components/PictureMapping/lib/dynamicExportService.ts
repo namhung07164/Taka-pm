@@ -27,6 +27,27 @@ export type { BackgroundSyncStatus };
 
 const getPartitionKey = (store: string, location: string) => `${store}_${location}`;
 
+function cloneVersionGroups(rawGroups: any[]) {
+  if (!Array.isArray(rawGroups)) return [];
+  return rawGroups.map((g: any) => ({
+    id: g.id,
+    name: g.name,
+    color: g.color,
+    opacity: g.opacity,
+    hatchPattern: g.hatchPattern || 'none',
+    symbol: g.symbol || '',
+    category: g.category || g.paintCategory || '',
+    paintCategory: g.paintCategory || g.category || '',
+    rules: Array.isArray(g.rules)
+      ? g.rules.map((r: any) => ({
+          field: r.field,
+          operator: r.operator,
+          value: r.value !== undefined ? String(r.value) : '',
+        }))
+      : [],
+  }));
+}
+
 export async function loadStoreFromCloudR2(): Promise<{ success: boolean; message: string }> {
   const creds = await getStoredR2CredentialsAsync();
   if (!creds) {
@@ -122,30 +143,9 @@ export async function loadStoreFromCloudR2(): Promise<{ success: boolean; messag
           }
         }
 
-        const rawGroups = v.groups || [];
-        const deepCopiedGroups = Array.isArray(rawGroups)
-          ? rawGroups.map((g: any) => ({
-              id: g.id,
-              name: g.name,
-              color: g.color,
-              opacity: g.opacity,
-              hatchPattern: g.hatchPattern || 'none',
-              symbol: g.symbol || '',
-              category: g.category || g.paintCategory || '',
-              paintCategory: g.paintCategory || g.category || '',
-              rules: Array.isArray(g.rules)
-                ? g.rules.map((r: any) => ({
-                    field: r.field,
-                    operator: r.operator,
-                    value: r.value !== undefined ? String(r.value) : '',
-                  }))
-                : [],
-            }))
-          : [];
-
         v.store = v.store || pStore;
         v.location = v.location || pLoc;
-        v.groups = deepCopiedGroups;
+        v.groups = cloneVersionGroups(v.groups);
         v.groupMappings = v.groupMappings || {};
         v.isDynamicActive = true;
       }
@@ -238,34 +238,13 @@ export async function saveStoreToCloudR2(
         }
       }
 
-      const rawGroups = v.groups || [];
-      const deepCopiedGroups = Array.isArray(rawGroups)
-        ? rawGroups.map((g: any) => ({
-            id: g.id,
-            name: g.name,
-            color: g.color,
-            opacity: g.opacity,
-            hatchPattern: g.hatchPattern || 'none',
-            symbol: g.symbol || '',
-            category: g.category || g.paintCategory || '',
-            paintCategory: g.paintCategory || g.category || '',
-            rules: Array.isArray(g.rules)
-              ? g.rules.map((r: any) => ({
-                  field: r.field,
-                  operator: r.operator,
-                  value: r.value !== undefined ? String(r.value) : '',
-                }))
-              : [],
-          }))
-        : [];
-
       pVersionsCloud.push({
         ...v,
         year: String(v.year || useAppStore.getState().globalYearFilter || '2026'),
         store: v.store || pStore,
         location: v.location || pLoc,
         backgroundUrl: r2Key ? `r2://${r2Key}` : displayUrl,
-        groups: deepCopiedGroups,
+        groups: cloneVersionGroups(v.groups),
         groupMappings: v.groupMappings || {},
         isDynamicActive: true,
       });

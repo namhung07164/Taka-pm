@@ -5,6 +5,9 @@ import { extractR2Key } from '../../../lib/r2Upload';
 import { deleteR2StorageFiles } from '../../../../../lib/r2StorageUtils';
 
 export const convertPdfToImage = async (file: File): Promise<string> => {
+  let pdf: any = null;
+  let page: any = null;
+  let canvas: HTMLCanvasElement | null = null;
   try {
     const pdfjsLib = await import('pdfjs-dist/build/pdf.mjs');
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
@@ -14,8 +17,8 @@ export const convertPdfToImage = async (file: File): Promise<string> => {
       cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/cmaps/`,
       cMapPacked: true,
     });
-    const pdf = await loadingTask.promise;
-    const page = await pdf.getPage(1);
+    pdf = await loadingTask.promise;
+    page = await pdf.getPage(1);
 
     const unscaledViewport = page.getViewport({ scale: 1.0 });
     const maxDimension = Math.max(unscaledViewport.width, unscaledViewport.height);
@@ -23,7 +26,7 @@ export const convertPdfToImage = async (file: File): Promise<string> => {
     const scale = maxDimension > targetMaxDimension ? targetMaxDimension / maxDimension : 2.0;
 
     const viewport = page.getViewport({ scale });
-    const canvas = document.createElement('canvas');
+    canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
     canvas.height = viewport.height;
     canvas.width = viewport.width;
@@ -36,6 +39,10 @@ export const convertPdfToImage = async (file: File): Promise<string> => {
   } catch (error: any) {
     console.error('PDF Processing details:', error);
     throw new Error(`PDF Error: ${error.message || 'Unknown error'}`);
+  } finally {
+    try { page?.cleanup?.(); } catch {}
+    try { pdf?.cleanup?.(); pdf?.destroy?.(); } catch {}
+    if (canvas) { canvas.width = 0; canvas.height = 0; }
   }
 };
 
@@ -115,6 +122,9 @@ export function useEditTabHandlers({
       const file = acceptedFiles[0];
       setIsLoading(true);
       try {
+        if (localImageUrl && localImageUrl.startsWith('blob:')) {
+          try { URL.revokeObjectURL(localImageUrl); } catch {}
+        }
         if (file.type === 'application/pdf') {
           const imageUrl = await convertPdfToImage(file);
           setLocalImageUrl(imageUrl);

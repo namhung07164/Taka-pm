@@ -22,23 +22,11 @@ import { AppGanttPrintPagesView } from "./components/AppParts/AppGanttPrintPages
 import { AppGlobalOverlays } from "./components/AppParts/AppGlobalOverlays";
 
 const PrintOptionsPanel = lazyWithRetry(
-  () =>
-    import("./components/PrintOptionsPanel").then((m) => ({
-      default: m.PrintOptionsPanel,
-    })),
+  () => import("./components/PrintOptionsPanel").then((m) => ({ default: m.PrintOptionsPanel })),
   "PrintOptionsPanel"
 );
 
-const onRenderCallback = (
-  _id: string,
-  _phase: "mount" | "update" | "nested-update",
-  _actualDuration: number,
-  _baseDuration: number,
-  _startTime: number,
-  _commitTime: number
-) => {
-  // Profiler onRender callback
-};
+const onRenderCallback = () => {};
 
 export default function App() {
   const isFocusMode = useAppStore((state) => state.isFocusMode);
@@ -72,14 +60,8 @@ export default function App() {
   const redoStack = useAppStore((state) => state.redoStack);
   const setRedoStack = useAppStore((state) => state.setRedoStack);
 
-  const isAnyModalOpen = useAppStore(
-    (state) =>
-      !!(
-        state.isLoginModalOpen ||
-        state.isProjectModalOpen ||
-        state.isTaskModalOpen ||
-        state.isUserModalOpen
-      )
+  const isAnyModalOpen = useAppStore((state) =>
+    Boolean(state.isLoginModalOpen || state.isProjectModalOpen || state.isTaskModalOpen || state.isUserModalOpen)
   );
   const setIsLoginModalOpen = useAppStore((state) => state.setIsLoginModalOpen);
   const setIsProjectModalOpen = useAppStore((state) => state.setIsProjectModalOpen);

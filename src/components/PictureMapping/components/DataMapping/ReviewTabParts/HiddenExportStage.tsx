@@ -338,11 +338,13 @@ export const HiddenExportStage = ({
           height={logicalHeight}
           fill="white"
           listening={false}
+          perfectDrawEnabled={false}
         />
         {image && (
           <KonvaImage
             image={image}
             listening={false}
+            perfectDrawEnabled={false}
             x={version?.imagePos?.x || 0}
             y={version?.imagePos?.y || 0}
             scaleX={version?.imageScale || 1}
@@ -365,6 +367,7 @@ export const HiddenExportStage = ({
             shadowBlur: 4,
             shadowColor: 'rgba(0,0,0,0.5)',
             listening: false,
+            perfectDrawEnabled: false,
           };
 
           if (unit.type === 'rect') {
@@ -378,6 +381,7 @@ export const HiddenExportStage = ({
                     width={unit.width}
                     height={unit.height}
                     rotation={unit.rotation || 0}
+                    listening={false}
                   >
                     {renderWrappedTextLines(
                       unit.sizeLabelLines || [],
@@ -400,6 +404,7 @@ export const HiddenExportStage = ({
                     y={unit.y - (unit.radius || 0)}
                     width={d}
                     height={d}
+                    listening={false}
                   >
                     {renderWrappedTextLines(
                       unit.sizeLabelLines || [],
@@ -417,20 +422,25 @@ export const HiddenExportStage = ({
                 <Line {...shapeProps} points={unit.points} closed={true} />
                 {unit.name &&
                   (() => {
-                    const bx = unit.points
-                      ? Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 0))
-                      : unit.x;
-                    const by = unit.points
-                      ? Math.min(...unit.points.filter((_: any, i: number) => i % 2 === 1))
-                      : unit.y;
-                    const bw = unit.points
-                      ? Math.max(...unit.points.filter((_: any, i: number) => i % 2 === 0)) - bx
-                      : 100;
-                    const bh = unit.points
-                      ? Math.max(...unit.points.filter((_: any, i: number) => i % 2 === 1)) - by
-                      : 30;
+                    let minPtX = Infinity;
+                    let maxPtX = -Infinity;
+                    let minPtY = Infinity;
+                    let maxPtY = -Infinity;
+                    for (let i = 0; i < unit.points.length; i += 2) {
+                      const px = unit.points[i];
+                      const py = unit.points[i + 1];
+                      if (px < minPtX) minPtX = px;
+                      if (px > maxPtX) maxPtX = px;
+                      if (py < minPtY) minPtY = py;
+                      if (py > maxPtY) maxPtY = py;
+                    }
+                    const hasPts = minPtX !== Infinity;
+                    const bx = hasPts ? minPtX : unit.x;
+                    const by = hasPts ? minPtY : unit.y;
+                    const bw = hasPts ? Math.max(10, maxPtX - minPtX) : 100;
+                    const bh = hasPts ? Math.max(10, maxPtY - minPtY) : 30;
                     return (
-                      <Group x={bx} y={by} width={bw} height={bh}>
+                      <Group x={bx} y={by} width={bw} height={bh} listening={false}>
                         {renderWrappedTextLines(
                           unit.sizeLabelLines || [],
                           bw,

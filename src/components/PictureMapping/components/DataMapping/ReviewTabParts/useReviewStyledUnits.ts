@@ -190,7 +190,7 @@ export function useReviewCanvasZoom({
         const mousePointTo = { x: (ptr.x - curStage.x()) / oldScale, y: (ptr.y - curStage.y()) / oldScale };
         curStage.scale({ x: newScale, y: newScale });
         curStage.position({ x: ptr.x - mousePointTo.x * newScale, y: ptr.y - mousePointTo.y * newScale });
-        curStage.getLayers().forEach((l: any) => l.drawScene());
+        curStage.batchDraw();
 
         if (wheelSyncTimerRef.current) clearTimeout(wheelSyncTimerRef.current);
         wheelSyncTimerRef.current = setTimeout(() => {
@@ -237,7 +237,7 @@ export function useReviewCanvasZoom({
         x: localCenter.x - pointTo.x * newScale + (newCenter.x - lastCenter.x),
         y: localCenter.y - pointTo.y * newScale + (newCenter.y - lastCenter.y),
       });
-      st.getLayers().forEach((l: any) => l.drawScene());
+      st.batchDraw();
       pinchDistRef.current = dist;
       pinchCenterRef.current = newCenter;
     });

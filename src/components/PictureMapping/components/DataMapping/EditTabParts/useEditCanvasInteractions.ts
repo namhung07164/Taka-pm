@@ -61,20 +61,8 @@ export function useEditCanvasDrawing({
 
   const snapToGrid = (val: number) => (!magneticGrid ? val : Math.round(val / gridSize) * gridSize);
 
-  const editCanvasStateRef = useRef({
-    units,
-    activeTool,
-    magneticGrid,
-    gridSize,
-    handleSetUnitsWithHistory,
-  });
-  editCanvasStateRef.current = {
-    units,
-    activeTool,
-    magneticGrid,
-    gridSize,
-    handleSetUnitsWithHistory,
-  };
+  const editCanvasStateRef = useRef({ units, activeTool, magneticGrid, gridSize, handleSetUnitsWithHistory });
+  editCanvasStateRef.current = { units, activeTool, magneticGrid, gridSize, handleSetUnitsWithHistory };
 
   const handleSelectCanvasUnit = useCallback(
     (unitId: string) => {
@@ -84,25 +72,15 @@ export function useEditCanvasDrawing({
   );
 
   const handleDragEndCanvasUnit = useCallback((unitId: string, rawX: number, rawY: number) => {
-    const {
-      units: curUnits,
-      magneticGrid: mag,
-      gridSize: gs,
-      handleSetUnitsWithHistory: commitUnits,
-    } = editCanvasStateRef.current;
+    const { units: curUnits, magneticGrid: mag, gridSize: gs, handleSetUnitsWithHistory: commitUnits } =
+      editCanvasStateRef.current;
     const snap = (v: number) => (mag ? Math.round(v / gs) * gs : v);
-    commitUnits(
-      curUnits.map((u) => (u.id === unitId ? { ...u, x: snap(rawX), y: snap(rawY) } : u))
-    );
+    commitUnits(curUnits.map((u) => (u.id === unitId ? { ...u, x: snap(rawX), y: snap(rawY) } : u)));
   }, []);
 
   const handleTransformEndCanvasUnit = useCallback((unit: UnitShape, node: any) => {
-    const {
-      units: curUnits,
-      magneticGrid: mag,
-      gridSize: gs,
-      handleSetUnitsWithHistory: commitUnits,
-    } = editCanvasStateRef.current;
+    const { units: curUnits, magneticGrid: mag, gridSize: gs, handleSetUnitsWithHistory: commitUnits } =
+      editCanvasStateRef.current;
     const snap = (v: number) => (mag ? Math.round(v / gs) * gs : v);
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();

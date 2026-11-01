@@ -34,7 +34,8 @@ export const HATCH_PATTERNS: { id: HatchPatternType; label: string; iconLabel: s
   { id: 'vertical', label: 'Vertical', iconLabel: '║', desc: 'Vertical lines' },
 ];
 
-// In-RAM Canvas Pattern Cache for Konva
+// In-RAM Canvas Pattern Cache for Konva (bounded LRU to prevent GPU memory growth)
+const MAX_PATTERN_CACHE = 64;
 const patternCanvasCache = new Map<string, HTMLCanvasElement>();
 
 /**
@@ -45,7 +46,11 @@ export function getHatchPatternCanvas(color: string, pattern?: string | null): H
 
   const cacheKey = `${color}_${pattern}`;
   const existing = patternCanvasCache.get(cacheKey);
-  if (existing) return existing;
+  if (existing) {
+    patternCanvasCache.delete(cacheKey);
+    patternCanvasCache.set(cacheKey, existing);
+    return existing;
+  }
 
   if (typeof document === 'undefined') return null;
 
@@ -111,6 +116,17 @@ export function getHatchPatternCanvas(color: string, pattern?: string | null): H
     ctx.stroke();
   }
 
+  if (patternCanvasCache.size >= MAX_PATTERN_CACHE) {
+    const oldestKey = patternCanvasCache.keys().next().value;
+    if (oldestKey) {
+      const evicted = patternCanvasCache.get(oldestKey);
+      patternCanvasCache.delete(oldestKey);
+      if (evicted) {
+        evicted.width = 0;
+        evicted.height = 0;
+      }
+    }
+  }
   patternCanvasCache.set(cacheKey, canvas);
   return canvas;
 }
