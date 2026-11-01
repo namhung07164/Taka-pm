@@ -354,8 +354,6 @@ export function useAppNavigationAndShortcuts({
           if (typeof window !== "undefined") {
             window.dispatchEvent(new CustomEvent("taka-mywork-focus-changed", { detail: focusPayload }));
           }
-          updates.isTasksRequested = true;
-          updates.isDelegationsRequested = true;
           break;
         }
         default:

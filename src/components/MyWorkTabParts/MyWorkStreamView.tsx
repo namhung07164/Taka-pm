@@ -13,6 +13,7 @@ interface MyWorkStreamViewProps {
   weekItems: UnifiedWorkItem[];
   monthItems: UnifiedWorkItem[];
   doneItems: UnifiedWorkItem[];
+  onAcceptItem: (item: UnifiedWorkItem) => void;
   onToggleTaskComplete: (item: UnifiedWorkItem) => void;
   onReportSubTaskComplete: (item: UnifiedWorkItem) => void;
   onApproveItem: (item: UnifiedWorkItem) => void;
@@ -37,6 +38,7 @@ export const MyWorkStreamView: React.FC<MyWorkStreamViewProps> = React.memo(
     weekItems,
     monthItems,
     doneItems,
+    onAcceptItem,
     onToggleTaskComplete,
     onReportSubTaskComplete,
     onApproveItem,
@@ -217,6 +219,7 @@ export const MyWorkStreamView: React.FC<MyWorkStreamViewProps> = React.memo(
                     <MyWorkRowItem
                       key={item.id}
                       item={item}
+                      onAcceptItem={onAcceptItem}
                       onToggleTaskComplete={onToggleTaskComplete}
                       onReportSubTaskComplete={onReportSubTaskComplete}
                       onApproveItem={onApproveItem}

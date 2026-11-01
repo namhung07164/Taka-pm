@@ -1,11 +1,12 @@
 import React from 'react';
-import { Check, RotateCcw, Flag, Sparkles, MessageSquare, Clock } from 'lucide-react';
+import { Check, RotateCcw, Flag, Sparkles, MessageSquare, Clock, Play } from 'lucide-react';
 import { QuickNavButton } from '../QuickNavButton';
 import { UnifiedWorkItem } from './myWorkTypes';
 import { cn } from '../../lib/utils';
 
 interface MyWorkRowItemProps {
   item: UnifiedWorkItem;
+  onAcceptItem: (item: UnifiedWorkItem) => void;
   onToggleTaskComplete: (item: UnifiedWorkItem) => void;
   onReportSubTaskComplete: (item: UnifiedWorkItem) => void;
   onApproveItem: (item: UnifiedWorkItem) => void;
@@ -15,6 +16,7 @@ interface MyWorkRowItemProps {
 
 export const MyWorkRowItem: React.FC<MyWorkRowItemProps> = React.memo(function MyWorkRowItem({
   item,
+  onAcceptItem,
   onToggleTaskComplete,
   onReportSubTaskComplete,
   onApproveItem,
@@ -32,11 +34,11 @@ export const MyWorkRowItem: React.FC<MyWorkRowItemProps> = React.memo(function M
   const handleLeftCircleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (item.type === 'task') {
-      onToggleTaskComplete(item);
+      if (item.canEdit) onToggleTaskComplete(item);
     } else if (item.type === 'delegation_subtask') {
-      if (item.isApprover && item.isAwaitingMyApproval) {
+      if (item.canApproveOrReject) {
         onApproveItem(item);
-      } else {
+      } else if (item.canSubmitApproval) {
         onReportSubTaskComplete(item);
       }
     } else {
@@ -67,16 +69,19 @@ export const MyWorkRowItem: React.FC<MyWorkRowItemProps> = React.memo(function M
         ) : (
           <button
             type="button"
+            disabled={!item.canEdit && !item.canApproveOrReject}
             onClick={handleLeftCircleClick}
             title={
-              item.isCompleted
+              !item.canEdit && !item.canApproveOrReject
+                ? 'Read-only (No write permission or archived year)'
+                : item.isCompleted
                 ? 'Click to reopen'
-                : item.type === 'delegation_subtask' && !item.isApprover
-                ? '1-Click: Report completed (Request Approval)'
+                : item.type === 'delegation_subtask' && !item.canApproveOrReject
+                ? '1-Click: Request Approval (85% Pending Completed)'
                 : '1-Click: Mark as Completed'
             }
             className={cn(
-              'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer active:scale-90 touch-manipulation',
+              'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer active:scale-90 touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed',
               item.isCompleted
                 ? 'bg-emerald-500 border-emerald-500 text-white'
                 : item.isAwaitingMyApproval
@@ -125,7 +130,7 @@ export const MyWorkRowItem: React.FC<MyWorkRowItemProps> = React.memo(function M
 
           {item.type === 'delegation_subtask' && !item.isNeedsRework && (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/50">
-              Delegation
+              Delegation • {item.statusLabel}
             </span>
           )}
         </div>
@@ -166,19 +171,19 @@ export const MyWorkRowItem: React.FC<MyWorkRowItemProps> = React.memo(function M
         </div>
       </div>
 
-      {/* Right Column: Inline Quick Actions */}
+      {/* Right Column: Inline Quick Actions (Strictly RBAC Gated) */}
       <div
         className="flex items-center gap-1.5 shrink-0"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* If item is awaiting approval, show 1-Click Approve & Rework buttons */}
-        {item.isAwaitingMyApproval && !item.isCompleted && (
+        {/* 1. If item is awaiting approval and currentUser is Creator/Approver */}
+        {item.canApproveOrReject && (
           <>
             <button
               type="button"
               onClick={() => onApproveItem(item)}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xs transition-all cursor-pointer active:scale-95 touch-manipulation"
-              title="1-Click Approve"
+              title="1-Click Approve (100% Completed)"
             >
               <Check className="w-3.5 h-3.5 stroke-[2.5]" />
               <span>Approve</span>
@@ -196,20 +201,31 @@ export const MyWorkRowItem: React.FC<MyWorkRowItemProps> = React.memo(function M
           </>
         )}
 
-        {/* For Delegation PIC not yet submitted for approval, offer 1-Click Report Done */}
-        {item.type === 'delegation_subtask' &&
-          !item.isCompleted &&
-          !item.isAwaitingMyApproval && (
-            <button
-              type="button"
-              onClick={() => onReportSubTaskComplete(item)}
-              className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 transition-all cursor-pointer active:scale-95 touch-manipulation"
-              title="Submit for Approval"
-            >
-              <Check className="w-3 h-3" />
-              <span>Submit</span>
-            </button>
-          )}
+        {/* 2. Accept Delegation (0% -> 50% On process) */}
+        {item.type === 'delegation_subtask' && item.canAccept && (
+          <button
+            type="button"
+            onClick={() => onAcceptItem(item)}
+            className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60 transition-all cursor-pointer active:scale-95"
+            title="Accept Delegation (50% On process)"
+          >
+            <Play className="w-3 h-3" />
+            <span>Accept</span>
+          </button>
+        )}
+
+        {/* 3. Submit Delegation for Approval (85% Pending completed) */}
+        {item.type === 'delegation_subtask' && item.canSubmitApproval && (
+          <button
+            type="button"
+            onClick={() => onReportSubTaskComplete(item)}
+            className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60 transition-all cursor-pointer active:scale-95 touch-manipulation"
+            title="Submit for Approval (85% Pending completed)"
+          >
+            <Check className="w-3 h-3" />
+            <span>Request Approval</span>
+          </button>
+        )}
 
         {/* Open Chat directly */}
         <button
@@ -221,7 +237,7 @@ export const MyWorkRowItem: React.FC<MyWorkRowItemProps> = React.memo(function M
           <MessageSquare className="w-3.5 h-3.5" />
         </button>
 
-        {/* 1-Click QuickNav to Layout 2D / Gantt / Detail */}
+        {/* 1-Click QuickNav to Layout 2D / Gantt / Detail / My Works */}
         {item.rawProject && (
           <QuickNavButton
             project={item.rawProject}

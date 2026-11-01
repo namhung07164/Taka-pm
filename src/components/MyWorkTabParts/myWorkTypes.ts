@@ -2,6 +2,10 @@ import { Project, Task, DelegationGroup, DelegationSubTask } from '../../types';
 
 export type MyWorkTabView = 'today' | 'inbox' | 'upcoming' | 'done';
 
+export type MyWorkDisplayMode = 'kanban' | 'list';
+
+export type MyWorkKanbanColumnId = 'todo' | 'in_progress' | 'pending_approval' | 'done';
+
 export type UnifiedWorkItemType = 'task' | 'delegation_subtask' | 'project_milestone';
 
 export type WorkItemPriority = 'critical' | 'high' | 'medium' | 'low';
@@ -9,6 +13,7 @@ export type WorkItemPriority = 'critical' | 'high' | 'medium' | 'low';
 export interface UnifiedWorkItem {
   id: string;
   type: UnifiedWorkItemType;
+  kanbanColumn: MyWorkKanbanColumnId;
   title: string;
   subtitle?: string;
   projectId?: string;
@@ -23,13 +28,23 @@ export interface UnifiedWorkItem {
   friendlyDueLabel: string;
   priority: WorkItemPriority;
   statusLabel: string;
+  flowStatusLabel?: string;
   isCompleted: boolean;
   isOverdue: boolean;
   isNeedsRework: boolean;
+  isInProgress: boolean;
   isAwaitingMyApproval: boolean;
   isPIC: boolean;
+  isCreator: boolean;
   isApprover: boolean;
+  canEdit: boolean;
+  canAccept: boolean;
+  canSubmitApproval: boolean;
+  canApproveOrReject: boolean;
   party: string;
+  commentCount: number;
+  attachmentCount: number;
+  reportSnippet?: string;
   milestoneKind?: 'Start' | 'Handover' | 'Opening';
   rawTask?: Task;
   rawProject?: Project;
@@ -60,6 +75,15 @@ export interface MyWorkCounts {
   todayTodo: number;
 }
 
-export interface MyWorkScopeMode {
-  onlyMine: boolean;
+export interface MyWorkBriefingStats {
+  totalActiveTasks: number;
+  criticalUrgentCount: number;
+  highPriorityCount: number;
+  normalActiveCount: number;
+  upcomingMilestonesCount: number;
+  dueThisWeekCount: number;
+  delegationsActiveCount: number;
+  delegationsMyPICCount: number;
+  pendingMyApprovalCount: number;
+  needsReworkCount: number;
 }
