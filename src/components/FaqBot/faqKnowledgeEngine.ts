@@ -289,40 +289,40 @@ export const FAQ_KNOWLEDGE_BASE: FaqKnowledgeEntry[] = [
   {
     id: 'layout-floorplan-area',
     category: 'Layout & Floor Plan',
-    titleVi: '8. 🗺️ Mặt bằng Layout 2D: Tính diện tích (m²), Viền màu Legend & QR Code',
-    titleEn: '8. 🗺️ 2D Floor Layout: Area (m²) Formula, Legend Outline & QR Code',
+    titleVi: '8. 🗺️ Mặt bằng Layout 2D, Diện tích (m²) & Picture Mapping Dynamic (CSV 2 Sheet)',
+    titleEn: '8. 🗺️ 2D Layout Area (m²) & Picture Mapping Dynamic Hierarchy (2-Sheet CSV/Excel)',
     keywords: [
       'layout', 'mặt bằng', 'floor plan', 'diện tích', 'area', 'm2', 'sizeM2',
-      'color legend', 'viền màu', 'border', 'unit', 'qr', 'qr code', 'mini gantt', 'alerts'
+      'color legend', 'viền màu', 'border', 'unit', 'qr', 'qr code', 'mini gantt', 'alerts',
+      'picture mapping', 'dynamic', 'dynamic hierarchy', 'rule-based', 'sheet 2', 'csv', 'import', 'export'
     ],
     targetTab: 'layout',
     targetTabLabelVi: 'Mở Tab Layout (Bản đồ 2D)',
     targetTabLabelEn: 'Open Layout Tab (2D Map)',
     quickPromptsVi: [
-      'Tại sao khi bấm vào Color Legend có ô hiện viền màu, có ô không có viền?',
-      'Diện tích m² của In Progress / Completed được tính như thế nào?'
+      'Làm sao Import/Export CSV & xem Sheet 2 giải thích trong Picture Mapping Dynamic?',
+      'Tại sao khi bấm vào Color Legend có ô hiện viền màu, có ô không có viền?'
     ],
     quickPromptsEn: [
-      'Why do some units show a colored border when clicking Color Legend while others do not?',
-      'How is the m² area for In Progress / Completed calculated?'
+      'How do I Import/Export CSV & use Sheet 2 guide in Picture Mapping Dynamic?',
+      'Why do some units show a colored border when clicking Color Legend while others do not?'
     ],
     answerVi:
-      '🎯 **Hiểu đơn giản**: Tab `Layout` hiển thị bản vẽ mặt bằng các tầng (`B2` ➔ `L5`), tô màu tự động theo tiến độ và thống kê diện tích (`m²`) trực tiếp trong bảng **Color Legend** nổi.\n' +
-      '📐 **Quy tắc tính Diện tích (`m²`) trong Color Legend**:\n' +
-      '  • Diện tích của từng nhóm (`Upcoming`, `In Progress`, `Completed`, `Shop Type`, `Party`...) được tính bằng **tổng diện tích (`sizeM2`) của các Dự án duy nhất (Unique Projects)** thuộc nhóm đó.\n' +
-      '  • *Tại sao?* Giúp khi 1 dự án gộp 2–3 ô mặt bằng thì diện tích dự án chỉ cộng **1 lần chuẩn xác**, không bao giờ bị nhân đôi.\n' +
-      '✨ **Quy tắc Viền Màu khi bấm vào Color Legend**:\n' +
-      '  • Khi bạn nhấn vào 1 dòng trong **Color Legend** (VD: nhấn vào ô `Completed` hoặc `In Progress`):\n' +
-      '    - Gian hàng/dự án nào **có diện tích (`sizeM2 > 0`)** sẽ sáng **đường viền màu chính của trạng thái đó bao xung quanh**.\n' +
-      '    - Ô nào **không có diện tích (`0 m²`)** sẽ **không có viền**.\n' +
-      '💡 **Mẹo tương tác**: Chạm vào gian hàng trên bản đồ để mở **`[📊 Mini Gantt]`**, **`[💬 Chat]`** (siêu nhẹ 0ms), xem **`[🖼️ Ảnh]`** (cô lập riêng `HCM` và `HN`), hoặc dùng điện thoại **Quét QR Code** để tự động zoom thẳng vào gian hàng!',
+      '🎯 **Hiểu đơn giản**: Quản lý trực quan bản vẽ các tầng (`B2` ➔ `L5`) qua **Tab `Layout`** (tiến độ dự án) và **Tab `Picture mapping`** (quy hoạch động `DYNAMIC` & lưu trữ Cloudflare R2).\n' +
+      '📐 **Quy tắc Diện tích (`m²`) & Viền màu trong `Color Legend` (`Layout`)**:\n' +
+      '  • Diện tích mỗi nhóm tính bằng **tổng `sizeM2` của các Dự án duy nhất (`Unique Projects`)** cộng diện tích các ô phụ nối qua `Project Code Link` (không bao giờ bị tính trùng).\n' +
+      '  • Khi bấm chọn 1 dòng trong **Color Legend**: Gian hàng/dự án **có diện tích (`sizeM2 > 0`)** sẽ sáng **viền màu trạng thái bao quanh**; ô `0 m²` không hiện viền.\n' +
+      '📊 **Quy tắc Động (`Picture mapping ➔ DYNAMIC`) & Xuất/Nhập Excel 2 Sheet**:\n' +
+      '  • Tạo các nhóm quy tắc tự động (`Rule-Based Groups` chạy `RAM 0ms`) và đồng bộ qua `SAVE/LOAD CLOUD DYNAMIC`.\n' +
+      '  • Khi bấm **`Export Excel`**, file xuất ra gồm **2 Sheet**: **Sheet 1 (`Dynamic_Rules_Data`)** chứa bảng dữ liệu quy tắc để chỉnh sửa & Import lại; **Sheet 2 (`Field_Reference_Guide`)** giải thích chi tiết từng cột, trường dữ liệu (`Floor`, `Category`, `Lease Status`, `Area`...) và toán tử hợp lệ (`=`, `!=`, `contains`, `>`, `<`).',
     answerEn:
-      '🎯 **Simple Idea**: The `Layout` tab renders interactive 2D floor plans (`B2` ➔ `L5`) with live status coloring and area (`m²`) metrics inside the floating **Color Legend**.\n' +
-      '📐 **Area (`m²`) Calculation Rule**:\n' +
-      '  • Group area (`Upcoming`, `In Progress`, `Completed`, etc.) equals the **sum of `sizeM2` of unique matched projects** in that status (preventing double-counting when one project spans multiple units).\n' +
-      '✨ **Status Border Highlight Rule on Color Legend Click**:\n' +
-      '  • Clicking any row in **Color Legend** draws a **bold status-colored outline around matched units/projects that have area (`sizeM2 > 0`)**. Units without area (`0 m²`) show no border.\n' +
-      '💡 **Pro Tip**: Tap any booth on the map to open **`[📊 Mini Gantt]`**, **`[💬 Chat]`**, **`[🖼️ Photos]`** (strictly isolated between `HCM` and `HN`), or scan a **Project QR Code** to auto-zoom right into the unit!',
+      '🎯 **Simple Idea**: Manage floor plans (`B2` ➔ `L5`) via **`Layout`** (live project progress) and **`Picture mapping`** (`DYNAMIC` rule-based planning & Cloudflare R2 sync).\n' +
+      '📐 **Area (`m²`) & Status Border Rule in `Color Legend` (`Layout`)**:\n' +
+      '  • Group area equals the **sum of `sizeM2` of unique matched projects** plus linked units (preventing double-counting).\n' +
+      '  • Clicking a **Color Legend** row draws a **bold status-colored outline around matched units with area (`sizeM2 > 0`)**; `0 m²` units show no border.\n' +
+      '📊 **`Picture mapping ➔ DYNAMIC` & 2-Sheet Excel/CSV Import-Export**:\n' +
+      '  • Build `Rule-Based Groups` (`RAM 0ms`) and sync via `SAVE/LOAD CLOUD DYNAMIC`.\n' +
+      '  • **`Export Excel`** generates **2 Sheets**: **Sheet 1 (`Dynamic_Rules_Data`)** for bulk editing/importing rules, and **Sheet 2 (`Field_Reference_Guide`)** documenting all valid fields (`Floor`, `Category`, `Lease Status`, `Area`...), operators (`=`, `!=`, `contains`, `>`, `<`), and examples.',
     relatedIds: ['project-status-lifecycle']
   },
   {

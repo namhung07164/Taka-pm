@@ -31,6 +31,15 @@ const TAKA_CORE_SYSTEM_CONTEXT = `
 5. CLOUDFLARE R2, CORS POLICY & SLEEPING TABS:
    - R2 CORS Policy requires AllowedOrigins: ["*"], AllowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD"], AllowedHeaders: ["*"].
    - Chrome/Edge Sleeping Tabs: Whitelist Taka PM in chrome://settings/performance or edge://settings/system. Overnight Wake-up Guard auto-detects sleep gaps (>60s), pulls missed deltas, and cleans zombie tasks without clearing cache.
+
+6. MY WORK TAB (TIME-HORIZON FILTERS & PER-ACCOUNT REVIEWED SYNC):
+   - Default 'Summary Mode (0 Read)' aggregates tasks/delegations/milestones from memory with 0 extra Firestore reads.
+   - Time-Horizon Filters: All Dates, Overdue, Today, This Week, Next 7 Days, This Month + Store (All/HCM/HN) + Fix Project Code.
+   - Per-Account Cross-Device Reviewed Sync: Checking off a task in My Work syncs by user account (taka_config/mywork_reviewed_<accountKey> + taka_deltas) across iOS, iPad, and Laptop. If a reviewed task later changes status/progress/dueDate or gets rejected for rework, its signature changes and it automatically returns to active columns.
+
+7. QUICK NAVIGATOR ('FIX PROJECT CODE' vs 'SEARCH') & PICTURE MAPPING DYNAMIC CSV/EXCEL:
+   - Clicking a project in Quick Navigator populates 'Fix Project Code' (fixedProjectCode) and keeps 'Search' empty for secondary keyword filtering, while still relaxing status/money filters to 'All', auto-jumping Location to the project's floor, and expanding child rows.
+   - Picture Mapping -> DYNAMIC Tab supports Rule-Based Groups (RAM 0ms), Cloud R2 Save/Load, and 2-Sheet Excel/CSV Export & Import: Sheet 1 ('Dynamic_Rules_Data') has importable group/rule rows; Sheet 2 ('Field_Reference_Guide') documents all valid fields, operators, and sample values.
 `;
 
 function loadFaqKnowledgeDocs(): { manualMd: string; businessMd: string } {
@@ -83,7 +92,7 @@ export function registerFaqChatRoute(app: express.Express): void {
       });
 
       const systemInstruction =
-        `You are the official Takashimaya Project Management (Taka PM) User Manual Assistant.\n` +
+        `You are the official Takashimaya Project Management (Taka PM) User Manual & Domain Logic Assistant.\n` +
         `The user is currently on tab: "${activeTab}".\n` +
         `CRITICAL CONSTRAINTS:\n` +
         `- Keep your answer ultra-concise, clear, and complete within 3 to 5 bullet points (under 220 words) so it fits cleanly within maxOutputTokens: 300.\n` +
@@ -91,8 +100,8 @@ export function registerFaqChatRoute(app: express.Express): void {
         `- Base your answer strictly on the Taka PM Core System Context and documentation below.\n` +
         `${TAKA_CORE_SYSTEM_CONTEXT}\n` +
         `--- MATCHED FAQ CONTEXT ---\n${localContext}\n` +
-        `--- USER_MANUAL.md EXCERPT ---\n${manualMd.slice(0, 8000)}\n` +
-        `--- BUSINESS_LOGIC.md EXCERPT ---\n${businessMd.slice(0, 5000)}`;
+        `--- USER_MANUAL.md ---\n${manualMd.slice(0, 32000)}\n` +
+        `--- BUSINESS_LOGIC.md ---\n${businessMd.slice(0, 32000)}`;
 
       let responseText = '';
       try {

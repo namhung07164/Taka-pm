@@ -31,10 +31,72 @@ export const TAB_DISPLAY_NAMES: Record<string, { vi: string; en: string }> = {
   notification: { vi: 'Tab Thông báo', en: 'Notifications Tab' },
   manual: { vi: 'Tab Cẩm nang HDSD', en: 'User Manual Tab' },
   auditLog: { vi: 'Tab Nhật ký Kiểm toán', en: 'Audit Log Tab' },
-  csvExport: { vi: 'Tab Xuất/Nhập CSV & Excel', en: 'CSV / Excel Export Tab' }
+  csvExport: { vi: 'Tab Xuất/Nhập CSV & Excel', en: 'CSV / Excel Export Tab' },
+  myWork: { vi: 'Tab My Work (Việc của tôi)', en: 'My Work Tab' }
 };
 
 export const FAQ_TAB_QUICK_CHIPS: FaqQuickChip[] = [
+  {
+    id: 'chip-mywork-reviewed-sync',
+    tabIds: ['myWork', 'all'],
+    labelVi: 'Đồng bộ tích việc My Work & Bộ lọc Today',
+    labelEn: 'My Work Account Sync & Time Filters',
+    targetTab: 'myWork',
+    targetTabLabelVi: 'Mở Tab My Work',
+    targetTabLabelEn: 'Open My Work Tab',
+    answerVi:
+      '### ⚡ Quản lý Việc cá nhân (`My Work`) & Đồng bộ Đã kiểm tra theo Tài khoản\n' +
+      '• **Bộ lọc thời gian**: Lọc nhanh theo `Today` (Hôm nay), `This Week` (Tuần này), `Next 7 Days`, `This Month`, hoặc `Overdue` (Quá hạn) kết hợp `All / HCM / HN` và `Fix Project Code`.\n' +
+      '• **Đồng bộ theo Tài khoản (iOS ⇄ Laptop)**: Khi bạn tích chọn hoàn tất/đã kiểm tra 1 task trên điện thoại iOS (VD: tài khoản `CP-HUNG`), trạng thái được đồng bộ thời gian thực lên Cloud theo tài khoản. Khi mở Laptop, task đó tự động nằm ở cột **`Completed`** và không hiện lại ở cột việc cần làm.\n' +
+      '• **Tự động nhắc lại thông minh**: Nếu task đã tích nhưng sau đó có cập nhật % tiến độ mới, đổi hạn chót hoặc bị `Reject`, task sẽ tự động quay lại cột `To Do / In Progress`.',
+    answerEn:
+      '### ⚡ My Work Time-Horizon Filters & Per-Account Reviewed Sync\n' +
+      '• **Time Filters**: Filter by `Today`, `This Week`, `Next 7 Days`, `This Month`, or `Overdue` alongside `All / HCM / HN` and `Fix Project Code`.\n' +
+      '• **Per-Account Cross-Device Sync**: Checking off a task on iOS syncs to your account (`taka_config/mywork_reviewed_<account>`) so it automatically appears in **`Completed`** on your Laptop without reappearing in active columns.\n' +
+      '• **Smart Reopen**: If a reviewed task later changes progress, due date, or is rejected for rework, it automatically returns to active columns.'
+  },
+  {
+    id: 'chip-quick-nav-fix-project',
+    tabIds: ['general', 'detail', 'gantt', 'budget', 'cost', 'myWork'],
+    labelVi: 'Quick Navigator & Ô Fix Project Code',
+    labelEn: 'Quick Navigator & Fix Project Code',
+    targetTab: 'detail',
+    targetTabLabelVi: 'Xem trên Task Detail',
+    targetTabLabelEn: 'View on Task Detail',
+    answerVi:
+      '### 📌 Cơ chế điền `Fix Project Code` khi chọn từ Quick Navigator\n' +
+      '• Khi bạn click chọn dự án từ **Quick Navigator** (hoặc link dự án), mã dự án được điền vào ô **`Fix Project Code`** thay vì ô `Search`.\n' +
+      '• **Lợi ích kép**:\n' +
+      '  1. Ô **`Fix Project Code`** vẫn tự động nhảy đúng tầng (`Location`), mở khóa bộ lọc `All` và bung mở các dòng con y hệt như khi tìm kiếm.\n' +
+      '  2. Ô **`Search`** được giữ trống hoàn toàn để bạn thoải mái gõ thêm từ khóa lọc sâu (tên nhà thầu, tên việc, hạng mục chi phí) bên trong dự án đã ghim!',
+    answerEn:
+      '### 📌 Quick Navigator & `Fix Project Code` vs `Search`\n' +
+      '• Selecting a project from **Quick Navigator** populates **`Fix Project Code`** instead of the `Search` input.\n' +
+      '• **Dual Benefit**:\n' +
+      '  1. **`Fix Project Code`** automatically jumps to the project floor, relaxes status/money filters to `All`, and expands child rows.\n' +
+      '  2. The **`Search`** box stays empty so you can filter by secondary keywords (task name, contractor, cost item) inside the pinned project!'
+  },
+  {
+    id: 'chip-picture-mapping-dynamic-csv',
+    tabIds: ['picture_mapping', 'layout'],
+    labelVi: 'Import/Export CSV & Sheet 2 Giải thích (Dynamic)',
+    labelEn: 'Dynamic Rules CSV/Excel & Sheet 2 Guide',
+    targetTab: 'picture_mapping',
+    targetTabLabelVi: 'Mở Picture Mapping',
+    targetTabLabelEn: 'Open Picture Mapping',
+    answerVi:
+      '### 📊 Xuất / Nhập CSV & Excel 2 Sheet trong `Picture Mapping ➔ DYNAMIC`\n' +
+      '• **Xuất Excel 2 Sheet (`Export Excel`)**:\n' +
+      '  - **Sheet 1 (`Dynamic_Rules_Data`)**: Chứa toàn bộ danh sách nhóm (`Rule-Based Groups`) và các điều kiện lọc để bạn chỉnh sửa hàng loạt rồi Import ngược lại.\n' +
+      '  - **Sheet 2 (`Field_Reference_Guide`)**: Bảng từ điển giải thích chi tiết từng cột, liệt kê các trường hợp lệ (`Floor`, `Category`, `Lease Status`, `Area`, `Party`...), các toán tử (`=`, `!=`, `contains`, `>`, `<`) và ví dụ mẫu.\n' +
+      '• **Đồng bộ R2**: Bấm `SAVE CLOUD DYNAMIC` / `LOAD CLOUD DYNAMIC` để lưu và tải mặt bằng + quy tắc động từ Cloudflare R2.',
+    answerEn:
+      '### 📊 2-Sheet Excel/CSV Import & Export in `Picture Mapping ➔ DYNAMIC`\n' +
+      '• **2-Sheet Excel Export**:\n' +
+      '  - **Sheet 1 (`Dynamic_Rules_Data`)**: Editable flat table of all rule groups and matching conditions for bulk import.\n' +
+      '  - **Sheet 2 (`Field_Reference_Guide`)**: Complete dictionary explaining every column, valid field keys (`Floor`, `Category`, `Lease Status`, `Area`...), operators (`=`, `!=`, `contains`, `>`, `<`), and sample values.\n' +
+      '• **Cloudflare R2 Sync**: Use `SAVE CLOUD DYNAMIC` / `LOAD CLOUD DYNAMIC` to sync floor plans and rules across devices.'
+  },
   {
     id: 'chip-gantt-predecessor',
     tabIds: ['gantt', 'detail', 'all'],
