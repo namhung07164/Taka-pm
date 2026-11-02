@@ -45,22 +45,22 @@ export function MyWorkTab() {
     visibleDelegationGroups: delegationGroups,
   } = useEnrichedData();
 
-  const currentUser = useAppStore((state) => state.currentUser)!;
-  const permissionMatrix = useAppStore((state) => state.permissionMatrix);
-  const setIsTasksRequested = useAppStore((state) => state.setIsTasksRequested);
-  const isDelegationsRequested = useAppStore((state) => state.isDelegationsRequested);
-  const setIsDelegationsRequested = useAppStore((state) => state.setIsDelegationsRequested);
-  const globalStoreFilter = useAppStore((state) => state.globalStoreFilter);
-  const setGlobalStoreFilter = useAppStore((state) => state.setGlobalStoreFilter);
-  const globalYearFilter = useAppStore((state) => state.globalYearFilter);
-  const setIsCalendarSyncModalOpen = useAppStore((state) => state.setIsCalendarSyncModalOpen);
-  const setEditingTask = useAppStore((state) => state.setEditingTask);
-  const setEditingProject = useAppStore((state) => state.setEditingProject);
-  const setIsTaskModalOpen = useAppStore((state) => state.setIsTaskModalOpen);
-  const setIsProjectModalOpen = useAppStore((state) => state.setIsProjectModalOpen);
-  const setModalInitialTab = useAppStore((state) => state.setModalInitialTab);
-  const setIsReadOnlyModal = useAppStore((state) => state.setIsReadOnlyModal);
-  const setToast = useAppStore((state) => state.setToast);
+  const currentUser = useAppStore((s) => s.currentUser)!;
+  const permissionMatrix = useAppStore((s) => s.permissionMatrix);
+  const setIsTasksRequested = useAppStore((s) => s.setIsTasksRequested);
+  const isDelegationsRequested = useAppStore((s) => s.isDelegationsRequested);
+  const setIsDelegationsRequested = useAppStore((s) => s.setIsDelegationsRequested);
+  const globalStoreFilter = useAppStore((s) => s.globalStoreFilter);
+  const setGlobalStoreFilter = useAppStore((s) => s.setGlobalStoreFilter);
+  const globalYearFilter = useAppStore((s) => s.globalYearFilter);
+  const setIsCalendarSyncModalOpen = useAppStore((s) => s.setIsCalendarSyncModalOpen);
+  const setEditingTask = useAppStore((s) => s.setEditingTask);
+  const setEditingProject = useAppStore((s) => s.setEditingProject);
+  const setIsTaskModalOpen = useAppStore((s) => s.setIsTaskModalOpen);
+  const setIsProjectModalOpen = useAppStore((s) => s.setIsProjectModalOpen);
+  const setModalInitialTab = useAppStore((s) => s.setModalInitialTab);
+  const setIsReadOnlyModal = useAppStore((s) => s.setIsReadOnlyModal);
+  const setToast = useAppStore((s) => s.setToast);
 
   const [displayMode, setDisplayMode] = useState<MyWorkDisplayMode>('kanban');
   const [activeView, setActiveView] = useState<MyWorkTabView>('today');
@@ -73,27 +73,21 @@ export function MyWorkTab() {
     const handleFocusChanged = (e: Event) => {
       const custom = e as CustomEvent<MyWorkFocusTarget | null>;
       setFocusTarget(custom.detail || null);
-      if (custom.detail) {
-        setActiveView('today');
-      }
+      if (custom.detail) setActiveView('today');
     };
     window.addEventListener('taka-mywork-focus-changed', handleFocusChanged);
     return () => window.removeEventListener('taka-mywork-focus-changed', handleFocusChanged);
   }, []);
 
-  // Summary-First & Local Dexie Priority (0 Firestore Read on Boot - Rule 3 & Rule 14)
   useEffect(() => {
     hydrateTasksFromLocal().catch(() => {});
     hydrateDelegationsFromLocal()
-      .then((hydratedCount) => {
-        if (!hydratedCount && !isDelegationsRequested) {
-          setIsDelegationsRequested(true);
-        }
+      .then((count) => {
+        if (!count && !isDelegationsRequested) setIsDelegationsRequested(true);
       })
       .catch(() => {});
   }, [isDelegationsRequested, setIsDelegationsRequested]);
 
-  // On-demand targeted hydration ONLY when focused on a specific project from Quick Navigator
   useEffect(() => {
     if (focusTarget?.projectCode) {
       ensureProjectTasksLoaded(focusTarget.projectCode, {
@@ -151,40 +145,34 @@ export function MyWorkTab() {
     focusTarget,
   });
 
-  // 1-Click Task Completion Toggle (0ms Optimistic UI across both tasks and project.taskSummaries)
   const handleToggleTaskComplete = useCallback(
     async (item: UnifiedWorkItem) => {
       if (!item.canEdit) {
         setToast({
           title: 'Permission Denied',
-          message: 'You do not have write permission for this task or it belongs to an archived year.',
+          message: 'You do not have write permission for this item or it belongs to an archived year.',
           type: 'warning',
         });
         return;
       }
-      try {
-        const nextCompleted = !item.isCompleted;
-        const todayIso = new Date().toISOString().substring(0, 10);
-        await mutateTaskStatusUnified(
-          item,
-          {
-            runningStatus: nextCompleted ? 'Completed' : 'On process',
-            ...(nextCompleted && !item.dueDateStr ? { finish: todayIso } : {}),
-          },
-          {
-            title: nextCompleted ? 'Task Completed' : 'Task Reopened',
-            message: `"${item.title}" moved to ${nextCompleted ? 'Completed' : 'In Progress'}.`,
-            type: 'success',
-          }
-        );
-      } catch (err) {
-        console.error('[MyWorkTab] handleToggleTaskComplete error:', err);
-      }
+      const nextCompleted = !item.isCompleted;
+      const todayIso = new Date().toISOString().substring(0, 10);
+      await mutateTaskStatusUnified(
+        item,
+        {
+          runningStatus: nextCompleted ? 'Completed' : 'On process',
+          ...(nextCompleted && !item.dueDateStr ? { finish: todayIso } : {}),
+        },
+        {
+          title: nextCompleted ? 'Item Completed' : 'Item Reopened',
+          message: `"${item.title}" moved to ${nextCompleted ? 'Completed' : 'In Progress'}.`,
+          type: 'success',
+        }
+      );
     },
     [setToast]
   );
 
-  // 1-Click Accept Task / Delegation (Assigned/To Do -> In Progress)
   const handleAcceptItem = useCallback(
     async (item: UnifiedWorkItem) => {
       if (!item.canAccept) return;
@@ -203,18 +191,11 @@ export function MyWorkTab() {
           'Delegation Accepted (50%)',
           `"${item.title}" moved to In Progress.`
         );
-      } else if (item.type === 'task') {
+      } else {
         await mutateTaskStatusUnified(
           item,
-          {
-            runningStatus: 'On process',
-            start: item.startDateStr || todayStr,
-          },
-          {
-            title: 'Task Started',
-            message: `"${item.title}" moved to In Progress.`,
-            type: 'info',
-          }
+          { runningStatus: 'On process', start: item.startDateStr || todayStr },
+          { title: 'Task Started', message: `"${item.title}" moved to In Progress.`, type: 'info' }
         );
       }
     },
@@ -243,7 +224,6 @@ export function MyWorkTab() {
     [currentUser?.id]
   );
 
-  // 1-Click Approve (Strictly gated to Creator / Admin)
   const handleApproveItem = useCallback(
     async (item: UnifiedWorkItem) => {
       if (!item.canApproveOrReject) {
@@ -256,42 +236,25 @@ export function MyWorkTab() {
       }
       const nowIso = new Date().toISOString();
       const todayStr = nowIso.substring(0, 10);
-
       if (item.type === 'delegation_subtask') {
         await mutateDelegationSubTaskUnified(
           item,
-          {
-            status: 'Approved',
-            delegationStatus: 'Completed',
-            approvalStatus: 'Approved',
-            finishAct: todayStr,
-            approvedAt: nowIso,
-          },
+          { status: 'Approved', delegationStatus: 'Completed', approvalStatus: 'Approved', finishAct: todayStr, approvedAt: nowIso },
           currentUser.id,
           'Approved (100%)',
           `"${item.title}" has been approved and moved to Completed.`
         );
-      } else if (item.type === 'task') {
+      } else {
         await mutateTaskStatusUnified(
           item,
-          {
-            approval: 'Approved',
-            approvedAt: nowIso,
-            runningStatus: 'Completed',
-            finish: item.dueDateStr || todayStr,
-          },
-          {
-            title: 'Task Approved',
-            message: `"${item.title}" approved and moved to Completed.`,
-            type: 'success',
-          }
+          { approval: 'Approved', approvedAt: nowIso, runningStatus: 'Completed', finish: item.dueDateStr || todayStr },
+          { title: 'Task Approved', message: `"${item.title}" approved and moved to Completed.`, type: 'success' }
         );
       }
     },
     [currentUser?.id, setToast]
   );
 
-  // 1-Click Request Rework (Strictly gated to Creator / Admin)
   const handleReworkItem = useCallback(
     async (item: UnifiedWorkItem) => {
       if (!item.canApproveOrReject) {
@@ -305,29 +268,17 @@ export function MyWorkTab() {
       if (item.type === 'delegation_subtask') {
         await mutateDelegationSubTaskUnified(
           item,
-          {
-            status: 'Needs Rework',
-            delegationStatus: 'Needs Rework',
-            approvalStatus: 'ReqReview',
-            approvedAt: null,
-          },
+          { status: 'Needs Rework', delegationStatus: 'Needs Rework', approvalStatus: 'ReqReview', approvedAt: null },
           currentUser.id,
           'Returned for Rework (25%)',
           `"${item.title}" marked as Needs Rework.`,
           'warning'
         );
-      } else if (item.type === 'task') {
+      } else {
         await mutateTaskStatusUnified(
           item,
-          {
-            approval: 'Rejected',
-            runningStatus: 'On process',
-          },
-          {
-            title: 'Returned for Rework',
-            message: `"${item.title}" returned to PIC for rework.`,
-            type: 'warning',
-          }
+          { approval: 'Rejected', runningStatus: 'On process' },
+          { title: 'Returned for Rework', message: `"${item.title}" returned to PIC for rework.`, type: 'warning' }
         );
       }
     },
@@ -337,7 +288,6 @@ export function MyWorkTab() {
   // Kanban Column Drag & Drop Handler (Enforces RBAC & Delegation State Machine)
   const handleMoveItemToColumn = useCallback(
     async (item: UnifiedWorkItem, targetCol: MyWorkKanbanColumnId) => {
-      if (item.type === 'project_milestone') return;
       if (item.type === 'delegation_subtask') {
         if (targetCol === 'in_progress' && item.canEdit) {
           await handleAcceptItem({ ...item, canAccept: true });
@@ -352,13 +302,13 @@ export function MyWorkTab() {
         } else if (targetCol === 'todo' && item.isCreator) {
           await handleReworkItem({ ...item, canApproveOrReject: true });
         }
-      } else if (item.type === 'task' && item.canEdit) {
+      } else if ((item.type === 'task' || item.type === 'project_milestone') && item.canEdit) {
         const todayIso = new Date().toISOString().substring(0, 10);
         if (targetCol === 'done') {
           await mutateTaskStatusUnified(
             item,
             { runningStatus: 'Completed', finish: item.dueDateStr || todayIso },
-            { title: 'Task Completed', message: `"${item.title}" moved to Completed.`, type: 'success' }
+            { title: 'Item Completed', message: `"${item.title}" moved to Completed.`, type: 'success' }
           );
         } else if (targetCol === 'pending_approval') {
           await mutateTaskStatusUnified(
@@ -370,7 +320,7 @@ export function MyWorkTab() {
           await mutateTaskStatusUnified(
             item,
             { runningStatus: 'On process' },
-            { title: 'Task In Progress', message: `"${item.title}" moved to In Progress.`, type: 'info' }
+            { title: 'Item In Progress', message: `"${item.title}" moved to In Progress.`, type: 'info' }
           );
         } else {
           await mutateTaskStatusUnified(

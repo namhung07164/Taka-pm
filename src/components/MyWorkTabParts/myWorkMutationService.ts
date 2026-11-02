@@ -16,6 +16,11 @@ import {
 import { getStatus, getTaskStatus, resolveActualStatus } from '../../lib/utils';
 import { checkAndSyncRealtimeSubTaskCompletion } from '../TaskDelegationParts/delegationAutoSync';
 import { UnifiedWorkItem } from './myWorkTypes';
+import {
+  buildKeysFromUnifiedItem,
+  persistAccountMyWorkState,
+  sanitizeWorkKeyPart,
+} from './myWorkAccountSync';
 
 /**
  * Matches a task summary entry inside Project.taskSummaries by id, taskCodePhu, or normalized name.
@@ -83,9 +88,11 @@ export async function resolveRealTaskForWorkItem(item: UnifiedWorkItem): Promise
 }
 
 /**
- * 0ms Optimistic UI + Full Persistence for Task Status Mutations (Complete / Reopen / Start / Approve / Rework).
- * Simultaneously updates project.taskSummaries and state.tasks in Zustand so virtual summary tasks
- * and real tasks immediately transition across Kanban columns with 0 latency.
+ * 0ms Optimistic UI + Account-Synced Persistence for Task & Milestone Status Mutations.
+ * Simultaneously updates:
+ * 1) currentUser.myWorkStates (synced to `taka_users/{userId}` across iOS & Laptop)
+ * 2) project.taskSummaries (in Zustand, Dexie, and Firestore `taka_projects`)
+ * 3) state.tasks (in Zustand, Dexie, and Firestore `taka_tasks`)
  */
 export async function mutateTaskStatusUnified(
   item: UnifiedWorkItem,
@@ -98,6 +105,33 @@ export async function mutateTaskStatusUnified(
   const projCodeLower = String(item.projectCode || '').trim().toLowerCase();
   const projStoreLower = String(item.projectStore || '').trim().toLowerCase();
   const projYearStr = String(item.projectYear || '').trim();
+
+  const accountStatus =
+    updates.runningStatus === 'Completed' || updates.approval === 'Approved'
+      ? 'Completed'
+      : updates.approval === 'ReqApproval'
+      ? 'ReqApproval'
+      : updates.approval === 'Rejected'
+      ? 'Needs Rework'
+      : updates.runningStatus || 'On process';
+
+  // 0. 0ms Account-Level Sync (Zustand + localStorage + Firestore `taka_users/{userId}`)
+  const syncKeys = buildKeysFromUnifiedItem(item);
+  persistAccountMyWorkState(syncKeys, accountStatus).catch((err) =>
+    console.warn('[myWorkMutationService] persistAccountMyWorkState warning:', err)
+  );
+
+  if (toastInfo) {
+    useAppStore.getState().setToast({
+      title: toastInfo.title,
+      message: toastInfo.message,
+      type: toastInfo.type || 'success',
+    });
+  }
+
+  if (item.type === 'project_milestone') {
+    return;
+  }
 
   // 1. 0ms Synchronous Optimistic Update on Project.taskSummaries in Zustand
   let matchedProjectInStore: Project | undefined;
@@ -164,18 +198,15 @@ export async function mutateTaskStatusUnified(
     useAppStore.getState().optimisticUpdateTasks([immediateTask]);
   }
 
-  if (toastInfo) {
-    useAppStore.getState().setToast({
-      title: toastInfo.title,
-      message: toastInfo.message,
-      type: toastInfo.type || 'success',
-    });
-  }
-
   // 3. Resolve Real Task & Persist to Dexie + Firestore (via firestoreWrites.ts)
   const realTask = existingInTasks || (await resolveRealTaskForWorkItem(item));
 
   if (realTask && !String(realTask.id || '').startsWith('ts_')) {
+    const realTaskKey = `tid_${sanitizeWorkKeyPart(realTask.id)}`;
+    if (!syncKeys.includes(realTaskKey)) {
+      persistAccountMyWorkState([realTaskKey], accountStatus).catch(() => {});
+    }
+
     const fullTaskUpdate: Task = {
       ...realTask,
       projectId: realTask.projectId || projId,
@@ -193,6 +224,23 @@ export async function mutateTaskStatusUnified(
       fullTaskUpdate,
       { merge: true }
     );
+
+    // Guarantee `taka_projects.taskSummaries` is written to Firestore for Summary Mode (0 Read) devices
+    const targetProject = matchedProjectInStore || item.rawProject;
+    if (targetProject?.id && updatedSummariesForProject) {
+      upsertLocalRecord('taka_projects', {
+        ...targetProject,
+        taskSummaries: updatedSummariesForProject,
+        updatedAt: nowIso,
+      }).catch(() => {});
+      await updateDoc(
+        doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', targetProject.id),
+        {
+          taskSummaries: updatedSummariesForProject,
+          updatedAt: nowIso,
+        }
+      );
+    }
     return;
   }
 
@@ -224,7 +272,7 @@ export async function mutateTaskStatusUnified(
 }
 
 /**
- * 0ms Optimistic UI + Full Persistence for Delegation SubTask Transitions.
+ * 0ms Optimistic UI + Account-Synced Persistence for Delegation SubTask Transitions.
  */
 export async function mutateDelegationSubTaskUnified(
   item: UnifiedWorkItem,
@@ -237,6 +285,20 @@ export async function mutateDelegationSubTaskUnified(
   const group = item.rawDelegationGroup;
   const subTask = item.rawSubTask;
   if (!group || !subTask) return;
+
+  const rawNextStatus = String(
+    updates.status || updates.delegationStatus || updates.approvalStatus || ''
+  ).toLowerCase();
+  const delAccountStatus =
+    rawNextStatus === 'approved' || rawNextStatus === 'completed'
+      ? 'Completed'
+      : rawNextStatus === 'pending completed' || rawNextStatus === 'requested'
+      ? 'ReqApproval'
+      : rawNextStatus === 'needs rework' || rawNextStatus === 'rejected'
+      ? 'Needs Rework'
+      : 'On process';
+
+  persistAccountMyWorkState(buildKeysFromUnifiedItem(item), delAccountStatus).catch(() => {});
 
   const nowIso = new Date().toISOString();
   const updatedSubTasks = (group.subTasks || []).map((st) =>

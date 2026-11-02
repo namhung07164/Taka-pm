@@ -247,6 +247,8 @@ export interface AppUser {
   byPartyAccess?: boolean;
   partyPermissions?: Record<string, boolean>;
   readNotifs?: string[];
+  myWorkStates?: Record<string, string>;
+  myWorkUpdatedAt?: string;
   preferences?: {
     defaultStore?: string;
     defaultYear?: string;

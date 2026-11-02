@@ -33,7 +33,7 @@ export const MyWorkRowItem: React.FC<MyWorkRowItemProps> = React.memo(function M
 
   const handleLeftCircleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (item.type === 'task') {
+    if (item.type === 'task' || item.type === 'project_milestone') {
       if (item.canEdit) onToggleTaskComplete(item);
     } else if (item.type === 'delegation_subtask') {
       if (item.canApproveOrReject) {
@@ -59,41 +59,32 @@ export const MyWorkRowItem: React.FC<MyWorkRowItemProps> = React.memo(function M
     >
       {/* Left Column: Things 3-style 1-Click Circular Action */}
       <div className="flex items-center shrink-0">
-        {item.type === 'project_milestone' ? (
-          <div
-            className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-950/70 text-purple-600 dark:text-purple-300 flex items-center justify-center border border-purple-300/70 dark:border-purple-800/60"
-            title={`Project Milestone: ${item.milestoneKind}`}
-          >
-            <Flag className="w-3.5 h-3.5" />
-          </div>
-        ) : (
-          <button
-            type="button"
-            disabled={!item.canEdit && !item.canApproveOrReject}
-            onClick={handleLeftCircleClick}
-            title={
-              !item.canEdit && !item.canApproveOrReject
-                ? 'Read-only (No write permission or archived year)'
-                : item.isCompleted
-                ? 'Click to reopen'
-                : item.type === 'delegation_subtask' && !item.canApproveOrReject
-                ? '1-Click: Request Approval (85% Pending Completed)'
-                : '1-Click: Mark as Completed'
-            }
-            className={cn(
-              'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer active:scale-90 touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed',
-              item.isCompleted
-                ? 'bg-emerald-500 border-emerald-500 text-white'
-                : item.isAwaitingMyApproval
-                ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/50 text-amber-600 hover:bg-emerald-500 hover:border-emerald-500 hover:text-white'
-                : item.isOverdue || item.isNeedsRework
-                ? 'border-rose-400 dark:border-rose-500 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-transparent hover:text-emerald-600'
-                : 'border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-transparent hover:text-emerald-600'
-            )}
-          >
-            <Check className="w-3 h-3 stroke-[3]" />
-          </button>
-        )}
+        <button
+          type="button"
+          disabled={!item.canEdit && !item.canApproveOrReject}
+          onClick={handleLeftCircleClick}
+          title={
+            !item.canEdit && !item.canApproveOrReject
+              ? 'Read-only (No write permission or archived year)'
+              : item.isCompleted
+              ? 'Click to reopen'
+              : item.type === 'delegation_subtask' && !item.canApproveOrReject
+              ? '1-Click: Request Approval (85% Pending Completed)'
+              : '1-Click: Mark as Completed'
+          }
+          className={cn(
+            'w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer active:scale-90 touch-manipulation disabled:opacity-40 disabled:cursor-not-allowed',
+            item.isCompleted
+              ? 'bg-emerald-500 border-emerald-500 text-white'
+              : item.isAwaitingMyApproval
+              ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/50 text-amber-600 hover:bg-emerald-500 hover:border-emerald-500 hover:text-white'
+              : item.isOverdue || item.isNeedsRework
+              ? 'border-rose-400 dark:border-rose-500 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-transparent hover:text-emerald-600'
+              : 'border-slate-300 dark:border-slate-600 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-transparent hover:text-emerald-600'
+          )}
+        >
+          <Check className="w-3 h-3 stroke-[3]" />
+        </button>
       </div>
 
       {/* Middle Column: Clean 2-Line Information */}

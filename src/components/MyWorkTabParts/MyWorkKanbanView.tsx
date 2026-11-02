@@ -81,7 +81,7 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
 
   const handleCircleAction = (e: React.MouseEvent, item: UnifiedWorkItem) => {
     e.stopPropagation();
-    if (item.type === 'task') {
+    if (item.type === 'task' || item.type === 'project_milestone') {
       onToggleTaskComplete(item);
       return;
     }
@@ -148,7 +148,7 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
                     const dispDate = item.dueDateStr ? formatDisplayDateMain(item.dueDateStr) : 'No date';
                     const avatarInitial = String(item.party || 'U').trim().charAt(0).toUpperCase();
                     const canTapCircle =
-                      (item.type === 'task' && item.canEdit) ||
+                      ((item.type === 'task' || item.type === 'project_milestone') && item.canEdit) ||
                       (item.type === 'delegation_subtask' &&
                         (item.canSubmitApproval || item.canApproveOrReject || item.isCreator));
 
@@ -233,38 +233,36 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
 
                         {/* Title with 1-Click Check Circle & Project Metadata */}
                         <div className="flex items-start gap-2.5">
-                          {item.type !== 'project_milestone' && (
-                            <button
-                              type="button"
-                              disabled={!canTapCircle}
-                              onClick={(e) => handleCircleAction(e, item)}
-                              title={
-                                item.isCompleted
-                                  ? 'Click to reopen task'
-                                  : item.type === 'delegation_subtask' && !item.isCreator
-                                  ? 'Click to request approval (85%)'
-                                  : 'Click to mark as Completed (100%)'
-                              }
-                              className={cn(
-                                'mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all touch-manipulation active:scale-90',
-                                item.isCompleted
-                                  ? 'bg-emerald-500 border-emerald-500 text-white cursor-pointer'
-                                  : item.isAwaitingMyApproval
-                                  ? 'bg-amber-100 dark:bg-amber-950/70 border-amber-400 dark:border-amber-500 text-amber-600 dark:text-amber-300 cursor-pointer'
-                                  : canTapCircle
-                                  ? 'border-slate-300 dark:border-slate-500 hover:border-emerald-500 dark:hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-transparent hover:text-emerald-600 cursor-pointer'
-                                  : 'border-slate-200 dark:border-slate-700 opacity-50 cursor-not-allowed'
-                              )}
-                            >
-                              {item.isCompleted ? (
-                                <Check className="w-3 h-3 stroke-[3]" />
-                              ) : item.isAwaitingMyApproval ? (
-                                <Clock className="w-3 h-3" />
-                              ) : (
-                                <Check className="w-3 h-3 stroke-[2.5]" />
-                              )}
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            disabled={!canTapCircle}
+                            onClick={(e) => handleCircleAction(e, item)}
+                            title={
+                              item.isCompleted
+                                ? 'Click to reopen'
+                                : item.type === 'delegation_subtask' && !item.isCreator
+                                ? 'Click to request approval (85%)'
+                                : 'Click to mark as Completed (100%)'
+                            }
+                            className={cn(
+                              'mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all touch-manipulation active:scale-90',
+                              item.isCompleted
+                                ? 'bg-emerald-500 border-emerald-500 text-white cursor-pointer'
+                                : item.isAwaitingMyApproval
+                                ? 'bg-amber-100 dark:bg-amber-950/70 border-amber-400 dark:border-amber-500 text-amber-600 dark:text-amber-300 cursor-pointer'
+                                : canTapCircle
+                                ? 'border-slate-300 dark:border-slate-500 hover:border-emerald-500 dark:hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-transparent hover:text-emerald-600 cursor-pointer'
+                                : 'border-slate-200 dark:border-slate-700 opacity-50 cursor-not-allowed'
+                            )}
+                          >
+                            {item.isCompleted ? (
+                              <Check className="w-3 h-3 stroke-[3]" />
+                            ) : item.isAwaitingMyApproval ? (
+                              <Clock className="w-3 h-3" />
+                            ) : (
+                              <Check className="w-3 h-3 stroke-[2.5]" />
+                            )}
+                          </button>
 
                           <div className="min-w-0 flex-1">
                             <h4
@@ -352,22 +350,24 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
                             </>
                           )}
 
-                          {/* 4. Standard Task 1-Click Complete / Reopen */}
-                          {item.type === 'task' && item.canEdit && !item.isAwaitingMyApproval && (
-                            <button
-                              type="button"
-                              onClick={() => onToggleTaskComplete(item)}
-                              className={cn(
-                                'inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold border transition-all cursor-pointer active:scale-95 touch-manipulation',
-                                item.isCompleted
-                                  ? 'bg-slate-100 dark:bg-[#2c2c34] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-[#3c3c46]'
-                                  : 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
-                              )}
-                            >
-                              <Check className="w-3 h-3" />
-                              <span>{item.isCompleted ? 'Reopen' : 'Complete'}</span>
-                            </button>
-                          )}
+                          {/* 4. Standard Task & Milestone 1-Click Complete / Reopen */}
+                          {(item.type === 'task' || item.type === 'project_milestone') &&
+                            item.canEdit &&
+                            !item.isAwaitingMyApproval && (
+                              <button
+                                type="button"
+                                onClick={() => onToggleTaskComplete(item)}
+                                className={cn(
+                                  'inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold border transition-all cursor-pointer active:scale-95 touch-manipulation',
+                                  item.isCompleted
+                                    ? 'bg-slate-100 dark:bg-[#2c2c34] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-[#3c3c46]'
+                                    : 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+                                )}
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>{item.isCompleted ? 'Reopen' : 'Complete'}</span>
+                              </button>
+                            )}
                         </div>
 
                         {/* Card Footer: PIC Avatar + Date + Comments & Attachments Count */}

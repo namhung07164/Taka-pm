@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
-import { doc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import { writeBatch } from "../../lib/firestoreWrites";
 import { useAppStore } from "../../store/useAppStore";
 import { usePerformanceStore } from "../../store/usePerformanceStore";
-import { auth, db } from "../../lib/firebase";
+import { auth, db, APP_ID } from "../../lib/firebase";
 import { safeGetItemLocal, safeSetItemLocal } from "../../lib/storage";
 import { getPendingUpdates, clearPendingUpdates, processPendingSync } from "../../lib/syncQueue";
 import { recordBatchDeltas } from "../../lib/deltaSyncService";
@@ -19,6 +19,10 @@ import {
   hydrateDelegationsForProjects,
 } from "../../lib/backgroundSyncWorker";
 import { deduplicateTasksInMemory } from "../../lib/taskDeduplicationService";
+import {
+  loadLocalMyWorkStates,
+  mergeMyWorkStates,
+} from "../../components/MyWorkTabParts/myWorkAccountSync";
 import { AppUser, TabId } from "../../types";
 
 let isArchiveLoaded = false;
@@ -39,6 +43,7 @@ export function useStaticAndAuthHydration() {
   const setIsDelegationsRequested = useAppStore((state) => state.setIsDelegationsRequested);
 
   const user = useAppStore((state) => state.user);
+  const currentUserId = useAppStore((state) => state.currentUser?.id);
   const appUsers = useAppStore((state) => state.appUsers);
   const globalYearFilter = useAppStore((state) => state.globalYearFilter);
 
@@ -206,20 +211,29 @@ export function useStaticAndAuthHydration() {
             );
           }
         }
+        const localWorkStates = loadLocalMyWorkStates(parsedUser.id);
+        parsedUser.myWorkStates = mergeMyWorkStates(parsedUser.myWorkStates, localWorkStates);
         setCurrentUser(parsedUser);
       } catch (e) {
         console.error("Error parsing savedAuth", e);
       }
     } else {
       const guestReadNotifsStr = safeGetItemLocal("taka_read_notifs_guest");
-      if (guestReadNotifsStr) {
-        try {
-          const guestRead = JSON.parse(guestReadNotifsStr);
-          const cur = useAppStore.getState().currentUser;
-          if (cur && cur.id === "guest" && Array.isArray(guestRead)) {
-            setCurrentUser({ ...cur, readNotifs: guestRead });
-          }
-        } catch (e) {}
+      const guestWorkStates = loadLocalMyWorkStates("guest");
+      const cur = useAppStore.getState().currentUser;
+      if (cur && cur.id === "guest") {
+        let guestRead: string[] = cur.readNotifs || [];
+        if (guestReadNotifsStr) {
+          try {
+            const parsed = JSON.parse(guestReadNotifsStr);
+            if (Array.isArray(parsed)) guestRead = parsed;
+          } catch (e) {}
+        }
+        setCurrentUser({
+          ...cur,
+          readNotifs: guestRead,
+          myWorkStates: mergeMyWorkStates(cur.myWorkStates, guestWorkStates),
+        });
       }
     }
 
@@ -281,7 +295,65 @@ export function useStaticAndAuthHydration() {
     };
   }, [user?.uid, setCloudStatus, setToast]);
 
-  // 5. Sync Profile Effect
+  // 5. Real-time Account Profile & My Work States Listener (iOS <-> Laptop Instant Sync)
+  useEffect(() => {
+    if (!user?.uid || !currentUserId || currentUserId === "guest") return;
+
+    const userDocRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_users", currentUserId);
+    const unsubUserDoc = onSnapshot(
+      userDocRef,
+      (snap) => {
+        if (!snap.exists()) return;
+        const remoteData = snap.data() as Partial<AppUser>;
+        const cur = useAppStore.getState().currentUser;
+        if (!cur || cur.id !== currentUserId) return;
+
+        const localWorkStates = loadLocalMyWorkStates(currentUserId);
+        const mergedMyWorkStates = mergeMyWorkStates(
+          mergeMyWorkStates(localWorkStates, cur.myWorkStates),
+          remoteData.myWorkStates
+        );
+
+        const localReadNotifsStr = safeGetItemLocal(`taka_read_notifs_${currentUserId}`);
+        let localReadNotifs: string[] = [];
+        if (localReadNotifsStr) {
+          try {
+            localReadNotifs = JSON.parse(localReadNotifsStr);
+          } catch (e) {}
+        }
+        const mergedReadNotifs = Array.from(
+          new Set([...(remoteData.readNotifs || []), ...(cur.readNotifs || []), ...localReadNotifs])
+        );
+
+        const workStatesChanged =
+          JSON.stringify(cur.myWorkStates || {}) !== JSON.stringify(mergedMyWorkStates);
+        const notifsChanged =
+          JSON.stringify(cur.readNotifs || []) !== JSON.stringify(mergedReadNotifs);
+
+        if (workStatesChanged || notifsChanged) {
+          const updated: AppUser = {
+            ...cur,
+            ...remoteData,
+            id: currentUserId,
+            readNotifs: mergedReadNotifs,
+            myWorkStates: mergedMyWorkStates,
+          };
+          setCurrentUser(updated);
+          safeSetItemLocal(`taka_mywork_states_${currentUserId}`, JSON.stringify(mergedMyWorkStates));
+          safeSetItemLocal("taka_auth_v1", JSON.stringify(updated));
+        }
+      },
+      (err) => {
+        console.warn("[useStaticAndAuthHydration] User doc snapshot warning:", err);
+      }
+    );
+
+    return () => {
+      unsubUserDoc();
+    };
+  }, [user?.uid, currentUserId, setCurrentUser]);
+
+  // 6. Sync Profile Effect from appUsers list
   useEffect(() => {
     if (!appUsers || appUsers.length === 0) return;
     const cur = useAppStore.getState().currentUser;
@@ -299,6 +371,12 @@ export function useStaticAndAuthHydration() {
           new Set([...(found.readNotifs || []), ...(cur.readNotifs || []), ...localReadNotifs])
         );
 
+        const localWorkStates = loadLocalMyWorkStates(cur.id);
+        const mergedMyWorkStates = mergeMyWorkStates(
+          mergeMyWorkStates(localWorkStates, cur.myWorkStates),
+          found.myWorkStates
+        );
+
         const hasChanged =
           cur.role !== found.role ||
           cur.username !== found.username ||
@@ -308,15 +386,19 @@ export function useStaticAndAuthHydration() {
           JSON.stringify(cur.storePermissions) !== JSON.stringify(found.storePermissions) ||
           JSON.stringify(cur.locationPermissions) !== JSON.stringify(found.locationPermissions) ||
           JSON.stringify(cur.partyPermissions) !== JSON.stringify(found.partyPermissions) ||
-          JSON.stringify(cur.preferences) !== JSON.stringify(found.preferences);
+          JSON.stringify(cur.preferences) !== JSON.stringify(found.preferences) ||
+          JSON.stringify(cur.readNotifs || []) !== JSON.stringify(mergedReadNotifs) ||
+          JSON.stringify(cur.myWorkStates || {}) !== JSON.stringify(mergedMyWorkStates);
 
         if (hasChanged) {
           const updated: AppUser = {
             ...cur,
             ...found,
             readNotifs: mergedReadNotifs,
+            myWorkStates: mergedMyWorkStates,
           };
           setCurrentUser(updated);
+          safeSetItemLocal(`taka_mywork_states_${cur.id}`, JSON.stringify(mergedMyWorkStates));
           safeSetItemLocal("taka_auth_v1", JSON.stringify(updated));
 
           if (

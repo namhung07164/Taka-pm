@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { AppRole, AppUser, DelegationGroup, PermissionMatrix, Project, Task } from '../../types';
 import {
   getTaskStatus,
-  isDelegationGroupBelongsToProject,
   isTaskBelongsToProject,
   matchesAdvancedSearch,
 } from '../../lib/utils';
@@ -15,6 +14,24 @@ import {
   UnifiedWorkItem,
   WorkItemPriority,
 } from './myWorkTypes';
+import {
+  loadLocalMyWorkStates,
+  mergeMyWorkStates,
+} from './myWorkAccountSync';
+import {
+  MS_PER_DAY,
+  applyAccountOverrideToItem,
+  buildFriendlyDueLabel,
+  buildProjectMilestoneItems,
+  isItemInFocusProject,
+  normalizeRole,
+  parseLocalDayMs,
+  parseParties,
+} from './myWorkDataBuilders';
+import {
+  buildDelegationSubTaskItems,
+  buildSummaryFallbackItems,
+} from './myWorkDelegationBuilder';
 
 interface UseMyWorkDataParams {
   projects: Project[];
@@ -28,71 +45,6 @@ interface UseMyWorkDataParams {
   statusFilter: string;
   sortBy: 'urgency' | 'due_asc' | 'project' | 'priority';
   focusTarget?: MyWorkFocusTarget | null;
-}
-
-const MS_PER_DAY = 86400000;
-
-function normalizeRole(r?: string): AppRole | 'admin' {
-  if (!r) return 'Staff';
-  const lower = r.toLowerCase().trim();
-  if (lower === 'admin') return 'admin';
-  if (lower === 'manager') return 'Manager';
-  if (lower === 'cp') return 'CP';
-  if (lower === 'staff') return 'Staff';
-  if (lower === 'external') return 'External';
-  return r as AppRole;
-}
-
-function parseLocalDayMs(dateStr?: string | null): number | null {
-  if (!dateStr) return null;
-  const clean = String(dateStr).trim().substring(0, 10);
-  const parts = clean.split('-');
-  if (parts.length === 3) {
-    const y = Number(parts[0]);
-    const m = Number(parts[1]) - 1;
-    const d = Number(parts[2]);
-    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) return new Date(y, m, d).getTime();
-  }
-  const parsed = Date.parse(dateStr);
-  if (!isNaN(parsed)) {
-    const dt = new Date(parsed);
-    return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime();
-  }
-  return null;
-}
-
-function buildFriendlyDueLabel(diffDays: number | null, dateStr: string, isCompleted: boolean): string {
-  if (!dateStr) return 'No due date';
-  const shortDate = String(dateStr).substring(0, 10);
-  if (isCompleted) return `Done • ${shortDate}`;
-  if (diffDays === null) return shortDate;
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Tomorrow';
-  if (diffDays === -1) return 'Overdue 1d';
-  if (diffDays < -1) return `Overdue ${Math.abs(diffDays)}d`;
-  if (diffDays <= 7) return `In ${diffDays}d (${shortDate.slice(5)})`;
-  return shortDate;
-}
-
-function parseParties(raw?: string): string[] {
-  if (!raw) return [];
-  return String(raw).toLowerCase().split(/[,;/+]+/).map((s) => s.trim()).filter(Boolean);
-}
-
-function isItemInFocusProject(item: UnifiedWorkItem, focus: MyWorkFocusTarget): boolean {
-  if (focus.projectId && item.projectId) {
-    return String(item.projectId).trim() === String(focus.projectId).trim();
-  }
-  const fCode = String(focus.projectCode || '').trim().toLowerCase();
-  const iCode = String(item.projectCode || '').trim().toLowerCase();
-  if (!fCode || fCode !== iCode) return false;
-  if (focus.projectStore && item.projectStore) {
-    if (String(focus.projectStore).trim().toLowerCase() !== String(item.projectStore).trim().toLowerCase()) return false;
-  }
-  if (focus.projectYear && item.projectYear) {
-    if (String(focus.projectYear).trim() !== String(item.projectYear).trim()) return false;
-  }
-  return true;
 }
 
 export function useMyWorkData({
@@ -117,6 +69,12 @@ export function useMyWorkData({
     const role = normalizeRole(currentUser?.role);
     const isAdmin = role === 'admin';
     const isAdminOrManager = isAdmin || role === 'Manager' || role === 'CP';
+
+    // Merge localStorage + Firestore account-level My Work states (Last-Write-Wins per key)
+    const effectiveMyWorkStates = mergeMyWorkStates(
+      loadLocalMyWorkStates(currentUser?.id),
+      currentUser?.myWorkStates
+    );
 
     const canWriteDetailPerm =
       isAdmin || Boolean(permissionMatrix?.[role as AppRole]?.Write?.detail) || Boolean(currentUser?.canWrite);
@@ -244,15 +202,12 @@ export function useMyWorkData({
       const dueMs = parseLocalDayMs(dueStr);
       const diffDays = dueMs !== null ? Math.round((dueMs - todayStartMs) / MS_PER_DAY) : null;
 
-      // Determine canonical status (respecting explicit summary/task overrides vs schedule-driven status)
       const explicitSummaryStatus =
         summaryStatusByProjAndKey.get(`${pKey}|id:${String(t.id).trim()}`) ||
         summaryStatusByProjAndKey.get(`${pKey}|name:${String(t.name || '').trim().toLowerCase()}`) ||
         '';
 
-      const effectiveRawStatus = isVirtual
-        ? explicitSummaryStatus
-        : String(t.runningStatus || '').trim();
+      const effectiveRawStatus = isVirtual ? explicitSummaryStatus : String(t.runningStatus || '').trim();
       const rawStatusLower = effectiveRawStatus.toLowerCase();
       const rawApproval = String(t.approval || '').trim();
       const rawApprovalLower = rawApproval.toLowerCase();
@@ -300,7 +255,6 @@ export function useMyWorkData({
         !(startMs !== null && startMs > todayStartMs && !explicitSummaryStatus);
 
       const isOverdue = !isCompleted && diffDays !== null && diffDays < 0;
-
       const directPIC = checkPartyMatch(t.party) || (!t.party && checkPartyMatch(proj.party));
       const isPIC = directPIC || hasAllPartyPerm;
       const isApprover = isAwaitingMyApproval && isAdminOrManager;
@@ -321,7 +275,7 @@ export function useMyWorkData({
 
       const taskAttachmentCount = (t.comments || []).reduce((acc, c) => acc + (c.attachments?.length || 0), 0);
 
-      const item: UnifiedWorkItem = {
+      const baseItem: UnifiedWorkItem = {
         id: `task_${t.id}`,
         type: 'task',
         kanbanColumn,
@@ -368,280 +322,62 @@ export function useMyWorkData({
         isSummaryFallback: isVirtual,
       };
 
+      const item = applyAccountOverrideToItem(baseItem, effectiveMyWorkStates, isArchiveYear, isAdminOrManager);
       allCandidateItems.push(item);
-      if (directPIC || isApprover) directMatchedItems.push(item);
+      if (directPIC || item.isApprover) directMatchedItems.push(item);
     }
 
     // 2. Fallback for any project with taskSummaries not yet in activeTasks
-    for (let i = 0; i < validProjects.length; i++) {
-      const proj = validProjects[i];
-      if (proj.id && coveredProjectIdsWithTasks.has(String(proj.id))) continue;
-      const pYear = Number(proj.year || currentYear);
-      const isArchiveYear = pYear < currentYear;
-      const summaries = Array.isArray(proj.taskSummaries) ? proj.taskSummaries : [];
-      const summaryParentIds = new Set<string>();
-      summaries.forEach((s: any) => {
-        if (s?.parentTaskId) summaryParentIds.add(String(s.parentTaskId));
-      });
+    const { candidates: sumCandidates, directMatched: sumDirect } = buildSummaryFallbackItems({
+      validProjects,
+      coveredProjectIdsWithTasks,
+      todayStartMs,
+      currentYear,
+      checkPartyMatch,
+      hasAllPartyPerm,
+      isAdminOrManager,
+      canWriteDetailPerm,
+      effectiveMyWorkStates,
+    });
+    allCandidateItems.push(...sumCandidates);
+    directMatchedItems.push(...sumDirect);
 
-      for (let j = 0; j < summaries.length; j++) {
-        const s: any = summaries[j];
-        if (!s || !s.name || s.isModularParent || (s.id && summaryParentIds.has(String(s.id)))) continue;
-        const dueStr = s.finish || s.start || '';
-        const dueMs = parseLocalDayMs(dueStr);
-        const diffDays = dueMs !== null ? Math.round((dueMs - todayStartMs) / MS_PER_DAY) : null;
-        const rawStatus = String(s.runningStatus || s.status || '').trim().toLowerCase();
-        const plStatus = getTaskStatus(s.start, s.finish);
-
-        const isCompleted =
-          rawStatus === 'completed' ||
-          (!rawStatus && (plStatus === 'Completed' || proj.computedActProgress === 100));
-        const isInProgress =
-          !isCompleted &&
-          rawStatus !== 'upcoming' &&
-          (rawStatus === 'on process' || rawStatus === 'in progress' || plStatus === 'On process');
-        const isOverdue = !isCompleted && diffDays !== null && diffDays < 0;
-        const directPIC = checkPartyMatch(s.party || proj.party);
-        const isPIC = directPIC || hasAllPartyPerm;
-        const canEdit = !isArchiveYear && (canWriteDetailPerm || isPIC || isAdminOrManager);
-
-        const item: UnifiedWorkItem = {
-          id: `sum_${proj.id}_${s.id || j}`,
-          type: 'task',
-          kanbanColumn: isCompleted ? 'done' : isInProgress ? 'in_progress' : 'todo',
-          title: s.name,
-          subtitle: proj.code,
-          projectId: proj.id,
-          projectCode: proj.code,
-          projectName: proj.name || proj.code,
-          projectStore: proj.store || 'HCM',
-          projectYear: proj.year || '',
-          floor: proj.location || '',
-          dueDateStr: dueStr,
-          startDateStr: s.start || '',
-          dueDiffDays: diffDays,
-          friendlyDueLabel: buildFriendlyDueLabel(diffDays, dueStr, isCompleted),
-          priority: isOverdue ? 'critical' : diffDays !== null && diffDays <= 1 ? 'high' : 'medium',
-          statusLabel: isCompleted ? 'Completed' : isInProgress ? 'On Process' : 'To Do',
-          isCompleted,
-          isOverdue,
-          isNeedsRework: false,
-          isInProgress,
-          isAwaitingMyApproval: false,
-          isPIC,
-          isCreator: isAdminOrManager,
-          isApprover: false,
-          canEdit,
-          canAccept: canEdit && !isInProgress && !isCompleted,
-          canSubmitApproval: canEdit && !isCompleted,
-          canApproveOrReject: false,
-          party: s.party || proj.party || 'PMO',
-          commentCount: proj.comments?.length || 0,
-          attachmentCount: 0,
-          rawProject: proj,
-          rawSummaryId: s.id ? String(s.id) : undefined,
-          isSummaryFallback: true,
-        };
-        allCandidateItems.push(item);
-        if (directPIC) directMatchedItems.push(item);
-      }
-    }
-
-    // 3. Process Delegation Groups & Sub-Tasks (Strict RBAC & Approval State Machine)
-    const activeGroups = (delegationGroups || []).filter((g) => g && !g.isDeleted);
-    for (let i = 0; i < activeGroups.length; i++) {
-      const g = activeGroups[i];
-      const linkedTask = g.parentTaskId ? taskById.get(g.parentTaskId) : undefined;
-      const proj =
-        (g.projectId ? projectById.get(String(g.projectId).trim()) : undefined) ||
-        (linkedTask ? resolveParentProjectForTask(linkedTask) : undefined) ||
-        validProjects.find((p) => isDelegationGroupBelongsToProject(g, p));
-
-      if (storeFilter && storeFilter !== 'all' && String(proj?.store || g.projectStore || '').toUpperCase().trim() !== storeFilter.toUpperCase().trim()) continue;
-      if (globalYearFilter && globalYearFilter !== 'all' && String(proj?.year || g.projectYear || '').trim() !== String(globalYearFilter).trim()) continue;
-
-      const pYear = Number(proj?.year || g.projectYear || currentYear);
-      const isArchiveYear = pYear < currentYear;
-      const isCreator = Boolean(currentUser?.id && g.createdBy && String(g.createdBy) === String(currentUser.id)) || isAdmin;
-
-      const subTasks = Array.isArray(g.subTasks) ? g.subTasks : [];
-      for (let j = 0; j < subTasks.length; j++) {
-        const st = subTasks[j];
-        if (!st) continue;
-        const dueStr = st.finishAct || st.finish || st.startAct || st.start || '';
-        const dueMs = parseLocalDayMs(dueStr);
-        const diffDays = dueMs !== null ? Math.round((dueMs - todayStartMs) / MS_PER_DAY) : null;
-
-        const stStatus = String(st.status || '').trim();
-        const delStatus = String(st.delegationStatus || '').trim();
-        const appStatus = String(st.approvalStatus || '').trim();
-
-        const isCompleted =
-          stStatus.toLowerCase() === 'approved' ||
-          stStatus.toLowerCase() === 'completed' ||
-          delStatus.toLowerCase() === 'completed' ||
-          appStatus.toLowerCase() === 'approved';
-
-        const isNeedsRework =
-          stStatus.toLowerCase() === 'needs rework' ||
-          stStatus.toLowerCase() === 'rejected' ||
-          delStatus.toLowerCase() === 'needs rework' ||
-          delStatus.toLowerCase() === 'rejected' ||
-          appStatus.toLowerCase() === 'needs rework' ||
-          appStatus.toLowerCase() === 'rejected';
-
-        const isAwaitingApproval =
-          !isCompleted &&
-          ['pending completed', 'reqapproval', 'waiting for approval', 'requested', 'hold'].some(
-            (s) => stStatus.toLowerCase() === s || delStatus.toLowerCase() === s || appStatus.toLowerCase() === s
-          );
-
-        const isInProgress =
-          !isCompleted &&
-          !isAwaitingApproval &&
-          !isNeedsRework &&
-          ['on process', 'accepted', 'accepttask'].some(
-            (s) => stStatus.toLowerCase() === s || delStatus.toLowerCase() === s || appStatus.toLowerCase() === s
-          );
-
-        const isOverdue = !isCompleted && diffDays !== null && diffDays < 0;
-        const directPIC = checkPartyMatch(st.party, st.involvedUsers);
-        const isPIC = directPIC || hasAllPartyPerm;
-        const isApprover = isAwaitingApproval && isCreator;
-        const canEdit = !isArchiveYear && (canWriteDelegationPerm || isCreator || isPIC);
-
-        let priority: WorkItemPriority = 'medium';
-        if (isOverdue || isNeedsRework || st.priority === 'High') priority = 'critical';
-        else if (isAwaitingApproval || st.priority === 'Mid-high' || (diffDays !== null && diffDays <= 1)) priority = 'high';
-        else if (isCompleted) priority = 'low';
-
-        const kanbanColumn: MyWorkKanbanColumnId = isCompleted
-          ? 'done'
-          : isAwaitingApproval
-          ? 'pending_approval'
-          : isInProgress
-          ? 'in_progress'
-          : 'todo';
-
-        const subTitleText = st.name || st.comments || g.name || 'Delegated Sub-task';
-        const attCount = (st.attachments?.length || 0) + (st.fileUrl || st.childFileUrl ? 1 : 0);
-
-        const item: UnifiedWorkItem = {
-          id: `del_${g.id}_${st.id}`,
-          type: 'delegation_subtask',
-          kanbanColumn,
-          title: subTitleText,
-          subtitle: g.name && g.name !== subTitleText ? g.name : proj?.code || g.projectCode || '',
-          projectId: proj?.id || g.projectId,
-          projectCode: proj?.code || g.projectCode || 'CUSTOM',
-          projectName: proj?.name || g.name || 'Delegation',
-          projectStore: proj?.store || g.projectStore || 'HCM',
-          projectYear: proj?.year || g.projectYear || '',
-          floor: proj?.location || '',
-          dueDateStr: dueStr,
-          startDateStr: st.startAct || st.start || '',
-          dueDiffDays: diffDays,
-          friendlyDueLabel: buildFriendlyDueLabel(diffDays, dueStr, isCompleted),
-          priority,
-          statusLabel: isNeedsRework
-            ? 'Needs Rework'
-            : isAwaitingApproval
-            ? 'Pending Completed (85%)'
-            : isCompleted
-            ? 'Approved (100%)'
-            : isInProgress
-            ? 'On Process (50%)'
-            : 'Assigned (0%)',
-          flowStatusLabel: delStatus || stStatus || 'Assigned',
-          isCompleted,
-          isOverdue,
-          isNeedsRework,
-          isInProgress,
-          isAwaitingMyApproval: isAwaitingApproval,
-          isPIC,
-          isCreator,
-          isApprover,
-          canEdit,
-          canAccept: canEdit && (isPIC || isCreator) && !isInProgress && !isAwaitingApproval && !isCompleted,
-          canSubmitApproval: canEdit && (isPIC || isCreator) && !isAwaitingApproval && !isCompleted,
-          canApproveOrReject: !isArchiveYear && isCreator && isAwaitingApproval,
-          party: st.party || 'Assigned',
-          commentCount: st.comments ? 1 : 0,
-          attachmentCount: attCount,
-          reportSnippet: st.report || st.childReport || st.comments || '',
-          rawProject: proj,
-          rawTask: linkedTask,
-          rawDelegationGroup: g,
-          rawSubTask: st,
-        };
-
-        allCandidateItems.push(item);
-        if (directPIC || isCreator) directMatchedItems.push(item);
-      }
-    }
+    // 3. Process Delegation Groups & Sub-Tasks
+    const { candidates: delCandidates, directMatched: delDirect } = buildDelegationSubTaskItems({
+      delegationGroups,
+      validProjects,
+      projectById,
+      taskById,
+      resolveParentProjectForTask,
+      storeFilter,
+      globalYearFilter,
+      currentYear,
+      todayStartMs,
+      currentUserId: currentUser?.id,
+      isAdmin,
+      isAdminOrManager,
+      canWriteDelegationPerm,
+      hasAllPartyPerm,
+      checkPartyMatch,
+      effectiveMyWorkStates,
+    });
+    allCandidateItems.push(...delCandidates);
+    directMatchedItems.push(...delDirect);
 
     // 4. Process Project Milestones (Handover / Opening)
-    for (let i = 0; i < validProjects.length; i++) {
-      const p = validProjects[i];
-      const directProjMatch = checkPartyMatch(p.party);
-      const isFocusedProj = Boolean(
-        focusTarget &&
-          ((focusTarget.projectId && p.id && String(p.id) === String(focusTarget.projectId)) ||
-            String(p.code || '').trim().toLowerCase() === String(focusTarget.projectCode || '').trim().toLowerCase())
-      );
-      const milestones: Array<{ kind: 'Start' | 'Handover' | 'Opening'; dateStr?: string }> = [
-        { kind: 'Handover', dateStr: p.computedTakCompl || p.handover },
-        { kind: 'Opening', dateStr: p.computedOpening || p.opening },
-      ];
-
-      for (let m = 0; m < milestones.length; m++) {
-        const ms = milestones[m];
-        if (!ms.dateStr) continue;
-        const dueMs = parseLocalDayMs(ms.dateStr);
-        if (dueMs === null) continue;
-        const diffDays = Math.round((dueMs - todayStartMs) / MS_PER_DAY);
-        if (!isFocusedProj && (diffDays < 0 || diffDays > 30)) continue;
-
-        const isCompleted = p.computedActProgress === 100 || String(p.mdStatus || '').toLowerCase() === 'completed';
-        const item: UnifiedWorkItem = {
-          id: `ms_${p.id}_${ms.kind}`,
-          type: 'project_milestone',
-          kanbanColumn: isCompleted ? 'done' : diffDays <= 7 ? 'in_progress' : 'todo',
-          title: `${ms.kind} Milestone: ${p.name || p.code}`,
-          subtitle: p.code,
-          projectId: p.id,
-          projectCode: p.code,
-          projectName: p.name || p.code,
-          projectStore: p.store || 'HCM',
-          projectYear: p.year || '',
-          floor: p.location || '',
-          dueDateStr: ms.dateStr,
-          dueDiffDays: diffDays,
-          friendlyDueLabel: buildFriendlyDueLabel(diffDays, ms.dateStr, isCompleted),
-          priority: diffDays <= 3 ? 'high' : 'medium',
-          statusLabel: ms.kind,
-          isCompleted,
-          isOverdue: false,
-          isNeedsRework: false,
-          isInProgress: diffDays <= 7 && !isCompleted,
-          isAwaitingMyApproval: false,
-          isPIC: directProjMatch || hasAllPartyPerm,
-          isCreator: isAdminOrManager,
-          isApprover: false,
-          canEdit: false,
-          canAccept: false,
-          canSubmitApproval: false,
-          canApproveOrReject: false,
-          party: p.party || 'PMO',
-          commentCount: p.comments?.length || 0,
-          attachmentCount: 0,
-          milestoneKind: ms.kind,
-          rawProject: p,
-        };
-        allCandidateItems.push(item);
-        if (directProjMatch) directMatchedItems.push(item);
-      }
-    }
+    const { candidates: msCandidates, directMatched: msDirect } = buildProjectMilestoneItems({
+      validProjects,
+      todayStartMs,
+      currentYear,
+      focusTarget,
+      checkPartyMatch,
+      hasAllPartyPerm,
+      isAdminOrManager,
+      canWriteDetailPerm,
+      effectiveMyWorkStates,
+    });
+    allCandidateItems.push(...msCandidates);
+    directMatchedItems.push(...msDirect);
 
     // Scope resolution
     const baseStream: UnifiedWorkItem[] =
