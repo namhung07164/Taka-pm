@@ -6,6 +6,15 @@ export type MyWorkDisplayMode = 'kanban' | 'list';
 
 export type MyWorkKanbanColumnId = 'todo' | 'in_progress' | 'pending_approval' | 'done';
 
+export type MyWorkTimeFilter =
+  | 'all'
+  | 'today_focus'
+  | 'today'
+  | 'this_week'
+  | 'this_month'
+  | 'overdue'
+  | 'upcoming';
+
 export type UnifiedWorkItemType = 'task' | 'delegation_subtask' | 'project_milestone';
 
 export type WorkItemPriority = 'critical' | 'high' | 'medium' | 'low';
@@ -74,6 +83,12 @@ export interface MyWorkCounts {
   done: number;
   overdue: number;
   todayTodo: number;
+  allActive: number;
+  todayFocus: number;
+  todayOnly: number;
+  thisWeek: number;
+  thisMonth: number;
+  future: number;
 }
 
 export interface MyWorkBriefingStats {

@@ -1,19 +1,15 @@
 import { doc } from 'firebase/firestore';
-import { setDoc, updateDoc } from '../../lib/firestoreWrites';
+import { setDoc, writeBatch } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { useAppStore } from '../../store/useAppStore';
 import { Project, Task } from '../../types';
-import { upsertLocalRecord } from '../../lib/localDb';
-import {
-  ensureProjectTasksLoaded,
-  saveTaskStateUnified,
-} from '../../lib/taskStateService';
+import { getLocalTasksForProjects, upsertLocalRecord } from '../../lib/localDb';
+import { syncQueueManager, isPermanentWriteError } from '../../lib/syncQueue';
 import {
   calculateProjectComputedDates,
   getTasksForProject,
-  syncProjectDatesToFirestore,
 } from '../../lib/projectDatesService';
-import { getStatus, getTaskStatus, resolveActualStatus } from '../../lib/utils';
+import { getStatus, getTaskStatus, isTaskBelongsToProject, resolveActualStatus } from '../../lib/utils';
 import { checkAndSyncRealtimeSubTaskCompletion } from '../TaskDelegationParts/delegationAutoSync';
 import { UnifiedWorkItem } from './myWorkTypes';
 import {
@@ -21,6 +17,90 @@ import {
   persistAccountMyWorkState,
   sanitizeWorkKeyPart,
 } from './myWorkAccountSync';
+
+interface PendingBatchMutation {
+  tasksById: Map<string, Task>;
+  projectsById: Map<string, Record<string, any>>;
+}
+
+const pendingMutationQueue: PendingBatchMutation = {
+  tasksById: new Map(),
+  projectsById: new Map(),
+};
+let flushMutationTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Rule 8 & Rule 15: Debounces (400ms) and coalesces Task + Project Summary mutations
+ * into a single atomic `writeBatch` (from `firestoreWrites.ts`), with Offline Queue fallback.
+ */
+function scheduleCoalescedTaskAndProjectFlush(
+  taskToWrite?: Task,
+  projectId?: string,
+  projectPatch?: Record<string, any>
+): void {
+  if (taskToWrite && taskToWrite.id && !String(taskToWrite.id).startsWith('ts_')) {
+    pendingMutationQueue.tasksById.set(taskToWrite.id, taskToWrite);
+  }
+  if (projectId && projectPatch) {
+    const existing = pendingMutationQueue.projectsById.get(projectId) || {};
+    pendingMutationQueue.projectsById.set(projectId, { ...existing, ...projectPatch });
+  }
+
+  if (flushMutationTimer) clearTimeout(flushMutationTimer);
+  flushMutationTimer = setTimeout(() => {
+    flushMutationTimer = null;
+    void flushCoalescedTaskAndProjectMutations();
+  }, 400);
+}
+
+async function flushCoalescedTaskAndProjectMutations(): Promise<void> {
+  const tasksToFlush = Array.from(pendingMutationQueue.tasksById.values());
+  const projectsToFlush = Array.from(pendingMutationQueue.projectsById.entries());
+  pendingMutationQueue.tasksById.clear();
+  pendingMutationQueue.projectsById.clear();
+
+  if (tasksToFlush.length === 0 && projectsToFlush.length === 0) return;
+
+  try {
+    const batch = writeBatch(db);
+    for (const t of tasksToFlush) {
+      const taskRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
+      batch.set(taskRef, t, { merge: true });
+    }
+    for (const [projId, patch] of projectsToFlush) {
+      const projRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', projId);
+      batch.update(projRef, patch);
+    }
+    await batch.commit();
+  } catch (err) {
+    console.warn('[myWorkMutationService] Batch commit failed, queueing to Offline SyncQueue:', err);
+    if (!isPermanentWriteError(err)) {
+      const fallbackItems: Array<{
+        collectionName: string;
+        docId: string;
+        action: 'set' | 'update' | 'delete';
+        data: any;
+      }> = [];
+      for (const t of tasksToFlush) {
+        fallbackItems.push({
+          collectionName: 'taka_tasks',
+          docId: t.id,
+          action: 'set',
+          data: t,
+        });
+      }
+      for (const [projId, patch] of projectsToFlush) {
+        fallbackItems.push({
+          collectionName: 'taka_projects',
+          docId: projId,
+          action: 'update',
+          data: patch,
+        });
+      }
+      await syncQueueManager.bulkAddToQueue(fallbackItems);
+    }
+  }
+}
 
 /**
  * Matches a task summary entry inside Project.taskSummaries by id, taskCodePhu, or normalized name.
@@ -44,7 +124,8 @@ function matchesSummaryEntry(s: any, item: UnifiedWorkItem, idx: number): boolea
 }
 
 /**
- * Resolves a real Task from Zustand / Dexie / Firestore for an item (including virtual summary tasks).
+ * Rule 8 & Rule 14: Zero-Query Local Resolution for a Work Item's underlying Task.
+ * Searches Zustand memory first, then local IndexedDB (Dexie) — NEVER triggers Firestore `getDocs`.
  */
 export async function resolveRealTaskForWorkItem(item: UnifiedWorkItem): Promise<Task | undefined> {
   const rawTask = item.rawTask;
@@ -66,33 +147,38 @@ export async function resolveRealTaskForWorkItem(item: UnifiedWorkItem): Promise
 
   if (!projectCode && !projectId) return rawTask;
 
-  const loaded = await ensureProjectTasksLoaded(projectCode, {
-    projectId,
-    store: projectStore,
-    year: projectYear,
-  });
-
   const rawId = rawTask?.id ? String(rawTask.id).trim() : '';
   const rawSumId = item.rawSummaryId ? String(item.rawSummaryId).trim() : '';
   const rawCode = rawTask?.taskCodePhu ? String(rawTask.taskCodePhu).trim().toLowerCase() : '';
   const titleLower = String(item.title || '').trim().toLowerCase();
 
-  return loaded.find((t) => {
+  const matchesCandidate = (t: Task): boolean => {
     if (!t || t.isDeleted || String(t.id || '').startsWith('ts_')) return false;
+    if (proj && !isTaskBelongsToProject(t, proj)) return false;
     const tId = String(t.id).trim();
     if (rawId && !rawId.startsWith('ts_') && tId === rawId) return true;
     if (rawSumId && !rawSumId.startsWith('ts_') && tId === rawSumId) return true;
     if (rawCode && t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === rawCode) return true;
     return Boolean(titleLower && String(t.name || '').trim().toLowerCase() === titleLower);
-  });
+  };
+
+  // 1. Check in-memory Zustand store first (0ms)
+  const memoryTasks = useAppStore.getState().tasks || [];
+  const inMemoryMatch = memoryTasks.find(matchesCandidate);
+  if (inMemoryMatch) return inMemoryMatch;
+
+  // 2. Check local IndexedDB (Dexie) only — 0 Firestore Reads!
+  const keys = [projectId, projectCode].filter(Boolean) as string[];
+  const localCandidates = await getLocalTasksForProjects(keys, projectYear, projectStore);
+  return localCandidates.find(matchesCandidate);
 }
 
 /**
  * 0ms Optimistic UI + Account-Synced Persistence for Task & Milestone Status Mutations.
  * Simultaneously updates:
- * 1) currentUser.myWorkStates (synced to `taka_users/{userId}` across iOS & Laptop)
- * 2) project.taskSummaries (in Zustand, Dexie, and Firestore `taka_projects`)
- * 3) state.tasks (in Zustand, Dexie, and Firestore `taka_tasks`)
+ * 1) currentUser.myWorkStates (debounced sync to `taka_users/{userId}` + `taka_deltas`)
+ * 2) project.taskSummaries + computedDates (0ms in Zustand/Dexie, 400ms coalesced `writeBatch` to `taka_projects`)
+ * 3) state.tasks (0ms in Zustand/Dexie, 400ms coalesced `writeBatch` to `taka_tasks`)
  */
 export async function mutateTaskStatusUnified(
   item: UnifiedWorkItem,
@@ -115,7 +201,7 @@ export async function mutateTaskStatusUnified(
       ? 'Needs Rework'
       : updates.runningStatus || 'On process';
 
-  // 0. 0ms Account-Level Sync (Zustand + localStorage + Firestore `taka_users/{userId}`)
+  // 0. 0ms Account-Level Sync (Zustand + localStorage + debounced `taka_users` & `taka_deltas`)
   const syncKeys = buildKeysFromUnifiedItem(item);
   persistAccountMyWorkState(syncKeys, accountStatus).catch((err) =>
     console.warn('[myWorkMutationService] persistAccountMyWorkState warning:', err)
@@ -133,11 +219,38 @@ export async function mutateTaskStatusUnified(
     return;
   }
 
-  // 1. 0ms Synchronous Optimistic Update on Project.taskSummaries in Zustand
+  // 1. 0ms Synchronous Optimistic Update on state.tasks if already present in memory
+  const rawTask = item.rawTask;
+  const existingInTasks =
+    rawTask &&
+    !String(rawTask.id || '').startsWith('ts_') &&
+    (state.tasks || []).find((t) => t.id === rawTask.id);
+
+  let updatedRealTask: Task | undefined;
+  if (existingInTasks) {
+    updatedRealTask = {
+      ...existingInTasks,
+      projectId: existingInTasks.projectId || projId,
+      projectCode: existingInTasks.projectCode || item.projectCode,
+      projectStore: existingInTasks.projectStore || item.projectStore || 'HCM',
+      projectYear: Number(existingInTasks.projectYear || item.projectYear || new Date().getFullYear()),
+      ...updates,
+      updatedAt: nowIso,
+    };
+    delete (updatedRealTask as any)._isVirtualSummary;
+    useAppStore.getState().optimisticUpdateTasks([updatedRealTask]);
+    upsertLocalRecord('taka_tasks', updatedRealTask).catch(() => {});
+  }
+
+  // 2. 0ms Synchronous Optimistic Update on Project.taskSummaries + Computed Rollup Dates in Zustand
   let matchedProjectInStore: Project | undefined;
   let updatedSummariesForProject: any[] | undefined;
+  let computedDatesPatch: Partial<Project> = {};
 
-  const currentProjects = state.projects || [];
+  const latestTasksInMemory = useAppStore.getState().tasks || [];
+  const latestDelegationsInMemory = useAppStore.getState().delegationGroups || [];
+  const currentProjects = useAppStore.getState().projects || [];
+
   const nextProjects = currentProjects.map((p) => {
     if (!p || p.isDeleted) return p;
     const isSameProj =
@@ -166,113 +279,71 @@ export async function mutateTaskStatusUnified(
 
     if (!changed) return p;
     updatedSummariesForProject = nextSummaries;
-    return {
+    const draftProj: Project = {
       ...p,
       taskSummaries: nextSummaries,
       updatedAt: nowIso,
     };
+    const projectTasks = getTasksForProject(draftProj, latestTasksInMemory);
+    computedDatesPatch = calculateProjectComputedDates(
+      draftProj,
+      projectTasks,
+      latestDelegationsInMemory
+    );
+    const enrichedProj: Project = {
+      ...draftProj,
+      ...computedDatesPatch,
+      updatedAt: nowIso,
+    };
+    upsertLocalRecord('taka_projects', enrichedProj).catch(() => {});
+    return enrichedProj;
   });
 
   if (updatedSummariesForProject) {
     useAppStore.getState().setProjects(nextProjects);
   }
 
-  // 2. 0ms Synchronous Optimistic Update on state.tasks if already present in memory
-  const rawTask = item.rawTask;
-  const existingInTasks =
-    rawTask &&
-    !String(rawTask.id || '').startsWith('ts_') &&
-    (state.tasks || []).find((t) => t.id === rawTask.id);
+  // 3. Resolve Real Task from Local Dexie if not already in Zustand memory (0 Firestore Reads)
+  const realTask = updatedRealTask || (await resolveRealTaskForWorkItem(item));
+  let finalTaskToWrite: Task | undefined = updatedRealTask;
 
-  if (existingInTasks) {
-    const immediateTask: Task = {
-      ...existingInTasks,
-      projectId: existingInTasks.projectId || projId,
-      projectCode: existingInTasks.projectCode || item.projectCode,
-      projectStore: existingInTasks.projectStore || item.projectStore || 'HCM',
-      projectYear: existingInTasks.projectYear || item.projectYear,
-      ...updates,
-      updatedAt: nowIso,
-    };
-    delete (immediateTask as any)._isVirtualSummary;
-    useAppStore.getState().optimisticUpdateTasks([immediateTask]);
-  }
-
-  // 3. Resolve Real Task & Persist to Dexie + Firestore (via firestoreWrites.ts)
-  const realTask = existingInTasks || (await resolveRealTaskForWorkItem(item));
-
-  if (realTask && !String(realTask.id || '').startsWith('ts_')) {
+  if (realTask && !String(realTask.id || '').startsWith('ts_') && !updatedRealTask) {
     const realTaskKey = `tid_${sanitizeWorkKeyPart(realTask.id)}`;
     if (!syncKeys.includes(realTaskKey)) {
       persistAccountMyWorkState([realTaskKey], accountStatus).catch(() => {});
     }
 
-    const fullTaskUpdate: Task = {
+    finalTaskToWrite = {
       ...realTask,
       projectId: realTask.projectId || projId,
       projectCode: realTask.projectCode || item.projectCode,
       projectStore: realTask.projectStore || item.projectStore || 'HCM',
-      projectYear: realTask.projectYear || item.projectYear,
+      projectYear: Number(realTask.projectYear || item.projectYear || new Date().getFullYear()),
       ...updates,
       updatedAt: nowIso,
     };
-    delete (fullTaskUpdate as any)._isVirtualSummary;
+    delete (finalTaskToWrite as any)._isVirtualSummary;
+    useAppStore.getState().optimisticUpdateTasks([finalTaskToWrite]);
+    upsertLocalRecord('taka_tasks', finalTaskToWrite).catch(() => {});
+  }
 
-    await saveTaskStateUnified([fullTaskUpdate]);
-    await setDoc(
-      doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', fullTaskUpdate.id),
-      fullTaskUpdate,
-      { merge: true }
-    );
-
-    // Guarantee `taka_projects.taskSummaries` is written to Firestore for Summary Mode (0 Read) devices
-    const targetProject = matchedProjectInStore || item.rawProject;
-    if (targetProject?.id && updatedSummariesForProject) {
-      upsertLocalRecord('taka_projects', {
-        ...targetProject,
-        taskSummaries: updatedSummariesForProject,
-        updatedAt: nowIso,
-      }).catch(() => {});
-      await updateDoc(
-        doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', targetProject.id),
-        {
+  // 4. Schedule single coalesced 400ms atomic writeBatch to Firestore (Rule 8 & Rule 15)
+  const targetProject = matchedProjectInStore || item.rawProject;
+  const projectPatch =
+    targetProject?.id && updatedSummariesForProject
+      ? {
           taskSummaries: updatedSummariesForProject,
+          ...computedDatesPatch,
           updatedAt: nowIso,
         }
-      );
-    }
-    return;
-  }
+      : undefined;
 
-  // 4. Fallback for Summary-Only Projects (where tasks exist only in Project.taskSummaries)
-  const targetProject = matchedProjectInStore || item.rawProject;
-  if (targetProject?.id && updatedSummariesForProject) {
-    const latestProj: Project = {
-      ...targetProject,
-      taskSummaries: updatedSummariesForProject,
-      updatedAt: nowIso,
-    };
-    const projectTasks = getTasksForProject(latestProj, useAppStore.getState().tasks || []);
-    const computedDates = calculateProjectComputedDates(
-      latestProj,
-      projectTasks,
-      useAppStore.getState().delegationGroups || []
-    );
-    const enrichedProj = { ...latestProj, ...computedDates };
-    upsertLocalRecord('taka_projects', enrichedProj).catch(() => {});
-    await syncProjectDatesToFirestore(targetProject.id, computedDates);
-    await updateDoc(
-      doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', targetProject.id),
-      {
-        taskSummaries: updatedSummariesForProject,
-        updatedAt: nowIso,
-      }
-    );
-  }
+  scheduleCoalescedTaskAndProjectFlush(finalTaskToWrite, targetProject?.id, projectPatch);
 }
 
 /**
  * 0ms Optimistic UI + Account-Synced Persistence for Delegation SubTask Transitions.
+ * Includes Offline SyncQueue protection (Rule 2 & Rule 14).
  */
 export async function mutateDelegationSubTaskUnified(
   item: UnifiedWorkItem,
@@ -284,7 +355,7 @@ export async function mutateDelegationSubTaskUnified(
 ): Promise<void> {
   const group = item.rawDelegationGroup;
   const subTask = item.rawSubTask;
-  if (!group || !subTask) return;
+  if (!group || !subTask || !group.id) return;
 
   const rawNextStatus = String(
     updates.status || updates.delegationStatus || updates.approvalStatus || ''
@@ -327,9 +398,10 @@ export async function mutateDelegationSubTaskUnified(
   }
   const computedActStatus = resolveActualStatus(computedPlStatus, updatedSubTasks).label;
 
+  // Rule 16.1: Enforce all 4 composite keys on delegation record
   const updatedGroup = {
     ...group,
-    projectId: group.projectId || parentProject?.id,
+    projectId: group.projectId || parentProject?.id || item.projectId,
     projectCode: group.projectCode || item.projectCode,
     projectStore: group.projectStore || item.projectStore || 'HCM',
     projectYear: Number(group.projectYear || item.projectYear || new Date().getFullYear()),
@@ -352,10 +424,17 @@ export async function mutateDelegationSubTaskUnified(
     type: toastType,
   });
 
-  await setDoc(
-    doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', group.id),
-    updatedGroup
-  );
+  try {
+    await setDoc(
+      doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', group.id),
+      updatedGroup
+    );
+  } catch (err) {
+    console.warn('[myWorkMutationService] Delegation write failed, queueing to SyncQueue:', err);
+    if (!isPermanentWriteError(err)) {
+      await syncQueueManager.addToQueue('taka_delegation_groups', group.id, 'set', updatedGroup);
+    }
+  }
 
   if (group.parentTaskId && parentTask) {
     checkAndSyncRealtimeSubTaskCompletion(

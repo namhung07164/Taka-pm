@@ -7,28 +7,13 @@ import { triggerBatchChangeFlash } from './changeFlashService';
 import { broadcastAppliedDeltas } from './broadcastSyncService';
 import { applyFieldPatch } from './deltaPatchService';
 import { resolveInvalidations } from './deltaInvalidateService';
-import {
-  deltaTime,
-  serverDeltaTime,
-  getLastDeltaSyncTime,
-  getRestoreCutoffTimestamp,
-  markRestoreVersionCompleted,
-} from './deltaSyncService';
+import { deltaTime, serverDeltaTime, getLastDeltaSyncTime, getRestoreCutoffTimestamp, markRestoreVersionCompleted } from './deltaSyncService';
 import { CLIENT_SESSION_ID, DELTA_COLLECTION, LAST_SYNC_KEY } from './deltaConstants';
 import { safeSetItemLocal } from './storage';
 import { markTasksDeleted } from './taskDeletedTracker';
 import { markLoaded } from './loadedMarkers';
 import { markProjectTasksHydrated } from './utils';
-import {
-  tsOf,
-  buildDeltaProjectsIndex,
-  purgeProjectAndTasksOnDeleteDelta,
-  unlinkChildTasksOnTaskDeleteDelta,
-  removeDeletedTaskSummaryFromProjects,
-  reconcileTasksAgainstIncomingProjectSummaries,
-  upsertTaskSummaryIntoMatchingProjects,
-  recalculateTouchedProjectsAfterDeltas,
-} from './deltaApplyParts/deltaProjectReconciler';
+import { tsOf, buildDeltaProjectsIndex, purgeProjectAndTasksOnDeleteDelta, unlinkChildTasksOnTaskDeleteDelta, removeDeletedTaskSummaryFromProjects, reconcileTasksAgainstIncomingProjectSummaries, upsertTaskSummaryIntoMatchingProjects, recalculateTouchedProjectsAfterDeltas } from './deltaApplyParts/deltaProjectReconciler';
 import { rollupParentTaskDatesAndStatus } from './taskRollupService';
 
 export function applyIncomingDeltas(deltas: TakaDelta[]): number {
@@ -381,8 +366,17 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
 
     if (delta.sessionId && delta.sessionId === CLIENT_SESSION_ID) return;
 
+    if (delta.data?.type === 'USER_MYWORK_SYNC' || String(delta.docId || '').startsWith('sys_mywork_')) {
+      import('../components/MyWorkTabParts/myWorkAccountSync').then((m) => m.applyIncomingMyWorkSyncDelta(delta.data)).catch(() => {});
+      return;
+    }
+
     if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
       delta.batchItems.forEach((item) => {
+        if (item.data?.type === 'USER_MYWORK_SYNC' || String(item.docId || '').startsWith('sys_mywork_')) {
+          import('../components/MyWorkTabParts/myWorkAccountSync').then((m) => m.applyIncomingMyWorkSyncDelta(item.data)).catch(() => {});
+          return;
+        }
         if (item.invalidate) {
           if (item.docId) directlyAppliedDocIds.delete(item.docId);
           invalidations.push(item);

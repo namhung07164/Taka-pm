@@ -1,7 +1,8 @@
-import { AppRole, DelegationGroup, Project, Task } from '../../types';
+import { AppRole, Project } from '../../types';
 import {
   MyWorkFocusTarget,
   MyWorkKanbanColumnId,
+  MyWorkTimeFilter,
   UnifiedWorkItem,
   WorkItemPriority,
 } from './myWorkTypes';
@@ -91,6 +92,57 @@ export function isItemInFocusProject(
     }
   }
   return true;
+}
+
+/**
+ * Checks whether an item is due today or actively scheduled across today's date.
+ */
+export function isItemScheduledForToday(item: UnifiedWorkItem, todayStartMs: number): boolean {
+  if (item.dueDiffDays === 0) return true;
+  const startMs = parseLocalDayMs(item.startDateStr);
+  const dueMs = parseLocalDayMs(item.dueDateStr);
+  if (startMs !== null && dueMs !== null && startMs <= todayStartMs && dueMs >= todayStartMs) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Evaluates whether a work item belongs to the selected Time Horizon filter.
+ */
+export function matchesTimeFilter(
+  item: UnifiedWorkItem,
+  timeFilter: MyWorkTimeFilter,
+  todayStartMs: number
+): boolean {
+  if (!timeFilter || timeFilter === 'all') return true;
+  if (item.isFocusedTarget) return true;
+
+  const diff = item.dueDiffDays;
+  const isTodayItem = isItemScheduledForToday(item, todayStartMs);
+
+  switch (timeFilter) {
+    case 'overdue':
+      return item.isOverdue || item.isNeedsRework || (diff !== null && diff < 0);
+    case 'today':
+      return isTodayItem;
+    case 'today_focus':
+      return (
+        item.isOverdue ||
+        item.isNeedsRework ||
+        isTodayItem ||
+        item.isAwaitingMyApproval ||
+        (diff !== null && diff <= 0)
+      );
+    case 'this_week':
+      return isTodayItem || (diff !== null && diff >= 0 && diff <= 7);
+    case 'this_month':
+      return isTodayItem || (diff !== null && diff >= 0 && diff <= 30);
+    case 'upcoming':
+      return diff === null || diff > 30;
+    default:
+      return true;
+  }
 }
 
 /**

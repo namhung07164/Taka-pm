@@ -3,15 +3,16 @@ import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import {
   hydrateTasksFromLocal,
+  hydrateTasksForProjects,
   hydrateDelegationsFromLocal,
 } from '../lib/backgroundSyncWorker';
-import { ensureProjectTasksLoaded } from '../lib/taskStateService';
 import { safeGetItemSession } from '../lib/storage';
 import {
   MyWorkDisplayMode,
   MyWorkFocusTarget,
   MyWorkKanbanColumnId,
   MyWorkTabView,
+  MyWorkTimeFilter,
   UnifiedWorkItem,
 } from './MyWorkTabParts/myWorkTypes';
 import { useMyWorkData } from './MyWorkTabParts/useMyWorkData';
@@ -64,6 +65,7 @@ export function MyWorkTab() {
 
   const [displayMode, setDisplayMode] = useState<MyWorkDisplayMode>('kanban');
   const [activeView, setActiveView] = useState<MyWorkTabView>('today');
+  const [timeFilter, setTimeFilter] = useState<MyWorkTimeFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'urgency' | 'due_asc' | 'project' | 'priority'>('urgency');
@@ -79,24 +81,37 @@ export function MyWorkTab() {
     return () => window.removeEventListener('taka-mywork-focus-changed', handleFocusChanged);
   }, []);
 
+  // Rule 3 & Rule 14: Local-First Dexie hydration only on mount (0 Firestore Reads, preserves Tri-Gate flags)
   useEffect(() => {
-    hydrateTasksFromLocal().catch(() => {});
-    hydrateDelegationsFromLocal()
-      .then((count) => {
-        if (!count && !isDelegationsRequested) setIsDelegationsRequested(true);
-      })
-      .catch(() => {});
-  }, [isDelegationsRequested, setIsDelegationsRequested]);
+    hydrateTasksFromLocal(globalYearFilter).catch(() => {});
+    hydrateDelegationsFromLocal(globalYearFilter).catch(() => {});
+  }, [globalYearFilter]);
 
+  // If user explicitly filters by Delegation workflow and none are in memory, enable delegation gate on-demand
   useEffect(() => {
-    if (focusTarget?.projectCode) {
-      ensureProjectTasksLoaded(focusTarget.projectCode, {
-        projectId: focusTarget.projectId,
-        store: focusTarget.projectStore,
-        year: focusTarget.projectYear ? Number(focusTarget.projectYear) : undefined,
-      }).catch(() => {});
+    if (statusFilter === 'delegation' && !isDelegationsRequested && delegationGroups.length === 0) {
+      setIsDelegationsRequested(true);
     }
-  }, [focusTarget?.projectCode, focusTarget?.projectId, focusTarget?.projectStore, focusTarget?.projectYear]);
+  }, [statusFilter, isDelegationsRequested, delegationGroups.length, setIsDelegationsRequested]);
+
+  // Rule 8 & Rule 14: Local-only project task hydration when focused (0 Firestore Reads)
+  useEffect(() => {
+    const keys = [focusTarget?.projectId, focusTarget?.projectCode].filter(Boolean) as string[];
+    if (keys.length > 0) {
+      hydrateTasksForProjects(
+        keys,
+        focusTarget?.projectYear || globalYearFilter,
+        focusTarget?.projectStore || globalStoreFilter
+      ).catch(() => {});
+    }
+  }, [
+    focusTarget?.projectCode,
+    focusTarget?.projectId,
+    focusTarget?.projectStore,
+    focusTarget?.projectYear,
+    globalStoreFilter,
+    globalYearFilter,
+  ]);
 
   const handleRequestFullHydration = useCallback(() => {
     setIsTasksRequested(true);
@@ -141,6 +156,7 @@ export function MyWorkTab() {
     storeFilter: globalStoreFilter,
     globalYearFilter,
     statusFilter,
+    timeFilter,
     sortBy,
     focusTarget,
   });
@@ -353,13 +369,8 @@ export function MyWorkTab() {
 
       if (item.type === 'task') {
         const matched = await resolveRealTaskForWorkItem(item);
-        if (matched) {
-          setEditingTask(matched);
-          setIsTaskModalOpen(true);
-          return;
-        }
-        if (item.rawTask) {
-          setEditingTask(item.rawTask);
+        if (matched || item.rawTask) {
+          setEditingTask(matched || item.rawTask!);
           setIsTaskModalOpen(true);
           return;
         }
@@ -370,14 +381,7 @@ export function MyWorkTab() {
         setIsProjectModalOpen(true);
       }
     },
-    [
-      setEditingProject,
-      setEditingTask,
-      setIsProjectModalOpen,
-      setIsReadOnlyModal,
-      setIsTaskModalOpen,
-      setModalInitialTab,
-    ]
+    [setEditingProject, setEditingTask, setIsProjectModalOpen, setIsReadOnlyModal, setIsTaskModalOpen, setModalInitialTab]
   );
 
   return (
@@ -388,6 +392,8 @@ export function MyWorkTab() {
         onDisplayModeChange={setDisplayMode}
         activeView={activeView}
         onViewChange={setActiveView}
+        timeFilter={timeFilter}
+        onTimeFilterChange={setTimeFilter}
         counts={counts}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -410,21 +416,16 @@ export function MyWorkTab() {
                 <Target className="w-3.5 h-3.5" />
               </div>
               <div className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 truncate">
-                <span className="font-bold text-violet-700 dark:text-violet-300">
-                  Focused Project & Related Work:
-                </span>{' '}
+                <span className="font-bold text-violet-700 dark:text-violet-300">Focused Project & Related Work:</span>{' '}
                 <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-white dark:bg-[#242429] border border-violet-200 dark:border-violet-800/60 text-violet-700 dark:text-violet-300">
                   {focusTarget.projectCode}
                   {focusTarget.projectStore ? ` • ${focusTarget.projectStore}` : ''}
                   {focusTarget.projectYear ? ` • ${focusTarget.projectYear}` : ''}
                 </span>{' '}
-                {focusTarget.projectName && (
-                  <span className="font-semibold">{focusTarget.projectName}</span>
-                )}
+                {focusTarget.projectName && <span className="font-semibold">{focusTarget.projectName}</span>}
                 {focusTarget.taskName && (
                   <span className="text-slate-500 dark:text-slate-400">
-                    {' '}
-                    — Task: <strong className="text-slate-800 dark:text-white">{focusTarget.taskName}</strong>
+                    {' '}— Task: <strong className="text-slate-800 dark:text-white">{focusTarget.taskName}</strong>
                   </span>
                 )}
               </div>
@@ -443,11 +444,7 @@ export function MyWorkTab() {
         </div>
       )}
 
-      <MyWorkBriefingBanner
-        stats={briefingStats}
-        statusFilter={statusFilter}
-        onSelectFilter={setStatusFilter}
-      />
+      <MyWorkBriefingBanner stats={briefingStats} statusFilter={statusFilter} onSelectFilter={setStatusFilter} />
 
       {displayMode === 'kanban' ? (
         <MyWorkKanbanView

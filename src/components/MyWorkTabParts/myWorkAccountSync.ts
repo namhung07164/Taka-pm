@@ -165,9 +165,54 @@ export function resolveAccountOverrideStatus(
   return bestStatus;
 }
 
+const pendingUserPatches = new Map<string, Record<string, string>>();
+let flushUserStateTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function flushPendingAccountMyWorkStates(): Promise<void> {
+  const entries = Array.from(pendingUserPatches.entries());
+  pendingUserPatches.clear();
+  if (entries.length === 0) return;
+
+  const nowIso = new Date().toISOString();
+  const { syncQueueManager, isPermanentWriteError } = await import('../../lib/syncQueue');
+  const { recordDelta } = await import('../../lib/deltaWriteService');
+
+  for (const [userId, patchMap] of entries) {
+    if (!userId || userId === 'guest') continue;
+    const payload = {
+      myWorkStates: patchMap,
+      myWorkUpdatedAt: nowIso,
+    };
+    try {
+      await setDoc(
+        doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', userId),
+        payload,
+        { merge: true }
+      );
+      await recordDelta({
+        docId: `sys_mywork_${userId}`,
+        collectionName: 'taka_projects',
+        action: 'update',
+        data: {
+          type: 'USER_MYWORK_SYNC',
+          userId,
+          myWorkStates: patchMap,
+          updatedAt: nowIso,
+        },
+        updatedBy: userId,
+      }).catch(() => {});
+    } catch (err) {
+      console.warn('[myWorkAccountSync] Write failed, queueing to SyncQueue:', err);
+      if (!isPermanentWriteError(err)) {
+        await syncQueueManager.addToQueue('taka_users', userId, 'set', payload);
+      }
+    }
+  }
+}
+
 /**
- * Persists a user's checked/kanban status to Zustand (0ms), localStorage, and Firestore `taka_users/{userId}`
- * so iOS and Laptop stay 100% synchronized in real time for the same account.
+ * Persists a user's checked/kanban status to Zustand (0ms), localStorage, and debounced (400ms)
+ * Firestore `taka_users/{userId}` + `taka_deltas` so iOS and Laptop stay 100% synchronized in real time.
  */
 export async function persistAccountMyWorkState(
   keys: string[],
@@ -207,13 +252,43 @@ export async function persistAccountMyWorkState(
   safeSetItemLocal('taka_auth_v1', JSON.stringify(updatedUser));
 
   if (currentUser.id !== 'guest') {
-    await setDoc(
-      doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_users', currentUser.id),
-      {
-        myWorkStates: patchMap,
-        myWorkUpdatedAt: nowIso,
-      },
-      { merge: true }
-    );
+    const existingPending = pendingUserPatches.get(currentUser.id) || {};
+    pendingUserPatches.set(currentUser.id, mergeMyWorkStates(existingPending, patchMap));
+    if (flushUserStateTimer) clearTimeout(flushUserStateTimer);
+    flushUserStateTimer = setTimeout(() => {
+      flushUserStateTimer = null;
+      void flushPendingAccountMyWorkStates();
+    }, 400);
   }
 }
+
+/**
+ * Applies a remote `USER_MYWORK_SYNC` delta payload received over `taka_deltas` in 0ms
+ * with 0 extra Firestore reads or listeners.
+ */
+export function applyIncomingMyWorkSyncDelta(data: any): void {
+  if (!data || data.type !== 'USER_MYWORK_SYNC' || !data.userId || !data.myWorkStates) return;
+  const state = useAppStore.getState();
+  const cur = state.currentUser;
+  if (!cur || cur.id !== data.userId) return;
+
+  const localStates = loadLocalMyWorkStates(cur.id);
+  const merged = mergeMyWorkStates(
+    mergeMyWorkStates(localStates, cur.myWorkStates),
+    data.myWorkStates
+  );
+  if (JSON.stringify(cur.myWorkStates || {}) === JSON.stringify(merged)) return;
+
+  const updated = {
+    ...cur,
+    myWorkStates: merged,
+    myWorkUpdatedAt: data.updatedAt || new Date().toISOString(),
+  };
+  state.setCurrentUser(updated);
+  if (Array.isArray(state.appUsers) && state.appUsers.length > 0) {
+    state.setAppUsers(state.appUsers.map((u) => (u.id === cur.id ? updated : u)));
+  }
+  safeSetItemLocal(`taka_mywork_states_${cur.id}`, JSON.stringify(merged));
+  safeSetItemLocal('taka_auth_v1', JSON.stringify(updated));
+}
+

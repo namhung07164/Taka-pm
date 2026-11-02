@@ -1,16 +1,25 @@
 import React from 'react';
 import {
+  AlertTriangle,
   Calendar,
   CalendarDays,
   CheckCircle2,
+  Clock,
   Database,
+  Flame,
   Inbox,
   Kanban,
   List,
+  Sparkles,
   Sun,
 } from 'lucide-react';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
-import { MyWorkCounts, MyWorkDisplayMode, MyWorkTabView } from './myWorkTypes';
+import {
+  MyWorkCounts,
+  MyWorkDisplayMode,
+  MyWorkTabView,
+  MyWorkTimeFilter,
+} from './myWorkTypes';
 import { cn } from '../../lib/utils';
 
 interface MyWorkHeaderProps {
@@ -19,6 +28,8 @@ interface MyWorkHeaderProps {
   onDisplayModeChange: (mode: MyWorkDisplayMode) => void;
   activeView: MyWorkTabView;
   onViewChange: (view: MyWorkTabView) => void;
+  timeFilter: MyWorkTimeFilter;
+  onTimeFilterChange: (tf: MyWorkTimeFilter) => void;
   counts: MyWorkCounts;
   searchQuery: string;
   onSearchChange: (q: string) => void;
@@ -46,6 +57,8 @@ export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyW
   onDisplayModeChange,
   activeView,
   onViewChange,
+  timeFilter,
+  onTimeFilterChange,
   counts,
   searchQuery,
   onSearchChange,
@@ -61,7 +74,67 @@ export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyW
 }) {
   const { emoji, greeting } = getGreetingByHour();
 
-  const pills: Array<{
+  const timeChips: Array<{
+    id: MyWorkTimeFilter;
+    label: string;
+    icon: React.ElementType;
+    count: number;
+    urgent?: boolean;
+    accentClass?: string;
+  }> = [
+    {
+      id: 'all',
+      label: 'All Dates',
+      icon: Sparkles,
+      count: counts.allActive,
+    },
+    {
+      id: 'today_focus',
+      label: 'Today & Overdue',
+      icon: Flame,
+      count: counts.todayFocus,
+      urgent: counts.overdue > 0,
+      accentClass: 'text-orange-600 dark:text-orange-400',
+    },
+    {
+      id: 'today',
+      label: 'Today',
+      icon: Sun,
+      count: counts.todayOnly,
+      accentClass: 'text-amber-600 dark:text-amber-400',
+    },
+    {
+      id: 'this_week',
+      label: 'This Week (7d)',
+      icon: CalendarDays,
+      count: counts.thisWeek,
+      accentClass: 'text-blue-600 dark:text-blue-400',
+    },
+    {
+      id: 'this_month',
+      label: 'This Month (30d)',
+      icon: Calendar,
+      count: counts.thisMonth,
+      accentClass: 'text-indigo-600 dark:text-indigo-400',
+    },
+    {
+      id: 'overdue',
+      label: 'Overdue',
+      icon: AlertTriangle,
+      count: counts.overdue,
+      urgent: counts.overdue > 0,
+      accentClass: 'text-rose-600 dark:text-rose-400',
+    },
+    {
+      id: 'upcoming',
+      label: 'Later (>30d)',
+      icon: Clock,
+      count: counts.future,
+      accentClass: 'text-slate-600 dark:text-slate-400',
+    },
+  ];
+
+  const listPills: Array<{
     id: MyWorkTabView;
     label: string;
     emojiIcon: string;
@@ -71,7 +144,7 @@ export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyW
   }> = [
     {
       id: 'today',
-      label: 'Today',
+      label: 'Today Stream',
       emojiIcon: '☀️',
       icon: Sun,
       count: counts.today,
@@ -87,7 +160,7 @@ export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyW
     },
     {
       id: 'upcoming',
-      label: 'Upcoming',
+      label: 'Upcoming Stream',
       emojiIcon: '📅',
       icon: CalendarDays,
       count: counts.upcoming,
@@ -109,7 +182,7 @@ export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyW
 
   return (
     <div className="sticky top-0 z-[40] bg-white/95 dark:bg-[#18181b]/95 backdrop-blur-md border-b border-slate-200/80 dark:border-[#333336] px-4 py-3 sm:px-6 transition-colors">
-      <div className="max-w-[1440px] mx-auto flex flex-col gap-3">
+      <div className="max-w-[1440px] mx-auto flex flex-col gap-2.5">
         {/* Top Row: Greeting + View Switcher (Kanban | List) + Right Controls */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -121,7 +194,7 @@ export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyW
               </h1>
             </div>
 
-            {/* Kanban / List Mode Switcher (Matches Image 1) */}
+            {/* Kanban / List Mode Switcher */}
             <div className="inline-flex items-center bg-slate-100 dark:bg-[#242429] p-1 rounded-xl border border-slate-200/80 dark:border-[#36363e]">
               <button
                 type="button"
@@ -165,7 +238,7 @@ export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyW
             )}
           </div>
 
-          {/* Filter & Action Toolbar (Matches Image 1) */}
+          {/* Filter & Action Toolbar */}
           <div className="flex items-center flex-wrap gap-2">
             <div className="w-full sm:w-48">
               <DebouncedSearchInput
@@ -241,30 +314,74 @@ export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyW
           </div>
         </div>
 
-        {/* Bottom Row: Segmented Pill Tabs (Shown in List View) */}
-        {displayMode === 'list' && (
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-0.5">
-            {pills.map((pill) => {
-              const isActive = activeView === pill.id;
-              const countVal = pill.count ?? 0;
+        {/* Time Horizon Filter Bar (Works in both Kanban & List modes for focused execution) */}
+        <div className="flex items-center justify-between gap-2 flex-wrap pt-1 border-t border-slate-100 dark:border-[#29292f]">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mr-1 shrink-0">
+              Timeframe:
+            </span>
+            {timeChips.map((chip) => {
+              const Icon = chip.icon;
+              const isSelected = timeFilter === chip.id;
               return (
                 <button
-                  key={pill.id}
+                  key={chip.id}
                   type="button"
-                  onClick={() => onViewChange(pill.id)}
+                  onClick={() => onTimeFilterChange(chip.id)}
                   className={cn(
-                    'flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none shrink-0 active:scale-95 touch-manipulation border',
-                    isActive
-                      ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white shadow-sm'
-                      : 'bg-slate-100/90 dark:bg-[#242428] text-slate-600 dark:text-[#c3c3c3] border-slate-200/70 dark:border-[#38383c] hover:bg-slate-200/80 dark:hover:bg-[#303036]'
+                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer select-none shrink-0 active:scale-95 touch-manipulation border',
+                    isSelected
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                      : 'bg-slate-100/80 dark:bg-[#222227] text-slate-700 dark:text-slate-300 border-slate-200/80 dark:border-[#34343c] hover:bg-slate-200/70 dark:hover:bg-[#2c2c34]'
                   )}
                 >
-                  <span>{pill.emojiIcon}</span>
-                  <span>{pill.label}</span>
-                  {pill.id !== 'done' && (
+                  <Icon
+                    className={cn(
+                      'w-3.5 h-3.5 shrink-0',
+                      isSelected ? 'text-white' : chip.accentClass || 'text-slate-500'
+                    )}
+                  />
+                  <span>{chip.label}</span>
+                  <span
+                    className={cn(
+                      'px-1.5 py-0.2 rounded-full text-[10px] font-extrabold leading-tight',
+                      isSelected
+                        ? 'bg-white/25 text-white'
+                        : chip.urgent && chip.count > 0
+                        ? 'bg-rose-500 text-white'
+                        : 'bg-slate-200/90 dark:bg-[#32323a] text-slate-700 dark:text-slate-300'
+                    )}
+                  >
+                    {chip.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Segmented Stream Tabs when in List View */}
+          {displayMode === 'list' && (
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {listPills.map((pill) => {
+                const isActive = activeView === pill.id;
+                const countVal = pill.count ?? 0;
+                return (
+                  <button
+                    key={pill.id}
+                    type="button"
+                    onClick={() => onViewChange(pill.id)}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer select-none shrink-0 active:scale-95 touch-manipulation border',
+                      isActive
+                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white shadow-2xs'
+                        : 'bg-slate-100/90 dark:bg-[#242428] text-slate-600 dark:text-[#c3c3c3] border-slate-200/70 dark:border-[#38383c] hover:bg-slate-200/80 dark:hover:bg-[#303036]'
+                    )}
+                  >
+                    <span>{pill.emojiIcon}</span>
+                    <span>{pill.label}</span>
                     <span
                       className={cn(
-                        'px-1.5 py-0.5 rounded-full text-[10px] font-extrabold leading-none',
+                        'px-1.5 py-0.2 rounded-full text-[10px] font-extrabold leading-tight',
                         pill.urgentBadge && countVal > 0
                           ? 'bg-rose-500 text-white'
                           : isActive
@@ -274,12 +391,12 @@ export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyW
                     >
                       {countVal}
                     </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

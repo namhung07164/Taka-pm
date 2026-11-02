@@ -11,6 +11,7 @@ import {
   MyWorkCounts,
   MyWorkFocusTarget,
   MyWorkKanbanColumnId,
+  MyWorkTimeFilter,
   UnifiedWorkItem,
   WorkItemPriority,
 } from './myWorkTypes';
@@ -24,6 +25,8 @@ import {
   buildFriendlyDueLabel,
   buildProjectMilestoneItems,
   isItemInFocusProject,
+  isItemScheduledForToday,
+  matchesTimeFilter,
   normalizeRole,
   parseLocalDayMs,
   parseParties,
@@ -43,6 +46,7 @@ interface UseMyWorkDataParams {
   storeFilter: string;
   globalYearFilter: string;
   statusFilter: string;
+  timeFilter: MyWorkTimeFilter;
   sortBy: 'urgency' | 'due_asc' | 'project' | 'priority';
   focusTarget?: MyWorkFocusTarget | null;
 }
@@ -57,6 +61,7 @@ export function useMyWorkData({
   storeFilter,
   globalYearFilter,
   statusFilter,
+  timeFilter,
   sortBy,
   focusTarget,
 }: UseMyWorkDataParams) {
@@ -431,7 +436,8 @@ export function useMyWorkData({
       if (it.isNeedsRework) briefingStats.needsReworkCount++;
     }
 
-    const filteredStream = baseStream.filter((item) => {
+    // Filter by status & search first so Time Filter chip counts reflect active items in the current search/type filter
+    const searchAndStatusStream = baseStream.filter((item) => {
       if (statusFilter === 'overdue' && !item.isOverdue && !item.isNeedsRework) return false;
       if (statusFilter === 'approval' && !item.isAwaitingMyApproval && !item.isNeedsRework) return false;
       if (statusFilter === 'delegation' && item.type !== 'delegation_subtask') return false;
@@ -446,6 +452,42 @@ export function useMyWorkData({
         item.statusLabel,
       ]);
     });
+
+    // Compute Time Filter badge counts across active items before applying timeFilter
+    let allActiveCount = 0;
+    let todayFocusCount = 0;
+    let todayOnlyCount = 0;
+    let thisWeekCount = 0;
+    let thisMonthCount = 0;
+    let overdueCount = 0;
+    let futureCount = 0;
+    let inboxCount = 0;
+    let totalDoneCount = 0;
+
+    for (let i = 0; i < searchAndStatusStream.length; i++) {
+      const it = searchAndStatusStream[i];
+      if (it.isCompleted) {
+        totalDoneCount++;
+        continue;
+      }
+      allActiveCount++;
+      const isToday = isItemScheduledForToday(it, todayStartMs);
+      const diff = it.dueDiffDays;
+      if (it.isOverdue || it.isNeedsRework) overdueCount++;
+      if (isToday) todayOnlyCount++;
+      if (it.isOverdue || it.isNeedsRework || isToday || it.isAwaitingMyApproval || (diff !== null && diff <= 0)) {
+        todayFocusCount++;
+      }
+      if (isToday || (diff !== null && diff >= 0 && diff <= 7)) thisWeekCount++;
+      if (isToday || (diff !== null && diff >= 0 && diff <= 30)) thisMonthCount++;
+      if (diff === null || diff > 30) futureCount++;
+      if (it.isAwaitingMyApproval || it.isNeedsRework) inboxCount++;
+    }
+
+    // Apply Time Horizon Filter
+    const filteredStream = searchAndStatusStream.filter((item) =>
+      matchesTimeFilter(item, timeFilter, todayStartMs)
+    );
 
     const pWeight: Record<WorkItemPriority, number> = { critical: 0, high: 1, medium: 2, low: 3 };
     const sortFn = (a: UnifiedWorkItem, b: UnifiedWorkItem) => {
@@ -482,7 +524,7 @@ export function useMyWorkData({
       }
       if (item.isAwaitingMyApproval) approvalItems.push(item);
       if (item.isOverdue || item.isNeedsRework) overdueItems.push(item);
-      else if (item.dueDiffDays === 0 || item.isFocusedTarget) todayItems.push(item);
+      else if (isItemScheduledForToday(item, todayStartMs) || item.isFocusedTarget) todayItems.push(item);
       else if (item.dueDiffDays !== null && item.dueDiffDays >= 1 && item.dueDiffDays <= 7) weekItems.push(item);
       else if (item.dueDiffDays !== null && item.dueDiffDays > 7 && (item.dueDiffDays <= 30 || Boolean(focusTarget))) monthItems.push(item);
       else if (item.dueDiffDays === null && !item.isAwaitingMyApproval) todayItems.push(item);
@@ -501,11 +543,17 @@ export function useMyWorkData({
 
     const counts: MyWorkCounts = {
       today: overdueItems.length + todayItems.length,
-      inbox: approvalItems.length + overdueItems.filter((i) => i.isNeedsRework).length,
+      inbox: inboxCount,
       upcoming: weekItems.length + monthItems.length,
-      done: doneItems.length,
-      overdue: overdueItems.length,
+      done: totalDoneCount,
+      overdue: overdueCount,
       todayTodo: todayItems.length + overdueItems.length,
+      allActive: allActiveCount,
+      todayFocus: todayFocusCount,
+      todayOnly: todayOnlyCount,
+      thisWeek: thisWeekCount,
+      thisMonth: thisMonthCount,
+      future: futureCount,
     };
 
     return {
@@ -533,6 +581,7 @@ export function useMyWorkData({
     storeFilter,
     globalYearFilter,
     statusFilter,
+    timeFilter,
     sortBy,
     focusTarget,
   ]);

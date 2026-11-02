@@ -1,17 +1,13 @@
 import { useEffect, useRef } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
-import { writeBatch } from "../../lib/firestoreWrites";
 import { useAppStore } from "../../store/useAppStore";
 import { usePerformanceStore } from "../../store/usePerformanceStore";
-import { auth, db, APP_ID } from "../../lib/firebase";
+import { auth } from "../../lib/firebase";
 import { safeGetItemLocal, safeSetItemLocal } from "../../lib/storage";
-import { getPendingUpdates, clearPendingUpdates, processPendingSync } from "../../lib/syncQueue";
-import { recordBatchDeltas } from "../../lib/deltaSyncService";
+import { processPendingSync } from "../../lib/syncQueue";
 import { setupStaticConfigSync } from "../../lib/configCacheService";
 import { enforceStorageBudget } from "../../lib/storageBudgetService";
 import {
-  hydrateProjectsFromLocal,
   hydrateTasksFromLocal,
   hydrateTasksForProjects,
   hydrateCostsFromLocal,
@@ -43,7 +39,6 @@ export function useStaticAndAuthHydration() {
   const setIsDelegationsRequested = useAppStore((state) => state.setIsDelegationsRequested);
 
   const user = useAppStore((state) => state.user);
-  const currentUserId = useAppStore((state) => state.currentUser?.id);
   const appUsers = useAppStore((state) => state.appUsers);
   const globalYearFilter = useAppStore((state) => state.globalYearFilter);
 
@@ -295,65 +290,7 @@ export function useStaticAndAuthHydration() {
     };
   }, [user?.uid, setCloudStatus, setToast]);
 
-  // 5. Real-time Account Profile & My Work States Listener (iOS <-> Laptop Instant Sync)
-  useEffect(() => {
-    if (!user?.uid || !currentUserId || currentUserId === "guest") return;
-
-    const userDocRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_users", currentUserId);
-    const unsubUserDoc = onSnapshot(
-      userDocRef,
-      (snap) => {
-        if (!snap.exists()) return;
-        const remoteData = snap.data() as Partial<AppUser>;
-        const cur = useAppStore.getState().currentUser;
-        if (!cur || cur.id !== currentUserId) return;
-
-        const localWorkStates = loadLocalMyWorkStates(currentUserId);
-        const mergedMyWorkStates = mergeMyWorkStates(
-          mergeMyWorkStates(localWorkStates, cur.myWorkStates),
-          remoteData.myWorkStates
-        );
-
-        const localReadNotifsStr = safeGetItemLocal(`taka_read_notifs_${currentUserId}`);
-        let localReadNotifs: string[] = [];
-        if (localReadNotifsStr) {
-          try {
-            localReadNotifs = JSON.parse(localReadNotifsStr);
-          } catch (e) {}
-        }
-        const mergedReadNotifs = Array.from(
-          new Set([...(remoteData.readNotifs || []), ...(cur.readNotifs || []), ...localReadNotifs])
-        );
-
-        const workStatesChanged =
-          JSON.stringify(cur.myWorkStates || {}) !== JSON.stringify(mergedMyWorkStates);
-        const notifsChanged =
-          JSON.stringify(cur.readNotifs || []) !== JSON.stringify(mergedReadNotifs);
-
-        if (workStatesChanged || notifsChanged) {
-          const updated: AppUser = {
-            ...cur,
-            ...remoteData,
-            id: currentUserId,
-            readNotifs: mergedReadNotifs,
-            myWorkStates: mergedMyWorkStates,
-          };
-          setCurrentUser(updated);
-          safeSetItemLocal(`taka_mywork_states_${currentUserId}`, JSON.stringify(mergedMyWorkStates));
-          safeSetItemLocal("taka_auth_v1", JSON.stringify(updated));
-        }
-      },
-      (err) => {
-        console.warn("[useStaticAndAuthHydration] User doc snapshot warning:", err);
-      }
-    );
-
-    return () => {
-      unsubUserDoc();
-    };
-  }, [user?.uid, currentUserId, setCurrentUser]);
-
-  // 6. Sync Profile Effect from appUsers list
+  // 5. Sync Profile & MyWorkStates Effect from appUsers list + taka_deltas (0 extra Firestore listeners)
   useEffect(() => {
     if (!appUsers || appUsers.length === 0) return;
     const cur = useAppStore.getState().currentUser;
