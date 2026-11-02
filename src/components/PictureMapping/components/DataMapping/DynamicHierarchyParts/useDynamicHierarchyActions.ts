@@ -427,6 +427,43 @@ export function useDynamicHierarchyActions({
     [versions, activeVersion, updateVersions]
   );
 
+  const importGroups = useCallback(
+    (importedGroups: MapVersion['groups'], mode: 'merge' | 'replace') => {
+      if (activeVersion) {
+        const nextMappings: Record<string, string[]> =
+          mode === 'replace' ? {} : { ...(activeVersion.groupMappings || {}) };
+        importedGroups.forEach((g) => {
+          if (!nextMappings[g.id]) nextMappings[g.id] = [];
+        });
+        updateVersions(
+          versions.map((v) =>
+            v.id === activeVersion.id
+              ? { ...v, groups: importedGroups, groupMappings: nextMappings, isDynamicActive: true }
+              : v
+          )
+        );
+        return;
+      }
+
+      const newVer: MapVersion = {
+        id: uuidv4(),
+        name: `PM-${location}-${store}`,
+        backgroundUrl: null,
+        backgroundScale: 1,
+        backgroundPos: { x: 0, y: 0 },
+        groups: importedGroups,
+        groupMappings: {},
+        store,
+        location,
+        year: String(effectiveYear),
+        isDynamicActive: true,
+      };
+      updateVersions([...versions, newVer]);
+      setActiveVersionId(newVer.id);
+    },
+    [activeVersion, effectiveYear, location, setActiveVersionId, store, updateVersions, versions]
+  );
+
   return {
     toggleVersionActive,
     applyRules,
@@ -444,5 +481,6 @@ export function useDynamicHierarchyActions({
     updateRule,
     deleteRule,
     copyGroups,
+    importGroups,
   };
 }

@@ -22,6 +22,7 @@ import {
 } from '../../lib/dynamicExportService';
 import { useDynamicRules } from '../../hooks/useDynamicRules';
 import { DynamicGroupCard } from './DynamicHierarchyParts/DynamicGroupCard';
+import { DynamicCsvToolbar } from './DynamicHierarchyParts/DynamicCsvToolbar';
 import {
   useDynamicHierarchyActions,
   computeGroupMatchDetailsMap,
@@ -213,6 +214,7 @@ function DynamicHierarchyTab({
     updateRule,
     deleteRule,
     copyGroups,
+    importGroups,
   } = useDynamicHierarchyActions({
     store,
     location,
@@ -308,7 +310,16 @@ function DynamicHierarchyTab({
               </>
             )}
           </div>
-          <div className="flex gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <DynamicCsvToolbar
+              store={store}
+              location={location}
+              effectiveYear={String(effectiveYear)}
+              activeVersion={activeVersion}
+              summaryList={summaryList}
+              groupMatchDetailsMap={groupMatchDetailsMap}
+              onImportGroups={importGroups}
+            />
             <button
               onClick={addVersion}
               className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-brand-600 text-white text-[10px] font-bold uppercase shadow hover:bg-brand-500 transition-colors"
@@ -391,14 +402,8 @@ function DynamicHierarchyTab({
 
               {activeGroups.length === 0 && (
                 <div className="text-center py-6 px-4 border border-dashed border-slate-800 rounded-xl bg-slate-950/40 text-slate-400 flex flex-col items-center justify-center gap-2">
-                  <div className="w-9 h-9 rounded-lg bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400">
-                    <Calculator size={18} />
-                  </div>
                   <p className="text-xs font-semibold text-slate-300">
                     Phiên bản này ({activeVersion.name} • {activeVersion.year || effectiveYear}) chưa có nhóm phân loại & quy tắc.
-                  </p>
-                  <p className="text-[11px] text-slate-500 max-w-md">
-                    Mỗi phiên bản (theo từng năm) có nhóm quy tắc riêng. Bạn có thể sao chép nhanh từ phiên bản năm khác hoặc tự tạo nhóm mới.
                   </p>
                   <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
                     <button
