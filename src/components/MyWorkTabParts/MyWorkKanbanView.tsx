@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   Calendar,
   Check,
+  Clock,
   Flag,
   MessageSquare,
   Paperclip,
@@ -78,6 +79,23 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
     },
   ];
 
+  const handleCircleAction = (e: React.MouseEvent, item: UnifiedWorkItem) => {
+    e.stopPropagation();
+    if (item.type === 'task') {
+      onToggleTaskComplete(item);
+      return;
+    }
+    if (item.type === 'delegation_subtask') {
+      if (item.canApproveOrReject) {
+        onApproveItem(item);
+      } else if (item.isCreator && !item.isCompleted) {
+        onApproveItem({ ...item, canApproveOrReject: true });
+      } else if (item.canSubmitApproval) {
+        onReportSubTaskComplete(item);
+      }
+    }
+  };
+
   return (
     <div className="max-w-[1440px] mx-auto w-full px-4 sm:px-6 py-4 flex-grow">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
@@ -106,7 +124,7 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
                 isDropTarget && 'ring-2 ring-blue-500 bg-blue-50/40 dark:bg-blue-950/20'
               )}
             >
-              {/* Colored Pill Column Header (Matches Image 1) */}
+              {/* Colored Pill Column Header */}
               <div className={cn('px-3.5 py-2.5 flex items-center justify-between shadow-2xs', col.headerBg)}>
                 <span className="font-extrabold text-xs sm:text-sm tracking-wide truncate">
                   {col.title}
@@ -129,6 +147,10 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
                   col.items.map((item) => {
                     const dispDate = item.dueDateStr ? formatDisplayDateMain(item.dueDateStr) : 'No date';
                     const avatarInitial = String(item.party || 'U').trim().charAt(0).toUpperCase();
+                    const canTapCircle =
+                      (item.type === 'task' && item.canEdit) ||
+                      (item.type === 'delegation_subtask' &&
+                        (item.canSubmitApproval || item.canApproveOrReject || item.isCreator));
 
                     return (
                       <div
@@ -147,7 +169,7 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
                           item.isCompleted && 'opacity-85'
                         )}
                       >
-                        {/* Top Status & Project Code Bar */}
+                        {/* Top Status & QuickNav Bar */}
                         <div className="flex items-center justify-between gap-1.5 flex-wrap">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {item.isFocusedTarget && (
@@ -209,31 +231,66 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
                           </div>
                         </div>
 
-                        {/* Title & Project Metadata */}
-                        <div>
-                          <h4
-                            className={cn(
-                              'font-bold text-xs sm:text-sm text-slate-800 dark:text-[#f3f3f3] leading-snug line-clamp-2',
-                              item.isCompleted && 'line-through text-slate-400 dark:text-slate-500'
-                            )}
-                          >
-                            {item.title}
-                          </h4>
-
-                          <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
-                            <span className="font-mono font-bold px-1.5 py-0.2 rounded bg-slate-100 dark:bg-[#2c2c34] text-slate-700 dark:text-slate-300">
-                              {item.projectCode}
-                              {item.floor ? ` • ${String(item.floor).toUpperCase()}` : ''}
-                              {item.projectStore ? ` • ${item.projectStore}` : ''}
-                            </span>
-                            <span className="truncate max-w-[150px]">{item.projectName}</span>
-                          </div>
-
-                          {item.reportSnippet && (
-                            <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 italic bg-slate-50 dark:bg-[#1b1b20] px-2 py-0.5 rounded border border-slate-100 dark:border-[#2e2e36]">
-                              {item.reportSnippet}
-                            </p>
+                        {/* Title with 1-Click Check Circle & Project Metadata */}
+                        <div className="flex items-start gap-2.5">
+                          {item.type !== 'project_milestone' && (
+                            <button
+                              type="button"
+                              disabled={!canTapCircle}
+                              onClick={(e) => handleCircleAction(e, item)}
+                              title={
+                                item.isCompleted
+                                  ? 'Click to reopen task'
+                                  : item.type === 'delegation_subtask' && !item.isCreator
+                                  ? 'Click to request approval (85%)'
+                                  : 'Click to mark as Completed (100%)'
+                              }
+                              className={cn(
+                                'mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all touch-manipulation active:scale-90',
+                                item.isCompleted
+                                  ? 'bg-emerald-500 border-emerald-500 text-white cursor-pointer'
+                                  : item.isAwaitingMyApproval
+                                  ? 'bg-amber-100 dark:bg-amber-950/70 border-amber-400 dark:border-amber-500 text-amber-600 dark:text-amber-300 cursor-pointer'
+                                  : canTapCircle
+                                  ? 'border-slate-300 dark:border-slate-500 hover:border-emerald-500 dark:hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-transparent hover:text-emerald-600 cursor-pointer'
+                                  : 'border-slate-200 dark:border-slate-700 opacity-50 cursor-not-allowed'
+                              )}
+                            >
+                              {item.isCompleted ? (
+                                <Check className="w-3 h-3 stroke-[3]" />
+                              ) : item.isAwaitingMyApproval ? (
+                                <Clock className="w-3 h-3" />
+                              ) : (
+                                <Check className="w-3 h-3 stroke-[2.5]" />
+                              )}
+                            </button>
                           )}
+
+                          <div className="min-w-0 flex-1">
+                            <h4
+                              className={cn(
+                                'font-bold text-xs sm:text-sm text-slate-800 dark:text-[#f3f3f3] leading-snug line-clamp-2',
+                                item.isCompleted && 'line-through text-slate-400 dark:text-slate-500'
+                              )}
+                            >
+                              {item.title}
+                            </h4>
+
+                            <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
+                              <span className="font-mono font-bold px-1.5 py-0.2 rounded bg-slate-100 dark:bg-[#2c2c34] text-slate-700 dark:text-slate-300">
+                                {item.projectCode}
+                                {item.floor ? ` • ${String(item.floor).toUpperCase()}` : ''}
+                                {item.projectStore ? ` • ${item.projectStore}` : ''}
+                              </span>
+                              <span className="truncate max-w-[150px]">{item.projectName}</span>
+                            </div>
+
+                            {item.reportSnippet && (
+                              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 italic bg-slate-50 dark:bg-[#1b1b20] px-2 py-0.5 rounded border border-slate-100 dark:border-[#2e2e36]">
+                                {item.reportSnippet}
+                              </p>
+                            )}
+                          </div>
                         </div>
 
                         {/* RBAC Action Bar for Delegation / Task State Machine */}
@@ -241,25 +298,29 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
                           className="flex items-center gap-1.5 flex-wrap pt-0.5"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {/* 1. Accept Task (0% -> 50% On process) for PIC or Creator */}
-                          {item.type === 'delegation_subtask' && item.canAccept && (
+                          {/* 1. Accept / Start Task (To Do -> In Progress) */}
+                          {item.canAccept && (
                             <button
                               type="button"
                               onClick={() => onAcceptItem(item)}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/70 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer active:scale-95"
-                              title="Accept Delegation & Start Work (50%)"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/70 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer active:scale-95 touch-manipulation"
+                              title={
+                                item.type === 'delegation_subtask'
+                                  ? 'Accept Delegation & Start Work (50%)'
+                                  : 'Move Task to In Progress'
+                              }
                             >
                               <Play className="w-3 h-3" />
-                              <span>Accept (50%)</span>
+                              <span>{item.type === 'delegation_subtask' ? 'Accept (50%)' : 'Start'}</span>
                             </button>
                           )}
 
-                          {/* 2. Request Approval (85% Pending completed) for PIC or Creator */}
+                          {/* 2. Request Approval (85% Pending completed) for Delegation SubTask */}
                           {item.type === 'delegation_subtask' && item.canSubmitApproval && (
                             <button
                               type="button"
                               onClick={() => onReportSubTaskComplete(item)}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/70 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition-all cursor-pointer active:scale-95"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/70 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 transition-all cursor-pointer active:scale-95 touch-manipulation"
                               title="Request Approval (85% Pending Completed)"
                             >
                               <Send className="w-3 h-3" />
@@ -273,7 +334,7 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
                               <button
                                 type="button"
                                 onClick={() => onApproveItem(item)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xs transition-all cursor-pointer active:scale-95"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xs transition-all cursor-pointer active:scale-95 touch-manipulation"
                                 title="Approve (100% Completed)"
                               >
                                 <Check className="w-3 h-3 stroke-[2.5]" />
@@ -282,7 +343,7 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
                               <button
                                 type="button"
                                 onClick={() => onReworkItem(item)}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 transition-all cursor-pointer active:scale-95"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800 transition-all cursor-pointer active:scale-95 touch-manipulation"
                                 title="Return for Rework / Reject"
                               >
                                 <RotateCcw className="w-3 h-3" />
@@ -297,7 +358,7 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
                               type="button"
                               onClick={() => onToggleTaskComplete(item)}
                               className={cn(
-                                'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer active:scale-95',
+                                'inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold border transition-all cursor-pointer active:scale-95 touch-manipulation',
                                 item.isCompleted
                                   ? 'bg-slate-100 dark:bg-[#2c2c34] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-[#3c3c46]'
                                   : 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
@@ -309,7 +370,7 @@ export const MyWorkKanbanView: React.FC<MyWorkKanbanViewProps> = React.memo(func
                           )}
                         </div>
 
-                        {/* Card Footer: PIC Avatar + Date + Comments & Attachments Count (Matches Image 1) */}
+                        {/* Card Footer: PIC Avatar + Date + Comments & Attachments Count */}
                         <div className="pt-2 mt-0.5 border-t border-slate-100 dark:border-[#2e2e36] flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
                           <div className="flex items-center gap-2 min-w-0">
                             <div

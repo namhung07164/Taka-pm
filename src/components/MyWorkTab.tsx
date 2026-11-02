@@ -1,21 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { doc } from 'firebase/firestore';
-import { setDoc } from '../lib/firestoreWrites';
-import { db, APP_ID } from '../lib/firebase';
 import { useAppStore } from '../store/useAppStore';
 import { useEnrichedData } from '../hooks/useEnrichedData';
 import {
   hydrateTasksFromLocal,
   hydrateDelegationsFromLocal,
 } from '../lib/backgroundSyncWorker';
-import { upsertLocalRecord } from '../lib/localDb';
-import {
-  saveTaskStateUnified,
-  ensureProjectTasksLoaded,
-} from '../lib/taskStateService';
-import { getStatus, getTaskStatus, resolveActualStatus } from '../lib/utils';
+import { ensureProjectTasksLoaded } from '../lib/taskStateService';
 import { safeGetItemSession } from '../lib/storage';
-import { checkAndSyncRealtimeSubTaskCompletion } from './TaskDelegationParts/delegationAutoSync';
 import {
   MyWorkDisplayMode,
   MyWorkFocusTarget,
@@ -24,6 +15,11 @@ import {
   UnifiedWorkItem,
 } from './MyWorkTabParts/myWorkTypes';
 import { useMyWorkData } from './MyWorkTabParts/useMyWorkData';
+import {
+  mutateDelegationSubTaskUnified,
+  mutateTaskStatusUnified,
+  resolveRealTaskForWorkItem,
+} from './MyWorkTabParts/myWorkMutationService';
 import { MyWorkHeader } from './MyWorkTabParts/MyWorkHeader';
 import { MyWorkBriefingBanner } from './MyWorkTabParts/MyWorkBriefingBanner';
 import { MyWorkKanbanView } from './MyWorkTabParts/MyWorkKanbanView';
@@ -73,7 +69,6 @@ export function MyWorkTab() {
   const [sortBy, setSortBy] = useState<'urgency' | 'due_asc' | 'project' | 'priority'>('urgency');
   const [focusTarget, setFocusTarget] = useState<MyWorkFocusTarget | null>(readInitialFocusTarget);
 
-  // Listen to Quick Navigator focus updates even while already on MyWorkTab
   useEffect(() => {
     const handleFocusChanged = (e: Event) => {
       const custom = e as CustomEvent<MyWorkFocusTarget | null>;
@@ -156,25 +151,7 @@ export function MyWorkTab() {
     focusTarget,
   });
 
-  // Helper to resolve a summary fallback task on-demand before mutating
-  const resolveRealTaskOnDemand = useCallback(async (item: UnifiedWorkItem) => {
-    if (item.rawTask) return item.rawTask;
-    if (item.rawProject) {
-      const loaded = await ensureProjectTasksLoaded(item.rawProject.code, {
-        projectId: item.rawProject.id,
-        store: item.rawProject.store,
-        year: item.rawProject.year,
-      });
-      return loaded.find(
-        (t) =>
-          String(t.name || '').trim().toLowerCase() ===
-          String(item.title || '').trim().toLowerCase()
-      );
-    }
-    return undefined;
-  }, []);
-
-  // 1-Click Task Completion Toggle (0ms Optimistic UI via saveTaskStateUnified)
+  // 1-Click Task Completion Toggle (0ms Optimistic UI across both tasks and project.taskSummaries)
   const handleToggleTaskComplete = useCallback(
     async (item: UnifiedWorkItem) => {
       if (!item.canEdit) {
@@ -186,124 +163,34 @@ export function MyWorkTab() {
         return;
       }
       try {
-        const targetTask = await resolveRealTaskOnDemand(item);
-        if (!targetTask) return;
-
         const nextCompleted = !item.isCompleted;
         const todayIso = new Date().toISOString().substring(0, 10);
-        await saveTaskStateUnified([
+        await mutateTaskStatusUnified(
+          item,
           {
-            id: targetTask.id,
             runningStatus: nextCompleted ? 'Completed' : 'On process',
-            finish: nextCompleted ? targetTask.finish || todayIso : targetTask.finish,
+            ...(nextCompleted && !item.dueDateStr ? { finish: todayIso } : {}),
           },
-        ]);
-
-        setToast({
-          title: nextCompleted ? 'Task Completed' : 'Task Reopened',
-          message: `"${item.title}" marked as ${nextCompleted ? 'Completed' : 'On process'}.`,
-          type: 'success',
-        });
+          {
+            title: nextCompleted ? 'Task Completed' : 'Task Reopened',
+            message: `"${item.title}" moved to ${nextCompleted ? 'Completed' : 'In Progress'}.`,
+            type: 'success',
+          }
+        );
       } catch (err) {
         console.error('[MyWorkTab] handleToggleTaskComplete error:', err);
       }
     },
-    [resolveRealTaskOnDemand, setToast]
+    [setToast]
   );
 
-  // Helper to mutate a DelegationSubTask with strict RBAC, plStatus/actStatus sync & 0ms Optimistic UI
-  const mutateDelegationSubTask = useCallback(
-    async (
-      item: UnifiedWorkItem,
-      updates: Record<string, any>,
-      toastTitle: string,
-      toastMessage: string
-    ) => {
-      const group = item.rawDelegationGroup;
-      const subTask = item.rawSubTask;
-      if (!group || !subTask) return;
-
-      const nowIso = new Date().toISOString();
-      const updatedSubTasks = (group.subTasks || []).map((st) =>
-        st.id === subTask.id
-          ? {
-              ...st,
-              ...updates,
-              updatedAt: nowIso,
-              involvedUsers: Array.from(
-                new Set([...(st.involvedUsers || []), currentUser.id])
-              ),
-            }
-          : st
-      );
-
-      const parentTask = item.rawTask;
-      const parentProject = item.rawProject;
-      let computedPlStatus = 'Upcoming';
-      if (parentTask) {
-        computedPlStatus = getTaskStatus(parentTask.start, parentTask.finish);
-      } else if (parentProject) {
-        computedPlStatus = getStatus(
-          parentProject.computedTakStart || parentProject.start,
-          parentProject.computedTakCompl,
-          parentProject.computedOpening || parentProject.opening,
-          parentProject.code
-        );
-      }
-      const computedActStatus = resolveActualStatus(computedPlStatus, updatedSubTasks).label;
-
-      const updatedGroup = {
-        ...group,
-        projectId: group.projectId || parentProject?.id,
-        projectCode: group.projectCode || item.projectCode,
-        projectStore: group.projectStore || item.projectStore || 'HCM',
-        projectYear: Number(group.projectYear || item.projectYear || new Date().getFullYear()),
-        plStatus: computedPlStatus,
-        actStatus: computedActStatus,
-        subTasks: updatedSubTasks,
-        updatedAt: nowIso,
-      };
-
-      // 0ms Optimistic Update in Zustand + Dexie
-      const allGroups = useAppStore.getState().delegationGroups || [];
-      useAppStore
-        .getState()
-        .setDelegationGroups(allGroups.map((g) => (g.id === group.id ? updatedGroup : g)));
-      upsertLocalRecord('taka_delegations', updatedGroup).catch(() => {});
-
-      // Persist via firestoreWrites wrapper (Rule 15 & 16.5)
-      await setDoc(
-        doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', group.id),
-        updatedGroup
-      );
-
-      if (group.parentTaskId && parentTask) {
-        checkAndSyncRealtimeSubTaskCompletion(
-          parentTask,
-          parentProject,
-          group.subTasks,
-          updatedSubTasks,
-          useAppStore.getState().tasks || [],
-          useAppStore.getState().projects || []
-        );
-      }
-
-      setToast({
-        title: toastTitle,
-        message: toastMessage,
-        type: 'success',
-      });
-    },
-    [currentUser?.id, setToast]
-  );
-
-  // 1-Click Accept Task / Delegation (Assigned 0% -> On process 50%)
+  // 1-Click Accept Task / Delegation (Assigned/To Do -> In Progress)
   const handleAcceptItem = useCallback(
     async (item: UnifiedWorkItem) => {
       if (!item.canAccept) return;
       const todayStr = new Date().toISOString().substring(0, 10);
       if (item.type === 'delegation_subtask') {
-        await mutateDelegationSubTask(
+        await mutateDelegationSubTaskUnified(
           item,
           {
             approvalStatus: 'AcceptTask',
@@ -312,22 +199,26 @@ export function MyWorkTab() {
             startAct: item.rawSubTask?.startAct || todayStr,
             approvedAt: null,
           },
+          currentUser.id,
           'Delegation Accepted (50%)',
-          `"${item.title}" is now On Process.`
+          `"${item.title}" moved to In Progress.`
         );
       } else if (item.type === 'task') {
-        const targetTask = await resolveRealTaskOnDemand(item);
-        if (!targetTask) return;
-        await saveTaskStateUnified([
+        await mutateTaskStatusUnified(
+          item,
           {
-            id: targetTask.id,
             runningStatus: 'On process',
-            start: targetTask.start || todayStr,
+            start: item.startDateStr || todayStr,
           },
-        ]);
+          {
+            title: 'Task Started',
+            message: `"${item.title}" moved to In Progress.`,
+            type: 'info',
+          }
+        );
       }
     },
-    [mutateDelegationSubTask, resolveRealTaskOnDemand]
+    [currentUser?.id]
   );
 
   // 1-Click PIC Submit for Approval (Pending completed 85%)
@@ -335,7 +226,7 @@ export function MyWorkTab() {
     (item: UnifiedWorkItem) => {
       if (!item.canSubmitApproval) return;
       const todayStr = new Date().toISOString().substring(0, 10);
-      mutateDelegationSubTask(
+      mutateDelegationSubTaskUnified(
         item,
         {
           status: 'Pending completed',
@@ -344,11 +235,12 @@ export function MyWorkTab() {
           finishAct: item.rawSubTask?.finishAct || todayStr,
           approvedAt: null,
         },
+        currentUser.id,
         'Requested Approval (85%)',
-        `"${item.title}" submitted to creator/approver.`
-      );
+        `"${item.title}" moved to Pending Approval.`
+      ).catch((err) => console.error('[MyWorkTab] handleReportSubTaskComplete error:', err));
     },
-    [mutateDelegationSubTask]
+    [currentUser?.id]
   );
 
   // 1-Click Approve (Strictly gated to Creator / Admin)
@@ -366,7 +258,7 @@ export function MyWorkTab() {
       const todayStr = nowIso.substring(0, 10);
 
       if (item.type === 'delegation_subtask') {
-        await mutateDelegationSubTask(
+        await mutateDelegationSubTaskUnified(
           item,
           {
             status: 'Approved',
@@ -375,29 +267,28 @@ export function MyWorkTab() {
             finishAct: todayStr,
             approvedAt: nowIso,
           },
+          currentUser.id,
           'Approved (100%)',
-          `"${item.title}" has been approved and completed.`
+          `"${item.title}" has been approved and moved to Completed.`
         );
       } else if (item.type === 'task') {
-        const targetTask = await resolveRealTaskOnDemand(item);
-        if (!targetTask) return;
-        await saveTaskStateUnified([
+        await mutateTaskStatusUnified(
+          item,
           {
-            id: targetTask.id,
             approval: 'Approved',
             approvedAt: nowIso,
             runningStatus: 'Completed',
-            finish: targetTask.finish || todayStr,
+            finish: item.dueDateStr || todayStr,
           },
-        ]);
-        setToast({
-          title: 'Task Approved',
-          message: `"${item.title}" approved and completed.`,
-          type: 'success',
-        });
+          {
+            title: 'Task Approved',
+            message: `"${item.title}" approved and moved to Completed.`,
+            type: 'success',
+          }
+        );
       }
     },
-    [mutateDelegationSubTask, resolveRealTaskOnDemand, setToast]
+    [currentUser?.id, setToast]
   );
 
   // 1-Click Request Rework (Strictly gated to Creator / Admin)
@@ -412,7 +303,7 @@ export function MyWorkTab() {
         return;
       }
       if (item.type === 'delegation_subtask') {
-        await mutateDelegationSubTask(
+        await mutateDelegationSubTaskUnified(
           item,
           {
             status: 'Needs Rework',
@@ -420,27 +311,27 @@ export function MyWorkTab() {
             approvalStatus: 'ReqReview',
             approvedAt: null,
           },
+          currentUser.id,
           'Returned for Rework (25%)',
-          `"${item.title}" marked as Needs Rework.`
+          `"${item.title}" marked as Needs Rework.`,
+          'warning'
         );
       } else if (item.type === 'task') {
-        const targetTask = await resolveRealTaskOnDemand(item);
-        if (!targetTask) return;
-        await saveTaskStateUnified([
+        await mutateTaskStatusUnified(
+          item,
           {
-            id: targetTask.id,
             approval: 'Rejected',
             runningStatus: 'On process',
           },
-        ]);
-        setToast({
-          title: 'Returned for Rework',
-          message: `"${item.title}" returned to PIC for rework.`,
-          type: 'warning',
-        });
+          {
+            title: 'Returned for Rework',
+            message: `"${item.title}" returned to PIC for rework.`,
+            type: 'warning',
+          }
+        );
       }
     },
-    [mutateDelegationSubTask, resolveRealTaskOnDemand, setToast]
+    [currentUser?.id, setToast]
   );
 
   // Kanban Column Drag & Drop Handler (Enforces RBAC & Delegation State Machine)
@@ -456,38 +347,41 @@ export function MyWorkTab() {
           if (item.isCreator) {
             await handleApproveItem({ ...item, canApproveOrReject: true });
           } else {
-            // If PIC drags to Done, submit for approval instead of self-approving!
             handleReportSubTaskComplete({ ...item, canSubmitApproval: true });
           }
         } else if (targetCol === 'todo' && item.isCreator) {
           await handleReworkItem({ ...item, canApproveOrReject: true });
         }
       } else if (item.type === 'task' && item.canEdit) {
-        const targetTask = await resolveRealTaskOnDemand(item);
-        if (!targetTask) return;
         const todayIso = new Date().toISOString().substring(0, 10);
         if (targetCol === 'done') {
-          await saveTaskStateUnified([
-            { id: targetTask.id, runningStatus: 'Completed', finish: targetTask.finish || todayIso },
-          ]);
+          await mutateTaskStatusUnified(
+            item,
+            { runningStatus: 'Completed', finish: item.dueDateStr || todayIso },
+            { title: 'Task Completed', message: `"${item.title}" moved to Completed.`, type: 'success' }
+          );
         } else if (targetCol === 'pending_approval') {
-          await saveTaskStateUnified([
-            { id: targetTask.id, approval: 'ReqApproval', runningStatus: 'On process' },
-          ]);
+          await mutateTaskStatusUnified(
+            item,
+            { approval: 'ReqApproval', runningStatus: 'On process' },
+            { title: 'Submitted for Approval', message: `"${item.title}" moved to Pending Approval.`, type: 'info' }
+          );
         } else if (targetCol === 'in_progress') {
-          await saveTaskStateUnified([{ id: targetTask.id, runningStatus: 'On process' }]);
+          await mutateTaskStatusUnified(
+            item,
+            { runningStatus: 'On process' },
+            { title: 'Task In Progress', message: `"${item.title}" moved to In Progress.`, type: 'info' }
+          );
         } else {
-          await saveTaskStateUnified([{ id: targetTask.id, runningStatus: 'Upcoming' }]);
+          await mutateTaskStatusUnified(
+            item,
+            { runningStatus: 'Upcoming' },
+            { title: 'Moved to To Do', message: `"${item.title}" moved to To Do.`, type: 'info' }
+          );
         }
       }
     },
-    [
-      handleAcceptItem,
-      handleApproveItem,
-      handleReportSubTaskComplete,
-      handleReworkItem,
-      resolveRealTaskOnDemand,
-    ]
+    [handleAcceptItem, handleApproveItem, handleReportSubTaskComplete, handleReworkItem]
   );
 
   // Zero-Query Modal Opener with on-demand summary hydration (Rule 8)
@@ -496,16 +390,26 @@ export function MyWorkTab() {
       setIsReadOnlyModal(!item.canEdit && !item.canApproveOrReject);
       setModalInitialTab(initialTab);
 
-      if (item.rawTask) {
+      const isVirtual =
+        Boolean(item.isSummaryFallback) ||
+        Boolean((item.rawTask as any)?._isVirtualSummary) ||
+        String(item.rawTask?.id || '').startsWith('ts_');
+
+      if (item.rawTask && !isVirtual) {
         setEditingTask(item.rawTask);
         setIsTaskModalOpen(true);
         return;
       }
 
-      if (item.isSummaryFallback && item.rawProject) {
-        const matched = await resolveRealTaskOnDemand(item);
+      if (item.type === 'task') {
+        const matched = await resolveRealTaskForWorkItem(item);
         if (matched) {
           setEditingTask(matched);
+          setIsTaskModalOpen(true);
+          return;
+        }
+        if (item.rawTask) {
+          setEditingTask(item.rawTask);
           setIsTaskModalOpen(true);
           return;
         }
@@ -517,7 +421,6 @@ export function MyWorkTab() {
       }
     },
     [
-      resolveRealTaskOnDemand,
       setEditingProject,
       setEditingTask,
       setIsProjectModalOpen,
@@ -590,7 +493,6 @@ export function MyWorkTab() {
         </div>
       )}
 
-      {/* Top Briefing Banner (4 Interactive Summary Cards inspired by Image 2) */}
       <MyWorkBriefingBanner
         stats={briefingStats}
         statusFilter={statusFilter}

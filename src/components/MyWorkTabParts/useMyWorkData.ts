@@ -1,6 +1,11 @@
 import { useMemo } from 'react';
 import { AppRole, AppUser, DelegationGroup, PermissionMatrix, Project, Task } from '../../types';
-import { isTaskBelongsToProject, isDelegationGroupBelongsToProject, matchesAdvancedSearch } from '../../lib/utils';
+import {
+  getTaskStatus,
+  isDelegationGroupBelongsToProject,
+  isTaskBelongsToProject,
+  matchesAdvancedSearch,
+} from '../../lib/utils';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import {
   MyWorkBriefingStats,
@@ -26,6 +31,17 @@ interface UseMyWorkDataParams {
 }
 
 const MS_PER_DAY = 86400000;
+
+function normalizeRole(r?: string): AppRole | 'admin' {
+  if (!r) return 'Staff';
+  const lower = r.toLowerCase().trim();
+  if (lower === 'admin') return 'admin';
+  if (lower === 'manager') return 'Manager';
+  if (lower === 'cp') return 'CP';
+  if (lower === 'staff') return 'Staff';
+  if (lower === 'external') return 'External';
+  return r as AppRole;
+}
 
 function parseLocalDayMs(dateStr?: string | null): number | null {
   if (!dateStr) return null;
@@ -98,15 +114,17 @@ export function useMyWorkData({
     const todayStartMs = new Date(currentYear, now.getMonth(), now.getDate()).getTime();
     const usernameLower = String(currentUser?.username || '').toLowerCase().trim();
     const userIdLower = String(currentUser?.id || '').toLowerCase().trim();
-    const isAdmin = currentUser?.role === 'admin';
-    const role = (currentUser?.role || 'Staff') as AppRole;
-    const isAdminOrManager =
-      isAdmin || String(role).toLowerCase() === 'manager' || String(role).toUpperCase() === 'CP';
+    const role = normalizeRole(currentUser?.role);
+    const isAdmin = role === 'admin';
+    const isAdminOrManager = isAdmin || role === 'Manager' || role === 'CP';
 
-    const canWriteDetailPerm = isAdmin || Boolean(permissionMatrix?.[role]?.Write?.detail) || Boolean(currentUser?.canWrite);
-    const canWriteDelegationPerm = isAdmin || Boolean(permissionMatrix?.[role]?.Write?.taskDelegation);
+    const canWriteDetailPerm =
+      isAdmin || Boolean(permissionMatrix?.[role as AppRole]?.Write?.detail) || Boolean(currentUser?.canWrite);
+    const canWriteDelegationPerm =
+      isAdmin || Boolean(permissionMatrix?.[role as AppRole]?.Write?.taskDelegation) || Boolean(currentUser?.canWrite);
 
     const userSpecificParties = new Set<string>();
+    if (role === 'CP') userSpecificParties.add('cp');
     if (currentUser?.partyPermissions) {
       Object.entries(currentUser.partyPermissions).forEach(([k, val]) => {
         if (val && k.toLowerCase().trim() !== 'all') userSpecificParties.add(k.toLowerCase().trim());
@@ -133,6 +151,7 @@ export function useMyWorkData({
     const projectById = new Map<string, Project>();
     const projectByCompositeKey = new Map<string, Project>();
     const projectsByCodeLower = new Map<string, Project[]>();
+    const summaryStatusByProjAndKey = new Map<string, string>();
 
     const validProjects = (projects || []).filter((p) => {
       if (!p || p.isDeleted) return false;
@@ -143,6 +162,7 @@ export function useMyWorkData({
 
     for (let i = 0; i < validProjects.length; i++) {
       const p = validProjects[i];
+      const pKey = String(p.id || p.code || '').trim();
       if (p.id) projectById.set(String(p.id).trim(), p);
       const compKey = `${String(p.code || '').trim().toLowerCase()}|${String(p.store || '').trim().toLowerCase()}|${String(p.year || '').trim()}`;
       projectByCompositeKey.set(compKey, p);
@@ -151,6 +171,16 @@ export function useMyWorkData({
         const list = projectsByCodeLower.get(codeLower) || [];
         list.push(p);
         projectsByCodeLower.set(codeLower, list);
+      }
+      if (Array.isArray(p.taskSummaries)) {
+        p.taskSummaries.forEach((s: any, idx: number) => {
+          if (!s) return;
+          const explicit = String(s.runningStatus || s.status || '').trim();
+          if (!explicit) return;
+          if (s.id) summaryStatusByProjAndKey.set(`${pKey}|id:${String(s.id).trim()}`, explicit);
+          if (s.name) summaryStatusByProjAndKey.set(`${pKey}|name:${String(s.name).trim().toLowerCase()}`, explicit);
+          summaryStatusByProjAndKey.set(`${pKey}|idx:${idx}`, explicit);
+        });
       }
     }
 
@@ -168,55 +198,113 @@ export function useMyWorkData({
     const allCandidateItems: UnifiedWorkItem[] = [];
     const directMatchedItems: UnifiedWorkItem[] = [];
     const taskById = new Map<string, Task>();
-    const coveredProjectIdsWithRealTasks = new Set<string>();
+    const coveredProjectIdsWithTasks = new Set<string>();
 
-    // 1. Process Real Tasks (if already in memory from Dexie / Delta)
     const activeTasks = (tasks || []).filter(
       (t) => t && !t.isDeleted && !isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)
     );
 
     const parentTaskIds = new Set<string>();
+    const maxCompletedStartMsByProj = new Map<string, number>();
+
     for (let i = 0; i < activeTasks.length; i++) {
       const t = activeTasks[i];
       taskById.set(t.id, t);
       if (t.parentTaskId) parentTaskIds.add(String(t.parentTaskId));
+      const rStat = String(t.runningStatus || '').trim().toLowerCase();
+      const rApp = String(t.approval || '').trim().toLowerCase();
+      if (rStat === 'completed' || rApp === 'approved') {
+        const pId = String(t.projectId || t.projectCode || '').trim();
+        const sMs = parseLocalDayMs(t.start);
+        if (pId && sMs !== null) {
+          const prev = maxCompletedStartMsByProj.get(pId) || 0;
+          if (sMs > prev) maxCompletedStartMsByProj.set(pId, sMs);
+        }
+      }
     }
 
+    // 1. Process Tasks (Real + Virtual Summary Tasks from useEnrichedData)
     for (let i = 0; i < activeTasks.length; i++) {
       const t = activeTasks[i];
       const proj = resolveParentProjectForTask(t);
       if (!proj) continue;
-      if (proj.id) coveredProjectIdsWithRealTasks.add(String(proj.id));
-      const isDirectFocusTask = Boolean(focusTarget?.taskId && String(t.id) === String(focusTarget.taskId));
-      if (parentTaskIds.has(t.id) && t.approval !== 'ReqApproval' && !isDirectFocusTask) continue;
+      const pKey = String(proj.id || proj.code || '').trim();
+      if (proj.id) coveredProjectIdsWithTasks.add(String(proj.id));
 
+      const isDirectFocusTask = Boolean(focusTarget?.taskId && String(t.id) === String(focusTarget.taskId));
+      if ((t.isModularParent || parentTaskIds.has(t.id)) && t.approval !== 'ReqApproval' && !isDirectFocusTask) {
+        continue;
+      }
+
+      const isVirtual = Boolean((t as any)._isVirtualSummary) || String(t.id || '').startsWith('ts_');
       const pYear = Number(proj.year || t.projectYear || currentYear);
       const isArchiveYear = pYear < currentYear;
+      const startMs = parseLocalDayMs(t.start);
       const dueStr = t.finish || t.start || '';
       const dueMs = parseLocalDayMs(dueStr);
       const diffDays = dueMs !== null ? Math.round((dueMs - todayStartMs) / MS_PER_DAY) : null;
 
-      const rawStatus = String(t.runningStatus || '').trim();
+      // Determine canonical status (respecting explicit summary/task overrides vs schedule-driven status)
+      const explicitSummaryStatus =
+        summaryStatusByProjAndKey.get(`${pKey}|id:${String(t.id).trim()}`) ||
+        summaryStatusByProjAndKey.get(`${pKey}|name:${String(t.name || '').trim().toLowerCase()}`) ||
+        '';
+
+      const effectiveRawStatus = isVirtual
+        ? explicitSummaryStatus
+        : String(t.runningStatus || '').trim();
+      const rawStatusLower = effectiveRawStatus.toLowerCase();
       const rawApproval = String(t.approval || '').trim();
-      const isCompleted = rawStatus.toLowerCase() === 'completed' || rawApproval.toLowerCase() === 'approved';
+      const rawApprovalLower = rawApproval.toLowerCase();
+
+      const isProjCompleted =
+        proj.computedActProgress === 100 ||
+        String(proj.mdStatus || '').toLowerCase() === 'completed' ||
+        (!t.delegation && String(proj.computedStatus || '').toLowerCase() === 'completed');
+
+      const maxCompStartMs = maxCompletedStartMsByProj.get(pKey) || 0;
+      const plStatus = getTaskStatus(t.start, t.finish);
+
+      const isExplicitlyCompleted = rawStatusLower === 'completed' || rawApprovalLower === 'approved';
+      const isExplicitlyReopenedOrDelayed =
+        rawStatusLower === 'delayed' ||
+        rawStatusLower === 'needs rework' ||
+        rawApprovalLower === 'rejected' ||
+        rawApprovalLower === 'reqapproval' ||
+        (isVirtual && (rawStatusLower === 'on process' || rawStatusLower === 'upcoming'));
+
+      const isScheduleCompleted =
+        !isExplicitlyReopenedOrDelayed &&
+        (isProjCompleted ||
+          (dueMs !== null && maxCompStartMs > 0 && dueMs <= maxCompStartMs) ||
+          (!t.delegation && plStatus === 'Completed' && (isVirtual || rawStatusLower === '' || rawStatusLower === 'on process')));
+
+      const isCompleted = isExplicitlyCompleted || isScheduleCompleted;
       const isNeedsRework =
-        rawApproval.toLowerCase() === 'rejected' ||
-        rawApproval.toLowerCase() === 'needs rework' ||
-        rawStatus.toLowerCase() === 'needs rework';
+        !isCompleted &&
+        (rawApprovalLower === 'rejected' || rawApprovalLower === 'needs rework' || rawStatusLower === 'needs rework');
       const isAwaitingMyApproval =
         !isCompleted &&
-        (rawApproval === 'ReqApproval' || rawApproval.toLowerCase() === 'pending' || rawApproval.toLowerCase() === 'waiting for approval');
+        (rawApproval === 'ReqApproval' || rawApprovalLower === 'pending' || rawApprovalLower === 'waiting for approval');
+
+      const isExplicitUpcoming = rawStatusLower === 'upcoming' || rawStatusLower === 'todo';
       const isInProgress =
         !isCompleted &&
         !isAwaitingMyApproval &&
         !isNeedsRework &&
-        (rawStatus.toLowerCase() === 'on process' || rawStatus.toLowerCase() === 'in progress');
+        !isExplicitUpcoming &&
+        (rawStatusLower === 'on process' ||
+          rawStatusLower === 'in progress' ||
+          rawStatusLower === 'delayed' ||
+          plStatus === 'On process') &&
+        !(startMs !== null && startMs > todayStartMs && !explicitSummaryStatus);
+
       const isOverdue = !isCompleted && diffDays !== null && diffDays < 0;
 
       const directPIC = checkPartyMatch(t.party) || (!t.party && checkPartyMatch(proj.party));
       const isPIC = directPIC || hasAllPartyPerm;
       const isApprover = isAwaitingMyApproval && isAdminOrManager;
-      const canEdit = !isArchiveYear && canWriteDetailPerm && isPIC;
+      const canEdit = !isArchiveYear && (canWriteDetailPerm || isPIC || isAdminOrManager);
 
       let priority: WorkItemPriority = 'medium';
       if (isOverdue || isNeedsRework) priority = 'critical';
@@ -231,10 +319,7 @@ export function useMyWorkData({
         ? 'in_progress'
         : 'todo';
 
-      const taskAttachmentCount = (t.comments || []).reduce(
-        (acc, c) => acc + (c.attachments?.length || 0),
-        0
-      );
+      const taskAttachmentCount = (t.comments || []).reduce((acc, c) => acc + (c.attachments?.length || 0), 0);
 
       const item: UnifiedWorkItem = {
         id: `task_${t.id}`,
@@ -261,7 +346,7 @@ export function useMyWorkData({
           ? 'Completed'
           : isInProgress
           ? 'On Process'
-          : rawStatus || 'To Do',
+          : 'To Do',
         isCompleted,
         isOverdue,
         isNeedsRework,
@@ -279,47 +364,51 @@ export function useMyWorkData({
         attachmentCount: taskAttachmentCount,
         rawTask: t,
         rawProject: proj,
+        rawSummaryId: t.id,
+        isSummaryFallback: isVirtual,
       };
 
       allCandidateItems.push(item);
       if (directPIC || isApprover) directMatchedItems.push(item);
     }
 
-    // 2. Priority Summary-First (0 Firestore Read): Build from Project.taskSummaries whenever real tasks aren't loaded yet
+    // 2. Fallback for any project with taskSummaries not yet in activeTasks
     for (let i = 0; i < validProjects.length; i++) {
       const proj = validProjects[i];
-      if (proj.id && coveredProjectIdsWithRealTasks.has(String(proj.id))) continue;
+      if (proj.id && coveredProjectIdsWithTasks.has(String(proj.id))) continue;
       const pYear = Number(proj.year || currentYear);
       const isArchiveYear = pYear < currentYear;
       const summaries = Array.isArray(proj.taskSummaries) ? proj.taskSummaries : [];
+      const summaryParentIds = new Set<string>();
+      summaries.forEach((s: any) => {
+        if (s?.parentTaskId) summaryParentIds.add(String(s.parentTaskId));
+      });
+
       for (let j = 0; j < summaries.length; j++) {
         const s: any = summaries[j];
-        if (!s || !s.name) continue;
+        if (!s || !s.name || s.isModularParent || (s.id && summaryParentIds.has(String(s.id)))) continue;
         const dueStr = s.finish || s.start || '';
         const dueMs = parseLocalDayMs(dueStr);
         const diffDays = dueMs !== null ? Math.round((dueMs - todayStartMs) / MS_PER_DAY) : null;
-        const rawStatus = String(s.runningStatus || s.status || '').trim();
-        const isCompleted = rawStatus.toLowerCase() === 'completed';
+        const rawStatus = String(s.runningStatus || s.status || '').trim().toLowerCase();
+        const plStatus = getTaskStatus(s.start, s.finish);
+
+        const isCompleted =
+          rawStatus === 'completed' ||
+          (!rawStatus && (plStatus === 'Completed' || proj.computedActProgress === 100));
         const isInProgress =
           !isCompleted &&
-          (rawStatus.toLowerCase() === 'on process' ||
-            rawStatus.toLowerCase() === 'in progress' ||
-            (dueMs !== null && parseLocalDayMs(s.start) !== null && parseLocalDayMs(s.start)! <= todayStartMs));
+          rawStatus !== 'upcoming' &&
+          (rawStatus === 'on process' || rawStatus === 'in progress' || plStatus === 'On process');
         const isOverdue = !isCompleted && diffDays !== null && diffDays < 0;
         const directPIC = checkPartyMatch(s.party || proj.party);
         const isPIC = directPIC || hasAllPartyPerm;
-        const canEdit = !isArchiveYear && canWriteDetailPerm && isPIC;
-
-        const kanbanColumn: MyWorkKanbanColumnId = isCompleted
-          ? 'done'
-          : isInProgress
-          ? 'in_progress'
-          : 'todo';
+        const canEdit = !isArchiveYear && (canWriteDetailPerm || isPIC || isAdminOrManager);
 
         const item: UnifiedWorkItem = {
           id: `sum_${proj.id}_${s.id || j}`,
           type: 'task',
-          kanbanColumn,
+          kanbanColumn: isCompleted ? 'done' : isInProgress ? 'in_progress' : 'todo',
           title: s.name,
           subtitle: proj.code,
           projectId: proj.id,
@@ -333,7 +422,7 @@ export function useMyWorkData({
           dueDiffDays: diffDays,
           friendlyDueLabel: buildFriendlyDueLabel(diffDays, dueStr, isCompleted),
           priority: isOverdue ? 'critical' : diffDays !== null && diffDays <= 1 ? 'high' : 'medium',
-          statusLabel: isCompleted ? 'Completed' : isInProgress ? 'On Process' : rawStatus || 'To Do',
+          statusLabel: isCompleted ? 'Completed' : isInProgress ? 'On Process' : 'To Do',
           isCompleted,
           isOverdue,
           isNeedsRework: false,
@@ -350,6 +439,7 @@ export function useMyWorkData({
           commentCount: proj.comments?.length || 0,
           attachmentCount: 0,
           rawProject: proj,
+          rawSummaryId: s.id ? String(s.id) : undefined,
           isSummaryFallback: true,
         };
         allCandidateItems.push(item);
@@ -372,7 +462,6 @@ export function useMyWorkData({
 
       const pYear = Number(proj?.year || g.projectYear || currentYear);
       const isArchiveYear = pYear < currentYear;
-      // Strict Delegation Creator Check (Matches TaskDelegationDesktopSubTaskRow.tsx line 51 & 474)
       const isCreator = Boolean(currentUser?.id && g.createdBy && String(g.createdBy) === String(currentUser.id)) || isAdmin;
 
       const subTasks = Array.isArray(g.subTasks) ? g.subTasks : [];
@@ -555,68 +644,56 @@ export function useMyWorkData({
     }
 
     // Scope resolution
-    let baseStream: UnifiedWorkItem[];
-    if (focusTarget && (focusTarget.projectId || focusTarget.projectCode)) {
-      const fTaskId = focusTarget.taskId ? String(focusTarget.taskId).trim() : '';
-      const fTaskName = String(focusTarget.taskName || '').trim().toLowerCase();
-      baseStream = allCandidateItems
-        .filter((item) => isItemInFocusProject(item, focusTarget))
-        .map((item) => {
-          const matchesTask =
-            (fTaskId &&
-              (String(item.rawTask?.id || '') === fTaskId ||
-                String(item.rawDelegationGroup?.parentTaskId || '') === fTaskId)) ||
-            (fTaskName && String(item.title || '').trim().toLowerCase() === fTaskName);
-          return matchesTask ? { ...item, isFocusedTarget: true } : item;
-        });
-    } else {
-      baseStream =
-        directMatchedItems.length > 0 ? directMatchedItems : hasAllPartyPerm ? allCandidateItems : directMatchedItems;
-    }
+    const baseStream: UnifiedWorkItem[] =
+      focusTarget && (focusTarget.projectId || focusTarget.projectCode)
+        ? allCandidateItems
+            .filter((item) => isItemInFocusProject(item, focusTarget))
+            .map((item) => {
+              const fTaskId = focusTarget.taskId ? String(focusTarget.taskId).trim() : '';
+              const fTaskName = String(focusTarget.taskName || '').trim().toLowerCase();
+              const matchesTask =
+                (fTaskId &&
+                  (String(item.rawTask?.id || '') === fTaskId ||
+                    String(item.rawDelegationGroup?.parentTaskId || '') === fTaskId)) ||
+                (fTaskName && String(item.title || '').trim().toLowerCase() === fTaskName);
+              return matchesTask ? { ...item, isFocusedTarget: true } : item;
+            })
+        : directMatchedItems.length > 0
+        ? directMatchedItems
+        : hasAllPartyPerm
+        ? allCandidateItems
+        : directMatchedItems;
 
-    // Briefing stats across the user's stream (before status/search sub-filtering)
-    let totalActiveTasks = 0;
-    let criticalUrgentCount = 0;
-    let highPriorityCount = 0;
-    let normalActiveCount = 0;
-    let upcomingMilestonesCount = 0;
-    let dueThisWeekCount = 0;
-    let delegationsActiveCount = 0;
-    let delegationsMyPICCount = 0;
-    let pendingMyApprovalCount = 0;
-    let needsReworkCount = 0;
+    // Briefing stats across the user's stream
+    const briefingStats: MyWorkBriefingStats = {
+      totalActiveTasks: 0,
+      criticalUrgentCount: 0,
+      highPriorityCount: 0,
+      normalActiveCount: 0,
+      upcomingMilestonesCount: 0,
+      dueThisWeekCount: 0,
+      delegationsActiveCount: 0,
+      delegationsMyPICCount: 0,
+      pendingMyApprovalCount: 0,
+      needsReworkCount: 0,
+    };
 
     for (let i = 0; i < baseStream.length; i++) {
       const it = baseStream[i];
-      if (!it.isCompleted) {
-        totalActiveTasks++;
-        if (it.priority === 'critical' || it.isOverdue) criticalUrgentCount++;
-        else if (it.priority === 'high') highPriorityCount++;
-        else normalActiveCount++;
-
-        if (it.type === 'project_milestone') upcomingMilestonesCount++;
-        if (it.dueDiffDays !== null && it.dueDiffDays >= 0 && it.dueDiffDays <= 7) dueThisWeekCount++;
-        if (it.type === 'delegation_subtask') {
-          delegationsActiveCount++;
-          if (it.isPIC) delegationsMyPICCount++;
-        }
-        if (it.isAwaitingMyApproval) pendingMyApprovalCount++;
-        if (it.isNeedsRework) needsReworkCount++;
+      if (it.isCompleted) continue;
+      briefingStats.totalActiveTasks++;
+      if (it.priority === 'critical' || it.isOverdue) briefingStats.criticalUrgentCount++;
+      else if (it.priority === 'high') briefingStats.highPriorityCount++;
+      else briefingStats.normalActiveCount++;
+      if (it.type === 'project_milestone') briefingStats.upcomingMilestonesCount++;
+      if (it.dueDiffDays !== null && it.dueDiffDays >= 0 && it.dueDiffDays <= 7) briefingStats.dueThisWeekCount++;
+      if (it.type === 'delegation_subtask') {
+        briefingStats.delegationsActiveCount++;
+        if (it.isPIC) briefingStats.delegationsMyPICCount++;
       }
+      if (it.isAwaitingMyApproval) briefingStats.pendingMyApprovalCount++;
+      if (it.isNeedsRework) briefingStats.needsReworkCount++;
     }
-
-    const briefingStats: MyWorkBriefingStats = {
-      totalActiveTasks,
-      criticalUrgentCount,
-      highPriorityCount,
-      normalActiveCount,
-      upcomingMilestonesCount,
-      dueThisWeekCount,
-      delegationsActiveCount,
-      delegationsMyPICCount,
-      pendingMyApprovalCount,
-      needsReworkCount,
-    };
 
     const filteredStream = baseStream.filter((item) => {
       if (statusFilter === 'overdue' && !item.isOverdue && !item.isNeedsRework) return false;
@@ -651,7 +728,6 @@ export function useMyWorkData({
     const weekItems: UnifiedWorkItem[] = [];
     const monthItems: UnifiedWorkItem[] = [];
     const doneItems: UnifiedWorkItem[] = [];
-
     const kanbanTodo: UnifiedWorkItem[] = [];
     const kanbanInProgress: UnifiedWorkItem[] = [];
     const kanbanPendingApproval: UnifiedWorkItem[] = [];
@@ -672,7 +748,7 @@ export function useMyWorkData({
       if (item.isOverdue || item.isNeedsRework) overdueItems.push(item);
       else if (item.dueDiffDays === 0 || item.isFocusedTarget) todayItems.push(item);
       else if (item.dueDiffDays !== null && item.dueDiffDays >= 1 && item.dueDiffDays <= 7) weekItems.push(item);
-      else if (item.dueDiffDays !== null && (item.dueDiffDays > 7 && (item.dueDiffDays <= 30 || Boolean(focusTarget)))) monthItems.push(item);
+      else if (item.dueDiffDays !== null && item.dueDiffDays > 7 && (item.dueDiffDays <= 30 || Boolean(focusTarget))) monthItems.push(item);
       else if (item.dueDiffDays === null && !item.isAwaitingMyApproval) todayItems.push(item);
     }
 
@@ -682,7 +758,6 @@ export function useMyWorkData({
     weekItems.sort(sortFn);
     monthItems.sort(sortFn);
     doneItems.sort((a, b) => (a.isFocusedTarget === b.isFocusedTarget ? (b.dueDateStr || '').localeCompare(a.dueDateStr || '') : a.isFocusedTarget ? -1 : 1));
-
     kanbanTodo.sort(sortFn);
     kanbanInProgress.sort(sortFn);
     kanbanPendingApproval.sort(sortFn);

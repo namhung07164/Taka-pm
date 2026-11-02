@@ -50,6 +50,7 @@ export interface UnifiedWorkItem {
   rawProject?: Project;
   rawDelegationGroup?: DelegationGroup;
   rawSubTask?: DelegationSubTask;
+  rawSummaryId?: string;
   isSummaryFallback?: boolean;
   isFocusedTarget?: boolean;
 }
