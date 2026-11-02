@@ -1,17 +1,13 @@
 # Taka-PM System Architecture & Quick Lookup Guide
 
-> 📌 **MỤC ĐÍCH**: Bản đồ kiến trúc kỹ thuật dành cho AI Agent và Developer để định vị file submodule, tái sử dụng các hàm có sẵn trong `src/lib/` & `src/hooks/`, và tuyệt đối chống viết lại code trùng lặp.
-> 
-> 📖 **SINGLE SOURCE OF TRUTH**: 
-> 1. Đọc **`ARCHITECTURE.md`** trước tiên để nắm vị trí thư mục và phân bổ module.
-> 2. Tra cứu **`src/api-contracts.ts`** thứ hai – từ điển kiểu dữ liệu, interface, enums, Zustand stores và chữ ký hàm API/Services của toàn bộ hệ thống.
-
+> 📌 **MỤC ĐÍCH**: Bản đồ kiến trúc kỹ thuật dành cho AI Agent và Developer để định vị nhanh file submodule (`*Parts/`), tái sử dụng các hàm có sẵn trong `src/lib/` & `src/hooks/`, và tuyệt đối chống viết lại code trùng lặp.
+> 📖 **QUY TẮC & KỶ LUẬT TÁC NGHIỆP**: Xem chi tiết tại **`AGENTS.md`** (4 Nguyên tắc cốt lõi, Quy trình 3 bước, Cô lập 4 khóa định danh, Local-First & Delta Sync) và **`src/api-contracts.ts`** (Từ điển Types, Zustand Store & chữ ký hàm API).
 
 ---
 
-## 1. Sơ đồ Luồng Dữ Liệu & Đồng Bộ (Data & Sync Pipeline)
+## 1. Sơ Đồ Kiến Trúc Local-First 4 Tầng (4-Layer Data & Sync Pipeline)
 
-Hệ thống hoạt động theo mô hình **Local-First 4 Tầng** với độ trễ phản hồi UI 0ms:
+Hệ thống hoạt động theo mô hình **Local-First 4 Tầng** với độ trễ phản hồi UI 0ms (chi tiết quy tắc đọc/ghi/reconcile xem tại `AGENTS.md` Mục 3, 14, 15, 16):
 
 ```
 [UI Layer (React 19 + Tailwind + Lucide)]
@@ -28,29 +24,6 @@ Hệ thống hoạt động theo mô hình **Local-First 4 Tầng** với độ 
        │ (onSnapshot Cursor) ▼
 [Layer 4: Cloud Backend (Google Firestore + Firebase Storage / Cloudflare R2)]
 ```
-
-### 1.1. Luồng Đọc & Đồng Bộ Realtime (Read Pipeline)
-1. **Cold Boot (5–10ms)**: `bootstrapLocalStore()` nạp dữ liệu từ Dexie.js vào Zustand ngay lập tức mà không chờ mạng, xóa bỏ hoàn toàn màn hình tải (loading spinner).
-2. **Tri-Gate Lazy Fetching**: 3 cờ `isTasksRequested`, `isCostsRequested`, `isDelegationsRequested` chỉ kích hoạt Firestore listener khi người dùng mở tab tương ứng.
-3. **Multi-Listener Pooling ("All Years")**: Quản lý listener từng năm qua `Map` pool, giữ kết nối Delta Sync, không ngắt khi chuyển năm cũ để Zero-Read từ cache.
-4. **Realtime Delta Sync**: `deltaRealtimeListener.ts` lắng nghe collection `taka_deltas` theo `serverTime`. Khi phát hiện thay đổi từ thiết bị khác, hệ thống áp dụng nguyên tử vào Zustand và Dexie.
-5. **Reconciliation (Triệt tiêu Task Ma - Bản vá 1L)**: Khi nhận Server Snapshot sạch (`!fromCache` & `!hasPendingWrites`), tự động đối chiếu loại trừ các task cục bộ không còn trên máy chủ (`buildZombieRemovalsForYear`). Có guard an toàn 30 giây (`RECENT_EDIT_GUARD_MS`) chống xóa nhầm task vừa tạo.
-6. **Thức Giấc Qua Đêm (Overnight Wake-up & Sleep Resume Guard)**: Heartbeat gap detection phát hiện máy ngủ qua đêm (> 60s gap) để kích hoạt `pullAndApplyDeltas(undefined, true)`, kéo bù 100% biến động bị bỏ lỡ.
-
-### 1.2. Luồng Ghi & Bảo Vệ Toàn Vẹn (Write Pipeline)
-1. **Zero-Delay Optimistic (0ms)**: Cập nhật ngay vào Zustand, UI phản hồi lập tức.
-2. **Local Storage Mirror**: Đồng bộ ngầm không chặn luồng chính (`setTimeout 0`) vào Dexie.js.
-3. **Write Protection (BẮT BUỘC)**: Mọi thao tác ghi Firestore bắt buộc dùng wrapper `setDoc`, `updateDoc`, `deleteDoc`, `writeBatch` từ `src/lib/firestoreWrites.ts` để `autoDeltaQueue.ts` tự động phát sinh delta sang các thiết bị khác.
-4. **Offline Queue Resilience**: Nếu mất mạng hoặc lỗi, tác vụ được lưu vào `src/lib/syncQueue.ts` và tự động retry khi kết nối trở lại.
-
-### 1.3. Quy Chuẩn 4 Khóa Định Danh (Composite Key Isolation Standard)
-- **4 trường bắt buộc**: Mọi bản ghi (Task, Project, Cost, Delegation) phải lưu đủ: `projectId`, `projectCode`, `year` (hoặc `projectYear`), và `store` (hoặc `projectStore`).
-- **Thứ tự ưu tiên khi liên kết thực thể (`isTaskBelongsToProject`)**:
-  1. Loại trừ bản ghi đã xóa (`isDeleted: true` hoặc nằm trong `taskDeletedTracker`).
-  2. Khớp ID dự án (Ưu tiên #1): `task.projectId === project.id`. Nếu cả hai bên đều có ID nhưng khác nhau ➔ LẬP TỨC LOẠI TRỪ (`return false`).
-  3. Khớp Chi nhánh Store (Ưu tiên #2): Chuẩn hóa `toLowerCase().trim()`. Khác store ➔ LẬP TỨC LOẠI TRỪ.
-  4. Khớp Năm tài chính Year (Ưu tiên #3): Chuẩn hóa `String(year).trim()`. Khác năm ➔ LẬP TỨC LOẠI TRỪ.
-  5. Fallback dữ liệu cũ: Chỉ khi thiếu `projectId` mới đối chiếu kết hợp `projectCode` + `store` + `year`.
 
 ---
 
@@ -93,6 +66,7 @@ Hệ thống hoạt động theo mô hình **Local-First 4 Tầng** với độ 
 | :--- | :--- | :--- |
 | `src/lib/firestoreWrites.ts` | `setDoc`, `updateDoc`, `deleteDoc`, `writeBatch` | **BẮT BUỘC DÙNG**: Wrapper SDK Firestore tự phát delta `invalidate` qua `autoDeltaQueue`. |
 | `src/lib/localDb.ts` | `localDb`, `getLocalProjects`, `getLocalTasks`, `bulkPersistTasks` | Cơ sở dữ liệu IndexedDB Dexie lưu trữ sơ cấp client. |
+| `src/lib/backgroundSyncWorker.ts` | `bootstrapLocalStore`, `hydrateTasksFromLocal`, `hydrateTasksForProjects`, `hydrateDelegationsFromLocal` | Khởi tạo dữ liệu tức thì từ Dexie (0 Firestore Read) và đồng bộ nền không chặn UI. |
 | `src/lib/deltaSyncService.ts` | `recordDelta`, `recordBatchDeltas`, `pullAndApplyDeltas` | Kéo và áp dụng các delta mutation mới nhất từ server vào local. |
 | `src/lib/deltaRealtimeListener.ts` | `startDeltaRealtimeListener` | Listener duy nhất thời gian thực trên `taka_deltas` để nhận biến động từ máy khác. |
 | `src/lib/syncQueue.ts` | `syncQueueManager`, `addPendingUpdate`, `processPendingSync` | Hàng đợi lưu trữ ngoại tuyến khi mất mạng hoặc server bận. |
@@ -135,19 +109,26 @@ Hệ thống hoạt động theo mô hình **Local-First 4 Tầng** với độ 
 src/components/
 ├── <TabName>.tsx             <- Orchestrator Container (dưới 400 dòng, chỉ đọc state & truyền props)
 └── <TabName>Parts/           <- Toàn bộ Sub-components, Sub-modals & Hooks độc lập (< 500 dòng/file)
+    ├── <TabName>FilterToolbar.tsx   (Thanh công cụ, bộ lọc, tìm kiếm, Fix Project, xuất/nhập)
+    ├── <TabName>TableView.tsx       (Giao diện View chính: Bảng/Lưới/Cây/Kanban)
+    ├── <TabName>MobileView.tsx      (Giao diện tối ưu di động iOS/Android)
+    ├── <TabName>RowItem.tsx         (Hàng dữ liệu con bọc React.memo)
+    ├── <TabName>Modal.tsx           (Modal phụ bọc React.lazy & JIT Mounting)
+    ├── <tabName>Types.ts            (Type/Interface riêng của module)
+    └── use<TabName>Data.ts          (Custom Hook xử lý tính toán/memo/filter)
 ```
 
 | TabId | Phân Hệ | File Container Chính | Submodules & Hooks Chính Cần Mở | Modals / Dialogs Liên Quan |
 | :--- | :--- | :--- | :--- | :--- |
 | `general` | Tổng quan dự án | `src/components/GeneralTab.tsx` | `GeneralTabParts/ProjectTableView.tsx`, `GeneralFilterToolbar.tsx`, `useGeneralData.ts` | `ProjectModal`, `ProjectQuickNavModal` |
-| `myWork` | Việc của tôi (My Work) | `src/components/MyWorkTab.tsx` | `MyWorkTabParts/MyWorkHeader.tsx`, `MyWorkStreamView.tsx`, `MyWorkRowItem.tsx`, `myWorkTypes.ts`, `useMyWorkData.ts` | `TaskModal`, `ProjectModal`, `CalendarSyncModal` |
-| `detail` | Chi tiết công việc | `src/components/DetailTab.tsx` | `DetailTabParts/DetailTableView.tsx`, `DetailFilterToolbar.tsx`, `DetailMobileView.tsx`, `detailTaskMoveService.ts`, `useDetailData.ts`, `useDetailTaskReorder.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal`, `TaskModularModal`, `FullReplaceImport` |
+| `myWork` | Việc của tôi (My Work) | `src/components/MyWorkTab.tsx` | `MyWorkTabParts/MyWorkHeader.tsx`, `MyWorkKanbanView.tsx`, `MyWorkStreamView.tsx`, `MyWorkRowItem.tsx`, `useMyWorkData.ts`, `myWorkDataBuilders.ts`, `myWorkMutationService.ts`, `myWorkAccountSync.ts` | `TaskModal`, `ProjectModal`, `CalendarSyncModal` |
+| `detail` | Chi tiết công việc | `src/components/DetailTab.tsx` | `DetailTabParts/DetailTableView.tsx`, `DetailFilterToolbar.tsx`, `DetailMobileView.tsx`, `detailTaskMoveService.ts`, `useDetailData.ts`, `useDetailFilterSync.ts`, `useDetailTaskReorder.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal`, `TaskModularModal`, `FullReplaceImport` |
 | `gantt` | Biểu đồ tiến độ Gantt | `src/components/GanttTab.tsx` | `Gantt/GanttTableView.tsx`, `GanttTimeline.tsx`, `GanttProjectRow.tsx`, `GanttTaskRow.tsx`, `useGanttProjectsFilter.ts`, `useGanttRowVirtualizer.ts`, `useGanttDependencies.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal` |
 | `calendar` | Lịch tiến độ công việc | `src/components/CalendarTab.tsx` | `CalendarTabParts/CalendarMonthlyView.tsx`, `useCalendarEvents.ts` | `CalendarSyncModal`, `TaskModal` |
-| `budget` | Quản lý ngân sách | `src/components/BudgetTab.tsx` | `BudgetParts/BudgetTableView.tsx`, `BudgetFilterToolbar.tsx`, `BudgetTreeRow.tsx`, `useBudgetData.ts` | `BudgetLinkModal` (kèm `BudgetLinkParentColumn.tsx`, `BudgetLinkChildColumn.tsx`) |
-| `cost` | Chi phí thực tế | `src/components/CostTab.tsx` | `CostParts/CostTableView.tsx`, `CostFilterToolbar.tsx`, `useCostData.ts` | `CostItemModal`, `CostExportModal` |
+| `budget` | Quản lý ngân sách | `src/components/BudgetTab.tsx` | `BudgetParts/BudgetTableView.tsx`, `BudgetFilterToolbar.tsx`, `BudgetTreeRow.tsx`, `useBudgetData.ts`, `useBudgetFilterSort.ts` | `BudgetLinkModal` (kèm `BudgetLinkParentColumn.tsx`, `BudgetLinkChildColumn.tsx`) |
+| `cost` | Chi phí thực tế | `src/components/CostTab.tsx` | `CostParts/CostTableView.tsx`, `CostFilterToolbar.tsx`, `useCostData.ts`, `useCostSearchFilter.ts` | `CostItemModal`, `CostExportModal` |
 | `layout` | Mặt bằng CAD / Kỹ thuật | `src/components/LayoutTab.tsx` | `LayoutTabParts/LayoutCanvasViewport.tsx`, `LayoutUnitSidebar.tsx`, `LayoutFilterToolbar.tsx`, `useLayoutGestures.ts`, `layoutDataAggregator.ts` | `LayoutUnitLightboxModal`, `LayoutMiniGanttModal` |
-| `picture_mapping` | Ánh xạ sơ đồ hình ảnh | `src/components/PictureMappingTab.tsx` | `PictureMapping/components/DataMapping/EditTab.tsx`, `DynamicHierarchyTab.tsx`, `ReviewTab.tsx`, `EditTabParts/EditTabInspector.tsx`, `InspectorInputs.tsx`, `DynamicHierarchyParts/DynamicGroupCard.tsx` | `EditTabInspector`, `DynamicHierarchyTab`, `ReviewTab` |
+| `picture_mapping` | Ánh xạ sơ đồ hình ảnh | `src/components/PictureMappingTab.tsx` | `PictureMapping/components/DataMapping/EditTab.tsx`, `DynamicHierarchyTab.tsx`, `ReviewTab.tsx`, `EditTabParts/EditTabInspector.tsx`, `DynamicHierarchyParts/DynamicGroupCard.tsx`, `DynamicHierarchyCsvService.ts`, `DynamicCsvGuideModal.tsx` | `EditTabInspector`, `DynamicCsvGuideModal`, `ReviewTab` |
 | `summary` | Báo cáo tóm tắt | `src/components/SummaryTab.tsx` | `SummaryParts/SummaryMetricsCard.tsx`, `SummaryFilterToolbar.tsx` | `SummaryExportModal` |
 | `taskDelegation` | Phân công ủy quyền | `src/components/TaskDelegationTab.tsx`| `TaskDelegationParts/DelegationTableView.tsx`, `DelegationParts/DelegationCard.tsx` | `DelegationGroupModal`, `DelegationTaskModal` |
 | `taskDelegationCalendar`| Lịch ủy quyền | `src/components/DelegationCalendarTab.tsx`| `DelegationCalendarParts/DelegationCalendarGrid.tsx` | `DelegationDetailModal` |
@@ -157,25 +138,3 @@ src/components/
 | `setting` | Cấu hình & Backup | `src/components/SettingTab.tsx` | `SettingTabParts/SystemConfigPanel.tsx`, `DataBackupPanel.tsx` | `ProjectLinksImagesManagerModal`, `FirestoreSummarizedExportModal`, `DesktopOptimizationModal` |
 | `csv_export` | Xuất nhập file | `src/components/CsvExportTab.tsx` | `CsvExportParts/ExportPreviewTable.tsx` | `CsvImportModal` |
 | `manual` | Hướng dẫn sử dụng | `src/components/ManualTab.tsx` | `FaqBot/FaqChatWindow.tsx`, `FaqKnowledgeViewer.tsx` | `FaqChatbotModal` |
-
----
-
-## 5. Quy Tắc Tác Nghiệp Nhanh Cho AI (Quick Lookup Protocol & 3-Step Workflow)
-
-Khi nhận bất kỳ yêu cầu sửa lỗi (hotfix), tối ưu hiệu năng hoặc thêm tính năng mới:
-
-1. **Bước 1: Check Contracts (`src/api-contracts.ts`) & Map (`ARCHITECTURE.md`)**:
-   - Đọc `ARCHITECTURE.md` để định vị đúng phân hệ và file submodule trong `*Parts/`.
-   - Tra cứu `src/api-contracts.ts` để kiểm tra các interface, enum, Zustand state/action/selector hoặc API service có sẵn. Tái sử dụng tối đa, cấm viết lại hàm đã tồn tại hoặc tự suy đoán attributes (Zero Hallucination).
-
-2. **Bước 2: Code Implementation (< 500 dòng/file)**:
-   - **Chỉ mở các file submodule trong thư mục `*Parts/`** để chỉnh sửa. TUYỆT ĐỐI KHÔNG nhồi code mới vào file Container chính (`<TabName>.tsx`).
-   - Thao tác ghi dữ liệu BẮT BUỘC import từ `src/lib/firestoreWrites.ts` và dùng các hàm chuẩn (`saveTaskStateUnified`, `saveCostWithAtomicSummary`...).
-   - Bắt buộc giữ file < 500 dòng code (`AGENTS.md` Rule 12). Đảm bảo 100% UI bằng tiếng Anh Enterprise.
-
-3. **Bước 3: Selective Auto-Sync & Mandatory Validation**:
-   - **Chỉ cập nhật tài liệu khi có thay đổi kiến trúc/interface cốt lõi:** Cập nhật `src/api-contracts.ts` CHỈ KHI có thêm/sửa/xóa `interface`, `type`, Zustand state/action/selector hoặc hàm API. Cập nhật `ARCHITECTURE.md` CHỈ KHI tạo thêm module/phân hệ hoặc thư mục tính năng mới. **KHÔNG** cập nhật tài liệu đối với các sửa lỗi cú pháp/logic nhỏ (bug fix) để tiết kiệm token và tránh xung đột.
-   - **Chốt chặn bắt buộc (`lint_applet`):** Sau khi sửa code xong, luôn chạy `lint_applet` (`tsc --noEmit`) và `compile_applet` để bắt ngay mọi lỗi thiếu type hoặc sai kiểu dữ liệu trước khi hoàn tất.
-
-
-
