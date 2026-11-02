@@ -1,14 +1,12 @@
 import { useMemo } from 'react';
 import { AppRole, AppUser, DelegationGroup, PermissionMatrix, Project, Task } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
 import {
   getTaskStatus,
   isTaskBelongsToProject,
-  matchesAdvancedSearch,
 } from '../../lib/utils';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import {
-  MyWorkBriefingStats,
-  MyWorkCounts,
   MyWorkFocusTarget,
   MyWorkKanbanColumnId,
   MyWorkTimeFilter,
@@ -25,11 +23,11 @@ import {
   buildFriendlyDueLabel,
   buildProjectMilestoneItems,
   isItemInFocusProject,
-  isItemScheduledForToday,
-  matchesTimeFilter,
+  matchesFixedProject,
   normalizeRole,
   parseLocalDayMs,
   parseParties,
+  partitionAndSortMyWorkStream,
 } from './myWorkDataBuilders';
 import {
   buildDelegationSubTaskItems,
@@ -65,6 +63,8 @@ export function useMyWorkData({
   sortBy,
   focusTarget,
 }: UseMyWorkDataParams) {
+  const fixedProjectCode = useAppStore((s) => s.fixedProjectCode);
+
   return useMemo(() => {
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -375,6 +375,7 @@ export function useMyWorkData({
       todayStartMs,
       currentYear,
       focusTarget,
+      fixedProjectCode,
       checkPartyMatch,
       hasAllPartyPerm,
       isAdminOrManager,
@@ -384,193 +385,45 @@ export function useMyWorkData({
     allCandidateItems.push(...msCandidates);
     directMatchedItems.push(...msDirect);
 
-    // Scope resolution
-    const baseStream: UnifiedWorkItem[] =
-      focusTarget && (focusTarget.projectId || focusTarget.projectCode)
-        ? allCandidateItems
-            .filter((item) => isItemInFocusProject(item, focusTarget))
-            .map((item) => {
-              const fTaskId = focusTarget.taskId ? String(focusTarget.taskId).trim() : '';
-              const fTaskName = String(focusTarget.taskName || '').trim().toLowerCase();
-              const matchesTask =
-                (fTaskId &&
-                  (String(item.rawTask?.id || '') === fTaskId ||
-                    String(item.rawDelegationGroup?.parentTaskId || '') === fTaskId)) ||
-                (fTaskName && String(item.title || '').trim().toLowerCase() === fTaskName);
-              return matchesTask ? { ...item, isFocusedTarget: true } : item;
-            })
-        : directMatchedItems.length > 0
-        ? directMatchedItems
-        : hasAllPartyPerm
-        ? allCandidateItems
-        : directMatchedItems;
+    // Scope resolution (supports both QuickNav focusTarget and global fixedProjectCode)
+    const hasFocusTarget = Boolean(focusTarget && (focusTarget.projectId || focusTarget.projectCode));
+    const hasFixedCode = Boolean(fixedProjectCode && fixedProjectCode.trim());
 
-    // Briefing stats across the user's stream
-    const briefingStats: MyWorkBriefingStats = {
-      totalActiveTasks: 0,
-      criticalUrgentCount: 0,
-      highPriorityCount: 0,
-      normalActiveCount: 0,
-      upcomingMilestonesCount: 0,
-      dueThisWeekCount: 0,
-      delegationsActiveCount: 0,
-      delegationsMyPICCount: 0,
-      pendingMyApprovalCount: 0,
-      needsReworkCount: 0,
-    };
+    let baseStream: UnifiedWorkItem[] = hasFocusTarget
+      ? allCandidateItems
+          .filter((item) => isItemInFocusProject(item, focusTarget!))
+          .map((item) => {
+            const fTaskId = focusTarget!.taskId ? String(focusTarget!.taskId).trim() : '';
+            const fTaskName = String(focusTarget!.taskName || '').trim().toLowerCase();
+            const matchesTask =
+              (fTaskId &&
+                (String(item.rawTask?.id || '') === fTaskId ||
+                  String(item.rawDelegationGroup?.parentTaskId || '') === fTaskId)) ||
+              (fTaskName && String(item.title || '').trim().toLowerCase() === fTaskName);
+            return matchesTask ? { ...item, isFocusedTarget: true } : item;
+          })
+      : hasFixedCode
+      ? allCandidateItems.filter((item) => matchesFixedProject(item, fixedProjectCode))
+      : directMatchedItems.length > 0
+      ? directMatchedItems
+      : hasAllPartyPerm
+      ? allCandidateItems
+      : directMatchedItems;
 
-    for (let i = 0; i < baseStream.length; i++) {
-      const it = baseStream[i];
-      if (it.isCompleted) continue;
-      briefingStats.totalActiveTasks++;
-      if (it.priority === 'critical' || it.isOverdue) briefingStats.criticalUrgentCount++;
-      else if (it.priority === 'high') briefingStats.highPriorityCount++;
-      else briefingStats.normalActiveCount++;
-      if (it.type === 'project_milestone') briefingStats.upcomingMilestonesCount++;
-      if (it.dueDiffDays !== null && it.dueDiffDays >= 0 && it.dueDiffDays <= 7) briefingStats.dueThisWeekCount++;
-      if (it.type === 'delegation_subtask') {
-        briefingStats.delegationsActiveCount++;
-        if (it.isPIC) briefingStats.delegationsMyPICCount++;
-      }
-      if (it.isAwaitingMyApproval) briefingStats.pendingMyApprovalCount++;
-      if (it.isNeedsRework) briefingStats.needsReworkCount++;
+    if (hasFocusTarget && hasFixedCode) {
+      baseStream = baseStream.filter((item) => matchesFixedProject(item, fixedProjectCode));
     }
 
-    // Filter by status & search first so Time Filter chip counts reflect active items in the current search/type filter
-    const searchAndStatusStream = baseStream.filter((item) => {
-      if (statusFilter === 'overdue' && !item.isOverdue && !item.isNeedsRework) return false;
-      if (statusFilter === 'approval' && !item.isAwaitingMyApproval && !item.isNeedsRework) return false;
-      if (statusFilter === 'delegation' && item.type !== 'delegation_subtask') return false;
-      if (statusFilter === 'milestone' && item.type !== 'project_milestone') return false;
-      if (!searchQuery.trim()) return true;
-      return matchesAdvancedSearch(searchQuery, [
-        item.title,
-        item.projectCode,
-        item.projectName,
-        item.floor || '',
-        item.party,
-        item.statusLabel,
-      ]);
-    });
-
-    // Compute Time Filter badge counts across active items before applying timeFilter
-    let allActiveCount = 0;
-    let todayFocusCount = 0;
-    let todayOnlyCount = 0;
-    let thisWeekCount = 0;
-    let thisMonthCount = 0;
-    let overdueCount = 0;
-    let futureCount = 0;
-    let inboxCount = 0;
-    let totalDoneCount = 0;
-
-    for (let i = 0; i < searchAndStatusStream.length; i++) {
-      const it = searchAndStatusStream[i];
-      if (it.isCompleted) {
-        totalDoneCount++;
-        continue;
-      }
-      allActiveCount++;
-      const isToday = isItemScheduledForToday(it, todayStartMs);
-      const diff = it.dueDiffDays;
-      if (it.isOverdue || it.isNeedsRework) overdueCount++;
-      if (isToday) todayOnlyCount++;
-      if (it.isOverdue || it.isNeedsRework || isToday || it.isAwaitingMyApproval || (diff !== null && diff <= 0)) {
-        todayFocusCount++;
-      }
-      if (isToday || (diff !== null && diff >= 0 && diff <= 7)) thisWeekCount++;
-      if (isToday || (diff !== null && diff >= 0 && diff <= 30)) thisMonthCount++;
-      if (diff === null || diff > 30) futureCount++;
-      if (it.isAwaitingMyApproval || it.isNeedsRework) inboxCount++;
-    }
-
-    // Apply Time Horizon Filter
-    const filteredStream = searchAndStatusStream.filter((item) =>
-      matchesTimeFilter(item, timeFilter, todayStartMs)
-    );
-
-    const pWeight: Record<WorkItemPriority, number> = { critical: 0, high: 1, medium: 2, low: 3 };
-    const sortFn = (a: UnifiedWorkItem, b: UnifiedWorkItem) => {
-      if (a.isFocusedTarget && !b.isFocusedTarget) return -1;
-      if (!a.isFocusedTarget && b.isFocusedTarget) return 1;
-      if (sortBy === 'project') return a.projectCode.localeCompare(b.projectCode);
-      if (sortBy === 'priority') return pWeight[a.priority] - pWeight[b.priority];
-      const da = a.dueDiffDays ?? 9999;
-      const db = b.dueDiffDays ?? 9999;
-      return da !== db ? da - db : pWeight[a.priority] - pWeight[b.priority];
-    };
-
-    const overdueItems: UnifiedWorkItem[] = [];
-    const approvalItems: UnifiedWorkItem[] = [];
-    const todayItems: UnifiedWorkItem[] = [];
-    const weekItems: UnifiedWorkItem[] = [];
-    const monthItems: UnifiedWorkItem[] = [];
-    const doneItems: UnifiedWorkItem[] = [];
-    const kanbanTodo: UnifiedWorkItem[] = [];
-    const kanbanInProgress: UnifiedWorkItem[] = [];
-    const kanbanPendingApproval: UnifiedWorkItem[] = [];
-    const kanbanDone: UnifiedWorkItem[] = [];
-
-    for (let i = 0; i < filteredStream.length; i++) {
-      const item = filteredStream[i];
-      if (item.kanbanColumn === 'done') kanbanDone.push(item);
-      else if (item.kanbanColumn === 'pending_approval') kanbanPendingApproval.push(item);
-      else if (item.kanbanColumn === 'in_progress') kanbanInProgress.push(item);
-      else kanbanTodo.push(item);
-
-      if (item.isCompleted) {
-        doneItems.push(item);
-        continue;
-      }
-      if (item.isAwaitingMyApproval) approvalItems.push(item);
-      if (item.isOverdue || item.isNeedsRework) overdueItems.push(item);
-      else if (isItemScheduledForToday(item, todayStartMs) || item.isFocusedTarget) todayItems.push(item);
-      else if (item.dueDiffDays !== null && item.dueDiffDays >= 1 && item.dueDiffDays <= 7) weekItems.push(item);
-      else if (item.dueDiffDays !== null && item.dueDiffDays > 7 && (item.dueDiffDays <= 30 || Boolean(focusTarget))) monthItems.push(item);
-      else if (item.dueDiffDays === null && !item.isAwaitingMyApproval) todayItems.push(item);
-    }
-
-    overdueItems.sort(sortFn);
-    approvalItems.sort(sortFn);
-    todayItems.sort(sortFn);
-    weekItems.sort(sortFn);
-    monthItems.sort(sortFn);
-    doneItems.sort((a, b) => (a.isFocusedTarget === b.isFocusedTarget ? (b.dueDateStr || '').localeCompare(a.dueDateStr || '') : a.isFocusedTarget ? -1 : 1));
-    kanbanTodo.sort(sortFn);
-    kanbanInProgress.sort(sortFn);
-    kanbanPendingApproval.sort(sortFn);
-    kanbanDone.sort((a, b) => (a.isFocusedTarget === b.isFocusedTarget ? (b.dueDateStr || '').localeCompare(a.dueDateStr || '') : a.isFocusedTarget ? -1 : 1));
-
-    const counts: MyWorkCounts = {
-      today: overdueItems.length + todayItems.length,
-      inbox: inboxCount,
-      upcoming: weekItems.length + monthItems.length,
-      done: totalDoneCount,
-      overdue: overdueCount,
-      todayTodo: todayItems.length + overdueItems.length,
-      allActive: allActiveCount,
-      todayFocus: todayFocusCount,
-      todayOnly: todayOnlyCount,
-      thisWeek: thisWeekCount,
-      thisMonth: thisMonthCount,
-      future: futureCount,
-    };
-
-    return {
-      overdueItems,
-      approvalItems,
-      todayItems,
-      weekItems,
-      monthItems,
-      doneItems: doneItems.slice(0, 60),
-      kanbanTodo,
-      kanbanInProgress,
-      kanbanPendingApproval,
-      kanbanDone: kanbanDone.slice(0, 60),
-      counts,
-      briefingStats,
+    return partitionAndSortMyWorkStream({
+      baseStream,
+      statusFilter,
+      searchQuery,
+      timeFilter,
+      sortBy,
+      todayStartMs,
+      hasProjectFocus: hasFocusTarget || hasFixedCode,
       hasSummaryFallbacks: allCandidateItems.some((i) => i.isSummaryFallback),
-    };
+    });
   }, [
     projects,
     tasks,
@@ -584,5 +437,6 @@ export function useMyWorkData({
     timeFilter,
     sortBy,
     focusTarget,
+    fixedProjectCode,
   ]);
 }

@@ -65,6 +65,7 @@ export function useCostData({
   const handleProjectLinkClick = useCallback(
     (p: Project) => {
       if (!p) return;
+      useAppStore.getState().setFixedProjectCode(String(p.code || '').trim().toUpperCase());
       setDetailTabFilterCode(p.code);
       setDetailTabStoreFilter(p.store || 'all');
       if (p.year) {
@@ -268,7 +269,8 @@ export function useCostData({
         const fix = fixedProjectCode.trim().toLowerCase();
         const pCode = (p.code || '').trim().toLowerCase();
         const pName = (p.name || '').trim().toLowerCase();
-        const matchesFix = pCode === fix || pCode.includes(fix) || pName.includes(fix) || String(p.id).toLowerCase() === fix;
+        const pLink = Array.isArray(p.linkCodes) ? p.linkCodes.join(' ').toLowerCase() : String(p.linkCodes || '').toLowerCase();
+        const matchesFix = pCode === fix || pCode.includes(fix) || pName.includes(fix) || pLink.includes(fix) || String(p.id).toLowerCase() === fix;
         if (!matchesFix) return false;
       }
 

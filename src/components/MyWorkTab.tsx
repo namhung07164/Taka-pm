@@ -125,6 +125,7 @@ export function MyWorkTab() {
 
   const handleClearFocusTarget = useCallback(() => {
     setFocusTarget(null);
+    useAppStore.getState().setFixedProjectCode('');
     try {
       sessionStorage.removeItem('taka_mywork_focus');
     } catch {
@@ -388,6 +389,8 @@ export function MyWorkTab() {
     <div className="flex flex-col flex-grow min-h-[calc(100dvh-130px)] bg-slate-50/60 dark:bg-[#121215] rounded-xl border border-slate-200/80 dark:border-[#333336] overflow-hidden">
       <MyWorkHeader
         username={currentUser?.username || 'User'}
+        projects={projects}
+        yearFilter={globalYearFilter}
         displayMode={displayMode}
         onDisplayModeChange={setDisplayMode}
         activeView={activeView}

@@ -145,8 +145,17 @@ export function useAppNavigationAndShortcuts({
           targetTask.taskCodePhu ||
           (targetProject ? `${targetProject.code}#1` : targetTask.projectCode || "");
 
-        if (subTaskCode) {
-          safeSetItemSession("taka_detail_search", subTaskCode);
+        const fixedCode = String(
+          targetProject?.code ||
+            targetTask.projectCode ||
+            (subTaskCode ? String(subTaskCode).split("#")[0] : "")
+        )
+          .trim()
+          .toUpperCase();
+
+        safeSetItemSession("taka_detail_search", "");
+        if (fixedCode) {
+          useAppStore.getState().setFixedProjectCode(fixedCode);
         }
 
         if (targetProject) {
@@ -214,6 +223,14 @@ export function useAppNavigationAndShortcuts({
       const taskCode = target?.taskCode;
       const effectiveFilterCode =
         taskCode || (task ? task.taskCodePhu || p?.code : p?.code) || "";
+      const projectCodeForFix = String(
+        p?.code ||
+          task?.projectCode ||
+          (effectiveFilterCode ? String(effectiveFilterCode).split("#")[0] : "") ||
+          ""
+      )
+        .trim()
+        .toUpperCase();
 
       const yearVal = p?.year || (task?.projectYear ? Number(task.projectYear) : null);
       const targetYear = yearVal ? String(yearVal) : "all";
@@ -231,6 +248,10 @@ export function useAppNavigationAndShortcuts({
         globalStoreFilter: targetStore,
         activeTab: targetTab,
       };
+
+      if (projectCodeForFix && targetTab !== "layout") {
+        updates.fixedProjectCode = projectCodeForFix;
+      }
 
       switch (targetTab) {
         case "layout": {
@@ -265,9 +286,7 @@ export function useAppNavigationAndShortcuts({
         case "gantt": {
           const targetProjectId = p?.id ? String(p.id) : p?.code || "";
           updates.ganttTabFilterProjectId = targetProjectId;
-          if (effectiveFilterCode) {
-            safeSetItemSession("taka_gantt_search", effectiveFilterCode);
-          }
+          safeSetItemSession("taka_gantt_search", "");
           updates.ganttTabFocusTaskId = "";
 
           if (p?.id) {
@@ -304,9 +323,7 @@ export function useAppNavigationAndShortcuts({
               : p?.code || effectiveFilterCode || "";
 
           updates.detailTabFilterCode = effectiveCode;
-          if (effectiveCode) {
-            safeSetItemSession("taka_detail_search", effectiveCode);
-          }
+          safeSetItemSession("taka_detail_search", "");
           if (p?.store || task?.projectStore) {
             updates.detailTabStoreFilter = p?.store || task?.projectStore || "";
           }
@@ -331,11 +348,11 @@ export function useAppNavigationAndShortcuts({
           break;
         }
         case "budget": {
-          updates.budgetTabSearchTerm = effectiveFilterCode || "";
+          updates.budgetTabSearchTerm = "";
           break;
         }
         case "cost": {
-          updates.costTabSearchTerm = effectiveFilterCode || "";
+          updates.costTabSearchTerm = "";
           break;
         }
         case "myWork": {

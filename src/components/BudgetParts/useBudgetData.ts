@@ -42,9 +42,11 @@ export function useBudgetData({
   const setDetailTabStoreFilter = useAppStore(state => state.setDetailTabStoreFilter);
   const setActiveTab = useAppStore(state => state.setActiveTab);
   const budgetTabSearchTerm = useAppStore(state => state.budgetTabSearchTerm);
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
 
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || budgetTabSearchTerm || '');
   const deferredSearchTerm = useDeferredValue(searchTerm);
+  const effectiveFilterTerm = deferredSearchTerm.trim() || (fixedProjectCode ? fixedProjectCode.trim() : '');
 
   useEffect(() => {
     if (initialSearchTerm) {
@@ -56,17 +58,17 @@ export function useBudgetData({
 
   const [collapsedInSearch, setCollapsedInSearch] = useState<Set<string>>(new Set());
   const [moneyFilter, setMoneyFilter] = useState(() => {
-    if ((initialSearchTerm || '').trim()) return 'all';
+    if ((initialSearchTerm || '').trim() || (fixedProjectCode || '').trim()) return 'all';
     return safeGetItemSession("taka_budget_money_filter") || 'has_money';
   });
   const lastSelectedMoneyFilterRef = useRef<string>(
     safeGetItemSession("taka_budget_money_filter") || 'has_money'
   );
   const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
-  const wasSearchingRef = useRef<boolean>(!!(initialSearchTerm || '').trim());
+  const wasSearchingRef = useRef<boolean>(!!((initialSearchTerm || '').trim() || (fixedProjectCode || '').trim()));
 
   useEffect(() => {
-    const isSearching = !!deferredSearchTerm.trim();
+    const isSearching = !!effectiveFilterTerm;
     if (!wasSearchingRef.current && isSearching) {
       if (moneyFilter !== 'all') {
         lastSelectedMoneyFilterRef.current = moneyFilter;
@@ -81,7 +83,7 @@ export function useBudgetData({
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [deferredSearchTerm]);
+  }, [effectiveFilterTerm]);
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(AVAILABLE_COLUMNS.map(c => c.id));
   const [colWidths, setColWidths] = useState<Record<string, number>>({
@@ -331,7 +333,7 @@ export function useBudgetData({
   };
 
   const toggleExpand = (id: string) => {
-    if (searchTerm.trim()) {
+    if (searchTerm.trim() || (fixedProjectCode && fixedProjectCode.trim())) {
       setCollapsedInSearch(prev => {
         const next = new Set(prev);
         if (next.has(id)) next.delete(id);
@@ -416,6 +418,7 @@ export function useBudgetData({
 
   const handleProjectLinkClick = (p: Project) => {
     if (!p) return;
+    useAppStore.getState().setFixedProjectCode(String(p.code || '').trim().toUpperCase());
     setDetailTabFilterCode(p.code);
     setDetailTabStoreFilter(p.store || "all");
     if (p.year) {

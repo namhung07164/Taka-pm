@@ -142,9 +142,12 @@ export function useDetailFocusTracking({
     }
     if (!parentProjectCode && initialFilterCode) {
       const matched = projects.find(p => p.code && (initialFilterCode === p.code || initialFilterCode.startsWith(p.code + '-')));
-      parentProjectCode = matched?.code || initialFilterCode;
+      parentProjectCode = matched?.code || String(initialFilterCode).split('#')[0].trim();
     }
-    setSearchTerm(parentProjectCode);
+    if (parentProjectCode) {
+      useAppStore.getState().setFixedProjectCode(String(parentProjectCode).split('#')[0].trim().toUpperCase());
+    }
+    setSearchTerm('');
     setDetailTabFilterCode(parentProjectCode);
     lastFocusedTaskIdRef.current = null;
     onClearFocus?.();
@@ -170,8 +173,6 @@ export function useDetailFocusTracking({
             (activeElement as HTMLElement).blur();
           }
           setSearchTerm("");
-          setDetailTabFilterCode("");
-          onClearFocus?.();
         } else if (initialFocusTaskId) {
           e.preventDefault();
           const activeElement = document.activeElement;
@@ -265,8 +266,12 @@ export function useDetailFocusTracking({
             (p ? `${p.code}#${(task.orderIndex !== undefined ? task.orderIndex : 0) + 1}` : '') ||
             task.projectCode
           : p?.code || '';
+        const fixCode = String(p?.code || task?.projectCode || String(subTaskCode || '').split('#')[0]).trim().toUpperCase();
+        if (fixCode) {
+          useAppStore.getState().setFixedProjectCode(fixCode);
+        }
+        setSearchTerm('');
         if (subTaskCode) {
-          setSearchTerm(subTaskCode);
           setDetailTabFilterCode(subTaskCode);
         }
         if (p) {

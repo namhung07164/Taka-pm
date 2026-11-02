@@ -124,6 +124,21 @@ export const FixedProjectInput: React.FC<FixedProjectInputProps> = React.memo(({
 
   const handleClearFix = () => {
     setFixedProjectCode('');
+    const storeState = useAppStore.getState();
+    if (storeState.detailTabFilterCode) storeState.setDetailTabFilterCode('');
+    if (storeState.detailTabFocusTaskId) storeState.setDetailTabFocusTaskId('');
+    if (storeState.ganttTabFilterProjectId) storeState.setGanttTabFilterProjectId('');
+    if (storeState.ganttTabFocusTaskId) storeState.setGanttTabFocusTaskId('');
+    if (storeState.budgetTabSearchTerm) storeState.setBudgetTabSearchTerm('');
+    if (storeState.costTabSearchTerm) storeState.setCostTabSearchTerm('');
+    try {
+      sessionStorage.removeItem('taka_mywork_focus');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('taka-mywork-focus-changed', { detail: null }));
+      }
+    } catch {
+      // ignore storage errors
+    }
     setInputVal('');
     setIsOpenDropdown(false);
   };

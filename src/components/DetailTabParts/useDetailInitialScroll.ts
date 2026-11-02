@@ -36,7 +36,7 @@ export function useDetailInitialScroll({
       initialFilterCode !== lastProcessedFilterCodeRef.current
     ) {
       lastProcessedFilterCodeRef.current = initialFilterCode;
-      setSearchTerm(initialFilterCode);
+      setSearchTerm('');
       setStatusFilter('all');
 
       const filterUpper = String(initialFilterCode).trim().toUpperCase();
@@ -66,12 +66,16 @@ export function useDetailInitialScroll({
       });
       const candidatePool = scopedProjects.length > 0 ? scopedProjects : projects;
 
+      const filterBaseUpper = filterUpper.split('#')[0].trim();
       const matchedProj =
         candidatePool.find(
           (p) => String(p.id || '').trim().toUpperCase() === filterUpper
         ) ||
         candidatePool.find(
           (p) => String(p.code || '').trim().toUpperCase() === filterUpper
+        ) ||
+        candidatePool.find(
+          (p) => String(p.code || '').trim().toUpperCase() === filterBaseUpper
         ) ||
         candidatePool.find(
           (p) =>
@@ -82,6 +86,11 @@ export function useDetailInitialScroll({
           (p) =>
             p.code && filterUpper.includes(String(p.code).trim().toUpperCase())
         );
+
+      const resolvedFixCode = String(matchedProj?.code || filterBaseUpper || filterUpper).trim().toUpperCase();
+      if (resolvedFixCode) {
+        useAppStore.getState().setFixedProjectCode(resolvedFixCode);
+      }
 
       // Keep parent row collapsed by default (Tri-Gate Lazy Loading rule).
       // If initialFocusTaskId is present, useDetailFocusTracking will scroll directly to the task.
@@ -123,7 +132,6 @@ export function useDetailInitialScroll({
       lastProcessedFilterCodeRef.current !== null
     ) {
       lastProcessedFilterCodeRef.current = null;
-      if (!initialFocusTaskId) setSearchTerm('');
     }
   }, [
     initialFilterCode,

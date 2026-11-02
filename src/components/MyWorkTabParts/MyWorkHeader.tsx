@@ -14,6 +14,8 @@ import {
   Sun,
 } from 'lucide-react';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
+import { FixedProjectInput } from '../FixedProjectInput';
+import { Project } from '../../types';
 import {
   MyWorkCounts,
   MyWorkDisplayMode,
@@ -24,6 +26,8 @@ import { cn } from '../../lib/utils';
 
 interface MyWorkHeaderProps {
   username: string;
+  projects?: Project[];
+  yearFilter?: string;
   displayMode: MyWorkDisplayMode;
   onDisplayModeChange: (mode: MyWorkDisplayMode) => void;
   activeView: MyWorkTabView;
@@ -53,6 +57,8 @@ function getGreetingByHour(): { emoji: string; greeting: string } {
 
 export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyWorkHeader({
   username,
+  projects = [],
+  yearFilter = 'all',
   displayMode,
   onDisplayModeChange,
   activeView,
@@ -240,7 +246,7 @@ export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyW
 
           {/* Filter & Action Toolbar */}
           <div className="flex items-center flex-wrap gap-2">
-            <div className="w-full sm:w-48">
+            <div className="w-full sm:w-44">
               <DebouncedSearchInput
                 value={searchQuery}
                 onChange={onSearchChange}
@@ -250,6 +256,12 @@ export const MyWorkHeader: React.FC<MyWorkHeaderProps> = React.memo(function MyW
                 className="w-full"
               />
             </div>
+
+            <FixedProjectInput
+              projects={projects}
+              yearFilter={yearFilter}
+              storeFilter={storeFilter}
+            />
 
             {/* Status / Type Filter Dropdown */}
             <select

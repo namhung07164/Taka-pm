@@ -41,24 +41,32 @@ export function useGanttProjectsFilter({
   const ganttTabFilterProjectId = useAppStore(state => state.ganttTabFilterProjectId);
   const setGanttTabFilterProjectId = useAppStore(state => state.setGanttTabFilterProjectId);
 
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
+  const setFixedProjectCode = useAppStore(state => state.setFixedProjectCode);
+
   const [searchTerm, setSearchTerm] = useState(() => safeGetItemSession("taka_gantt_search") || "");
   const deferredSearchTerm = useDeferredValue(searchTerm);
+  const effectiveFilterTerm = deferredSearchTerm.trim() || (fixedProjectCode ? fixedProjectCode.trim() : '');
 
-  // Sync QuickNav targeted project filter
+  // Sync QuickNav targeted project filter into FixedProjectCode instead of SearchTerm
   useEffect(() => {
     if (ganttTabFilterProjectId) {
       const targetProj = projects.find(
         p => (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
              (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase())
       );
-      const codeToDisplay = targetProj?.code || ganttTabFilterProjectId;
-      setSearchTerm(codeToDisplay);
+      const codeToDisplay = String(targetProj?.code || ganttTabFilterProjectId).split('#')[0].trim().toUpperCase();
+      if (codeToDisplay) {
+        setFixedProjectCode(codeToDisplay);
+      }
+      setSearchTerm('');
+      safeSetItemSession("taka_gantt_search", "");
       setFilterProjectStatus('all');
     }
-  }, [ganttTabFilterProjectId, projects]);
+  }, [ganttTabFilterProjectId, projects, setFixedProjectCode]);
 
   const [filterProjectStatus, setFilterProjectStatus] = useState<string>(() => {
-    if ((safeGetItemSession("taka_gantt_search") || "").trim()) return 'all';
+    if ((safeGetItemSession("taka_gantt_search") || "").trim() || (useAppStore.getState().fixedProjectCode || "").trim()) return 'all';
     const saved = safeGetItemSession("taka_gantt_status_filter");
     return saved && saved !== 'all' ? saved : 'On process + Upcoming 3 days';
   });
@@ -70,7 +78,9 @@ export function useGanttProjectsFilter({
     })()
   );
   const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
-  const wasSearchingRef = useRef<boolean>(!!(safeGetItemSession("taka_gantt_search") || "").trim());
+  const wasSearchingRef = useRef<boolean>(
+    Boolean((safeGetItemSession("taka_gantt_search") || "").trim() || (useAppStore.getState().fixedProjectCode || "").trim())
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -80,26 +90,27 @@ export function useGanttProjectsFilter({
           p => (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
                (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase())
         );
-        const expectedCode = targetProj?.code || ganttTabFilterProjectId;
-        if (!searchTerm.trim() || searchTerm.trim().toUpperCase() !== expectedCode.trim().toUpperCase()) {
+        const expectedCode = String(targetProj?.code || ganttTabFilterProjectId).split('#')[0].trim().toUpperCase();
+        const activeFixed = (fixedProjectCode || '').trim().toUpperCase();
+        if (!activeFixed || activeFixed !== expectedCode) {
           setGanttTabFilterProjectId('');
         }
       }
     }, 350);
     return () => clearTimeout(timer);
-  }, [searchTerm, ganttTabFilterProjectId, setGanttTabFilterProjectId, projects]);
+  }, [searchTerm, fixedProjectCode, ganttTabFilterProjectId, setGanttTabFilterProjectId, projects]);
 
   const onStatusFilterChange = useCallback((status: string) => {
     setFilterProjectStatus(status);
-    if (!searchTerm.trim()) {
+    if (!searchTerm.trim() && !(fixedProjectCode && fixedProjectCode.trim())) {
       lastSelectedStatusFilterRef.current = status;
       safeSetItemSession("taka_gantt_status_filter", status);
     }
-  }, [searchTerm]);
+  }, [searchTerm, fixedProjectCode]);
 
-  // Status & Location filter preservation during search
+  // Status & Location filter preservation during search or fixedProjectCode
   useEffect(() => {
-    const isSearching = !!deferredSearchTerm.trim();
+    const isSearching = !!effectiveFilterTerm;
     if (!wasSearchingRef.current && isSearching) {
       if (filterProjectStatus !== 'all') {
         lastSelectedStatusFilterRef.current = filterProjectStatus;
@@ -115,7 +126,7 @@ export function useGanttProjectsFilter({
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [deferredSearchTerm]);
+  }, [effectiveFilterTerm]);
 
   // Reset to default 'On process + Upcoming 3 days' when switching Year or Store
   const prevGanttScopeRef = useRef(`${globalYearFilter}_${effectiveStore}`);
@@ -123,7 +134,7 @@ export function useGanttProjectsFilter({
     const currentScope = `${globalYearFilter}_${effectiveStore}`;
     if (prevGanttScopeRef.current !== currentScope) {
       prevGanttScopeRef.current = currentScope;
-      if (!searchTerm.trim()) {
+      if (!searchTerm.trim() && !(fixedProjectCode && fixedProjectCode.trim())) {
         setFilterProjectStatus('On process + Upcoming 3 days');
         lastSelectedStatusFilterRef.current = 'On process + Upcoming 3 days';
         safeSetItemSession("taka_gantt_status_filter", 'On process + Upcoming 3 days');
@@ -141,7 +152,7 @@ export function useGanttProjectsFilter({
         }
       }
     }
-  }, [globalYearFilter, effectiveStore, searchTerm, projects, globalLocationFilter, setGlobalLocationFilter]);
+  }, [globalYearFilter, effectiveStore, searchTerm, fixedProjectCode, projects, globalLocationFilter, setGlobalLocationFilter]);
 
   const uniqueYears = useMemo(() => {
     const yearsSet = new Set<string>();
@@ -369,8 +380,6 @@ export function useGanttProjectsFilter({
     return map;
   }, [hasActiveSearchTerm, projects, getGroupTasksForProject]);
 
-  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
-
   const filteredProjects = useMemo(() => {
     return projects.filter(p => {
       // Check fixedProjectCode
@@ -378,7 +387,8 @@ export function useGanttProjectsFilter({
         const fix = fixedProjectCode.trim().toLowerCase();
         const pCode = (p.code || '').trim().toLowerCase();
         const pName = (p.name || '').trim().toLowerCase();
-        const matchesFix = pCode === fix || pCode.includes(fix) || pName.includes(fix) || String(p.id).toLowerCase() === fix;
+        const pLink = Array.isArray(p.linkCodes) ? p.linkCodes.join(' ').toLowerCase() : String(p.linkCodes || '').toLowerCase();
+        const matchesFix = pCode === fix || pCode.includes(fix) || pName.includes(fix) || pLink.includes(fix) || String(p.id).toLowerCase() === fix;
         if (!matchesFix) return false;
       }
 
@@ -386,7 +396,7 @@ export function useGanttProjectsFilter({
       if (ganttTabFilterProjectId) {
         const isTarget = (p.id && String(p.id) === String(ganttTabFilterProjectId)) ||
                          (p.code && String(p.code).trim().toUpperCase() === String(ganttTabFilterProjectId).trim().toUpperCase());
-        return isTarget;
+        if (!isTarget) return false;
       }
 
       const computedTakStart = p.computedTakStart || p.start || "";
@@ -426,7 +436,7 @@ export function useGanttProjectsFilter({
 
   useEffect(() => {
     setVisibleCount(20);
-  }, [globalYearFilter, effectiveStore, globalLocationFilter, filterProjectStatus, deferredSearchTerm]);
+  }, [globalYearFilter, effectiveStore, globalLocationFilter, filterProjectStatus, deferredSearchTerm, fixedProjectCode]);
 
   const sortedProjects = useMemo(() => {
     return [...filteredProjects].sort((a, b) => {

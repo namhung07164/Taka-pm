@@ -107,11 +107,13 @@ export function useDetailFilterSync({
   setVisibleCount,
   setVisibleActiveProjectIds,
 }: UseDetailFilterSyncParams) {
+  const fixedProjectCode = useAppStore(state => state.fixedProjectCode);
+  const effectiveFilterTerm = deferredSearchTerm.trim() || (fixedProjectCode ? fixedProjectCode.trim() : '');
   const lastSelectedLocationFilterRef = useRef<string[]>(globalLocationFilter);
   const wasSearchingRef = useRef<boolean>(false);
 
   useEffect(() => {
-    const isSearching = !!deferredSearchTerm.trim();
+    const isSearching = !!effectiveFilterTerm;
     if (!wasSearchingRef.current && isSearching) {
       if (statusFilter !== 'all') {
         lastSelectedStatusFilterRef.current = statusFilter;
@@ -130,11 +132,11 @@ export function useDetailFilterSync({
       setGlobalLocationFilter(lastSelectedLocationFilterRef.current || []);
       wasSearchingRef.current = false;
     }
-  }, [deferredSearchTerm]);
+  }, [effectiveFilterTerm]);
 
-  // Auto-jump to matched project location(s) when searching (Debounced)
+  // Auto-jump to matched project location(s) when searching or fixing project code (Debounced)
   useEffect(() => {
-    const term = deferredSearchTerm.trim();
+    const term = effectiveFilterTerm;
     if (!term) return;
 
     const timer = setTimeout(() => {
@@ -176,7 +178,7 @@ export function useDetailFilterSync({
 
     return () => clearTimeout(timer);
   }, [
-    deferredSearchTerm,
+    effectiveFilterTerm,
     projects,
     tasksByProjectKey,
     globalYearFilter,
@@ -188,14 +190,14 @@ export function useDetailFilterSync({
   // Auto-clear stale filters when user manually changes Year / Store in Task Detail
   const prevYearStoreRef = useRef(`${globalYearFilter}_${effectiveStore}`);
   const prevTargetNavRef = useRef(
-    `${useAppStore.getState().detailTabFilterCode || ''}_${useAppStore.getState().detailTabFocusTaskId || ''}`
+    `${useAppStore.getState().detailTabFilterCode || ''}_${useAppStore.getState().detailTabFocusTaskId || ''}_${useAppStore.getState().fixedProjectCode || ''}`
   );
 
   useEffect(() => {
     const storeState = useAppStore.getState();
     const currentKey = `${globalYearFilter}_${effectiveStore}`;
-    const currentTargetNav = `${storeState.detailTabFilterCode || ''}_${storeState.detailTabFocusTaskId || ''}`;
-    const didTargetNavJustChange = prevTargetNavRef.current !== currentTargetNav && currentTargetNav !== '_';
+    const currentTargetNav = `${storeState.detailTabFilterCode || ''}_${storeState.detailTabFocusTaskId || ''}_${storeState.fixedProjectCode || ''}`;
+    const didTargetNavJustChange = prevTargetNavRef.current !== currentTargetNav && currentTargetNav !== '__';
     prevTargetNavRef.current = currentTargetNav;
 
     if (prevYearStoreRef.current !== currentKey) {
@@ -232,8 +234,8 @@ export function useDetailFilterSync({
         }
       }
 
-      // Always reset to 'On process + Upcoming 3 days' when switching Year or Store, unless actively searching
-      if (!searchTerm.trim()) {
+      // Always reset to 'On process + Upcoming 3 days' when switching Year or Store, unless actively searching or fixing a project
+      if (!searchTerm.trim() && !(fixedProjectCode && fixedProjectCode.trim())) {
         setStatusFilter('On process + Upcoming 3 days');
         lastSelectedStatusFilterRef.current = 'On process + Upcoming 3 days';
         safeSetItemSession('taka_detail_status_filter', 'On process + Upcoming 3 days');
@@ -246,6 +248,7 @@ export function useDetailFilterSync({
     globalLocationFilter,
     statusFilter,
     searchTerm,
+    fixedProjectCode,
     setGlobalLocationFilter,
     setStatusFilter,
     setSearchTerm,
@@ -277,8 +280,9 @@ export function useDetailFilterSync({
 
   // Ensure visibleCount is large enough to render target project row
   useEffect(() => {
-    if (!initialFilterCode) return;
-    const filterClean = String(initialFilterCode).trim().toUpperCase();
+    const activeTargetCode = initialFilterCode || fixedProjectCode;
+    if (!activeTargetCode) return;
+    const filterClean = String(activeTargetCode).trim().toUpperCase();
     const projIdx = filteredProjects.findIndex(p => {
       const pCode = String(p.code || '').trim().toUpperCase();
       const pId = String(p.id || '').trim().toUpperCase();
@@ -287,7 +291,7 @@ export function useDetailFilterSync({
     if (projIdx >= 0 && projIdx >= visibleCount) {
       setVisibleCount(projIdx + 25);
     }
-  }, [initialFilterCode, filteredProjects, visibleCount, setVisibleCount]);
+  }, [initialFilterCode, fixedProjectCode, filteredProjects, visibleCount, setVisibleCount]);
 
   const prevVisibleIdsRef = useRef<string>('');
   useEffect(() => {
