@@ -15,8 +15,49 @@ interface UseLayoutTabSettingsProps {
 const LAYOUT_SETTINGS_CACHE_KEY = 'taka_cache_layout_settings_v1';
 const LAYOUT_EXPORT_TS_KEY = 'taka_layout_export_ts_v1';
 
+// Module-level singleton listener pool to prevent re-reading taka_settings on every tab switch
+let sharedLayoutSettingsData: Record<string, any> | null = null;
+let sharedLayoutTriggerData: Record<string, any> | null = null;
+let sharedUnsubLayout: (() => void) | null = null;
+let sharedUnsubTrigger: (() => void) | null = null;
+const layoutSettingsSubscribers = new Set<(data: Record<string, any>) => void>();
+const layoutTriggerSubscribers = new Set<(data: Record<string, any>) => void>();
+
+function ensureSharedLayoutListeners() {
+  if (!sharedUnsubLayout) {
+    usePerformanceStore.getState().registerListener('taka_settings/layout');
+    sharedUnsubLayout = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout'), (docSnap) => {
+      usePerformanceStore.getState().trackSnapshot('taka_settings/layout', docSnap);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        sharedLayoutSettingsData = data;
+        try {
+          localStorage.setItem(LAYOUT_SETTINGS_CACHE_KEY, JSON.stringify(data));
+        } catch {}
+        layoutSettingsSubscribers.forEach((cb) => cb(data));
+      }
+    }, (error) => {
+      console.error('Error listening to layout settings', error);
+    });
+  }
+  if (!sharedUnsubTrigger) {
+    usePerformanceStore.getState().registerListener('taka_settings/layout_trigger');
+    sharedUnsubTrigger = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout_trigger'), (docSnap) => {
+      usePerformanceStore.getState().trackSnapshot('taka_settings/layout_trigger', docSnap);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        sharedLayoutTriggerData = data;
+        layoutTriggerSubscribers.forEach((cb) => cb(data));
+      }
+    }, (error) => {
+      console.error('Error listening to layout_trigger', error);
+    });
+  }
+}
+
 export function useLayoutTabSettings({ activeStore, locFilterStr, canWrite = false }: UseLayoutTabSettingsProps) {
   const [layoutSettings, setLayoutSettings] = useState<Record<string, any>>(() => {
+    if (sharedLayoutSettingsData) return sharedLayoutSettingsData;
     try {
       const raw = localStorage.getItem(LAYOUT_SETTINGS_CACHE_KEY);
       if (raw) return JSON.parse(raw) || {};
@@ -38,53 +79,38 @@ export function useLayoutTabSettings({ activeStore, locFilterStr, canWrite = fal
 
   const docKey = `url_${activeStore}_${locFilterStr}`;
 
-  // Listen to layout settings & triggers from Firestore
+  // Reuse warm singleton listener for layout settings & triggers across tab switches (0 extra reads)
   useEffect(() => {
-    usePerformanceStore.getState().registerListener('taka_settings/layout');
-    usePerformanceStore.getState().registerListener('taka_settings/layout_trigger');
-
-    const unsubLayout = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout'), (docSnap) => {
-      usePerformanceStore.getState().trackSnapshot('taka_settings/layout', docSnap);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setLayoutSettings(data);
-        try {
-          localStorage.setItem(LAYOUT_SETTINGS_CACHE_KEY, JSON.stringify(data));
-        } catch {}
-      }
-    }, (error) => {
-      console.error('Error listening to layout settings', error);
-    });
-
-    const unsubTrigger = onSnapshot(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_settings', 'layout_trigger'), (docSnap) => {
-      usePerformanceStore.getState().trackSnapshot('taka_settings/layout_trigger', docSnap);
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.is_ready_to_export === false) {
+    ensureSharedLayoutListeners();
+    if (sharedLayoutSettingsData) {
+      setLayoutSettings(sharedLayoutSettingsData);
+    }
+    const handleTriggerUpdate = (data: Record<string, any>) => {
+      if (data.is_ready_to_export === false) {
+        setIsExporting(false);
+        if (data.export_completed_at) {
+          setCacheBuster(data.export_completed_at);
+          try {
+            localStorage.setItem(LAYOUT_EXPORT_TS_KEY, String(data.export_completed_at));
+          } catch {}
+        }
+      } else if (data.is_ready_to_export === true) {
+        if (data.requested_at && Date.now() - data.requested_at < 15000) {
+          setIsExporting(true);
+        } else {
           setIsExporting(false);
-          if (data.export_completed_at) {
-            setCacheBuster(data.export_completed_at);
-            try {
-              localStorage.setItem(LAYOUT_EXPORT_TS_KEY, String(data.export_completed_at));
-            } catch {}
-          }
-        } else if (data.is_ready_to_export === true) {
-          if (data.requested_at && Date.now() - data.requested_at < 15000) {
-            setIsExporting(true);
-          } else {
-            setIsExporting(false);
-          }
         }
       }
-    }, (error) => {
-      console.error('Error listening to layout_trigger', error);
-    });
+    };
+    if (sharedLayoutTriggerData) {
+      handleTriggerUpdate(sharedLayoutTriggerData);
+    }
+    layoutSettingsSubscribers.add(setLayoutSettings);
+    layoutTriggerSubscribers.add(handleTriggerUpdate);
 
     return () => {
-      unsubLayout();
-      unsubTrigger();
-      usePerformanceStore.getState().unregisterListener('taka_settings/layout');
-      usePerformanceStore.getState().unregisterListener('taka_settings/layout_trigger');
+      layoutSettingsSubscribers.delete(setLayoutSettings);
+      layoutTriggerSubscribers.delete(handleTriggerUpdate);
     };
   }, []);
 

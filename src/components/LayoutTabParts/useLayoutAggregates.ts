@@ -67,42 +67,47 @@ export function useLayoutAggregates({
       }
     });
 
+    const preIndexedUnits = units.map((u: any) => {
+      const uName = String(u?.name || '').trim().toLowerCase();
+      const uId = String(u?.id || '').trim().toLowerCase();
+      const linkedCodes = [
+        ...(unitToProjectCodesMap.get(uName) || []),
+        ...(unitToProjectCodesMap.get(uId) || []),
+      ];
+      return { uName, uId, linkedCodes };
+    });
+
     const allowedCodeSet = new Set<string>();
     enrichedProjects.forEach(p => {
       const pMeta = extractProjectMetadata(p);
       if (!projectMatchesScope(pMeta, { store: storeFilter, location: targetLoc, year: effectiveLayoutYear })) return;
       const pCodes = extractAllProjectCodes(p);
-      pCodes.forEach(c => {
-        if (c) allowedCodeSet.add(c.toLowerCase());
+      const pCodesLower = pCodes.map(c => c.toLowerCase());
+      pCodesLower.forEach(c => {
+        if (c) allowedCodeSet.add(c);
       });
-      units.forEach((u: any) => {
-        const uName = String(u?.name || '').trim().toLowerCase();
-        const uId = String(u?.id || '').trim().toLowerCase();
-        const linkedCodes = [
-          ...(unitToProjectCodesMap.get(uName) || []),
-          ...(unitToProjectCodesMap.get(uId) || []),
-        ];
-        const isLinked = linkedCodes.some(lc =>
-          pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
+      for (let i = 0; i < preIndexedUnits.length; i++) {
+        const { uName, uId, linkedCodes } = preIndexedUnits[i];
+        const isExact = (uName && pCodesLower.includes(uName)) || (uId && pCodesLower.includes(uId));
+        const isLinked = !isExact && linkedCodes.length > 0 && linkedCodes.some(lc =>
+          pCodesLower.includes(lc) || projectMatchesUnitCode(pCodes, lc)
         );
-        const isExact = pCodes.some(c => c.toLowerCase() === uName || c.toLowerCase() === uId);
         if (isExact || isLinked || projectMatchesUnitCode(pCodes, uName || uId)) {
           if (uName) allowedCodeSet.add(uName);
           if (uId) allowedCodeSet.add(uId);
         }
-      });
+      }
     });
 
     const restrictedSet = new Set<string>();
     const isPartyRestricted = currUser.byPartyAccess === true && currUser.partyPermissions?.['all'] !== true;
 
     if (isPartyRestricted) {
-      units.forEach((u: any) => {
-        const uName = String(u?.name || '').trim().toLowerCase();
-        const uId = String(u?.id || '').trim().toLowerCase();
+      for (let i = 0; i < preIndexedUnits.length; i++) {
+        const { uName, uId } = preIndexedUnits[i];
         if (uName && !allowedCodeSet.has(uName)) restrictedSet.add(uName);
         if (uId && !allowedCodeSet.has(uId)) restrictedSet.add(uId);
-      });
+      }
     }
 
     allProjects.forEach(p => {
@@ -114,13 +119,13 @@ export function useLayoutAggregates({
           restrictedSet.add(code);
         }
       });
-      units.forEach((u: any) => {
-        const uName = String(u?.name || '').trim().toLowerCase();
-        if (!uName || allowedCodeSet.has(uName)) return;
+      for (let i = 0; i < preIndexedUnits.length; i++) {
+        const { uName } = preIndexedUnits[i];
+        if (!uName || allowedCodeSet.has(uName)) continue;
         if (pCodes.includes(uName) || projectMatchesUnitCode(pCodes, uName)) {
           restrictedSet.add(uName);
         }
-      });
+      }
     });
 
     return restrictedSet;

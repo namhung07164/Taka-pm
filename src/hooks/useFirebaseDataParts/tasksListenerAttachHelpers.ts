@@ -134,16 +134,16 @@ export function evaluateProjectTaskHydrationState(params: {
     p.taskSummaries.length === 0 &&
     localProjTasks.length === 0;
 
-  // CRITICAL MULTI-DEVICE GUARD:
-  // Never bypass Firestore verification if markers are expired (>24h offline) or when the user
-  // explicitly expands/searches a project (`isTargetedExpansion`) that has not yet been verified from the server in this session.
+  // CRITICAL MULTI-DEVICE GUARD + ZERO-READ OPTIMIZATION:
+  // If the real-time delta channel is connected and local cache already covers 100% of taskSummaries (with fresh marker),
+  // or if the project definitively has 0 tasks (`taskCount === 0` and empty `taskSummaries`), avoid redundant Firestore reads.
   const isFreshOrVerified = isTargetedExpansion
-    ? isVerifiedInSession
+    ? isVerifiedInSession || (isProjMarkerFresh && deltaFirstTasks && (coversAllSummaries || isZeroTaskProject))
     : isProjMarkerFresh || isVerifiedInSession;
 
   const deltaManaged =
     isFreshOrVerified &&
-    ((isZeroTaskProject && !isTargetedExpansion) ||
+    (isZeroTaskProject ||
       (hasLocalProjTasks && isArchivedPastYear) ||
       (deltaFirstTasks && (coversAllSummaries || hasLocalProjTasks)));
 

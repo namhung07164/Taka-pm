@@ -18,6 +18,8 @@ function normalizeStore(store?: string | null): string {
   return s;
 }
 
+const unitImagesSessionCache = new Map<string, Array<{ id: string; url: string; title?: string; createdAt?: string; store?: string }>>();
+
 interface UseTooltipImagesParams {
   p?: Project;
   data: any;
@@ -52,21 +54,35 @@ export function useTooltipImages({
   const activeUnitStorageKey = `taka_unit_images_${activeStore}_${cleanCode}`;
   const unitImagesDocKey = `${activeStore}_${cleanCode}`;
 
-  // 1. Instant 0ms load from localStorage
-  // 2. Real-time Firestore sync on taka_unit_images for cross-device sync (Desktop <-> iOS <-> Android)
+  // 1. Instant 0ms load from session memory cache / localStorage
+  // 2. Smart Firestore sync on taka_unit_images: avoid hover read-storms by reusing session cache unless image panel is opened
   useEffect(() => {
     let localImages: any[] = [];
-    try {
-      const saved = localStorage.getItem(activeUnitStorageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          localImages = parsed.filter(item => !item.store || normalizeStore(item.store) === activeStore);
-          setCustomUnitImages(localImages);
+    if (unitImagesSessionCache.has(unitImagesDocKey)) {
+      localImages = unitImagesSessionCache.get(unitImagesDocKey)!;
+      setCustomUnitImages(localImages);
+    } else {
+      try {
+        const saved = localStorage.getItem(activeUnitStorageKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            localImages = parsed.filter(item => !item.store || normalizeStore(item.store) === activeStore);
+            setCustomUnitImages(localImages);
+          } else {
+            setCustomUnitImages([]);
+          }
+        } else {
+          setCustomUnitImages([]);
         }
+      } catch {
+        setCustomUnitImages([]);
       }
-    } catch {
-      setCustomUnitImages([]);
+    }
+
+    // If user is only hovering (image panel closed) and this unit was already synced in session, skip Firestore listener (0 reads)
+    if (!showImagePanel && !quickImageMode && unitImagesSessionCache.has(unitImagesDocKey)) {
+      return;
     }
 
     const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_unit_images", unitImagesDocKey);
@@ -75,6 +91,7 @@ export function useTooltipImages({
         const cloudData = snap.data();
         if (Array.isArray(cloudData?.images)) {
           const cloudImages = cloudData.images.filter((item: any) => !item.store || normalizeStore(item.store) === activeStore);
+          unitImagesSessionCache.set(unitImagesDocKey, cloudImages);
           setCustomUnitImages(cloudImages);
           try {
             localStorage.setItem(activeUnitStorageKey, JSON.stringify(cloudImages));
@@ -82,6 +99,7 @@ export function useTooltipImages({
           return;
         }
       } else if (localImages.length > 0 && canWrite) {
+        unitImagesSessionCache.set(unitImagesDocKey, localImages);
         // Auto-heal: If images existed in desktop's localStorage, sync them up to Firestore so iOS receives them
         setDoc(docRef, {
           unitCode: cleanCode,
@@ -89,13 +107,15 @@ export function useTooltipImages({
           images: localImages,
           updatedAt: new Date().toISOString(),
         }, { merge: true }).catch(() => {});
+      } else {
+        unitImagesSessionCache.set(unitImagesDocKey, []);
       }
     }, (err) => {
       console.warn("[useTooltipImages] Cloud sync listener:", err);
     });
 
     return () => unsub();
-  }, [activeUnitStorageKey, activeStore, cleanCode, unitImagesDocKey, canWrite]);
+  }, [activeUnitStorageKey, activeStore, cleanCode, unitImagesDocKey, canWrite, showImagePanel, quickImageMode]);
 
   useEffect(() => {
     setShowImagePanel(Boolean(quickImageMode));
@@ -141,6 +161,7 @@ export function useTooltipImages({
       store: activeStore,
     };
     const updated = [newEntry, ...customUnitImages];
+    unitImagesSessionCache.set(unitImagesDocKey, updated);
     setCustomUnitImages(updated);
     setNewLinkInput('');
     setShowAddLinkInput(false);
@@ -233,8 +254,9 @@ export function useTooltipImages({
     if (!canWrite) return;
     const targetUrl = urlToDelete || customUnitImages.find(item => item.id === id)?.url;
 
-    // 1. Immediately remove from local component state
+    // 1. Immediately remove from local component state & session cache
     const updated = customUnitImages.filter(item => item.id !== id && (urlToDelete ? item.url !== urlToDelete : true));
+    unitImagesSessionCache.set(unitImagesDocKey, updated);
     setCustomUnitImages(updated);
 
     // 2. Resolve matching project

@@ -390,16 +390,25 @@ export function useLayoutFloorData({
     }
   }, [bgImage, availableStoreVersions, activeBgUrl]);
 
+  // O(1) In-Memory Cache for hasStoredUnitImages to eliminate 1,000+ synchronous localStorage.getItem + JSON.parse calls per canvas render
+  const unitImagesCheckCacheRef = useRef<Map<string, boolean>>(new Map());
+
   // Helper to accurately check if unit has user-attached images in localStorage partitioned by store
   const hasStoredUnitImages = useCallback((key: string | undefined | null, overrideStore?: string): boolean => {
     if (typeof window === 'undefined' || !key) return false;
     try {
       const activeStore = (overrideStore || (storeFilter === 'HN' ? 'HN' : 'HCM')).toUpperCase();
       const storeKey = `taka_unit_images_${activeStore}_${key}`;
+      const cached = unitImagesCheckCacheRef.current.get(storeKey);
+      if (cached !== undefined) return cached;
+
       const raw = localStorage.getItem(storeKey);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) return true;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          unitImagesCheckCacheRef.current.set(storeKey, true);
+          return true;
+        }
       }
       // Migrate legacy un-prefixed key for HN if present
       if (activeStore === 'HN') {
@@ -411,11 +420,13 @@ export function useLayoutFloorData({
               const tagged = parsed.map((item: any) => ({ ...item, store: 'HN' }));
               localStorage.setItem(storeKey, JSON.stringify(tagged));
               localStorage.removeItem(`taka_unit_images_${key}`);
+              unitImagesCheckCacheRef.current.set(storeKey, true);
               return true;
             }
           } catch {}
         }
       }
+      unitImagesCheckCacheRef.current.set(storeKey, false);
       return false;
     } catch {
       return false;
@@ -426,6 +437,7 @@ export function useLayoutFloorData({
   const [unitImagesRev, setUnitImagesRev] = useState(0);
   useEffect(() => {
     const handleStorageChange = () => {
+      unitImagesCheckCacheRef.current.clear();
       setUnitImagesRev(prev => prev + 1);
     };
     window.addEventListener('taka_unit_images_changed', handleStorageChange);

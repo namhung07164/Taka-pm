@@ -10,11 +10,15 @@ import {
   Compass,
   Search,
   X,
-  Layers
+  Layers,
+  Image as ImageIcon
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getHatchCssStyle } from './layoutPatternUtils';
 import { LayoutLegendExportMenu } from './LayoutLegendExportMenu';
+import { useColorLegendImages } from './useColorLegendImages';
+import { TooltipImageGalleryPanel } from './TooltipParts/TooltipImageGalleryPanel';
+import { LayoutUnitLightboxModal } from './LayoutUnitLightboxModal';
 
 export type LegendDockPosition = 'top-right' | 'bottom-right' | 'bottom-left';
 
@@ -65,6 +69,23 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
     }
     return 'top-right';
   });
+
+  const {
+    cleanCode,
+    showImagePanel,
+    setShowImagePanel,
+    showAddLinkInput,
+    setShowAddLinkInput,
+    newLinkInput,
+    setNewLinkInput,
+    copiedLink,
+    enlargedImage,
+    setEnlargedImage,
+    allLegendImages,
+    handleAddCustomImage,
+    handleDeleteCustomImage,
+    handleCopyLink,
+  } = useColorLegendImages(canWrite);
 
   const nodeRef = useRef<HTMLDivElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -137,6 +158,7 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
   }[dockPosition];
 
   return (
+    <>
     <Draggable
       handle=".legend-drag-handle"
       cancel="button, input, select, textarea, .no-drag"
@@ -148,7 +170,7 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
         className={cn(
           "absolute z-30 pointer-events-auto hide-on-actual-print print:hidden transition-shadow select-none",
           dockClasses,
-          isCollapsed ? "max-w-xs" : "w-[330px] sm:w-[390px] max-w-[calc(100vw-1.5rem)]"
+          isCollapsed && !showImagePanel ? "max-w-xs" : "w-[330px] sm:w-[390px] max-w-[calc(100vw-1.5rem)]"
         )}
       >
         <div className="bg-white/95 dark:bg-[#1a1a1c]/95 backdrop-blur-xl rounded-2xl border border-slate-200/90 dark:border-[#333336] shadow-2xl p-2 sm:p-2.5 transition-all text-slate-800 dark:text-slate-100">
@@ -196,6 +218,27 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
                   Clear Filter
                 </button>
               )}
+
+              {/* Attached Images & Links Toggle Button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowImagePanel(!showImagePanel);
+                }}
+                className={cn(
+                  "flex items-center gap-1 px-1.5 py-1 rounded-lg text-[10px] font-semibold transition-all border cursor-pointer active:scale-95 touch-manipulation shrink-0",
+                  showImagePanel
+                    ? "bg-blue-600 text-white border-blue-700 shadow-xs"
+                    : allLegendImages.length > 0
+                      ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800/80 hover:bg-blue-100 dark:hover:bg-blue-900/60"
+                      : "bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-blue-600 dark:hover:text-blue-400"
+                )}
+                title={allLegendImages.length > 0 ? `View ${allLegendImages.length} attached image(s) / link(s)` : "Attach image or link to Color Legend"}
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                {allLegendImages.length > 0 && <span>{allLegendImages.length}</span>}
+              </button>
 
               {/* Dock Position Switcher */}
               <button
@@ -263,6 +306,28 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
               </button>
             </div>
           </div>
+
+          {/* Attached Images & Links Panel */}
+          {showImagePanel && (
+            <div className="no-drag mt-2">
+              <TooltipImageGalleryPanel
+                showImagePanel={showImagePanel}
+                setShowImagePanel={setShowImagePanel}
+                showAddLinkInput={showAddLinkInput}
+                setShowAddLinkInput={setShowAddLinkInput}
+                newLinkInput={newLinkInput}
+                setNewLinkInput={setNewLinkInput}
+                allUnitImages={allLegendImages}
+                copiedLink={copiedLink}
+                handleAddCustomImage={handleAddCustomImage}
+                handleDeleteCustomImage={handleDeleteCustomImage}
+                handleCopyLink={handleCopyLink}
+                setEnlargedImage={setEnlargedImage}
+                unitCode={cleanCode}
+                canWrite={canWrite}
+              />
+            </div>
+          )}
 
           {/* Body List (Visible when Expanded) */}
           {!isCollapsed && (
@@ -418,5 +483,14 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
         </div>
       </div>
     </Draggable>
+    {enlargedImage && (
+      <LayoutUnitLightboxModal
+        enlargedImage={enlargedImage}
+        onClose={() => setEnlargedImage(null)}
+        onCopyLink={handleCopyLink}
+        copiedLink={copiedLink}
+      />
+    )}
+    </>
   );
 });

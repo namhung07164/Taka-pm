@@ -146,6 +146,24 @@ export function buildAggregatedUnitData({
     }
   });
 
+  // Pre-index dataMap unit entries once to avoid O(P * U) string allocations & Map lookups
+  const preIndexedUnits = Object.keys(dataMap).map((uKey) => {
+    const uEntry = dataMap[uKey];
+    const uKeyLower = uKey.toLowerCase();
+    const uName = uEntry?.name ? String(uEntry.name) : '';
+    const uNameLower = uName.toLowerCase();
+    const uIdLower = uEntry?.id ? String(uEntry.id).toLowerCase() : '';
+    const uStore = (uEntry?.store || storeFilter || '').toUpperCase().trim();
+    const uLoc = (uEntry?.location || targetLoc || '').toUpperCase().trim();
+    const uYr = String(uEntry?.year || effectiveLayoutYear || '').trim();
+    const linkedCodes = [
+      ...(unitToProjectCodesMap.get(uKeyLower) || []),
+      ...(uNameLower ? (unitToProjectCodesMap.get(uNameLower) || []) : []),
+      ...(uIdLower ? (unitToProjectCodesMap.get(uIdLower) || []) : []),
+    ];
+    return { uKey, uKeyLower, uName, uNameLower, uStore, uLoc, uYr, linkedCodes };
+  });
+
   const now = new Date();
   enrichedProjects.forEach((p) => {
     if (!p.code && !p.linkCodes) return;
@@ -157,6 +175,7 @@ export function buildAggregatedUnitData({
     }
 
     const pCodes = extractAllProjectCodes(p);
+    const pCodesLower = pCodes.map(c => c.toLowerCase());
     const status = getStatus(p.computedTakStart || p.start, p.computedTakCompl || p.handover, p.computedOpening || p.opening, p.code);
     
     const seenTaskKeys = new Set<string>();
@@ -244,34 +263,27 @@ export function buildAggregatedUnitData({
     const partyStr = p.party || (p as any).contractor || '';
     const mdStatusStr = p.mdStatus || '';
 
+    const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
     const targetUnitKeys = new Set<string>();
-    Object.keys(dataMap).forEach(uKey => {
-      const uEntry = dataMap[uKey];
-      if (!uEntry) return;
-      const uStore = (uEntry.store || storeFilter || '').toUpperCase().trim();
-      const uLoc = (uEntry.location || targetLoc || '').toUpperCase().trim();
-      const uYr = String(uEntry.year || effectiveLayoutYear || '').trim();
+    for (let i = 0; i < preIndexedUnits.length; i++) {
+      const u = preIndexedUnits[i];
+      if (pMeta.store && u.uStore && u.uStore !== 'ALL' && pMeta.store !== u.uStore) continue;
+      if (pMeta.location && u.uLoc && !isStorewide && pMeta.location !== u.uLoc) continue;
+      if (pMeta.year && u.uYr && u.uYr !== 'ALL' && u.uYr !== 'all' && pMeta.year !== u.uYr) continue;
 
-      // Strict Store, Location, and Year Isolation
-      if (pMeta.store && uStore && uStore !== 'ALL' && uStore !== 'all' && pMeta.store !== uStore) return;
-      const isStorewide = pMeta.location === 'ALL' || pMeta.location === 'STORE' || pMeta.location === 'STOREWIDE' || pMeta.location === 'WHOLE STORE' || pMeta.location === 'ALL FLOORS';
-      if (pMeta.location && uLoc && !isStorewide && pMeta.location !== uLoc) return;
-      if (pMeta.year && uYr && uYr !== 'ALL' && uYr !== 'all' && pMeta.year !== uYr) return;
-
-      const linkedCodes = [
-        ...(unitToProjectCodesMap.get(uKey.toLowerCase()) || []),
-        ...(uEntry.name ? (unitToProjectCodesMap.get(uEntry.name.toLowerCase()) || []) : []),
-        ...(uEntry.id ? (unitToProjectCodesMap.get(uEntry.id.toLowerCase()) || []) : []),
-      ];
-      const isLinkedViaProjectLink = linkedCodes.some(lc => 
-        pCodes.some(pc => pc.toLowerCase() === lc.toLowerCase() || projectMatchesUnitCode([pc], lc))
-      );
-
-      const isExactCode = pCodes.some(c => c.toLowerCase() === uKey.toLowerCase() || (uEntry.name && c.toLowerCase() === uEntry.name.toLowerCase()));
-      if (isExactCode || isLinkedViaProjectLink || projectMatchesUnitCode(pCodes, uKey) || (uEntry.name && projectMatchesUnitCode(pCodes, uEntry.name))) {
-        targetUnitKeys.add(uKey);
+      const isExactCode = pCodesLower.includes(u.uKeyLower) || (Boolean(u.uNameLower) && pCodesLower.includes(u.uNameLower));
+      if (isExactCode) {
+        targetUnitKeys.add(u.uKey);
+        continue;
       }
-    });
+
+      const isLinkedViaProjectLink = u.linkedCodes.length > 0 && u.linkedCodes.some(lc =>
+        pCodesLower.includes(lc) || projectMatchesUnitCode(pCodes, lc)
+      );
+      if (isLinkedViaProjectLink || projectMatchesUnitCode(pCodes, u.uKey) || (u.uName && projectMatchesUnitCode(pCodes, u.uName))) {
+        targetUnitKeys.add(u.uKey);
+      }
+    }
 
     targetUnitKeys.forEach(code => {
        if (dataMap[code]) {
