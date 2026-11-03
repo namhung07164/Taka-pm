@@ -7,6 +7,9 @@ import { recordBatchDeltas } from '../../lib/deltaSyncService';
 import { executeMassBatchOperations, MassWriteOp } from '../../lib/massBatchWriteEngine';
 import { validateProjectsImportData, generateTaskErrorReportCSV, ImportValidationResult } from './importValidator';
 import { ImportErrorModal } from './ImportErrorModal';
+import { hydrateProjectsForImport, RawImportProjectKey } from './detailProjectImportHydrator';
+import { normalizeDashes } from '../../lib/utils';
+import { normalizeStoreCode, normalizeYearString } from '../../lib/taskDeduplicationService';
 
 interface UseDetailProjectCsvParams {
   filteredProjects: Project[];
@@ -70,20 +73,47 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
           return;
         }
 
-        const currentStoreProjects = useAppStore.getState().projects.length > 0
+        const initialStoreProjects = useAppStore.getState().projects.length > 0
           ? useAppStore.getState().projects
           : projects;
+
+        // Extract composite keys from CSV to hydrate any projects in unloaded years/stores from Dexie & Firestore
+        const rawKeysToHydrate: RawImportProjectKey[] = [];
+        const codeIdx = headers.findIndex(h => ['code', 'projectcode', 'project code'].includes(h));
+        const yearIdx = headers.findIndex(h => ['year', 'projectyear', 'project year'].includes(h));
+        const storeIdx = headers.findIndex(h => ['store', 'projectstore', 'project store'].includes(h));
+        for (const row of dataRows) {
+          const c = codeIdx >= 0 ? String(row[codeIdx] || '').trim() : '';
+          const y = yearIdx >= 0 ? String(row[yearIdx] || '').trim() : '';
+          const s = storeIdx >= 0 ? String(row[storeIdx] || '').trim() : '';
+          if (c) rawKeysToHydrate.push({ projectCode: c, projectYear: y, projectStore: s });
+        }
+
+        const hydratedStoreProjects = await hydrateProjectsForImport(rawKeysToHydrate, initialStoreProjects);
+        const currentStoreProjects = useAppStore.getState().projects.length > hydratedStoreProjects.length
+          ? useAppStore.getState().projects
+          : hydratedStoreProjects;
 
         let maxNo = currentStoreProjects.length > 0 ? Math.max(...currentStoreProjects.map(p => {
           const n = Number(p.no);
           return isNaN(n) ? 0 : n;
         })) : 0;
 
+        const buildProjectCompositeKey = (codeVal: any, yearVal: any, storeVal: any) => {
+          const c = normalizeDashes(String(codeVal || '')).replace(/\s+/g, '').toLowerCase();
+          const y = normalizeYearString(yearVal).toLowerCase();
+          const s = normalizeStoreCode(storeVal).toLowerCase();
+          return `${c}_${y}_${s}`;
+        };
+
         const processedProjects = new Map<string, Project>();
         const projectsById = new Map<string, Project>();
         currentStoreProjects.forEach(p => {
-          const key = `${String(p.code).trim().toLowerCase()}_${String(p.year || '').trim().toLowerCase()}_${String(p.store || '').trim().toLowerCase()}`;
-          processedProjects.set(key, p);
+          if (!p || p.isDeleted) return;
+          const key = buildProjectCompositeKey(p.code, p.year, p.store);
+          if (!processedProjects.has(key)) {
+            processedProjects.set(key, p);
+          }
           if (p.id) projectsById.set(String(p.id), p);
         });
 
@@ -130,6 +160,12 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
               let val: any = row[i];
               if (targetField === 'year') {
                 val = !isNaN(Number(val)) ? Number(val) : String(val).trim();
+              } else if (targetField === 'code') {
+                val = normalizeDashes(String(val || '')).replace(/\s+/g, '');
+              } else if (targetField === 'store') {
+                val = normalizeStoreCode(val) || String(val || '').trim().toUpperCase();
+              } else if (targetField === 'location') {
+                val = String(val || '').trim();
               } else if (targetField === 'shopType') {
                 val = val !== undefined && val !== null && String(val).trim() !== '' ? String(val).trim() : undefined;
               } else if (targetField === 'sizeM2') {
@@ -142,14 +178,16 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
           });
           
           if (p.code && p.year) {
-            const key = `${String(p.code).trim().toLowerCase()}_${String(p.year).trim().toLowerCase()}_${String(p.store || '').trim().toLowerCase()}`;
+            const key = buildProjectCompositeKey(p.code, p.year, p.store);
             const existing = processedProjects.get(key);
             let no = existing ? existing.no : null;
             let docId = existing ? (existing.id || String(existing.no)) : null;
             const isExistingOnServer = Boolean(existing && !newIds.has(String(docId)));
             
             if (!no) {
-              maxNo++;
+              do {
+                maxNo++;
+              } while (projectsById.has(String(maxNo)));
               no = maxNo;
               docId = String(no);
               newIds.add(docId);

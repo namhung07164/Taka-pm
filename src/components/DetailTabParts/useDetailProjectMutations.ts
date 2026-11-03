@@ -7,8 +7,10 @@ import { db, APP_ID } from '../../lib/firebase';
 import { undoManager } from '../../lib/undoManager';
 import { extractStorageUrls, deleteStorageFiles } from '../../lib/storageUtils';
 import { getProjectCodeChangePredecessorUpdates } from '../../lib/ganttUtils';
-import { generateId } from '../../lib/utils';
+import { generateId, normalizeDashes } from '../../lib/utils';
 import { deleteTaskStateUnified } from '../../lib/taskStateService';
+import { hydrateProjectsForImport } from './detailProjectImportHydrator';
+import { normalizeStoreCode, normalizeYearString } from '../../lib/taskDeduplicationService';
 
 interface UseDetailProjectMutationsParams {
   projects: Project[];
@@ -59,17 +61,41 @@ export function useDetailProjectMutations({
   const handleUpdateProject = async (p: Project, field: keyof Project, value: any) => {
     try {
       if ((field === 'code' || field === 'year' || field === 'store') && value !== p[field]) {
-        const newCode = field === 'code' ? value : p.code;
+        const newCode = normalizeDashes(String(field === 'code' ? value : p.code || '')).replace(/\s+/g, '');
         const newYear = field === 'year' ? value : p.year;
         const newStore = field === 'store' ? value : p.store;
-        const isDuplicate = projects.some(proj => 
-          proj.no !== p.no &&
-          String(proj.code).trim().toLowerCase() === String(newCode).trim().toLowerCase() &&
-          String(proj.year) === String(newYear) &&
-          String(proj.store) === String(newStore)
+
+        const initialAllProjects = useAppStore.getState().projects?.length
+          ? useAppStore.getState().projects
+          : projects;
+        const hydratedProjects = await hydrateProjectsForImport(
+          [{ projectCode: newCode, projectYear: String(newYear || ''), projectStore: String(newStore || '') }],
+          initialAllProjects
         );
+        const allCandidateProjects = useAppStore.getState().projects?.length
+          ? useAppStore.getState().projects
+          : hydratedProjects;
+
+        const targetCodeNorm = newCode.toLowerCase();
+        const targetYearNorm = normalizeYearString(newYear);
+        const targetStoreNorm = normalizeStoreCode(newStore);
+
+        const isDuplicate = allCandidateProjects.some(proj => {
+          if (!proj || proj.isDeleted) return false;
+          if (p.id && proj.id && String(proj.id) === String(p.id)) return false;
+          if (!p.id && !proj.id && String(proj.no) === String(p.no)) return false;
+          return (
+            normalizeDashes(String(proj.code || '')).replace(/\s+/g, '').toLowerCase() === targetCodeNorm &&
+            normalizeYearString(proj.year) === targetYearNorm &&
+            normalizeStoreCode(proj.store) === targetStoreNorm
+          );
+        });
         if (isDuplicate) {
-          useAppStore.getState().setToast({ title: "Notice", message: `Project code "${newCode}" already exists in year ${newYear} - Store ${newStore}. Please enter a different code.` });
+          useAppStore.getState().setToast({
+            title: "Duplicate Project Blocked",
+            message: `Project code "${newCode}" already exists in Year ${newYear} - Store ${newStore}. Please enter a different code.`,
+            type: "error"
+          });
           return;
         }
       }

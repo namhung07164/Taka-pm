@@ -1,7 +1,7 @@
 import React, { Dispatch, SetStateAction, useState } from 'react';
 import { Project, Task } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { removeCodeFromLinkCodesString, extractAllProjectCodes } from '../../lib/utils';
+import { removeCodeFromLinkCodesString, extractAllProjectCodes, normalizeDashes } from '../../lib/utils';
 import { doc } from 'firebase/firestore';
 import { writeBatch, setDoc, deleteDoc } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
@@ -10,9 +10,11 @@ import { addPendingUpdate } from '../../lib/syncQueue';
 import { calculateProjectComputedDates, getTasksForProject } from '../../lib/projectDatesService';
 import { deleteStorageFiles, extractStorageUrls } from '../../lib/storageUtils';
 import { recordDelta } from '../../lib/deltaSyncService';
-import { LinkCodesValidationError } from './projectModalTypes';
+import { LinkCodesValidationError, getLinkCodesValidationError } from './projectModalTypes';
 import { handleProjectIdentityChange } from './projectModalIdentityService';
 import { syncProjectSizeToUnits } from '../../lib/unitSizeResolver';
+import { hydrateProjectsForImport } from '../DetailTabParts/detailProjectImportHydrator';
+import { normalizeStoreCode, normalizeYearString } from '../../lib/taskDeduplicationService';
 
 interface UseProjectModalMutationsParams {
   project: Project | null;
@@ -57,13 +59,6 @@ export function useProjectModalMutations({
         return;
       }
 
-      const allStoreProjects = useAppStore.getState().projects || [];
-      const validNos = allStoreProjects.map(p => p.no).filter(n => typeof n === 'number' && !isNaN(n));
-      let no = project ? project.no : (validNos.length ? Math.max(...validNos) + 1 : 1);
-      if (isNaN(no)) no = (validNos.length ? Math.max(...validNos) + 1 : 1);
-
-      const docId = project?.id || String(no);
-
       if (!formData.year || String(formData.year).trim() === '') {
         setToast({ title: 'Validation Error', message: 'Project Year is strictly required.', type: 'error' });
         setIsSubmitting(false);
@@ -76,27 +71,100 @@ export function useProjectModalMutations({
         return;
       }
 
-      const cleanCode = String(formData.code || '').replace(/\s+/g, '');
+      const cleanCode = normalizeDashes(String(formData.code || '')).replace(/\s+/g, '');
       if (!cleanCode) {
         setToast({ title: 'Validation Error', message: 'Project Code is strictly required and cannot contain spaces.', type: 'error' });
         setIsSubmitting(false);
         return;
       }
 
-      if (linkCodesError) {
-        const yearDetail = linkCodesError.duplicateProjectYear ? ` (Year ${linkCodesError.duplicateProjectYear})` : '';
+      if (!formData.store || String(formData.store).trim() === '') {
+        setToast({ title: 'Validation Error', message: 'Store is strictly required.', type: 'error' });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (!formData.location || String(formData.location).trim() === '') {
+        setToast({ title: 'Validation Error', message: 'Location is strictly required.', type: 'error' });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Hydrate projects for the target (code, year, store) from Dexie & Firestore in case the target year is not currently active in memory
+      const initialStoreProjects = useAppStore.getState().projects || [];
+      const hydratedProjects = cloudStatus === 'offline'
+        ? initialStoreProjects
+        : await hydrateProjectsForImport(
+            [{ projectCode: cleanCode, projectYear: String(yearNum), projectStore: String(formData.store || '') }],
+            initialStoreProjects
+          );
+
+      const allStoreProjects = useAppStore.getState().projects?.length
+        ? useAppStore.getState().projects
+        : hydratedProjects;
+
+      const targetCodeNorm = cleanCode.toLowerCase();
+      const targetYearNorm = normalizeYearString(yearNum);
+      const targetStoreNorm = normalizeStoreCode(formData.store);
+
+      const duplicateProject = allStoreProjects.find(p => {
+        if (!p || p.isDeleted) return false;
+        if (project) {
+          if (project.id && p.id && String(p.id) === String(project.id)) return false;
+          if (!project.id && !p.id && String(p.no) === String(project.no)) return false;
+        }
+        const pCodeNorm = normalizeDashes(String(p.code || '')).replace(/\s+/g, '').toLowerCase();
+        const pYearNorm = normalizeYearString(p.year);
+        const pStoreNorm = normalizeStoreCode(p.store);
+        return pCodeNorm === targetCodeNorm && pYearNorm === targetYearNorm && pStoreNorm === targetStoreNorm;
+      });
+
+      if (duplicateProject) {
         setToast({
-          title: 'Duplicate Project Code',
-          message: `Code "${linkCodesError.invalidCode}" is already assigned to project "${linkCodesError.duplicateProjectCode}"${yearDetail} (${linkCodesError.duplicateProjectName}). Another project's code cannot be used as Project Code Link.`,
+          title: 'Duplicate Project Blocked',
+          message: `Project code "${cleanCode}" already exists in Year ${yearNum} - Store ${formData.store} (Location: ${duplicateProject.location || 'N/A'}, Name: "${duplicateProject.name || ''}"). Duplicate (Year, Store, Project Code) is not allowed.`,
           type: 'error'
         });
         setIsSubmitting(false);
         return;
       }
 
+      const rawLink = formData.linkCodes !== undefined ? String(formData.linkCodes) : cleanCode;
+      const resolvedLinkError = linkCodesError || getLinkCodesValidationError(
+        rawLink,
+        cleanCode,
+        project?.id,
+        allStoreProjects,
+        yearNum,
+        formData.store
+      );
+
+      if (resolvedLinkError) {
+        const yearDetail = resolvedLinkError.duplicateProjectYear ? ` (Year ${resolvedLinkError.duplicateProjectYear})` : '';
+        setToast({
+          title: 'Duplicate Project Code',
+          message: `Code "${resolvedLinkError.invalidCode}" is already assigned to project "${resolvedLinkError.duplicateProjectCode}"${yearDetail} (${resolvedLinkError.duplicateProjectName}). Another project's code cannot be used as Project Code Link.`,
+          type: 'error'
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      const existingIdSet = new Set(allStoreProjects.map(p => String(p.id || p.no || '')).filter(Boolean));
+      const validNos = allStoreProjects.map(p => Number(p.no)).filter(n => typeof n === 'number' && !isNaN(n));
+      let no = project ? project.no : (validNos.length ? Math.max(...validNos) + 1 : 1);
+      if (isNaN(no) || no <= 0) no = (validNos.length ? Math.max(...validNos) + 1 : 1);
+      if (!project) {
+        while (existingIdSet.has(String(no))) {
+          no++;
+        }
+      }
+
+      const docId = project?.id || String(no);
+
       const storeTasks = useAppStore.getState().tasks;
       const storeDelegationGroups = useAppStore.getState().delegationGroups;
-      const projectForDates = project ? { ...project, ...formData } : formData;
+      const projectForDates = project ? { ...project, ...formData, code: cleanCode } : { ...formData, code: cleanCode };
       const computedDates = calculateProjectComputedDates(
         projectForDates,
         getTasksForProject(projectForDates, storeTasks),
@@ -107,8 +175,8 @@ export function useProjectModalMutations({
         ...formData,
         no,
         year: yearNum,
-        code: String(formData.code).trim(),
-        linkCodes: formData.linkCodes ? String(formData.linkCodes).trim() : String(formData.code).trim(),
+        code: cleanCode,
+        linkCodes: formData.linkCodes ? normalizeDashes(String(formData.linkCodes)).trim() : cleanCode,
         shopType: formData.shopType !== undefined && formData.shopType !== null ? String(formData.shopType).trim() : '',
         sizeM2: (formData.sizeM2 !== undefined && formData.sizeM2 !== null && (formData.sizeM2 as any) !== '' && !isNaN(Number(formData.sizeM2)))
           ? Number(formData.sizeM2)
@@ -153,19 +221,6 @@ export function useProjectModalMutations({
           delete dataToSave[key];
         }
       });
-
-      const isDuplicate = projects.some(p =>
-        String(p.code || '').trim().toLowerCase() === String(formData.code || '').trim().toLowerCase() &&
-        String(p.year) === String(formData.year) &&
-        String(p.store || '').trim().toLowerCase() === String(formData.store || '').trim().toLowerCase() &&
-        (!project || (project.id && p.id ? p.id !== project.id : String(p.no) !== String(project.no)))
-      );
-
-      if (isDuplicate) {
-        setToast({ title: "Error", message: `Project code "${formData.code}" already exists in year ${formData.year} - Store ${formData.store}. Please enter a different code.`, type: "error" });
-        setIsSubmitting(false);
-        return;
-      }
 
       const isIdentityChange = project && (
         String(project.code || '').trim() !== String(formData.code || '').trim() ||
