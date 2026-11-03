@@ -72,7 +72,25 @@ export async function deleteProjectStateUnified(
 
   const relatedTaskIds = new Set<string>(relatedTaskMap.keys());
 
+  const hasOtherProjectWithSameCode = currentProjects.some((p) => {
+    if (pId && p.id && String(p.id).trim() === String(pId).trim()) return false;
+    const pStrCode = String(p.code || '').trim().toLowerCase();
+    const pStrStore = p.store ? String(p.store).trim().toLowerCase() : '';
+    const pStrYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+    return (
+      pStrCode === pCode &&
+      (!pStore || !pStrStore || pStore === pStrStore) &&
+      (!pYear || !pStrYear || pYear === pStrYear)
+    );
+  });
+
   const relatedCosts = currentCosts.filter((c) => {
+    const cProjId = (c as any).projectId ? String((c as any).projectId).trim() : '';
+    if (cProjId && pId) {
+      return cProjId === String(pId).trim();
+    }
+    if (hasOtherProjectWithSameCode) return false;
+
     const cStore = (c as any).projectStore ? String((c as any).projectStore).trim().toLowerCase() : '';
     const cYear =
       (c as any).projectYear !== undefined && (c as any).projectYear !== null
@@ -83,13 +101,19 @@ export async function deleteProjectStateUnified(
     if (pStore && cStore && pStore !== cStore) return false;
     if (pYear && cYear && pYear !== cYear) return false;
 
-    if ((c as any).projectId && String((c as any).projectId) === pId) return true;
     if (cCode && pCode && (cCode === pCode || matchProjectCode(cCode, pCode))) return true;
     return false;
   });
   const relatedCostIds = new Set(relatedCosts.map((c) => String(c.id)));
 
   const relatedDelegations = currentDelegations.filter((d) => {
+    const dProjId = (d as any).projectId ? String((d as any).projectId).trim() : '';
+    if (dProjId && pId) {
+      return dProjId === String(pId).trim();
+    }
+    if (d.parentTaskId && relatedTaskIds.has(String(d.parentTaskId))) return true;
+    if (hasOtherProjectWithSameCode) return false;
+
     const dStore = (d as any).projectStore ? String((d as any).projectStore).trim().toLowerCase() : '';
     const dYear =
       (d as any).projectYear !== undefined && (d as any).projectYear !== null
@@ -100,9 +124,7 @@ export async function deleteProjectStateUnified(
     if (pStore && dStore && pStore !== dStore) return false;
     if (pYear && dYear && pYear !== dYear) return false;
 
-    if ((d as any).projectId && String((d as any).projectId) === pId) return true;
     if (dCode && pCode && (dCode === pCode || matchProjectCode(dCode, pCode))) return true;
-    if (d.parentTaskId && relatedTaskIds.has(String(d.parentTaskId))) return true;
     return false;
   });
   const relatedDelegationIds = new Set(relatedDelegations.map((d) => String(d.id)));
@@ -110,17 +132,25 @@ export async function deleteProjectStateUnified(
   const nowIso = new Date().toISOString();
 
   const updatedProjects = currentProjects.filter((p) => {
-    if (pId && String(p.id) === pId) return false;
-    const pStrCode = String(p.code || '').trim().toLowerCase();
-    const pStrStore = p.store ? String(p.store).trim().toLowerCase() : '';
-    const pStrYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
+    if (pId && p.id !== undefined && p.id !== null && String(p.id).trim() !== '') {
+      return String(p.id).trim() !== String(pId).trim();
+    }
+    if (p.no !== undefined && targetProject?.no !== undefined && String(p.no) === String(targetProject.no)) {
+      return false;
+    }
+    // Legacy fallback ONLY when both records lack a distinct id/no
+    if (!p.id && !targetProject?.id) {
+      const pStrCode = String(p.code || '').trim().toLowerCase();
+      const pStrStore = p.store ? String(p.store).trim().toLowerCase() : '';
+      const pStrYear = p.year !== undefined && p.year !== null ? String(p.year).trim() : '';
 
-    if (pStrCode === pCode) {
-      if (
-        (!pStore || !pStrStore || pStore === pStrStore) &&
-        (!pYear || !pStrYear || pYear === pStrYear)
-      ) {
-        return false;
+      if (pStrCode === pCode) {
+        if (
+          (!pStore || !pStrStore || pStore === pStrStore) &&
+          (!pYear || !pStrYear || pYear === pStrYear)
+        ) {
+          return false;
+        }
       }
     }
     return true;
