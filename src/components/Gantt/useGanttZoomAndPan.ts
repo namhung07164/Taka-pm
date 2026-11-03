@@ -103,6 +103,8 @@ export function useGanttZoomAndPan({
       targetEl.closest('input') ||
       targetEl.closest('select') ||
       targetEl.closest('a') ||
+      targetEl.closest('[role="button"]') ||
+      targetEl.closest('[data-editable-cell="true"]') ||
       targetEl.closest('.gantt-bar') ||
       targetEl.closest('.cursor-col-resize') ||
       targetEl.closest('.cursor-row-resize') ||

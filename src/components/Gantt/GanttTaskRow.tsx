@@ -6,8 +6,10 @@ import { computeTaskCode, computeAllTaskCodes } from '../../lib/ganttUtils';
 import { GanttBar } from './GanttBar';
 import { GanttBaseline } from './GanttBaseline';
 import { GanttTaskLeftColumns } from './GanttTaskLeftColumns';
-import { cn, formatGanttDate, renderGanttDateCell } from './GanttUtils';
+import { GanttTaskEditableColumns } from './GanttTaskEditableColumns';
+import { cn, formatGanttDate } from './GanttUtils';
 import { useIsRowFlashed } from '../../lib/changeFlashService';
+import { executeUnifiedTaskUpdate } from '../../lib/taskInlineUpdateService';
 
 export interface GanttTaskRowProps {
   t: Task;
@@ -254,7 +256,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
           return;
         }
         const target = e.target as HTMLElement;
-        if (target.closest('input, button, a, [role="button"]')) {
+        if (target.closest('input, button, a, [role="button"], [data-editable-cell="true"]')) {
           e.preventDefault();
           return;
         }
@@ -308,51 +310,23 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
           />
         </div>
 
-        {showStart && (
-          <div
-            className="border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
-            style={{ width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
-          >
-            {renderGanttDateCell(t.start, "text-blue-600 dark:text-[#8ab4f8]")}
-          </div>
-        )}
-
-        {showFinish && (
-          <div
-            className="border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
-            style={{ width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
-          >
-            {renderGanttDateCell(t.finish, "text-pink-600 dark:text-pink-400")}
-          </div>
-        )}
-
-        {showParty && (
-          <div
-            className="text-xs text-slate-700 dark:text-slate-300 font-medium border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full"
-            style={{ width: partyColWidth, minWidth: partyColWidth, maxWidth: partyColWidth }}
-          >
-            {t.party || "-"}
-          </div>
-        )}
-
-        {showDuration && (
-          <div
-            className="font-mono text-[10px] sm:text-xs text-slate-700 dark:text-slate-300 border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center font-bold shrink-0 h-full"
-            style={{ width: durationColWidth, minWidth: durationColWidth, maxWidth: durationColWidth }}
-          >
-            {t.duration ? `${t.duration}d` : "-"}
-          </div>
-        )}
-
-        {showPredecessor && (
-          <div
-            className="font-mono text-[10px] sm:text-xs text-indigo-600 dark:text-indigo-400 font-semibold border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
-            style={{ width: predecessorColWidth, minWidth: predecessorColWidth, maxWidth: predecessorColWidth }}
-            title={t.predecessor || ""}
-          >
-            <span className="truncate">{t.predecessor || "-"}</span>
-          </div>
-        )}
+        <GanttTaskEditableColumns
+          t={t}
+          projects={projects}
+          tasks={tasks}
+          canWrite={canWrite}
+          showStart={showStart}
+          startColWidth={startColWidth}
+          showFinish={showFinish}
+          finishColWidth={finishColWidth}
+          showParty={showParty}
+          partyColWidth={partyColWidth}
+          showDuration={showDuration}
+          durationColWidth={durationColWidth}
+          showPredecessor={Boolean(showPredecessor)}
+          predecessorColWidth={predecessorColWidth}
+          onUpdateTask={(task, updates) => executeUnifiedTaskUpdate(task, updates, currentUser)}
+        />
       </div>
 
       {/* Right Timeline Area */}
@@ -381,6 +355,9 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
           setActiveTooltip={setActiveTooltip}
           isEditMode={isEditMode}
           getBarColor={getBarColor}
+          onUpdateTaskDates={(_id, newStart, newFinish) =>
+            executeUnifiedTaskUpdate(t, { start: newStart, finish: newFinish }, currentUser)
+          }
         />
       </div>
     </div>

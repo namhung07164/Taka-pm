@@ -1115,3 +1115,24 @@ export declare const undoManager: {
   clear: () => void;
 };
 
+// --- SOURCE: src/lib/taskInlineUpdateService.ts ---
+export interface ExecuteUnifiedTaskUpdateOptions {
+  skipPredecessorRecalc?: boolean;
+  skipProjectRollup?: boolean;
+  showPredecessorToast?: boolean;
+}
+export declare function executeUnifiedTaskUpdate(
+  t: Task,
+  updates: Partial<Task>,
+  currentUser?: AppUser | null,
+  options?: ExecuteUnifiedTaskUpdateOptions
+): Promise<void>;
+
+// --- SOURCE: src/lib/utilsParts/commonAndDateUtils.ts ---
+export declare function getEffectiveTaskDuration(t?: {
+  duration?: string | number | null;
+  start?: string;
+  finish?: string;
+} | null): string;
+
+

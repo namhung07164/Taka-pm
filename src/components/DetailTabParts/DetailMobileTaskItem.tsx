@@ -4,7 +4,7 @@ import { Task, Project } from '../../types';
 import { FastToggle } from './FastToggle';
 import { EditableCell } from './EditableCell';
 import { cleanDurationString } from '../../lib/taskImportService';
-import { cn, formatDisplayDateMain, calculateDays, getTaskStatus, getActStatusPercent } from '../../lib/utils';
+import { cn, formatDisplayDateMain, calculateDays, getTaskStatus, getActStatusPercent, getEffectiveTaskDuration } from '../../lib/utils';
 import { SwipeableRow, SwipeAction } from '../common/SwipeableRow';
 
 export interface DetailMobileTaskItemProps {
@@ -155,8 +155,9 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
             <div className="text-[10px] mt-1">
               {canWrite ? (
                 <EditableCell
-                  value={t.duration !== undefined && t.duration !== null ? t.duration : calculateDays(t.start, t.finish).replace('d', '')}
+                  value={getEffectiveTaskDuration(t)}
                   type="number"
+                  displaySuffix="d"
                   className="text-slate-700 dark:text-[#c3c3c3] font-mono font-medium text-[10px] px-0.5 py-0"
                   onSave={(val) => {
                     const cleanVal = cleanDurationString(val);
@@ -165,7 +166,7 @@ export const DetailMobileTaskItem = memo(function DetailMobileTaskItem({
                   canWrite={canWrite}
                 />
               ) : (
-                <span className="italic">{t.duration !== undefined ? `${t.duration}d` : calculateDays(t.start, t.finish)}</span>
+                <span className="italic">{getEffectiveTaskDuration(t) !== '' ? `${getEffectiveTaskDuration(t)}d` : calculateDays(t.start, t.finish)}</span>
               )}
             </div>
           </div>

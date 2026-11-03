@@ -1,5 +1,5 @@
 import { Task, DelegationGroup } from '../types';
-import { normalizeDashes } from './utils';
+import { normalizeDashes, parseDateTimeMs } from './utils';
 import { isTaskBelongToSameParentScope } from './parentHierarchyUtils';
 import {
   extractNumericSuffix,
@@ -309,8 +309,8 @@ export function rollupParentTaskDatesAndStatus(
       const childFinish = subRollup ? subRollup.finish : (child.finish || childStart || '');
 
       if (childStart) {
-        const sTime = new Date(childStart).getTime();
-        if (!isNaN(sTime)) {
+        const sTime = parseDateTimeMs(childStart);
+        if (sTime !== null && !isNaN(sTime)) {
           if (sTime < minStartTime) {
             minStartTime = sTime;
             minStart = childStart;
@@ -323,8 +323,8 @@ export function rollupParentTaskDatesAndStatus(
       }
 
       if (childFinish) {
-        const fTime = new Date(childFinish).getTime();
-        if (!isNaN(fTime)) {
+        const fTime = parseDateTimeMs(childFinish);
+        if (fTime !== null && !isNaN(fTime)) {
           if (fTime >= maxFinishTime) {
             maxFinishTime = fTime;
             maxFinish = childFinish;
@@ -408,11 +408,11 @@ export function rollupParentTaskDatesAndStatus(
       }
 
       if (newStart && newFinish) {
-        const sMs = new Date(newStart).getTime();
-        const fMs = new Date(newFinish).getTime();
-        if (!isNaN(sMs) && !isNaN(fMs)) {
-          const diffDays = Math.max(0, Math.round((fMs - sMs) / (1000 * 60 * 60 * 24)));
-          newDuration = String(diffDays);
+        const sMs = parseDateTimeMs(newStart);
+        const fMs = parseDateTimeMs(newFinish);
+        if (sMs !== null && fMs !== null && !isNaN(sMs) && !isNaN(fMs)) {
+          const diffDays = Math.max(0, (fMs - sMs) / (1000 * 60 * 60 * 24));
+          newDuration = String(Number(diffDays.toFixed(2)));
         }
       }
 

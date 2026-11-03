@@ -185,6 +185,29 @@ export function calculateDays(
   return (diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0) + " days";
 }
 
+export function getEffectiveTaskDuration(t: {
+  duration?: string | number | null;
+  start?: string;
+  finish?: string;
+}): string {
+  if (t.duration !== undefined && t.duration !== null && String(t.duration).trim() !== "") {
+    const cleaned = String(t.duration).trim().replace(/\s*d(ays?)?$/i, "").trim();
+    const num = parseFloat(cleaned);
+    if (!isNaN(num) && num >= 0) {
+      return String(Number(num.toFixed(2)));
+    }
+  }
+  if (t.start && t.finish) {
+    const sMs = parseDateTimeMs(t.start);
+    const fMs = parseDateTimeMs(t.finish);
+    if (sMs !== null && fMs !== null) {
+      const diffDays = (fMs - sMs) / (1000 * 60 * 60 * 24);
+      return String(diffDays >= 0 ? Number(diffDays.toFixed(2)) : 0);
+    }
+  }
+  return "";
+}
+
 export const getUserAllowedStores = (
   currentUser: AppUser | null | undefined,
 ): string[] => {

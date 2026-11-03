@@ -1,5 +1,5 @@
-import React, { memo, useEffect, useRef, useState } from 'react';
-import { formatDisplayDateTime, getDefaultDatetimeLocal, cn } from '../../lib/utils';
+import React, { useEffect, useRef, useState } from 'react';
+import { formatDisplayDateTime, getDefaultDatetimeLocal, parseDateTime, formatToDatetimeLocal, cn } from '../../lib/utils';
 
 export const EditableCell = React.memo(function EditableCell({ 
   value, 
@@ -9,7 +9,8 @@ export const EditableCell = React.memo(function EditableCell({
   canWrite, 
   isDate = false,
   listId,
-  className
+  className,
+  displaySuffix = ''
 }: { 
   value: any, 
   type?: string, 
@@ -18,7 +19,8 @@ export const EditableCell = React.memo(function EditableCell({
   canWrite: boolean, 
   isDate?: boolean,
   listId?: string,
-  className?: string
+  className?: string,
+  displaySuffix?: string
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [val, setVal] = useState(value !== undefined && value !== null ? value : '');
@@ -38,13 +40,17 @@ export const EditableCell = React.memo(function EditableCell({
   const handleBlur = () => {
     finishEditing();
     if (type === 'number') {
-      const parsed = Number(String(val).replace(',', '.').trim());
+      const cleanedStr = String(val).replace(/d$/i, '').replace(',', '.').trim();
+      if (cleanedStr === '') {
+        if (value !== '' && value !== undefined && value !== null) onSave('');
+        return;
+      }
+      const parsed = Number(cleanedStr);
       if (Number.isNaN(parsed)) {
-        // Nhập sai định dạng số: trả về giá trị cũ, không lưu
         setVal(value !== undefined && value !== null ? value : '');
         return;
       }
-      if (parsed !== value) onSave(parsed);
+      if (String(parsed) !== String(value)) onSave(parsed);
       return;
     }
     if (val !== value) {
@@ -55,13 +61,28 @@ export const EditableCell = React.memo(function EditableCell({
   const handleEditClick = () => {
     editingRef.current = true;
     setIsEditing(true);
-    if (isDate && (!val || val === '')) {
-      setVal(getDefaultDatetimeLocal());
+    if (isDate) {
+      if (!val || val === '') {
+        setVal(getDefaultDatetimeLocal());
+      } else {
+        const parsed = parseDateTime(val);
+        if (parsed && !isNaN(parsed.getTime())) {
+          setVal(formatToDatetimeLocal(parsed));
+        } else {
+          setVal(getDefaultDatetimeLocal());
+        }
+      }
     }
   };
 
+  const formattedDisplay = isDate
+    ? formatDisplayDateTime(value)
+    : value !== undefined && value !== null && value !== ''
+    ? `${value}${displaySuffix}`
+    : '-';
+
   if (!canWrite) {
-    return <span className={className}>{isDate ? formatDisplayDateTime(value) : (value !== undefined && value !== null && value !== '' ? value : '-')}</span>;
+    return <span className={className}>{formattedDisplay}</span>;
   }
 
   if (isEditing) {
@@ -119,7 +140,8 @@ export const EditableCell = React.memo(function EditableCell({
         className
       )}
     >
-      {isDate ? formatDisplayDateTime(value) : (value !== undefined && value !== null && value !== '' ? value : '-')}
+      {formattedDisplay}
     </div>
   );
 });
+

@@ -134,101 +134,21 @@ export function milestoneDate(it: LinkItem): string {
 export async function persistDefault(
   source: Task,
   change: PredecessorChange,
-  projects: Project[]
+  _projects: Project[]
 ): Promise<void> {
   if (!source?.id) {
     throw new Error('Please save the task before linking a predecessor.');
   }
-  const store = useAppStore.getState() as any;
-  let currentTasks: Task[] = store.tasks || [];
-  const now = new Date().toISOString();
-
-  let updatedTask: Task = {
-    ...source,
-    predecessor: change.predecessor,
-    predecessorTaskIds: change.predecessorTaskIds,
-    predecessors: change.predecessors,
-    realtimeUpdate: Boolean(change.predecessor.trim()),
-    updatedAt: now,
-  } as Task;
-
-  let taskNoMap = buildTaskNoMap(projects, currentTasks);
-  let parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
-
-  if (change.predecessor.trim() && (!parsed.length || parsed.some((p) => !p.task))) {
-    const parts = splitPredecessors(change.predecessor, taskNoMap);
-    const { normalizeDashes } = await import('../../../lib/utils');
-    const { ensureProjectTasksLoaded } = await import('../../../lib/taskStateService');
-    for (const token of parts) {
-      const cleanToken = normalizeDashes(token).replace(/(fs|ss|ff|sf|[+-]\s*\d+|\s+\d+)$/i, '').trim();
-      const matchedProj = projects.find(
-        (p) =>
-          p.code &&
-          cleanToken.toLowerCase().startsWith(normalizeDashes(p.code).toLowerCase())
-      );
-      if (matchedProj && (matchedProj.id !== source.projectId || matchedProj.code !== source.projectCode)) {
-        const loaded = await ensureProjectTasksLoaded(matchedProj.code, {
-          projectId: matchedProj.id,
-          store: matchedProj.store,
-          year: matchedProj.year,
-        });
-        if (loaded.length > 0) {
-          currentTasks = (useAppStore.getState() as any).tasks || currentTasks;
-          taskNoMap = buildTaskNoMap(projects, currentTasks);
-          parsed = parsePredecessors(change.predecessor, taskNoMap, updatedTask);
-        }
-      }
-    }
-  }
-
-  if (parsed.length >= 2) updatedTask.durationManual = false;
-
-  const calc = calculateTaskDatesFromPredecessors(updatedTask, parsed as any);
-  if (calc) {
-    updatedTask.start = calc.start;
-    updatedTask.finish = calc.finish;
-    updatedTask.duration = calc.duration;
-    updatedTask.durationManual = calc.durationManual;
-  }
-
-  const dependents = scheduleDependentTasks(updatedTask, currentTasks, projects);
-  const selfScheduled = dependents.find((d) => d.id === updatedTask.id);
-  if (selfScheduled) {
-    updatedTask = { ...updatedTask, ...selfScheduled, updatedAt: now };
-  }
-  const depUpdates = dependents
-    .filter((d) => d.id !== updatedTask.id)
-    .map((d) => ({ ...d, updatedAt: now }));
-
-  const allUpdates = [updatedTask, ...depUpdates];
-  store.optimisticUpdateTasks(allUpdates);
-
-  const editing = store.editingTask;
-  if (editing && editing.id === updatedTask.id && typeof store.setEditingTask === 'function') {
-    store.setEditingTask({ ...editing, ...updatedTask });
-  }
-
-  store.setToast?.({
-    title: 'Predecessor Updated',
-    message: change.predecessor ? `Link: ${change.predecessor}` : 'Predecessor removed',
-    type: 'success',
-  });
-
-  // Offload Firestore write & project date rollup to background microtask (0ms UI block)
-  setTimeout(async () => {
-    try {
-      const batch = writeBatch(db);
-      batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', updatedTask.id), updatedTask as any, { merge: true });
-      depUpdates.forEach((u: any) => {
-        batch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', u.id), u, { merge: true });
-      });
-      await batch.commit();
-      const { findAffectedProjects, syncAffectedProjects } = await import('../../../lib/taskStateService');
-      const affectedProjects = findAffectedProjects(allUpdates, projects);
-      await syncAffectedProjects(affectedProjects);
-    } catch (err: any) {
-      console.error('Failed to persist predecessor update:', err);
-      store.setToast?.({ title: 'Save failed', message: err?.message || 'Could not save predecessor', type: 'error' });
-    }
-  }, 0);
+  const { executeUnifiedTaskUpdate } = await import('../../../lib/taskInlineUpdateService');
+  await executeUnifiedTaskUpdate(
+    source,
+    {
+      predecessor: change.predecessor,
+      predecessorTaskIds: change.predecessorTaskIds,
+      predecessors: change.predecessors,
+    },
+    useAppStore.getState().currentUser,
+    { showPredecessorToast: true }
+  );
 }
+

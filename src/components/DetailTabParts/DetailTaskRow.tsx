@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Project, Task } from '../../types';
-import { cn, formatDisplayDateTime, formatDisplayDateMain, calculateDays, getActStatusPercent } from '../../lib/utils';
+import { cn, formatDisplayDateTime, formatDisplayDateMain, calculateDays, getActStatusPercent, getEffectiveTaskDuration } from '../../lib/utils';
 import { GripVertical, Trash2, Edit3, ArrowUp, ArrowDown, ChevronRight, ChevronDown } from 'lucide-react';
 import { DetailTableRow } from './detailTypes';
 import { EditableCell } from './EditableCell';
@@ -224,8 +224,9 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
         <td className="px-3 py-2 text-slate-500 dark:text-[#a3a3a3] font-mono text-xs">
           {canWrite ? (
             <EditableCell
-              value={t.duration !== undefined && t.duration !== null ? t.duration : calculateDays(t.start, t.finish).replace('d', '')}
+              value={getEffectiveTaskDuration(t)}
               type="number"
+              displaySuffix="d"
               className="text-slate-700 dark:text-[#c3c3c3] font-mono font-medium"
               onSave={(val) => {
                 const cleanVal = cleanDurationString(val);
@@ -235,7 +236,7 @@ export const DetailTaskRow = React.memo(function DetailTaskRow({
             />
           ) : (
             <span className="italic">
-              {t.duration !== undefined ? `${t.duration}d` : calculateDays(t.start, t.finish)}
+              {getEffectiveTaskDuration(t) !== '' ? `${getEffectiveTaskDuration(t)}d` : calculateDays(t.start, t.finish)}
             </span>
           )}
         </td>

@@ -21,11 +21,13 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
   onSave,
   canWrite,
   task,
+  compact = false,
 }: {
   value: any;
   onSave: (updates: Partial<Task>) => void | Promise<void>;
   canWrite: boolean;
   task: Task;
+  compact?: boolean;
   // giữ nguyên chữ ký cũ để không phải sửa nơi gọi
   tasks?: Task[];
   projects?: Project[];
@@ -106,7 +108,7 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
   /* ----- Hiển thị dạng thẻ dễ đọc ----- */
   const chips =
     tokens.length > 0 ? (
-      <div className="flex flex-wrap items-center gap-1">
+      <div className={cn('flex items-center gap-1', compact ? 'flex-nowrap overflow-hidden max-w-full' : 'flex-wrap')}>
         {tokens.slice(0, 2).map((tok, i) => {
           const { query, suffix } = parsePredecessorToken(tok);
           return (
@@ -114,13 +116,14 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
               key={`${tok}-${i}`}
               title={tok}
               className={cn(
-                'inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px]',
+                'inline-flex max-w-full items-center gap-0.5 rounded-md border px-1 py-0.5',
+                compact ? 'text-[10px]' : 'px-1.5 text-[11px]',
                 CHIP_STYLE[i] || CHIP_STYLE[1]
               )}
             >
               <b className="truncate font-mono">{query || tok}</b>
               {suffix && (
-                <span className="shrink-0 rounded bg-white/70 px-1 font-mono text-[10px] font-extrabold dark:bg-black/30">
+                <span className="shrink-0 rounded bg-white/70 px-0.5 font-mono text-[9px] font-extrabold dark:bg-black/30">
                   {suffix.replace(/^(FS|SS|FF|SF)?([+-])(\d.*)$/i, (_m, r, sg, n) => `${r || ''} ${sg === '-' ? '−' : '+'}${n}d`).trim()}
                 </span>
               )}
@@ -131,7 +134,11 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
     ) : null;
 
   if (!canWrite) {
-    return chips ? <div className="w-full">{chips}</div> : <span className="text-slate-400">-</span>;
+    return chips ? (
+      <div className={cn('w-full', compact && 'flex items-center justify-center overflow-hidden')}>{chips}</div>
+    ) : (
+      <span className="text-slate-400">-</span>
+    );
   }
 
   const panelContent = (
@@ -144,9 +151,9 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
         <button
           type="button"
           onClick={() => setIsEditing(false)}
-          className="inline-flex min-h-[40px] shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-3.5 text-[12px] font-bold text-white shadow-sm hover:bg-blue-700 active:scale-95 touch-manipulation"
+          className="inline-flex min-h-[36px] shrink-0 items-center gap-1 rounded-lg bg-blue-600 px-3 text-[12px] font-bold text-white shadow-sm hover:bg-blue-700 active:scale-95 touch-manipulation"
         >
-          <X className="h-3.5 w-3.5" /> Xong
+          <X className="h-3.5 w-3.5" /> Done
         </button>
       </div>
       <PredecessorSearchSuggest task={task} canWrite={canWrite} onChange={handleChange} />
@@ -159,23 +166,34 @@ export const PredecessorEditableCell = React.memo(function PredecessorEditableCe
         ref={anchorRef}
         role="button"
         tabIndex={0}
-        onClick={() => setIsEditing(true)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsEditing(true);
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
+            e.stopPropagation();
             setIsEditing(true);
           }
         }}
         className={cn(
-          'group flex min-h-[32px] w-full cursor-pointer items-center rounded-md px-0.5 transition-colors hover:bg-slate-50 dark:hover:bg-[#202023]',
+          'group flex w-full cursor-pointer items-center rounded-md px-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-[#28282a]',
+          compact ? 'min-h-[28px] justify-center overflow-hidden' : 'min-h-[32px]',
           isEditing && 'bg-blue-50/60 ring-1 ring-blue-300 dark:bg-blue-950/20 dark:ring-blue-700'
         )}
       >
-        {chips || (
-          <span className="inline-flex items-center gap-1 rounded-md border border-dashed border-slate-300 px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 group-hover:border-blue-400 group-hover:text-blue-500 dark:border-slate-600 dark:text-slate-500">
-            <Plus className="h-3 w-3" /> Thêm
-          </span>
-        )}
+        {chips ||
+          (compact ? (
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-slate-400 group-hover:text-blue-500">
+              <Plus className="h-3 w-3 opacity-60 group-hover:opacity-100" />
+              <span>-</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-md border border-dashed border-slate-300 px-1.5 py-0.5 text-[11px] font-semibold text-slate-400 group-hover:border-blue-400 group-hover:text-blue-500 dark:border-slate-600 dark:text-slate-500">
+              <Plus className="h-3 w-3" /> Add
+            </span>
+          ))}
       </div>
 
       {isEditing &&

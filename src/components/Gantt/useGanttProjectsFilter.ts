@@ -8,13 +8,14 @@ import {
   parseDateTime, 
   getUserAllowedStores, 
   getEffectiveStoreFilter, 
-  matchesAdvancedSearch 
+  matchesAdvancedSearch,
+  isProjectTasksHydrated 
 } from '../../lib/utils';
 import { useLocationOptions } from '../../hooks/useLocationOptions';
 import { safeGetItemSession, safeSetItemSession } from '../../lib/storage';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
 import { deduplicateTasksInMemory } from '../../lib/taskDeduplicationService';
-import { filterNonOrphanTasks } from '../../lib/taskRollupService';
+import { filterNonOrphanTasks, rollupParentTaskDatesAndStatus } from '../../lib/taskRollupService';
 import { sortGroupTasks } from '../../lib/ganttUtils';
 
 interface UseGanttProjectsFilterParams {
@@ -265,8 +266,13 @@ export function useGanttProjectsFilter({
         }
       }
 
-      // 4. Fallback & Merge from taskSummaries if taskSummaries has more items than realTasksMap
-      if (p.taskSummaries && Array.isArray(p.taskSummaries) && realTasksMap.size < p.taskSummaries.length) {
+      // 4. Fallback & Merge from taskSummaries if project tasks are not yet fully hydrated
+      if (
+        p.taskSummaries &&
+        Array.isArray(p.taskSummaries) &&
+        !isProjectTasksHydrated(pIdStr) &&
+        realTasksMap.size < p.taskSummaries.length
+      ) {
         p.taskSummaries.forEach((ts, idx) => {
           if (isTaskDeletedInTracker(ts.id, pIdStr || undefined)) return;
           if ((!ts.name || !String(ts.name).trim()) && (!ts.start || !String(ts.start).trim()) && (!ts.finish || !String(ts.finish).trim()) && !ts.taskCodePhu) {
@@ -328,7 +334,8 @@ export function useGanttProjectsFilter({
       }
       const { dedupedTasks } = deduplicateTasksInMemory(rawGroupTasks, [p]);
       const { cleaned } = filterNonOrphanTasks(dedupedTasks);
-      const sorted = sortGroupTasks(cleaned);
+      const rolledUp = rollupParentTaskDatesAndStatus(cleaned);
+      const sorted = sortGroupTasks(rolledUp);
       projectTasksCache.set(p, sorted);
       return sorted;
     },
