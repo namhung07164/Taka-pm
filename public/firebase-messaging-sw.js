@@ -1,7 +1,5 @@
-// Service Worker Version: 1.1.0 - Static Asset Caching, Offline Web Share Target & Firebase Push Notifications
+// Service Worker Version: 1.1.0 - Static Asset Caching & Firebase Push Notifications
 const CACHE_NAME = "taka-static-v1.1.0";
-const SHARE_INBOX_DB_NAME = "TakaShareTargetInboxDB";
-const SHARE_INBOX_STORE_NAME = "shared_inbox";
 
 const PRECACHE_ASSETS = [
   "/",
@@ -11,37 +9,6 @@ const PRECACHE_ASSETS = [
   "/icon-192.png",
   "/icon-512.png"
 ];
-
-function saveSharedPayloadToInboxDB(payload) {
-  return new Promise((resolve, reject) => {
-    try {
-      const request = indexedDB.open(SHARE_INBOX_DB_NAME, 1);
-      request.onupgradeneeded = (event) => {
-        const db = event.target.result;
-        if (!db.objectStoreNames.contains(SHARE_INBOX_STORE_NAME)) {
-          db.createObjectStore(SHARE_INBOX_STORE_NAME, { keyPath: "id" });
-        }
-      };
-      request.onsuccess = (event) => {
-        const db = event.target.result;
-        const tx = db.transaction(SHARE_INBOX_STORE_NAME, "readwrite");
-        const store = tx.objectStore(SHARE_INBOX_STORE_NAME);
-        store.put(payload);
-        tx.oncomplete = () => {
-          db.close();
-          resolve(payload.id);
-        };
-        tx.onerror = (err) => {
-          db.close();
-          reject(err);
-        };
-      };
-      request.onerror = (err) => reject(err);
-    } catch (err) {
-      reject(err);
-    }
-  });
-}
 
 // 1. Install Event: Precache App Shell
 self.addEventListener("install", (event) => {
@@ -76,86 +43,10 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// 3. Fetch Event: Web Share Target Interceptor + Intelligent Tiered Caching Strategy
+// 3. Fetch Event: Intelligent Tiered Caching Strategy
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
-
-  // Intercept Web Share Target POST requests (Works 100% Online & Offline)
-  if (
-    req.method === "POST" &&
-    (url.searchParams.has("share-target") || url.pathname === "/share-target")
-  ) {
-    event.respondWith(
-      (async () => {
-        try {
-          const formData = await req.formData();
-          const title = String(formData.get("title") || "").trim();
-          const text = String(formData.get("text") || "").trim();
-          const sharedUrl = String(formData.get("url") || "").trim();
-
-          const rawFiles = [];
-          const mediaEntries = formData.getAll("media");
-          for (const item of mediaEntries) {
-            if (item && typeof item === "object" && typeof item.arrayBuffer === "function") {
-              rawFiles.push(item);
-            }
-          }
-          if (rawFiles.length === 0) {
-            for (const [, value] of formData.entries()) {
-              if (value && typeof value === "object" && typeof value.arrayBuffer === "function") {
-                rawFiles.push(value);
-              }
-            }
-          }
-
-          const serializedFiles = [];
-          for (const file of rawFiles) {
-            try {
-              const buffer = await file.arrayBuffer();
-              serializedFiles.push({
-                name: file.name || `zalo_shared_${Date.now()}.jpg`,
-                type: file.type || "image/jpeg",
-                size: file.size || buffer.byteLength,
-                lastModified: file.lastModified || Date.now(),
-                buffer,
-              });
-            } catch (fileErr) {
-              console.warn("[SW ShareTarget] Failed reading file buffer:", fileErr);
-            }
-          }
-
-          const payloadId = `share_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          const payload = {
-            id: payloadId,
-            title,
-            text,
-            url: sharedUrl,
-            files: serializedFiles,
-            receivedAt: new Date().toISOString(),
-          };
-
-          await saveSharedPayloadToInboxDB(payload);
-
-          const clientList = await self.clients.matchAll({
-            type: "window",
-            includeUncontrolled: true,
-          });
-          for (const client of clientList) {
-            client.postMessage({
-              type: "TAKA_SHARE_TARGET_RECEIVED",
-              payloadId,
-            });
-          }
-        } catch (err) {
-          console.error("[SW ShareTarget] Error processing shared formData:", err);
-        }
-
-        return Response.redirect("/?share-target-received=1", 303);
-      })()
-    );
-    return;
-  }
 
   // Only intercept GET requests for caching
   if (req.method !== "GET") return;

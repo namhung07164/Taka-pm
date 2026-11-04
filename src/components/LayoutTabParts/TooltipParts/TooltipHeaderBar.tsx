@@ -125,14 +125,14 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
             onClick={(e) => {
               e.stopPropagation();
               if (p) {
-                onEditProject(p, !canWrite, 'details');
+                onEditProject(p, !canWrite, 'chat');
               } else if (targetProject) {
-                onEditProject(targetProject, !canWrite, 'details');
+                onEditProject(targetProject, !canWrite, 'chat');
               }
             }}
             className="p-1 rounded-md bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-600 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:bg-[#333336] dark:hover:text-[#8ab4f8] border border-slate-200 dark:border-[#444446] transition-all active:scale-95 touch-manipulation cursor-pointer flex items-center justify-center shrink-0"
-            title="Open Project Details Modal"
-            aria-label="Open Project Details Modal"
+            title="Open Project Comments & Details"
+            aria-label="Open Project Comments & Details"
           >
             <FolderKanban className="w-3.5 h-3.5" />
           </button>

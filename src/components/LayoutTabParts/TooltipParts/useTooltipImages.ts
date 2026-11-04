@@ -1,13 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Project } from '../../../types';
 import { useAppStore } from '../../../store/useAppStore';
-import { doc, deleteField, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { setDoc } from '../../../lib/firestoreWrites';
 import { db, APP_ID } from '../../../lib/firebase';
 import { extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata } from '../../../lib/utils';
 import { TooltipImageItem } from './tooltipTypes';
-import { deleteR2ImageCleanly } from '../../../lib/r2StorageUtils';
-import { recordDelta } from '../../../lib/deltaSyncService';
 import { removeUploadedImageEverywhere } from '../../../lib/projectImageSync';
 
 function normalizeStore(store?: string | null): string {
@@ -80,42 +78,38 @@ export function useTooltipImages({
       }
     }
 
-    // If user is only hovering (image panel closed) and this unit was already synced in session, skip Firestore listener (0 reads)
-    if (!showImagePanel && !quickImageMode && unitImagesSessionCache.has(unitImagesDocKey)) {
+    // Zero-Read Hover Guard: Only fetch from Firestore when user explicitly opens the Image Panel, and at most once per unit per session
+    if ((!showImagePanel && !quickImageMode) || unitImagesSessionCache.has(unitImagesDocKey)) {
       return;
     }
 
+    let cancelled = false;
     const docRef = doc(db, "artifacts", APP_ID, "public", "data", "taka_unit_images", unitImagesDocKey);
-    const unsub = onSnapshot(docRef, (snap) => {
-      if (snap.exists()) {
-        const cloudData = snap.data();
-        if (Array.isArray(cloudData?.images)) {
-          const cloudImages = cloudData.images.filter((item: any) => !item.store || normalizeStore(item.store) === activeStore);
-          unitImagesSessionCache.set(unitImagesDocKey, cloudImages);
-          setCustomUnitImages(cloudImages);
-          try {
-            localStorage.setItem(activeUnitStorageKey, JSON.stringify(cloudImages));
-          } catch {}
-          return;
+    getDoc(docRef)
+      .then((snap) => {
+        if (cancelled) return;
+        if (snap.exists()) {
+          const cloudData = snap.data();
+          if (Array.isArray(cloudData?.images)) {
+            const cloudImages = cloudData.images.filter((item: any) => !item.store || normalizeStore(item.store) === activeStore);
+            unitImagesSessionCache.set(unitImagesDocKey, cloudImages);
+            setCustomUnitImages(cloudImages);
+            try {
+              localStorage.setItem(activeUnitStorageKey, JSON.stringify(cloudImages));
+            } catch {}
+            return;
+          }
         }
-      } else if (localImages.length > 0 && canWrite) {
         unitImagesSessionCache.set(unitImagesDocKey, localImages);
-        // Auto-heal: If images existed in desktop's localStorage, sync them up to Firestore so iOS receives them
-        setDoc(docRef, {
-          unitCode: cleanCode,
-          store: activeStore,
-          images: localImages,
-          updatedAt: new Date().toISOString(),
-        }, { merge: true }).catch(() => {});
-      } else {
-        unitImagesSessionCache.set(unitImagesDocKey, []);
-      }
-    }, (err) => {
-      console.warn("[useTooltipImages] Cloud sync listener:", err);
-    });
+      })
+      .catch((err) => {
+        console.warn("[useTooltipImages] Cloud fetch:", err);
+      });
 
-    return () => unsub();
-  }, [activeUnitStorageKey, activeStore, cleanCode, unitImagesDocKey, canWrite, showImagePanel, quickImageMode]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUnitStorageKey, activeStore, cleanCode, unitImagesDocKey, showImagePanel, quickImageMode]);
 
   useEffect(() => {
     setShowImagePanel(Boolean(quickImageMode));
@@ -198,10 +192,6 @@ export function useTooltipImages({
       });
 
       if (targetProj && normalizeStore(extractProjectMetadata(targetProj).store) === activeStore) {
-        const cleanedSummaries = (targetProj.taskSummaries || []).filter(
-          ts => !ts.name?.startsWith('Link / Photo:') && !ts.name?.startsWith('http://') && !ts.name?.startsWith('https://')
-        );
-
         const existingLinks: any[] = Array.isArray(targetProj.imageLinks) ? targetProj.imageLinks : [];
         const hasLinkAlready = existingLinks.some(l => (typeof l === 'string' ? l === trimmed : l?.url === trimmed));
         const newLinkObj = {
@@ -212,13 +202,14 @@ export function useTooltipImages({
           store: activeStore,
         };
         const updatedImageLinks = hasLinkAlready ? existingLinks : [newLinkObj, ...existingLinks];
+        const nowIso = new Date().toISOString();
 
         const updatedProject: Project = {
           ...targetProj,
-          taskSummaries: cleanedSummaries,
           imageUrl: targetProj.imageUrl || trimmed,
           thumbnail: targetProj.thumbnail || trimmed,
           imageLinks: updatedImageLinks,
+          updatedAt: nowIso,
         };
 
         useAppStore.getState().setProjects(
@@ -227,22 +218,15 @@ export function useTooltipImages({
 
         if (targetProj.id) {
           const updateData = {
-            taskSummaries: cleanedSummaries,
             imageUrl: updatedProject.imageUrl,
             thumbnail: updatedProject.thumbnail,
             imageLinks: updatedImageLinks,
-            updatedAt: new Date().toISOString(),
+            updatedAt: nowIso,
           };
+          // setDoc from firestoreWrites.ts automatically queues and emits the delta via autoDeltaQueue
           setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_projects", targetProj.id), updateData, { merge: true }).catch(err => {
             console.error("Failed to sync to Firestore:", err);
           });
-          recordDelta({
-            docId: targetProj.id,
-            collectionName: 'taka_projects',
-            action: 'update',
-            data: updateData,
-            year: String(targetProj.year || '')
-          }).catch(console.error);
         }
       }
     } catch (err) {

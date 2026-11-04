@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { setDoc } from '../../lib/firestoreWrites';
 import { db, APP_ID } from '../../lib/firebase';
 import { useAppStore } from '../../store/useAppStore';
@@ -75,15 +75,16 @@ export function useColorLegendImages(canWrite: boolean = false) {
       }
     }
 
-    // Attach Firestore listener when panel is opened OR if not yet loaded in memory cache this session
-    if (!showImagePanel && legendImagesMemoryCache.has(docKey)) {
+    // Only fetch from Firestore when the user opens the Color Legend image panel and it is not yet cached in memory
+    if (!showImagePanel || legendImagesMemoryCache.has(docKey)) {
       return;
     }
 
+    let cancelled = false;
     const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_unit_images', docKey);
-    const unsub = onSnapshot(
-      docRef,
-      (snap) => {
+    getDoc(docRef)
+      .then((snap) => {
+        if (cancelled) return;
         if (snap.exists()) {
           const cloudData = snap.data();
           if (Array.isArray(cloudData?.images)) {
@@ -97,28 +98,17 @@ export function useColorLegendImages(canWrite: boolean = false) {
             } catch {}
             return;
           }
-        } else if (localList.length > 0 && canWrite) {
-          setDoc(
-            docRef,
-            {
-              unitCode: cleanCode,
-              store: activeStore,
-              images: localList,
-              updatedAt: new Date().toISOString(),
-            },
-            { merge: true }
-          ).catch(() => {});
-        } else {
-          legendImagesMemoryCache.set(docKey, []);
         }
-      },
-      (err) => {
-        console.warn('[useColorLegendImages] Cloud sync listener:', err);
-      }
-    );
+        legendImagesMemoryCache.set(docKey, localList);
+      })
+      .catch((err) => {
+        console.warn('[useColorLegendImages] Cloud fetch:', err);
+      });
 
-    return () => unsub();
-  }, [storageKey, activeStore, cleanCode, docKey, canWrite, showImagePanel]);
+    return () => {
+      cancelled = true;
+    };
+  }, [storageKey, activeStore, cleanCode, docKey, showImagePanel]);
 
   const handleAddCustomImage = (e?: React.FormEvent, customUrl?: string) => {
     if (e) e.preventDefault();

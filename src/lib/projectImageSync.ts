@@ -4,7 +4,6 @@ import { db, APP_ID, storage } from './firebase';
 import { ref as storageRef, deleteObject } from 'firebase/storage';
 import { useAppStore } from '../store/useAppStore';
 import { Project } from '../types';
-import { recordDelta } from './deltaSyncService';
 import { deleteR2ImageCleanly } from './r2StorageUtils';
 
 function normalizeStore(store?: string | null): string {
@@ -135,16 +134,8 @@ export async function syncUploadedImageToProjectAndUnit(
         updatedAt: nowIso,
       };
 
+      // setDoc from firestoreWrites automatically queues and emits the delta via autoDeltaQueue
       await setDoc(projDocRef, updateData, { merge: true });
-
-      // Record Delta for multi-device sync
-      await recordDelta({
-        docId: project.id,
-        collectionName: 'taka_projects',
-        action: 'update',
-        data: updateData,
-        year: String(project.year || ''),
-      }).catch(console.error);
     } catch (err) {
       console.error('[projectImageSync] Failed to update project imageLinks:', err);
     }
@@ -340,16 +331,8 @@ export async function removeUploadedImageEverywhere(
       if ((targetProj as any).photo === trimmedUrl) firestoreUpdate.photo = deleteField();
       if ((targetProj as any).image === trimmedUrl) firestoreUpdate.image = deleteField();
 
+      // setDoc from firestoreWrites automatically queues and emits the delta via autoDeltaQueue
       await setDoc(projDocRef, firestoreUpdate, { merge: true });
-
-      // Record Delta
-      await recordDelta({
-        docId: targetProj.id,
-        collectionName: 'taka_projects',
-        action: 'update',
-        data: firestoreUpdate,
-        year: String(targetProj.year || ''),
-      }).catch(console.error);
     } catch (err) {
       console.error('[removeUploadedImageEverywhere] Error updating project:', err);
     }

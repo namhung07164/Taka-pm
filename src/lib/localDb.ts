@@ -7,38 +7,12 @@ export interface LocalSyncMeta {
   updatedAt: number;
 }
 
-export interface SharedMediaRecord {
-  id: string;
-  projectId: string;
-  projectCode: string;
-  year: string;
-  store: string;
-  location: string;
-  unitCode: string;
-  pinId: string;
-  pinLabel: string;
-  pinX?: number;
-  pinY?: number;
-  title: string;
-  caption: string;
-  fileName: string;
-  mimeType: string;
-  fileSize?: number;
-  localDataUrl: string;
-  r2Url?: string;
-  syncStatus: 'synced' | 'pending_r2' | 'failed';
-  createdAt: string;
-  updatedAt: string;
-  createdBy?: string;
-}
-
 export class TakaLocalDB extends Dexie {
   projects!: Table<Project, string>;
   tasks!: Table<Task, string>;
   costs!: Table<Cost, string>;
   delegations!: Table<DelegationGroup, string>;
   syncMeta!: Table<LocalSyncMeta, string>;
-  sharedMedia!: Table<SharedMediaRecord, string>;
 
   constructor() {
     super('TakaLocalFirstDB_v1');
@@ -58,9 +32,6 @@ export class TakaLocalDB extends Dexie {
     });
     this.version(3).stores({
       delegations: '&id, projectId, projectCode, parentTaskId, code, projectStore, projectYear, store, year, status, updatedAt',
-    });
-    this.version(4).stores({
-      sharedMedia: '&id, projectId, projectCode, year, store, unitCode, pinId, syncStatus, updatedAt',
     });
   }
 }

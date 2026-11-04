@@ -174,6 +174,7 @@ export function useProjectsHydration({
         }
 
         if (pendingInvalidatedTaskIds.current.size > 0) {
+          const isTasksCurrentlyRequested = Boolean(useAppStore.getState().isTasksRequested);
           const itemsToResolve: TakaDeltaItem[] = [];
           pendingInvalidatedTaskIds.current.forEach((yr, tid) => {
             itemsToResolve.push({
@@ -184,7 +185,7 @@ export function useProjectsHydration({
               isPatch: true,
               invalidate: true,
               year: yr,
-              forceResolve: true,
+              forceResolve: isTasksCurrentlyRequested,
             } as any);
           });
           pendingInvalidatedTaskIds.current.clear();
@@ -480,7 +481,6 @@ export function useProjectsHydration({
     userRole,
     allowedStores,
     globalYearFilter,
-    globalStoreFilter,
     batchProjectsUpdate,
     setCloudStatus,
     recoveryTick,

@@ -24,12 +24,12 @@ export const TooltipTitleSection: React.FC<TooltipTitleSectionProps> = ({
   return (
     <div className="w-full pt-0.5">
       <div 
-        onClick={() => p && onEditProject?.(p, !canWrite, 'details')}
+        onClick={() => p && onEditProject?.(p, !canWrite, 'chat')}
         className={cn(
           "font-bold text-slate-800 dark:text-[#f0f0f3] text-sm sm:text-[14px] leading-tight break-words flex items-start gap-1.5 flex-wrap",
           p ? "cursor-pointer hover:text-blue-600 dark:hover:text-[#8ab4f8] transition-colors" : ""
         )}
-        title={p ? "Click to view project details" : undefined}
+        title={p ? "Click to view project comments & details" : undefined}
       >
         {v.floor && (
           <span className={cn(

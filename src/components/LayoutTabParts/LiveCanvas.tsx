@@ -418,7 +418,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
               }
               setEditingProject(project);
               setIsReadOnlyModal(Boolean(isReadOnly ?? !canWrite));
-              setModalInitialTab(tab || 'details');
+              setModalInitialTab(tab || 'chat');
               setIsProjectModalOpen(true);
             }}
             canWrite={canWrite}

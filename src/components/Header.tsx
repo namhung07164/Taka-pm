@@ -370,15 +370,6 @@ export const Header = React.memo(function Header({
             <ScanQrCode className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
 
-          {/* Web Share Target (Zalo Photo -> Project / Unit / Pin) Button */}
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent('taka_open_share_target_modal'))}
-            className="h-7 w-7 sm:h-8 sm:w-8 flex items-center justify-center bg-blue-50/80 hover:bg-blue-100 dark:bg-[#28282a] dark:hover:bg-[#333336] rounded-lg transition-colors border border-blue-200 dark:border-[#444446] shadow-2xs text-blue-600 dark:text-[#8ab4f8] active:scale-95 touch-manipulation shrink-0 cursor-pointer"
-            title="Web Share Target: Assign Zalo Photo to Project / Layout Unit / Pin (IndexedDB + R2)"
-          >
-            <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          </button>
-
           {/* Notification Bell (Always visible, right-aligned, shrink-0) */}
           <button
             onClick={() => onTabChange("notification")}

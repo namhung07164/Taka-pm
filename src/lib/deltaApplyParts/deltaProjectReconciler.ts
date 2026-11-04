@@ -220,8 +220,18 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
       nextTasks.push(t);
       continue;
     }
-    // Keep task in memory while runBackgroundDexieProjectTaskReconciliation verifies against Firestore taka_tasks
-    nextTasks.push(t);
+    // Task is older than 60s and no longer in authoritative project.taskSummaries -> purge zombie task locally (0 Firestore reads)
+    zombieIds.push(t.id);
+    anyTaskPatched = true;
+  }
+
+  if (zombieIds.length > 0) {
+    import('../taskDeletedTracker')
+      .then(({ markTasksDeleted }) => {
+        markTasksDeleted(zombieIds, pIdStr);
+      })
+      .catch(() => {});
+    localDb.tasks.bulkDelete(zombieIds).catch(() => {});
   }
 
   if (patchedTasksForDexie.length > 0) {

@@ -7,6 +7,7 @@ import { unmarkLoaded } from '../../lib/loadedMarkers';
 import { resolveInvalidations } from '../../lib/deltaInvalidateService';
 import { applyIncomingDeltas } from '../../lib/deltaSyncService';
 import { rollupTaskSummaries } from '../../lib/taskRollupHelpers';
+import { markTasksDeleted } from '../../lib/taskDeletedTracker';
 
 // Chuyển updatedAt (ISO string / Firestore Timestamp / plain {seconds} / number) về ms
 export const tsOf = (v: any): number => {
@@ -131,10 +132,15 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     tasksIndex,
     expandedSet,
     nowMs,
+    pendingDeletedTaskIds,
     pendingInvalidatedTaskIds,
   } = params;
 
   if (!Array.isArray(data.taskSummaries)) return;
+  const isTasksRequested = Boolean(useAppStore.getState().isTasksRequested);
+  const isProjectCurrentlyExpanded =
+    expandedSet.has(String(id)) ||
+    (Boolean(data.code) && expandedSet.has(String(data.code).trim()));
   const authoritativeSummaries =
     data.taskSummaries.length > 0 ? rollupTaskSummaries(data.taskSummaries) : data.taskSummaries;
 
@@ -165,7 +171,9 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
         !serverSummaryIds.has(oldId.toLowerCase()) &&
         !serverSummaryNameStarts.has(oldNameStart)
       ) {
-        pendingInvalidatedTaskIds.set(oldId, projYearStr);
+        // Server summary no longer has this task -> purge locally (0 Firestore reads)
+        markTasksDeleted([oldId], String(id));
+        pendingDeletedTaskIds.add(oldId);
       }
     });
   }
@@ -178,9 +186,7 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
   });
 
   const isProjectExpandedOrLoaded =
-    localProjTasksById.size > 0 ||
-    expandedSet.has(String(id)) ||
-    (Boolean(data.code) && expandedSet.has(String(data.code).trim()));
+    localProjTasksById.size > 0 || isProjectCurrentlyExpanded;
 
   let hasMissingLocalTasks = false;
   const unmatchedSummaryNameStarts = new Set<string>();
@@ -190,7 +196,7 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     if (!sIdLower || !localProjTasksById.has(sIdLower)) {
       if (sId && !sId.startsWith('ts_')) {
         hasMissingLocalTasks = true;
-        if (isProjectExpandedOrLoaded) {
+        if (isTasksRequested && isProjectCurrentlyExpanded) {
           pendingInvalidatedTaskIds.set(sId, projYearStr);
         }
       }
@@ -216,7 +222,9 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
       }
       const updatedMs = tsOf(t.updatedAt);
       if (!updatedMs || nowMs - updatedMs > 60000) {
-        pendingInvalidatedTaskIds.set(t.id, projYearStr);
+        // Zombie task in memory -> purge locally (0 Firestore reads)
+        markTasksDeleted([t.id], String(id));
+        pendingDeletedTaskIds.add(t.id);
       }
     }
   });
@@ -281,11 +289,23 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
 export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]): void {
   setTimeout(async () => {
     try {
+      const storeState = useAppStore.getState();
+      const isTasksRequested = Boolean(storeState.isTasksRequested);
+      const expandedSet = new Set(
+        [...(storeState.expandedProjectIds || []), ...(storeState.searchActiveProjectIds || [])].map(
+          String
+        )
+      );
+
       const nowBg = Date.now();
       const itemsToVerify: TakaDeltaItem[] = [];
+      const zombieIdsToPurgeFromStore = new Set<string>();
 
       for (const p of changed) {
         if (!p?.id || !Array.isArray(p.taskSummaries)) continue;
+        const isExpanded =
+          expandedSet.has(String(p.id)) ||
+          (Boolean(p.code) && expandedSet.has(String(p.code).trim()));
         const summaries =
           p.taskSummaries.length > 0 ? rollupTaskSummaries(p.taskSummaries) : p.taskSummaries;
         const summaryIds = new Set(
@@ -335,7 +355,7 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           if (!sIdLower || !candidateIdsLower.has(sIdLower)) {
             if (sId && !sId.startsWith('ts_')) {
               missingInDexie = true;
-              if (candidateMap.size > 0) {
+              if (isTasksRequested && isExpanded && candidateMap.size > 0) {
                 itemsToVerify.push({
                   docId: sId,
                   collectionName: 'taka_tasks',
@@ -374,19 +394,10 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
               continue;
             }
             if (isZeroTask || allSummariesHaveIds) {
-              itemsToVerify.push({
-                docId: tid,
-                collectionName: 'taka_tasks',
-                action: 'update',
-                data: {},
-                isPatch: true,
-                invalidate: true,
-                year: String(p.year || t.projectYear || ''),
-                projectId: String(p.id),
-                projectCode: p.code || t.projectCode,
-                projectStore: p.store || t.projectStore,
-                forceResolve: true,
-              } as any);
+              // Purge zombie task directly from local Dexie & Zustand (0 Firestore reads)
+              markTasksDeleted([tid], String(p.id));
+              zombieIdsToPurgeFromStore.add(tidLower);
+              await localDb.tasks.delete(tid).catch(() => {});
             }
           } else {
             const s = summaryById.get(tidLower);
@@ -431,6 +442,16 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
               }
             }
           }
+        }
+      }
+
+      if (zombieIdsToPurgeFromStore.size > 0) {
+        const latestTasks = useAppStore.getState().tasks || [];
+        const filtered = latestTasks.filter(
+          (t) => !t?.id || !zombieIdsToPurgeFromStore.has(String(t.id).trim().toLowerCase())
+        );
+        if (filtered.length !== latestTasks.length) {
+          useAppStore.getState().setTasks(filtered);
         }
       }
 

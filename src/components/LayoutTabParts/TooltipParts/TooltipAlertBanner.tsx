@@ -29,7 +29,7 @@ export const TooltipAlertBanner: React.FC<TooltipAlertBannerProps> = ({
     <div 
       onClick={() => {
         if (p) {
-          onEditProject?.(p, !canWrite, 'details');
+          onEditProject?.(p, !canWrite, 'chat');
         }
       }}
       className={cn(

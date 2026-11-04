@@ -1,30 +1,16 @@
-import { doc } from 'firebase/firestore';
 import { Task, Project, DelegationGroup } from '../../types';
-import { db, APP_ID } from '../../lib/firebase';
-import { writeBatch } from '../../lib/firestoreWrites';
 import { isTaskBelongsToProject, matchProjectCode } from '../../lib/utils';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
-import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../../lib/projectDatesService';
+import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS, calculateProjectComputedDates } from '../../lib/projectDatesService';
 import { bulkPersistProjects } from '../../lib/localDb';
 
 export { matchProjectCode };
 
 /**
- * Permanently deletes duplicate task docs from Firestore when deduplicated during server snapshot hydration.
+ * Local-only deduplication guard (Rule 16.3): never issue Firestore batch.delete during read snapshot hydration.
  */
-export function purgeRemovedDuplicateTasksFromFirestore(removedIds: string[], fromCache: boolean): void {
-  if (fromCache || !removedIds || removedIds.length === 0 || getAppBootAgeMs() < BOOT_SYNC_GUARD_MS) return;
-  const realIds = removedIds.filter((id) => id && !String(id).startsWith('ts_'));
-  if (realIds.length === 0) return;
-  setTimeout(async () => {
-    try {
-      const batch = writeBatch(db);
-      realIds.slice(0, 400).forEach((id) => {
-        batch.delete(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', String(id)));
-      });
-      await batch.commit();
-    } catch {}
-  }, 500);
+export function purgeRemovedDuplicateTasksFromFirestore(_removedIds: string[], _fromCache: boolean): void {
+  // Intentionally a no-op for Firestore to prevent read-triggered delete/delta storms.
 }
 
 export const tsOf = (v: any): number => {
@@ -418,9 +404,6 @@ export function healProjectsAfterTasksBatch(params: {
       (computed.taskSummaries?.length || 0) < (workingProj.taskSummaries?.length || 0);
     if (!fromCache && hasStructuralChange && !wouldShrinkUnloadedServerSummary) {
       bulkPersistProjects([healedProj]).catch(() => {});
-      if (isFullyHydratedProject && workingProj.id) {
-        syncProjectDatesToFirestore(String(workingProj.id), computed).catch(() => {});
-      }
     }
     return healedProj;
   });
