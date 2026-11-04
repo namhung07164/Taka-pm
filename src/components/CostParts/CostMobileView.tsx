@@ -94,7 +94,11 @@ export const CostMobileView = React.memo(function CostMobileView({
                 )
               : allGroupCosts;
           const groupKey = `${p.code}-${pDerivedYear}-${p.store}-${p.no}`;
-          const isExpanded = expandedCodes.includes(groupKey);
+          const isExpanded =
+            expandedCodes.includes(groupKey) ||
+            expandedCodes.includes(String(p.no)) ||
+            (p.id ? expandedCodes.includes(String(p.id)) : false) ||
+            (p.code ? expandedCodes.includes(String(p.code)) : false);
 
           return (
             <CostMobileCard

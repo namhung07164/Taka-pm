@@ -328,6 +328,18 @@ export async function getLocalCosts(year?: string): Promise<Cost[]> {
     const merged = new Map<string, Cost>();
     for (const c of byYear) if (c && c.id && !c.isDeleted) merged.set(c.id, c);
     for (const c of byProjYear) if (c && c.id && !c.isDeleted) merged.set(c.id, c);
+
+    if (merged.size === 0) {
+      const allCosts = await localDb.costs.toArray().catch(() => []);
+      for (const c of allCosts) {
+        if (!c || c.isDeleted) continue;
+        const cYear = String(c.projectYear !== undefined && c.projectYear !== null ? c.projectYear : (c as any).year || '').trim();
+        if (cYear === strYear) {
+          merged.set(c.id, c);
+        }
+      }
+    }
+
     return Array.from(merged.values());
   } catch (err) {
     console.warn('[localDb] getLocalCosts error:', err);
@@ -455,3 +467,5 @@ export async function clearDexieDatabase(): Promise<void> {
     console.warn('[localDb] clearDexieDatabase error:', err);
   }
 }
+
+export { getLocalCostsForProjects } from './localDbCosts';

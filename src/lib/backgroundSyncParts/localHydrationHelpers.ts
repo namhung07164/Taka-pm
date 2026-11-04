@@ -1,5 +1,6 @@
 import {
   getLocalCosts,
+  getLocalCostsForProjects,
   getLocalDelegations,
   getLocalDelegationsForProjects,
   getLocalDelegationsForTasks,
@@ -279,6 +280,66 @@ export async function hydrateCostsFromLocal(year?: string): Promise<number> {
     return 0;
   } catch (err) {
     console.warn('[backgroundSyncWorker] hydrateCostsFromLocal error:', err);
+    return 0;
+  }
+}
+
+export async function hydrateCostsForProjects(
+  projectIdsOrCodes: string[],
+  year?: string | number | null,
+  storeFilter?: string | null
+): Promise<number> {
+  if (!projectIdsOrCodes || projectIdsOrCodes.length === 0) return 0;
+  try {
+    const store = useAppStore.getState();
+    const currentProjects = store.projects || [];
+    const expandedKeys = new Set<string>();
+
+    projectIdsOrCodes.forEach((key) => {
+      const trimmed = String(key).trim();
+      if (!trimmed) return;
+      expandedKeys.add(trimmed);
+      const matched = currentProjects.find(
+        (p) => !p.isDeleted && (String(p.id) === trimmed || String(p.code).trim().toLowerCase() === trimmed.toLowerCase())
+      );
+      if (matched) {
+        if (matched.id) expandedKeys.add(String(matched.id).trim());
+        if (matched.code) expandedKeys.add(String(matched.code).trim());
+        if (matched.linkCodes) {
+          String(matched.linkCodes).split(/[,;/]+/).forEach((c) => { if (c.trim()) expandedKeys.add(c.trim()); });
+        }
+      }
+      currentProjects.forEach((child) => {
+        if (!child.isDeleted && (child.parentId === trimmed || (matched && (child.parentId === matched.id || child.parentId === matched.code)))) {
+          if (child.id) expandedKeys.add(String(child.id).trim());
+          if (child.code) expandedKeys.add(String(child.code).trim());
+        }
+      });
+    });
+
+    const localCosts = await getLocalCostsForProjects(Array.from(expandedKeys), year, storeFilter);
+    if (!localCosts || localCosts.length === 0) return 0;
+
+    const existing = store.costs || [];
+    const cMap = new Map(existing.map((c) => [c.id, c]));
+    let hasNew = false;
+    localCosts.forEach((c) => {
+      if (!c?.id) return;
+      const prev = cMap.get(c.id);
+      if (!prev || tsOf(c.updatedAt) > tsOf(prev.updatedAt)) {
+        cMap.set(c.id, c);
+        hasNew = true;
+      }
+    });
+
+    if (hasNew) {
+      store.setCosts(Array.from(cMap.values()));
+      usePerformanceStore.getState().trackGetDoc('dexie_costs_by_project', true, localCosts.length, `Instant Costs Hydration for ${projectIdsOrCodes.length} projects (0ms)`);
+      return localCosts.length;
+    }
+    return 0;
+  } catch (err) {
+    console.warn('[localHydrationHelpers] hydrateCostsForProjects error:', err);
     return 0;
   }
 }

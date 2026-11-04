@@ -57,6 +57,7 @@ export const CostMobileCard = React.memo(function CostMobileCard({
     : undefined;
 
   const totalAct = groupCosts.reduce((sum, c) => sum + (c.actual || 0), 0);
+  const effectiveAct = totalAct;
   const totalBalance = groupCosts.reduce(
     (sum, c) =>
       sum +
@@ -151,7 +152,7 @@ export const CostMobileCard = React.memo(function CostMobileCard({
                 : 'ACT:'
               : 'ACT:'}{' '}
             <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-              {formatCurrency(totalAct)}
+              {formatCurrency(effectiveAct)}
             </span>
           </div>
 
@@ -177,25 +178,31 @@ export const CostMobileCard = React.memo(function CostMobileCard({
       {/* Expanded Cost Item Cards */}
       {isExpanded && (
         <div className="flex flex-col gap-2.5 mt-1">
-          {groupCosts.map((c) => (
-            <CostMobileItemRow
-              key={c.id}
-              cost={c}
-              project={p}
-              pDerivedYear={pDerivedYear}
-              canWrite={canWrite}
-              currency={currency}
-              jpyRate={jpyRate}
-              usdRate={usdRate}
-              paidDateStart={paidDateStart}
-              paidDateEnd={paidDateEnd}
-              paidStageFilter={paidStageFilter}
-              getCostPaidMatches={getCostPaidMatches}
-              handleUpdateCost={handleUpdateCost}
-              handleDeleteCost={handleDeleteCost}
-              formatCurrency={formatCurrency}
-            />
-          ))}
+          {groupCosts.length === 0 ? (
+            <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-2 bg-slate-50 dark:bg-slate-800/40 rounded-lg">
+              No itemized cost entries recorded for this project.
+            </div>
+          ) : (
+            groupCosts.map((c) => (
+              <CostMobileItemRow
+                key={c.id}
+                cost={c}
+                project={p}
+                pDerivedYear={pDerivedYear}
+                canWrite={canWrite}
+                currency={currency}
+                jpyRate={jpyRate}
+                usdRate={usdRate}
+                paidDateStart={paidDateStart}
+                paidDateEnd={paidDateEnd}
+                paidStageFilter={paidStageFilter}
+                getCostPaidMatches={getCostPaidMatches}
+                handleUpdateCost={handleUpdateCost}
+                handleDeleteCost={handleDeleteCost}
+                formatCurrency={formatCurrency}
+              />
+            ))
+          )}
         </div>
       )}
 

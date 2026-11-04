@@ -139,12 +139,15 @@ export function useBudgetData({
   const { handleExportBudget, handleImportBudget } = useBudgetCsvOps({ projects, filteredRoots });
 
   const getProjectFinancials = (p: Project): ProjectFinancials => {
-    const fin = p.financial || { totalApproved: p.budget || 0, totalActualPaid: p.actual || 0, totalForecastPaid: 0 };
+    const fin = p.financial || { totalApproved: p.budget || 0, totalActualPaid: 0, totalForecastPaid: 0 };
     const budget = fin.totalApproved || p.budget || 0;
-    const actual = fin.totalActualPaid;
-    const hasForc = fin.totalForecastPaid > 0;
+    const pCosts = costs.filter(c => !c.isDeleted && String(c.projectCode || (c as any).code || '').trim().toLowerCase() === String(p.code || '').trim().toLowerCase() && (
+      !c.projectYear || !p.year || String(c.projectYear).trim() === String(p.year).trim()
+    ));
+    const actual = pCosts.reduce((sum, c) => sum + (Number(c.actual) || 0), 0);
+    const hasForc = pCosts.some(c => c.costType === 'forc');
     const supportingFee = p.supportingFee || 0;
-    const remaining = budget - (actual + fin.totalForecastPaid) + supportingFee;
+    const remaining = budget - (actual + (fin.totalForecastPaid || 0)) + supportingFee;
     return { budget, actual, supportingFee, hasForc, remaining };
   };
 

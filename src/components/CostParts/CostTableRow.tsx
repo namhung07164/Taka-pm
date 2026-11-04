@@ -78,9 +78,9 @@ export const CostTableRow = React.memo(function CostTableRow({
   const computedSup = allGroupCosts.reduce((s, c) => s + (Number(c.supportingFee) || 0), 0);
   const pFin = p.financial || {
     totalApproved: p.budget || 0,
-    totalActualPaid: p.actual || 0,
+    totalActualPaid: 0,
   };
-  const trueActual = hasAnyCosts ? computedActual : pFin.totalActualPaid || p.actual || 0;
+  const trueActual = computedActual;
   const trueSup = hasAnyCosts ? computedSup : p.supportingFee || 0;
   const trueBudget = pFin.totalApproved || p.budget || 0;
   const pRemaining = trueBudget - trueActual + trueSup;
@@ -158,7 +158,7 @@ export const CostTableRow = React.memo(function CostTableRow({
         {visibleColumns.includes('actual') && (
           <td className="px-4 py-3 text-right font-mono font-bold">
             <div className="flex flex-col items-end gap-1">
-              {groupCosts.length > 0 && (
+              {(groupCosts.length > 0 || (!hasAnyCosts && trueActual > 0)) && (
                 <span
                   className={cn(
                     'text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase',
@@ -171,8 +171,16 @@ export const CostTableRow = React.memo(function CostTableRow({
                 </span>
               )}
               <span className="text-emerald-600 dark:text-emerald-400">
-                {formatCurrency(totalAct)}
+                {formatCurrency(hasAnyCosts ? totalAct : trueActual)}
               </span>
+              {!hasAnyCosts && trueActual > 0 && (
+                <span
+                  className="text-[9px] text-amber-500/80 dark:text-amber-400/80 font-normal italic"
+                  title="Actual amount linked from Project / Budget summary"
+                >
+                  (Summary)
+                </span>
+              )}
             </div>
           </td>
         )}
@@ -250,6 +258,26 @@ export const CostTableRow = React.memo(function CostTableRow({
       </tr>
 
       {/* Expanded Cost Rows */}
+      {isExpanded && groupCosts.length === 0 && (
+        <tr className="bg-slate-50/80 dark:bg-[#1a1a1c]/80 border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
+          <td colSpan={visibleColumns.length} className="px-6 py-3 text-center">
+            <div className="flex items-center justify-center gap-2">
+              <span>No itemized cost entries recorded for this project yet.</span>
+              {canWrite && (
+                <button
+                  type="button"
+                  onClick={() => handleAddCost(p)}
+                  className="px-2.5 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded font-semibold text-[11px] inline-flex items-center gap-1 active:scale-95 touch-manipulation cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add First Cost Entry
+                </button>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+
       {isExpanded &&
         groupCosts.map((c, i) => {
           const {

@@ -227,13 +227,6 @@ export function useExecutiveDeckData(filters: {
           approvedCost += bd.totalApproved;
           costSupportingFee += Number(c.supportingFee) || 0;
         });
-      } else if (project.financial) {
-        actualPaid = Number(project.financial.totalActualPaid) || Number(project.actual) || 0;
-        forecastPaid = Number(project.financial.totalForecastPaid) || 0;
-        approvedCost = Number(project.financial.totalApproved) || actualPaid + forecastPaid;
-      } else {
-        actualPaid = Number(project.actual) || 0;
-        approvedCost = actualPaid;
       }
 
       const budget = Number(project.budget) || 0;

@@ -21,16 +21,11 @@ interface UseCostDataParams {
   initialSearchTerm?: string;
 }
 
-const EMPTY_COST_ARRAY: Cost[] = [];
-
-function getProjectCompositeKey(p: Project): string {
-  const pCode = String(p.code || '').trim().toLowerCase();
-  const pYr = String(
-    p.year ? p.year : p.start ? String(p.start).substring(0, 4) : ''
-  ).trim();
-  const pStore = String(p.store || '').trim().toLowerCase();
-  return `${p.id || p.no || ''}|${pCode}|${pYr}|${pStore}`;
-}
+import {
+  EMPTY_COST_ARRAY,
+  getProjectCompositeKey,
+  buildProjectCostsIndex,
+} from './costMatchingEngine';
 
 export function useCostData({
   projects,
@@ -98,70 +93,7 @@ export function useCostData({
   const prevProjectCostsCacheRef = React.useRef<Map<string, Cost[]>>(new Map());
 
   const projectCostsByCompositeKey = useMemo(() => {
-    const byCode = new Map<string, Cost[]>();
-    for (let i = 0; i < costs.length; i++) {
-      const c = costs[i];
-      if (c.isDeleted) continue;
-      const cCode = String(c.projectCode || (c as any).code || '').trim().toLowerCase();
-      if (!cCode) continue;
-      let list = byCode.get(cCode);
-      if (!list) {
-        list = [];
-        byCode.set(cCode, list);
-      }
-      list.push(c);
-    }
-
-    const prevCache = prevProjectCostsCacheRef.current;
-    const nextCache = new Map<string, Cost[]>();
-
-    for (let i = 0; i < projects.length; i++) {
-      const p = projects[i];
-      const key = getProjectCompositeKey(p);
-      const pCode = String(p.code || '').trim().toLowerCase();
-      const candidates = byCode.get(pCode);
-      if (!candidates || candidates.length === 0) {
-        nextCache.set(key, EMPTY_COST_ARRAY);
-        continue;
-      }
-
-      const pId = p.id ? String(p.id).trim() : '';
-      const pYr = String(
-        p.year ? p.year : p.start ? String(p.start).substring(0, 4) : ''
-      ).trim();
-      const pStore = String(p.store || '').trim().toLowerCase();
-
-      const matched: Cost[] = [];
-      for (let j = 0; j < candidates.length; j++) {
-        const c = candidates[j];
-        if (pId && c.projectId && String(c.projectId).trim() !== pId) {
-          continue;
-        }
-        const costYear = String(c.projectYear || (c as any).year || '').trim();
-        if (costYear && pYr && costYear !== pYr) continue;
-
-        const costStore = String(c.projectStore || (c as any).store || '').trim().toLowerCase();
-        if (costStore && pStore && costStore !== pStore) continue;
-
-        matched.push(c);
-      }
-
-      if (matched.length === 0) {
-        nextCache.set(key, EMPTY_COST_ARRAY);
-      } else {
-        const prevArr = prevCache.get(key);
-        if (
-          prevArr &&
-          prevArr.length === matched.length &&
-          prevArr.every((item, idx) => item === matched[idx])
-        ) {
-          nextCache.set(key, prevArr);
-        } else {
-          nextCache.set(key, matched);
-        }
-      }
-    }
-
+    const nextCache = buildProjectCostsIndex(projects, costs, prevProjectCostsCacheRef.current);
     prevProjectCostsCacheRef.current = nextCache;
     return nextCache;
   }, [costs, projects]);
@@ -269,8 +201,18 @@ export function useCostData({
         const fix = fixedProjectCode.trim().toLowerCase();
         const pCode = (p.code || '').trim().toLowerCase();
         const pName = (p.name || '').trim().toLowerCase();
-        const pLink = Array.isArray(p.linkCodes) ? p.linkCodes.join(' ').toLowerCase() : String(p.linkCodes || '').toLowerCase();
-        const matchesFix = pCode === fix || pCode.includes(fix) || pName.includes(fix) || pLink.includes(fix) || String(p.id).toLowerCase() === fix;
+        const pParent = (p.parentId || '').trim().toLowerCase();
+        const pLink = Array.isArray(p.linkCodes)
+          ? p.linkCodes.join(' ').toLowerCase()
+          : String(p.linkCodes || '').toLowerCase();
+        const matchesFix =
+          pCode === fix ||
+          pCode.includes(fix) ||
+          pName.includes(fix) ||
+          pLink.includes(fix) ||
+          String(p.id).toLowerCase() === fix ||
+          pParent === fix ||
+          pParent.includes(fix);
         if (!matchesFix) return false;
       }
 
@@ -348,14 +290,10 @@ export function useCostData({
       }
 
       const hasCostEntries = matchingGroupCosts.length > 0;
-      const fallbackProjectAct = p.financial?.totalActualPaid || p.actual || 0;
-      const totalAct = hasCostEntries
-        ? matchingGroupCosts.reduce((sum, c) => sum + (c.actual || 0), 0)
-        : fallbackProjectAct;
+      const totalAct = matchingGroupCosts.reduce((sum, c) => sum + (c.actual || 0), 0);
       if (
         hasActForcFilter === 'has_value' &&
         totalAct === 0 &&
-        fallbackProjectAct === 0 &&
         !hasCostEntries &&
         !paidDateStart &&
         !paidDateEnd
@@ -424,8 +362,17 @@ export function useCostData({
       setExpandedCodes(
         filteredProjectsForDisplay.map((p) => `${p.code}-${p.year}-${p.store}-${p.no}`)
       );
+    } else if (fixedProjectCode && filteredProjectsForDisplay.length > 0) {
+      const keysToExpand: string[] = [];
+      filteredProjectsForDisplay.forEach((sp) => {
+        const derivedYear = sp.year ? sp.year : sp.start ? Number(String(sp.start).substring(0, 4)) : undefined;
+        keysToExpand.push(`${sp.code}-${derivedYear}-${sp.store}-${sp.no}`);
+        if (sp.id) keysToExpand.push(String(sp.id));
+        if (sp.code) keysToExpand.push(String(sp.code));
+      });
+      setExpandedCodes((prev) => Array.from(new Set([...prev, ...keysToExpand])));
     }
-  }, [paidDateStart, paidDateEnd, paidStageFilter, filteredProjectsForDisplay, setExpandedCodes]);
+  }, [paidDateStart, paidDateEnd, paidStageFilter, fixedProjectCode, filteredProjectsForDisplay, setExpandedCodes]);
 
   const toggleAll = useCallback(() => {
     setExpandedCodes((prev) =>

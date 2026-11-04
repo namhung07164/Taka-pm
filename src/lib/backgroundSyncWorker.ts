@@ -16,11 +16,11 @@ import { isTaskBelongsToProject } from './utils';
 import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from './projectDatesService';
 import {
   tsOf, buildZombieProjectIndex, isZombieTaskAgainstProjects, reconcileAndDeduplicateLocalStore,
-  hydrateCostsFromLocal, hydrateDelegationsFromLocal, hydrateDelegationsForProjects, hydrateDelegationsForTasks,
+  hydrateCostsFromLocal, hydrateCostsForProjects, hydrateDelegationsFromLocal, hydrateDelegationsForProjects, hydrateDelegationsForTasks,
 } from './backgroundSyncParts/localHydrationHelpers';
 import { isProjectDeletedInTracker } from './taskDeletedTracker';
 
-export { hydrateCostsFromLocal, hydrateDelegationsFromLocal, hydrateDelegationsForProjects, hydrateDelegationsForTasks };
+export { hydrateCostsFromLocal, hydrateCostsForProjects, hydrateDelegationsFromLocal, hydrateDelegationsForProjects, hydrateDelegationsForTasks };
 
 /**
  * Làm tươi (refresh) Task của một dự án cụ thể khi có biến động (0ms lag)

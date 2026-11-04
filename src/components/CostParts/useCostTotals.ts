@@ -79,13 +79,12 @@ export function useCostTotals({
 
       const fin = p.financial || {
         totalApproved: p.budget || 0,
-        totalActualPaid: p.actual || 0,
+        totalActualPaid: 0,
       };
-      const fallbackActual = fin.totalActualPaid || p.actual || 0;
       const fallbackSup = p.supportingFee || 0;
       const finalBudget = fin.totalApproved || p.budget || 0;
 
-      const effectiveActual = hasCosts ? pActualSum : fallbackActual;
+      const effectiveActual = pActualSum;
       const effectiveSup = hasCosts ? pSupSum : fallbackSup;
 
       totalActAll += effectiveActual;

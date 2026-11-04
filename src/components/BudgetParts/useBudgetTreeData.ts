@@ -38,10 +38,10 @@ export function buildBudgetTreeData(projects: Project[], costs: Cost[]): BudgetT
       const computedForc = projectCosts.filter(c => c.costType === 'forc').reduce((sum, c) => sum + (Number(c.actual) || 0), 0);
       const computedSupportingFee = projectCosts.reduce((sum, c) => sum + (Number(c.supportingFee) || 0), 0);
 
-      const fin = p.financial || { totalApproved: p.budget || 0, totalActualPaid: p.actual || 0, totalForecastPaid: 0 };
+      const fin = p.financial || { totalApproved: p.budget || 0, totalActualPaid: 0, totalForecastPaid: 0 };
       const hasCosts = projectCosts.length > 0;
-      const finalActual = hasCosts ? computedActual : (fin.totalActualPaid || p.actual || 0);
-      const finalForc = hasCosts ? computedForc : (fin.totalForecastPaid || 0);
+      const finalActual = computedActual;
+      const finalForc = computedForc;
       const finalSupportingFee = hasCosts ? computedSupportingFee : (p.supportingFee || 0);
 
       const pData = {

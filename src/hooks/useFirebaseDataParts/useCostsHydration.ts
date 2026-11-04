@@ -1,12 +1,12 @@
 import { useEffect, useRef, useCallback } from "react";
-import { collection, onSnapshot, getDocsFromCache, getDocsFromServer } from "firebase/firestore";
+import { collection, onSnapshot, getDocsFromCache, getDocsFromServer, query, where } from "firebase/firestore";
 import { useAppStore } from "../../store/useAppStore";
 import { usePerformanceStore } from "../../store/usePerformanceStore";
 import { db, APP_ID } from "../../lib/firebase";
 import { Cost } from "../../types";
 import { PRIMARY_ACTIVE_YEARS, SECONDARY_ACTIVE_YEARS } from "../../lib/utils";
 import { buildStoreAndYearQuery } from "./firebaseQueryHelpers";
-import { hydrateCostsFromLocal, offloadPersistSnapshot } from "../../lib/backgroundSyncWorker";
+import { hydrateCostsFromLocal, hydrateCostsForProjects, offloadPersistSnapshot } from "../../lib/backgroundSyncWorker";
 import { deleteLocalRecord } from "../../lib/localDb";
 import { pullAndApplyDeltas } from "../../lib/deltaSyncService";
 import { getLoadedMarkers, hasFreshMarker, markLoaded } from "../../lib/loadedMarkers";
@@ -135,6 +135,42 @@ export function useCostsHydration({
     };
   }, []);
 
+  // Project-targeted hydration: when fixedProjectCode is set, hydrate immediately from Dexie & query Firestore
+  const fixedProjectCode = useAppStore((state) => state.fixedProjectCode);
+  useEffect(() => {
+    if (!isCostsRequested || !fixedProjectCode || !fixedProjectCode.trim()) return;
+    const targetCode = fixedProjectCode.trim();
+    hydrateCostsForProjects([targetCode], globalYearFilter, null).catch(() => {});
+
+    const colRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_costs");
+    const queries = [
+      query(colRef, where("projectCode", "==", targetCode)),
+      query(colRef, where("projectCode", "==", targetCode.toUpperCase())),
+      query(colRef, where("code", "==", targetCode)),
+      query(colRef, where("code", "==", targetCode.toUpperCase())),
+    ];
+    const targetProject = (useAppStore.getState().projects || []).find(
+      (p) =>
+        String(p.code || '').trim().toLowerCase() === targetCode.toLowerCase() ||
+        String(p.id).trim() === targetCode
+    );
+    if (targetProject?.id) {
+      queries.push(query(colRef, where("projectId", "==", String(targetProject.id).trim())));
+    }
+
+    Promise.all(queries.map((q) => getDocsFromServer(q).catch(() => getDocsFromCache(q))))
+      .then((snaps) => {
+        snaps.forEach((snap) => {
+          if (snap && !snap.empty) {
+            batchCostsUpdate(snap.docChanges(), false);
+          }
+        });
+      })
+      .catch((err) => {
+        console.warn("[useCostsHydration] Project-targeted cost query error:", err);
+      });
+  }, [isCostsRequested, fixedProjectCode, globalYearFilter, batchCostsUpdate]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -195,7 +231,8 @@ export function useCostsHydration({
         const storeState = useAppStore.getState();
         const currentCosts = storeState.costs || [];
         const hasLocalCosts =
-          localCount > 0 || currentCosts.some((c) => String(c.projectYear || "") === String(year));
+          localCount > 0 ||
+          currentCosts.some((c) => String(c.projectYear || (c as any).year || "") === String(year));
         const isClosedOrPastYear = Number(year) < new Date().getFullYear();
         const markers = await getLoadedMarkers();
         const hasFreshCostMarker = hasFreshMarker(markers, 'costs_year', year);
@@ -206,7 +243,7 @@ export function useCostsHydration({
         const deltaManaged =
           (hasLocalCosts && isClosedOrPastYear) ||
           yearHasZeroProjects ||
-          (DELTA_FIRST.costs && hasFreshCostMarker);
+          (DELTA_FIRST.costs && hasFreshCostMarker && hasLocalCosts);
         if (deltaManaged) {
           setIsCostsLoading(false);
           setCloudStatus("online");
@@ -250,9 +287,14 @@ export function useCostsHydration({
                 const isStoreRestricted =
                   userRole !== "admin" && allowedLower.length > 0 && !allowedLower.includes("all");
                 const currentCostsNow = useAppStore.getState().costs || [];
+                const fixedProj = (useAppStore.getState().fixedProjectCode || '').toLowerCase().trim();
                 currentCostsNow.forEach((c) => {
                   const cYr = String(c.projectYear ?? (c as any).year ?? "").trim();
                   if (c?.id && cYr === String(year).trim() && !serverIds.has(c.id)) {
+                    const cCode = String(c.projectCode || (c as any).code || '').toLowerCase().trim();
+                    if (fixedProj && (cCode === fixedProj || cCode.includes(fixedProj))) {
+                      return; // Guard target project costs against false zombie purge
+                    }
                     const cSt = c.projectStore || (c as any).store;
                     if (
                       isStoreRestricted &&
@@ -274,6 +316,18 @@ export function useCostsHydration({
 
               batchCostsUpdate(changesToApply, fromCache);
               setCloudStatus("online");
+
+              // Also check for legacy schema with year/store to ensure all costs are fetched
+              if (!fromCache) {
+                const qLegacy = buildStoreAndYearQuery(colRef, "store", "year", year, userRole, allowedStores);
+                getDocsFromServer(qLegacy)
+                  .then((legacySnap) => {
+                    if (!legacySnap.empty) {
+                      batchCostsUpdate(legacySnap.docChanges(), false);
+                    }
+                  })
+                  .catch(() => {});
+              }
 
               if (!fromCache) {
                 markLoaded('costs_year', year).catch(() => {});
