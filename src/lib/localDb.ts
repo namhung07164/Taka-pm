@@ -7,16 +7,38 @@ export interface LocalSyncMeta {
   updatedAt: number;
 }
 
-/**
- * TakaLocalDB: IndexedDB Local-First Database bọc bởi Dexie.js
- * Cung cấp khả năng lưu trữ cục bộ có chỉ mục (indexed), truy vấn O(1) và nạp tức thì 0ms
- */
+export interface SharedMediaRecord {
+  id: string;
+  projectId: string;
+  projectCode: string;
+  year: string;
+  store: string;
+  location: string;
+  unitCode: string;
+  pinId: string;
+  pinLabel: string;
+  pinX?: number;
+  pinY?: number;
+  title: string;
+  caption: string;
+  fileName: string;
+  mimeType: string;
+  fileSize?: number;
+  localDataUrl: string;
+  r2Url?: string;
+  syncStatus: 'synced' | 'pending_r2' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+}
+
 export class TakaLocalDB extends Dexie {
   projects!: Table<Project, string>;
   tasks!: Table<Task, string>;
   costs!: Table<Cost, string>;
   delegations!: Table<DelegationGroup, string>;
   syncMeta!: Table<LocalSyncMeta, string>;
+  sharedMedia!: Table<SharedMediaRecord, string>;
 
   constructor() {
     super('TakaLocalFirstDB_v1');
@@ -36,6 +58,9 @@ export class TakaLocalDB extends Dexie {
     });
     this.version(3).stores({
       delegations: '&id, projectId, projectCode, parentTaskId, code, projectStore, projectYear, store, year, status, updatedAt',
+    });
+    this.version(4).stores({
+      sharedMedia: '&id, projectId, projectCode, year, store, unitCode, pinId, syncStatus, updatedAt',
     });
   }
 }
@@ -214,9 +239,6 @@ export async function deleteLocalRecord(
   }
 }
 
-/**
- * Đọc toàn bộ Dự án từ Local Database theo bộ lọc
- */
 export async function getLocalProjects(year?: string, store?: string): Promise<Project[]> {
   try {
     let collection = localDb.projects.toCollection();
@@ -228,9 +250,7 @@ export async function getLocalProjects(year?: string, store?: string): Promise<P
     const results = await collection.toArray();
     const activeProjects = results.filter((p) => !p.isDeleted);
     if (store && store !== 'all' && store !== 'ALL') {
-      return activeProjects.filter(
-        (p) => p.store && p.store.toLowerCase() === store.toLowerCase()
-      );
+      return activeProjects.filter((p) => p.store && p.store.toLowerCase() === store.toLowerCase());
     }
     return activeProjects;
   } catch (err) {
@@ -239,9 +259,6 @@ export async function getLocalProjects(year?: string, store?: string): Promise<P
   }
 }
 
-/**
- * Đọc Tasks từ Local Database theo danh sách Project IDs hoặc Project Codes (hỗ trợ lọc theo year & store)
- */
 export async function getLocalTasksForProjects(
   projectIdsOrCodes: string[],
   year?: string | number | null,
@@ -301,9 +318,6 @@ export async function getLocalTasksForProjects(
   }
 }
 
-/**
- * Đọc toàn bộ Tasks từ Local Database
- */
 export async function getLocalTasks(year?: string): Promise<Task[]> {
   try {
     if (!year || year === 'all' || year === 'ALL') {
@@ -317,14 +331,10 @@ export async function getLocalTasks(year?: string): Promise<Task[]> {
     ]);
     const merged = new Map<string, Task>();
     for (const t of byYear) {
-      if (t && t.id && !t.isDeleted && !isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)) {
-        merged.set(t.id, t);
-      }
+      if (t && t.id && !t.isDeleted && !isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)) merged.set(t.id, t);
     }
     for (const t of byProjYear) {
-      if (t && t.id && !t.isDeleted && !isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)) {
-        merged.set(t.id, t);
-      }
+      if (t && t.id && !t.isDeleted && !isTaskDeletedInTracker(t.id, t.projectId ? String(t.projectId) : undefined)) merged.set(t.id, t);
     }
     return Array.from(merged.values());
   } catch (err) {
@@ -333,9 +343,6 @@ export async function getLocalTasks(year?: string): Promise<Task[]> {
   }
 }
 
-/**
- * Đọc toàn bộ Costs từ Local Database
- */
 export async function getLocalCosts(year?: string): Promise<Cost[]> {
   try {
     if (!year || year === 'all' || year === 'ALL') {
@@ -379,9 +386,6 @@ export async function getLocalDelegations(year?: string): Promise<DelegationGrou
   }
 }
 
-/**
- * Đọc Delegations từ Local Database theo danh sách Project IDs hoặc Project Codes (hỗ trợ lọc theo year & store)
- */
 export async function getLocalDelegationsForProjects(
   projectIdsOrCodes: string[],
   year?: string | number | null,
@@ -398,12 +402,8 @@ export async function getLocalDelegationsForProjects(
       localDb.delegations.where('code').anyOf(rawKeys).toArray().catch(() => []),
     ]);
 
-    const normYear = year !== undefined && year !== null && String(year).toLowerCase() !== 'all'
-      ? String(year).trim()
-      : '';
-    const normStore = store && String(store).toLowerCase() !== 'all'
-      ? String(store).trim().toUpperCase()
-      : '';
+    const normYear = year !== undefined && year !== null && String(year).toLowerCase() !== 'all' ? String(year).trim() : '';
+    const normStore = store && String(store).toLowerCase() !== 'all' ? String(store).trim().toUpperCase() : '';
 
     const matchesScope = (d: DelegationGroup, matchedById: boolean): boolean => {
       if (!d || !d.id || d.isDeleted) return false;
@@ -432,9 +432,6 @@ export async function getLocalDelegationsForProjects(
   }
 }
 
-/**
- * Đọc Delegations từ Local Database theo danh sách Task IDs
- */
 export async function getLocalDelegationsForTasks(taskIds: string[]): Promise<DelegationGroup[]> {
   if (!taskIds || taskIds.length === 0) return [];
   try {

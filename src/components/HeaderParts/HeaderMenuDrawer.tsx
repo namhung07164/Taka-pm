@@ -98,7 +98,23 @@ export function HeaderMenuDrawer({
             className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-slate-50 dark:hover:bg-[#333336]/50 flex items-center gap-2.5 transition-colors border-b border-slate-100 dark:border-[#444446] cursor-pointer"
           >
             <Calendar className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-            <span>Đồng bộ Apple Calendar (iOS)</span>
+            <span>Apple Calendar Sync (iOS)</span>
+          </button>
+
+          <button
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('taka_open_share_target_modal'));
+              setIsMenuOpen(false);
+            }}
+            className="w-full text-left px-4 py-2.5 text-xs text-slate-700 dark:text-[#e3e3e3] font-medium hover:bg-blue-50 dark:hover:bg-[#333336]/50 flex items-center justify-between transition-colors border-b border-slate-100 dark:border-[#444446] cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5">
+              <Upload className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span className="font-bold">Zalo Share Target (Pin & R2)</span>
+            </div>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+              PWA
+            </span>
           </button>
 
           <button

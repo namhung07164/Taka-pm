@@ -11,6 +11,7 @@ const TaskModal = lazyWithRetry(() => import('./TaskModal').then(m => ({ default
 const UserModal = lazyWithRetry(() => import('./UserModal').then(m => ({ default: m.UserModal })), 'UserModal');
 const CalendarSyncModal = lazyWithRetry(() => import('./CalendarSyncModal').then(m => ({ default: m.CalendarSyncModal })), 'CalendarSyncModal');
 const ZoomableImageViewer = lazyWithRetry(() => import('./ZoomableImageViewer').then(m => ({ default: m.ZoomableImageViewer })), 'ZoomableImageViewer');
+const ShareTargetModal = lazyWithRetry(() => import('./ShareTarget/ShareTargetModal').then(m => ({ default: m.ShareTargetModal })), 'ShareTargetModal');
 
 interface AppModalsProps {
   onLogin: (appUser: AppUser) => void;
@@ -88,6 +89,8 @@ export const AppModals: React.FC<AppModalsProps> = React.memo(({ onLogin, onTabC
 
   return (
     <Suspense fallback={null}>
+      <ShareTargetModal />
+
       {isLoginModalOpen && (
         <LoginModal
           isOpen={isLoginModalOpen}

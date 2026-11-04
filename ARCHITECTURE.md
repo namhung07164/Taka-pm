@@ -77,6 +77,7 @@ Hệ thống hoạt động theo mô hình **Local-First 4 Tầng** với độ 
 | `src/lib/lazyWithRetry.ts` | `lazyWithRetry` | Dynamic import bọc cơ chế tự tải lại khi mất mạng hoặc có phiên bản code mới. |
 | `src/lib/auditLogService.ts` | `recordAuditLog` | Ghi nhật ký kiểm toán Append-only vào `audit_logs` đối với biến động tiền và cấu hình. |
 | `src/lib/unitSizeResolver.ts` | `getUnitEffectiveSizeM2`, `projectMatchesUnitCode` | Giải mã diện tích m² và ghép nối mã dự án với layout CAD/PDF. |
+| `src/lib/shareTargetService.ts` | `consumeSharedInboxPayloads`, `saveSharedMediaToDexieAndR2`, `flushPendingSharedMediaQueue` | Xử lý Web Share Target API (nhận ảnh/text từ Zalo cả khi Offline), lưu vào Dexie `sharedMedia` và đồng bộ lên Cloudflare R2. |
 
 ---
 
@@ -120,14 +121,14 @@ src/components/
 
 | TabId | Phân Hệ | File Container Chính | Submodules & Hooks Chính Cần Mở | Modals / Dialogs Liên Quan |
 | :--- | :--- | :--- | :--- | :--- |
-| `general` | Tổng quan dự án | `src/components/GeneralTab.tsx` | `GeneralTabParts/ProjectTableView.tsx`, `GeneralFilterToolbar.tsx`, `useGeneralData.ts` | `ProjectModal`, `ProjectQuickNavModal` |
+| `general` | Tổng quan dự án | `src/components/GeneralTab.tsx` | `GeneralTabParts/ProjectTableView.tsx`, `GeneralFilterToolbar.tsx`, `useGeneralData.ts` | `ProjectModal`, `ProjectQuickNavModal`, `ShareTargetModal` |
 | `myWork` | Việc của tôi (My Work) | `src/components/MyWorkTab.tsx` | `MyWorkTabParts/MyWorkHeader.tsx`, `MyWorkKanbanView.tsx`, `MyWorkStreamView.tsx`, `MyWorkRowItem.tsx`, `useMyWorkData.ts`, `myWorkDataBuilders.ts`, `myWorkMutationService.ts`, `myWorkAccountSync.ts` | `TaskModal`, `ProjectModal`, `CalendarSyncModal` |
 | `detail` | Chi tiết công việc | `src/components/DetailTab.tsx` | `DetailTabParts/DetailTableView.tsx`, `DetailFilterToolbar.tsx`, `DetailMobileView.tsx`, `detailTaskMoveService.ts`, `useDetailData.ts`, `useDetailFilterSync.ts`, `useDetailTaskReorder.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal`, `TaskModularModal`, `FullReplaceImport` |
-| `gantt` | Biểu đồ tiến độ Gantt | `src/components/GanttTab.tsx` | `Gantt/GanttTableView.tsx`, `GanttTimeline.tsx`, `GanttProjectRow.tsx`, `GanttTaskRow.tsx`, `useGanttProjectsFilter.ts`, `useGanttRowVirtualizer.ts`, `useGanttDependencies.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal` |
+| `gantt` | Biểu đồ tiến độ Gantt | `src/components/GanttTab.tsx` | `Gantt/GanttTableView.tsx`, `GanttTimeline.tsx`, `GanttProjectRow.tsx`, `GanttTaskRow.tsx`, `GanttTaskEditableColumns.tsx`, `useGanttProjectsFilter.ts`, `useGanttRowVirtualizer.ts`, `useGanttDependencies.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal` |
 | `calendar` | Lịch tiến độ công việc | `src/components/CalendarTab.tsx` | `CalendarTabParts/CalendarMonthlyView.tsx`, `useCalendarEvents.ts` | `CalendarSyncModal`, `TaskModal` |
 | `budget` | Quản lý ngân sách | `src/components/BudgetTab.tsx` | `BudgetParts/BudgetTableView.tsx`, `BudgetFilterToolbar.tsx`, `BudgetTreeRow.tsx`, `useBudgetData.ts`, `useBudgetFilterSort.ts` | `BudgetLinkModal` (kèm `BudgetLinkParentColumn.tsx`, `BudgetLinkChildColumn.tsx`) |
 | `cost` | Chi phí thực tế | `src/components/CostTab.tsx` | `CostParts/CostTableView.tsx`, `CostFilterToolbar.tsx`, `useCostData.ts`, `useCostSearchFilter.ts` | `CostItemModal`, `CostExportModal` |
-| `layout` | Mặt bằng CAD / Kỹ thuật | `src/components/LayoutTab.tsx` | `LayoutTabParts/LayoutCanvasViewport.tsx`, `LayoutUnitSidebar.tsx`, `LayoutFilterToolbar.tsx`, `useLayoutGestures.ts`, `layoutDataAggregator.ts` | `LayoutUnitLightboxModal`, `LayoutMiniGanttModal` |
+| `layout` | Mặt bằng CAD / Kỹ thuật | `src/components/LayoutTab.tsx` | `LayoutTabParts/LayoutCanvasViewport.tsx`, `LayoutUnitSidebar.tsx`, `LayoutFilterToolbar.tsx`, `useLayoutGestures.ts`, `layoutDataAggregator.ts` | `LayoutUnitLightboxModal`, `LayoutMiniGanttModal`, `ShareTargetModal` |
 | `picture_mapping` | Ánh xạ sơ đồ hình ảnh | `src/components/PictureMappingTab.tsx` | `PictureMapping/components/DataMapping/EditTab.tsx`, `DynamicHierarchyTab.tsx`, `ReviewTab.tsx`, `EditTabParts/EditTabInspector.tsx`, `DynamicHierarchyParts/DynamicGroupCard.tsx`, `DynamicHierarchyCsvService.ts`, `DynamicCsvGuideModal.tsx` | `EditTabInspector`, `DynamicCsvGuideModal`, `ReviewTab` |
 | `summary` | Báo cáo tóm tắt | `src/components/SummaryTab.tsx` | `SummaryParts/SummaryMetricsCard.tsx`, `SummaryFilterToolbar.tsx` | `SummaryExportModal` |
 | `taskDelegation` | Phân công ủy quyền | `src/components/TaskDelegationTab.tsx`| `TaskDelegationParts/DelegationTableView.tsx`, `DelegationParts/DelegationCard.tsx` | `DelegationGroupModal`, `DelegationTaskModal` |
@@ -138,3 +139,4 @@ src/components/
 | `setting` | Cấu hình & Backup | `src/components/SettingTab.tsx` | `SettingTabParts/SystemConfigPanel.tsx`, `DataBackupPanel.tsx` | `ProjectLinksImagesManagerModal`, `FirestoreSummarizedExportModal`, `DesktopOptimizationModal` |
 | `csv_export` | Xuất nhập file | `src/components/CsvExportTab.tsx` | `CsvExportParts/ExportPreviewTable.tsx` | `CsvImportModal` |
 | `manual` | Hướng dẫn sử dụng | `src/components/ManualTab.tsx` | `FaqBot/FaqChatWindow.tsx`, `FaqKnowledgeViewer.tsx` | `FaqChatbotModal` |
+

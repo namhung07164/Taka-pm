@@ -315,6 +315,7 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
           projects={projects}
           tasks={tasks}
           canWrite={canWrite}
+          isEditMode={isEditMode}
           showStart={showStart}
           startColWidth={startColWidth}
           showFinish={showFinish}

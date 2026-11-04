@@ -107,6 +107,12 @@ const GanttDateInlineCell = memo(function GanttDateInlineCell({
     return () => document.removeEventListener('mousedown', onDown);
   }, [isEditing, val, commitSave]);
 
+  useEffect(() => {
+    if (!canWrite && isEditing) {
+      setIsEditing(false);
+    }
+  }, [canWrite, isEditing]);
+
   if (!canWrite) {
     return (
       <div className="w-full h-full flex items-center justify-center">
@@ -176,6 +182,7 @@ export interface GanttTaskEditableColumnsProps {
   projects: Project[];
   tasks: Task[];
   canWrite: boolean;
+  isEditMode?: boolean;
   showStart: boolean;
   startColWidth: number;
   showFinish: boolean;
@@ -194,6 +201,7 @@ export const GanttTaskEditableColumns = memo(function GanttTaskEditableColumns({
   projects,
   tasks,
   canWrite,
+  isEditMode = false,
   showStart,
   startColWidth,
   showFinish,
@@ -208,12 +216,18 @@ export const GanttTaskEditableColumns = memo(function GanttTaskEditableColumns({
 }: GanttTaskEditableColumnsProps) {
   const isPrintMode = useAppStore((state) => Boolean((state as any).isPrintMode));
   const parties = useAppStore((state) => state.parties);
-  const effectiveCanWrite = Boolean(canWrite && !isPrintMode);
+  const effectiveCanWrite = Boolean(canWrite && isEditMode && !isPrintMode);
 
   const effectiveDuration = getEffectiveTaskDuration(t);
 
   const [editingField, setEditingField] = useState<'party' | 'duration' | null>(null);
   const [draftVal, setDraftVal] = useState('');
+
+  useEffect(() => {
+    if (!effectiveCanWrite && editingField !== null) {
+      setEditingField(null);
+    }
+  }, [effectiveCanWrite, editingField]);
 
   const startEditParty = (e: React.MouseEvent) => {
     if (!effectiveCanWrite) return;
@@ -255,7 +269,7 @@ export const GanttTaskEditableColumns = memo(function GanttTaskEditableColumns({
     <>
       {showStart && (
         <div
-          data-editable-cell="true"
+          data-editable-cell={effectiveCanWrite ? 'true' : undefined}
           className="border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
           style={{ width: startColWidth, minWidth: startColWidth, maxWidth: startColWidth }}
         >
@@ -270,7 +284,7 @@ export const GanttTaskEditableColumns = memo(function GanttTaskEditableColumns({
 
       {showFinish && (
         <div
-          data-editable-cell="true"
+          data-editable-cell={effectiveCanWrite ? 'true' : undefined}
           className="border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
           style={{ width: finishColWidth, minWidth: finishColWidth, maxWidth: finishColWidth }}
         >
@@ -285,7 +299,7 @@ export const GanttTaskEditableColumns = memo(function GanttTaskEditableColumns({
 
       {showParty && (
         <div
-          data-editable-cell="true"
+          data-editable-cell={effectiveCanWrite ? 'true' : undefined}
           className="text-xs text-slate-700 dark:text-slate-300 font-medium border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
           style={{ width: partyColWidth, minWidth: partyColWidth, maxWidth: partyColWidth }}
         >
@@ -343,7 +357,7 @@ export const GanttTaskEditableColumns = memo(function GanttTaskEditableColumns({
 
       {showDuration && (
         <div
-          data-editable-cell="true"
+          data-editable-cell={effectiveCanWrite ? 'true' : undefined}
           className="font-mono text-[10px] sm:text-xs text-slate-700 dark:text-slate-300 border-l border-slate-200 dark:border-[#444446] p-1 flex items-center justify-center font-bold shrink-0 h-full overflow-hidden"
           style={{ width: durationColWidth, minWidth: durationColWidth, maxWidth: durationColWidth }}
         >
@@ -392,10 +406,10 @@ export const GanttTaskEditableColumns = memo(function GanttTaskEditableColumns({
 
       {showPredecessor && (
         <div
-          data-editable-cell="true"
+          data-editable-cell={effectiveCanWrite ? 'true' : undefined}
           className="font-mono text-[10px] sm:text-xs text-indigo-600 dark:text-indigo-400 font-semibold border-l border-slate-200 dark:border-[#444446] px-1 flex items-center justify-center shrink-0 h-full overflow-hidden"
           style={{ width: predecessorColWidth, minWidth: predecessorColWidth, maxWidth: predecessorColWidth }}
-          title={t.predecessor || 'Click to edit Predecessor'}
+          title={effectiveCanWrite ? (t.predecessor || 'Click to edit Predecessor') : (t.predecessor || undefined)}
         >
           <PredecessorEditableCell
             compact={true}
