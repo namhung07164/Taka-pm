@@ -305,16 +305,7 @@ export async function hydrateCostsForProjects(
       if (matched) {
         if (matched.id) expandedKeys.add(String(matched.id).trim());
         if (matched.code) expandedKeys.add(String(matched.code).trim());
-        if (matched.linkCodes) {
-          String(matched.linkCodes).split(/[,;/]+/).forEach((c) => { if (c.trim()) expandedKeys.add(c.trim()); });
-        }
       }
-      currentProjects.forEach((child) => {
-        if (!child.isDeleted && (child.parentId === trimmed || (matched && (child.parentId === matched.id || child.parentId === matched.code)))) {
-          if (child.id) expandedKeys.add(String(child.id).trim());
-          if (child.code) expandedKeys.add(String(child.code).trim());
-        }
-      });
     });
 
     const localCosts = await getLocalCostsForProjects(Array.from(expandedKeys), year, storeFilter);

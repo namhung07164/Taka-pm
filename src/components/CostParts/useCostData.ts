@@ -201,7 +201,6 @@ export function useCostData({
         const fix = fixedProjectCode.trim().toLowerCase();
         const pCode = (p.code || '').trim().toLowerCase();
         const pName = (p.name || '').trim().toLowerCase();
-        const pParent = (p.parentId || '').trim().toLowerCase();
         const pLink = Array.isArray(p.linkCodes)
           ? p.linkCodes.join(' ').toLowerCase()
           : String(p.linkCodes || '').toLowerCase();
@@ -210,9 +209,7 @@ export function useCostData({
           pCode.includes(fix) ||
           pName.includes(fix) ||
           pLink.includes(fix) ||
-          String(p.id).toLowerCase() === fix ||
-          pParent === fix ||
-          pParent.includes(fix);
+          String(p.id).toLowerCase() === fix;
         if (!matchesFix) return false;
       }
 

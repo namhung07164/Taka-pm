@@ -67,8 +67,7 @@ export async function getLocalCostsForProjects(
         if (
           lowerRawIds.has(cProjId) ||
           lowerRawIds.has(cProjCode) ||
-          compactRawIds.has(cCompact) ||
-          Array.from(compactRawIds).some((cr) => cCompact.startsWith(cr))
+          compactRawIds.has(cCompact)
         ) {
           merged.set(c.id, c);
         }
