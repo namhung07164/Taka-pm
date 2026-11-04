@@ -293,6 +293,40 @@ export const FAQ_TAB_QUICK_CHIPS: FaqQuickChip[] = [
       '### 🤝 5-Step Delegation Tracker Workflow\n' +
       '1. **`Assigned (0%)`** ➔ 2. **`Accepted / On process (50%)`** ➔ 3. **`Pending completed (85%)`** ➔ 4. **`Approved / Completed (100%)`** (or 5. **`Rejected (25%)`**).\n' +
       '• When 100% of sub-tasks are `Approved` and `Realtime Update` is active, the parent task automatically completes.'
+  },
+  {
+    id: 'chip-gantt-inline-edit-mode',
+    tabIds: ['gantt', 'detail'],
+    labelVi: 'Sửa trực tiếp trên Gantt (Edit Mode)',
+    labelEn: 'Inline Edit on Gantt (Edit Mode)',
+    targetTab: 'gantt',
+    targetTabLabelVi: 'Mở Tab Gantt',
+    targetTabLabelEn: 'Open Gantt Tab',
+    answerVi:
+      '### ✏️ Nhập liệu `Duration`, `Start`, `Finish`, `Party`, `Predecessor` trên Tab Gantt\n' +
+      '• **Chỉ mở khi bật `Edit Mode`**: Bấm nút **`ON Task detail`** (màu xanh trên Header) để mở khóa sửa trực tiếp 5 cột trên bảng Gantt.\n' +
+      '• **Đồng bộ 2 chiều (0ms)**: Mọi thay đổi trên Gantt tự động tính lại lịch dây chuyền (`cascade`) và đồng bộ 100% với **Tab Task Detail**.',
+    answerEn:
+      '### ✏️ Inline-Editing `Duration`, `Start`, `Finish`, `Party`, `Predecessor` on Gantt\n' +
+      '• **Protected by `Edit Mode`**: Toggle **`ON Task detail`** on the Header to unlock inline editing for all 5 columns on the Gantt table.\n' +
+      '• **Two-Way Sync (0ms)**: Edits cascade dependent dates and sync 100% with **Task Detail**.'
+  },
+  {
+    id: 'chip-layout-legend-attached',
+    tabIds: ['layout'],
+    labelVi: 'Xem 📎 Attached trên Legend & Mở Comment Tooltip',
+    labelEn: 'Legend 📎 Attachments & Tooltip Comments',
+    targetTab: 'layout',
+    targetTabLabelVi: 'Thực hành trên Layout',
+    targetTabLabelEn: 'Try on Layout Tab',
+    answerVi:
+      '### 📎 Nút Xem Ảnh Đính kèm trên `Color Legend` & Mở `Comments` từ Tooltip\n' +
+      '• **Nút `📎 Attached` trên Color Legend**: Bấm biểu tượng kẹp giấy trên từng dòng trạng thái của **Color Legend** để mở Lightbox xem toàn bộ ảnh/PDF của nhóm dự án đó (0 Firestore Read).\n' +
+      '• **Mở Dự án từ Tooltip ưu tiên hiện `Comments`**: Khi bấm nút mở Project trên hộp thoại nổi (Tooltip) của mặt bằng, cửa sổ dự án tự động mở thẳng vào tab **`Comments`** trước tiên.',
+    answerEn:
+      '### 📎 Color Legend Attachments & Tooltip Comments-First\n' +
+      '• **`📎 Attached` on Color Legend**: Click the paperclip badge on any status row in the Color Legend to browse all project photos/PDFs in that status group (0 Firestore Reads).\n' +
+      '• **Tooltip Opens `Comments` First**: Clicking Open Project on a Layout unit tooltip opens the Project Modal directly to the **`Comments`** tab first.'
   }
 ];
 

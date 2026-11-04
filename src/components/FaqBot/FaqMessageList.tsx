@@ -13,6 +13,7 @@ export type AnswerTierSource =
   | 'tier2_gemini_flash'
   | 'tier3_smart_cache'
   | 'quota_exceeded_fallback'
+  | 'live_data_analysis'
   | 'local_manual';
 
 export interface ChatMessage {
@@ -22,6 +23,7 @@ export interface ChatMessage {
   tierSource?: AnswerTierSource;
   primaryEntry?: FaqKnowledgeEntry;
   relatedEntries?: FaqKnowledgeEntry[];
+  followUpPrompts?: string[];
   targetTab?: TabId;
   targetTabLabel?: string;
   timestamp: string;
@@ -40,6 +42,9 @@ interface FaqMessageListProps {
 
 const getTierSourceLabel = (source: AnswerTierSource | undefined, lang: 'vi' | 'en'): string | null => {
   if (!source) return null;
+  if (source === 'live_data_analysis') {
+    return lang === 'vi' ? 'Phân tích dữ liệu trực tiếp (0 Read)' : 'Live Workspace Analysis (0 Read)';
+  }
   if (source === 'tier1_quick_chip') {
     return lang === 'vi' ? 'Trả lời tức thì (0ms)' : 'Instant Answer (0ms)';
   }
@@ -47,12 +52,12 @@ const getTierSourceLabel = (source: AnswerTierSource | undefined, lang: 'vi' | '
     return lang === 'vi' ? 'Đã lưu trong bộ nhớ máy' : 'Saved in Smart Cache';
   }
   if (source === 'tier2_gemini_flash') {
-    return lang === 'vi' ? 'Trợ lý AI Gemini' : 'Gemini AI Assistant';
+    return lang === 'vi' ? 'Trợ lý AI Phân tích' : 'AI Smart Assistant';
   }
   if (source === 'quota_exceeded_fallback') {
-    return lang === 'vi' ? 'Cẩm nang hướng dẫn' : 'Manual Guide';
+    return lang === 'vi' ? 'Phân tích nội bộ & Cẩm nang' : 'Smart Local Engine';
   }
-  return lang === 'vi' ? 'Trợ lý hướng dẫn' : 'Guide Assistant';
+  return lang === 'vi' ? 'Trợ lý thông minh' : 'Smart Assistant';
 };
 
 const renderFormattedText = (raw: string) => {
@@ -112,11 +117,14 @@ export const FaqMessageList: React.FC<FaqMessageListProps> = React.memo(({
     <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 dark:bg-[#18181b]">
       {messages.map(msg => {
         const isWelcome = msg.id === 'welcome';
-        const quickPrompts = msg.primaryEntry
-          ? lang === 'vi'
-            ? msg.primaryEntry.quickPromptsVi
-            : msg.primaryEntry.quickPromptsEn
-          : undefined;
+        const quickPrompts =
+          msg.followUpPrompts && msg.followUpPrompts.length > 0
+            ? msg.followUpPrompts
+            : msg.primaryEntry
+            ? lang === 'vi'
+              ? msg.primaryEntry.quickPromptsVi
+              : msg.primaryEntry.quickPromptsEn
+            : undefined;
         const targetTab = msg.targetTab || msg.primaryEntry?.targetTab;
         const targetTabLabel =
           msg.targetTabLabel ||

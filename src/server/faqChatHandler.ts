@@ -3,46 +3,44 @@ import fs from 'fs';
 import path from 'path';
 
 const TAKA_CORE_SYSTEM_CONTEXT = `
-=== TAKA PM CORE SYSTEM ARCHITECTURE & MANUAL SUMMARY ===
-1. OFFLINE-FIRST / LOCAL-FIRST (DEXIE.JS & iOS 40MB CAP):
-   - Primary client storage uses Dexie.js (IndexedDB: TakaLocalDB) + Zustand in-memory store for 0ms optimistic UI updates and 5-10ms cold boot.
-   - Mutations queue safely in syncQueue.ts when offline and broadcast incremental deltas via taka_deltas (onSnapshot + serverTime cursor).
-   - iOS Safari / WebKit Memory Guard: Firestore IndexedDB cache is strictly capped at 40MB (cacheSizeBytes: 41943040) with persistentSingleTabManager({ forceOwnership: true }) in PWA/iframe to prevent WebKit from wiping IndexedDB and causing read storms.
-   - 4-Key Composite Isolation: Every entity (Project, Task, Cost, Delegation) is strictly isolated by 4 keys: projectId + projectCode + year + store (HCM vs HN).
+=== TAKA PM CORE SYSTEM ARCHITECTURE & BUSINESS RULES ===
+1. 4-KEY COMPOSITE ISOLATION & DUPLICATE GUARD:
+   - Every Project, Task, Cost, and Delegation is strictly isolated by 4 keys: projectId + projectCode + year + store (HCM vs HN).
+   - Duplicate Project Prevention: Creating two projects with the same Year + Store + Location (Floor) + Project Code (or matching an existing Project Code Link in the same scope) is strictly blocked.
+   - Safe Cascade Delete: Deleting a project only deletes that specific projectId and its own tasks/costs, never affecting other projects.
 
-2. GANTT CHART & PREDECESSOR (#) SCHEDULING:
-   - Tasks are numbered in WBS hierarchy (#1, #2...). Parent task dates and progress (%) roll up 100% in client memory.
-   - Predecessor syntax uses '#' (e.g., A01#1FS+2 or #1FS):
+2. GANTT CHART, INLINE EDIT MODE & PREDECESSOR (#) SCHEDULING:
+   - Inline Editing on Gantt: Columns 'Duration', 'Start Date', 'Finish Date', 'Party', and 'Predecessor' on the Gantt tab can ONLY be edited when 'Edit Mode' ('ON Task detail' button on Header) is enabled. Changes sync 100% bidirectionally with Task Detail in 0ms.
+   - Predecessor Syntax uses '#' (e.g., A01#1FS+2 or #1FS):
      * FS (Finish-to-Start, default), SS (Start-to-Start), FF (Finish-to-Finish), SF (Start-to-Finish).
-     * Two-ended lock: Entering two predecessors (e.g., A01#1SS, A01#3FF) locks both Start and Finish and auto-computes Duration.
-   - Flexible (Blue Play icon) cascades schedule changes automatically; Pinned (Green Pin) freezes task dates.
-   - Gantt Timeline Header: Month row stays sticky at top when scrolling vertically. Grab and drag the divider between any 2 months left/right to lengthen or shorten month width (wheel zoom on month row is disabled).
+     * Two-Ended Lock: Entering two predecessors separated by comma (e.g., #1SS, #3FF) locks both Start and Finish and auto-calculates Duration.
+   - Flexible (Blue Play icon ▶️) cascades schedule changes automatically; Pinned (Green Pin 📌) freezes task dates.
+   - Sticky Month Header & Resize: Drag the divider between any two months left/right to resize month column width.
 
-3. BUDGET & 3-INSTALLMENT COST MANAGEMENT:
+3. 2D FLOOR LAYOUT, TOOLTIP COMMENTS-FIRST & COLOR LEGEND ATTACHMENTS:
+   - Layout Tooltip -> Comments First: Clicking the 'Open Project' button on any unit's Tooltip in the Layout tab opens the Project Modal directly to the 'Comments' tab first so users immediately see the latest site notes/discussions.
+   - Color Legend '📎 Attached' Button: Each status row (and TOTAL row) in the Layout Color Legend displays a Paperclip (📎) badge when projects in that status group have attached photos/PDFs. Clicking it opens the unified full-screen Lightbox with 0 extra Firestore reads.
+   - Multi-Unit 'Project Code Link': Separating unit codes with commas (e.g., L3-303-1, L3-303-2) paints all linked units and sums their area (sizeM2) in Color Legend without double-counting.
+
+4. BUDGET, 3-INSTALLMENT COST & RBAC MASKING (***):
    - Remaining Budget Formula: Remaining = Budget - Actual/Forc + Supporting Fee.
-   - Color Warnings by Remaining %: Green (> 20% safe), Amber/Yellow (0% to 20% tight), Red (< 0% over-budget).
+     * Green (> 20% left), Amber (0% to 20% left), Red (< 0% over-budget).
    - Project Modular (Parent-Child): Parent row expands into '↳ SELF' (own budget) and '↳ SUB' (linked child projects).
-   - 3-Installment Payments (Cost Tab): Supports VAT (0%, 8%, 10%), Amount Incl. VAT = Excl. VAT * (1 + VAT%). Entering 1st Paid (Advance) and 2nd Paid (Progress) auto-calculates 3rd Paid (Final Settlement) to equal 100%. Balance = Actual - (1st + 2nd + 3rd Paid).
+   - 3-Installment Payments (Cost Tab): Supports VAT (0%, 8%, 10%), Incl. VAT = Excl. VAT * (1 + VAT%). Entering 1st Paid and 2nd Paid auto-calculates 3rd Paid to equal 100%. Balance = Actual - (1st + 2nd + 3rd Paid).
+   - Why Money Editing is Locked or Masked as ***:
+     1) Currency is set to JPY or USD (switch back to '000 VND to edit).
+     2) Viewing a past fiscal year (auto Read-Only lock).
+     3) Account lacks canWrite or financial See permission in RBAC (numbers show as ***).
 
-4. iOS CALENDAR SYNC (WEBCAL / QR CODE):
-   - Users click 'Sync iOS / QR' in Calendar Tab or Header to generate a live webcal:// link and QR Code.
-   - Scanning the QR Code on iPhone/iPad subscribes Apple Calendar to live project & task milestones.
-
-5. CLOUDFLARE R2, CORS POLICY & SLEEPING TABS:
-   - R2 CORS Policy requires AllowedOrigins: ["*"], AllowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD"], AllowedHeaders: ["*"].
-   - Chrome/Edge Sleeping Tabs: Whitelist Taka PM in chrome://settings/performance or edge://settings/system. Overnight Wake-up Guard auto-detects sleep gaps (>60s), pulls missed deltas, and cleans zombie tasks without clearing cache.
-
-6. MY WORK TAB (TIME-HORIZON FILTERS & PER-ACCOUNT REVIEWED SYNC):
-   - Default 'Summary Mode (0 Read)' aggregates tasks/delegations/milestones from memory with 0 extra Firestore reads.
-   - Time-Horizon Filters: All Dates, Overdue, Today, This Week, Next 7 Days, This Month + Store (All/HCM/HN) + Fix Project Code.
-   - Per-Account Cross-Device Reviewed Sync: Checking off a task in My Work syncs by user account (taka_config/mywork_reviewed_<accountKey> + taka_deltas) across iOS, iPad, and Laptop. If a reviewed task later changes status/progress/dueDate or gets rejected for rework, its signature changes and it automatically returns to active columns.
-
-7. QUICK NAVIGATOR ('FIX PROJECT CODE' vs 'SEARCH') & PICTURE MAPPING DYNAMIC CSV/EXCEL:
-   - Clicking a project in Quick Navigator populates 'Fix Project Code' (fixedProjectCode) and keeps 'Search' empty for secondary keyword filtering, while still relaxing status/money filters to 'All', auto-jumping Location to the project's floor, and expanding child rows.
-   - Picture Mapping -> DYNAMIC Tab supports Rule-Based Groups (RAM 0ms), Cloud R2 Save/Load, and 2-Sheet Excel/CSV Export & Import: Sheet 1 ('Dynamic_Rules_Data') has importable group/rule rows; Sheet 2 ('Field_Reference_Guide') documents all valid fields, operators, and sample values.
+5. LOCAL-FIRST (DEXIE.JS), ZERO-READ STORM PROTECTION & ZERO-ZOMBIE SYNC:
+   - Data loads in 5-10ms from Dexie.js (IndexedDB) + Zustand with 0ms optimistic mutations.
+   - Zero-Zombie Task Cleanup (0 Firestore Reads): Deleted tasks broadcast via taka_deltas, are recorded in taskDeletedTracker, and any stale local tasks missing from project.taskSummaries (after a 30s recent-edit guard) are purged locally from Zustand & Dexie without extra network reads.
+   - Overnight Wake-up Guard: Waking a device after >60s automatically pulls missed deltas and reconciles state without clearing cache.
 `;
 
+let cachedDocs: { manualMd: string; businessMd: string } | null = null;
 function loadFaqKnowledgeDocs(): { manualMd: string; businessMd: string } {
+  if (cachedDocs) return cachedDocs;
   let manualMd = '';
   let businessMd = '';
   try {
@@ -61,13 +59,23 @@ function loadFaqKnowledgeDocs(): { manualMd: string; businessMd: string } {
   } catch {
     businessMd = '';
   }
-  return { manualMd, businessMd };
+  cachedDocs = { manualMd, businessMd };
+  return cachedDocs;
 }
 
 export function registerFaqChatRoute(app: express.Express): void {
   app.post('/api/faq-chat', async (req, res) => {
     try {
-      const { question, lang = 'vi', activeTab = 'general', localContext = '' } = req.body || {};
+      const {
+        question,
+        lang = 'vi',
+        activeTab = 'general',
+        intentCategory = 'manual_topic',
+        localContext = '',
+        liveDataContext = '',
+        recentHistory = []
+      } = req.body || {};
+
       if (!question || typeof question !== 'string') {
         return res.status(400).json({ error: 'Missing question' });
       }
@@ -91,17 +99,25 @@ export function registerFaqChatRoute(app: express.Express): void {
         }
       });
 
+      const historyBlock = Array.isArray(recentHistory) && recentHistory.length > 0
+        ? recentHistory.map((h: any) => `${h.role === 'user' ? 'User' : 'Assistant'}: ${String(h.text || '')}`).join('\n')
+        : 'None';
+
       const systemInstruction =
-        `You are the official Takashimaya Project Management (Taka PM) User Manual & Domain Logic Assistant.\n` +
-        `The user is currently on tab: "${activeTab}".\n` +
-        `CRITICAL CONSTRAINTS:\n` +
-        `- Keep your answer ultra-concise, clear, and complete within 3 to 5 bullet points (under 220 words) so it fits cleanly within maxOutputTokens: 300.\n` +
-        `- Respond in ${lang === 'vi' ? 'Vietnamese' : 'English'}.\n` +
-        `- Base your answer strictly on the Taka PM Core System Context and documentation below.\n` +
+        `You are the intelligent Takashimaya Project Management (Taka PM) AI Assistant & Data Analyst.\n` +
+        `The user is currently on tab: "${activeTab}". Detected question intent: "${intentCategory}".\n` +
+        `CRITICAL INSTRUCTIONS:\n` +
+        `1. Directly and accurately answer the user's exact question in the very first sentence. Do NOT dump unrelated manual topics.\n` +
+        `2. If the user asks about a specific project code (e.g., L3-333-2, HN-TKV-BOH), delayed projects, project counts, area (m²), or budget/cost status, use the [LIVE WORKSPACE SNAPSHOT] and [PRE-ANALYZED ANSWER / MATCHED CONTEXT] below to cite exact numbers, dates, progress %, and task names.\n` +
+        `3. If the user asks "Why" (Tại sao) or "How to" (Làm sao / Cách), explain the exact root cause and give clear, numbered UI steps using exact Taka PM button/tab names.\n` +
+        `4. Format cleanly with Markdown headings (###), bold key terms (**...**), inline code (\`...\`), and 3-6 concise bullet points.\n` +
+        `5. Respond in ${lang === 'vi' ? 'natural, professional Vietnamese' : 'clear, professional English'}.\n\n` +
         `${TAKA_CORE_SYSTEM_CONTEXT}\n` +
-        `--- MATCHED FAQ CONTEXT ---\n${localContext}\n` +
-        `--- USER_MANUAL.md ---\n${manualMd.slice(0, 32000)}\n` +
-        `--- BUSINESS_LOGIC.md ---\n${businessMd.slice(0, 32000)}`;
+        `--- LIVE WORKSPACE SNAPSHOT (REAL-TIME IN-MEMORY DATA) ---\n${liveDataContext}\n\n` +
+        `--- PRE-ANALYZED ANSWER / MATCHED CONTEXT ---\n${localContext}\n\n` +
+        `--- RECENT CONVERSATION HISTORY ---\n${historyBlock}\n\n` +
+        `--- REFERENCE: USER_MANUAL.md (EXCERPT) ---\n${manualMd.slice(0, 18000)}\n` +
+        `--- REFERENCE: BUSINESS_LOGIC.md (EXCERPT) ---\n${businessMd.slice(0, 18000)}`;
 
       let responseText = '';
       try {
@@ -110,8 +126,9 @@ export function registerFaqChatRoute(app: express.Express): void {
           contents: question,
           config: {
             systemInstruction,
-            maxOutputTokens: 300,
-            temperature: 0.2
+            maxOutputTokens: 1024,
+            temperature: 0.15,
+            thinkingConfig: { thinkingBudget: 0 }
           }
         });
         responseText = response.text || '';
@@ -121,8 +138,8 @@ export function registerFaqChatRoute(app: express.Express): void {
           contents: question,
           config: {
             systemInstruction,
-            maxOutputTokens: 300,
-            temperature: 0.2
+            maxOutputTokens: 1024,
+            temperature: 0.15
           }
         });
         responseText = fallbackResponse.text || '';

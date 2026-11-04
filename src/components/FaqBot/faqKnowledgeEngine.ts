@@ -441,7 +441,11 @@ function normalizeText(str: string): string {
   return str.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9\s+%*]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-export function searchFaqKnowledge(rawQuery: string, lang: 'vi' | 'en' = 'vi'): { bestMatches: FaqKnowledgeEntry[]; formattedAnswer: string } {
+export function searchFaqKnowledge(
+  rawQuery: string,
+  lang: 'vi' | 'en' = 'vi',
+  activeTab?: TabId
+): { bestMatches: FaqKnowledgeEntry[]; formattedAnswer: string } {
   const cleanQuery = rawQuery.trim();
   const normQuery = normalizeText(cleanQuery);
   if (!normQuery) {
@@ -449,8 +453,8 @@ export function searchFaqKnowledge(rawQuery: string, lang: 'vi' | 'en' = 'vi'): 
     return {
       bestMatches: starter,
       formattedAnswer: lang === 'vi'
-        ? 'Xin chào! Tôi là **Trợ lý Hướng dẫn Tương tác Takashimaya PM**.\n\nHãy bấm vào một chủ đề gợi ý hoặc gõ câu hỏi của bạn!'
-        : 'Hello! I am the **Takashimaya PM Interactive Onboarding Assistant**.\n\nTap any topic or type your question!'
+        ? 'Xin chào! Tôi là **Trợ lý Hướng dẫn & Phân tích Thông minh Takashimaya PM**.\n\nHãy bấm vào một chủ đề gợi ý, hỏi về mã dự án bất kỳ (VD: `L3-333-2`), hoặc gõ câu hỏi của bạn!'
+        : 'Hello! I am the **Takashimaya PM Smart Guide & Analytics Assistant**.\n\nTap any topic, ask about any project code (e.g., `L3-333-2`), or type your question!'
     };
   }
   const tokens = normQuery.split(' ').filter(t => t.length >= 2);
@@ -460,32 +464,46 @@ export function searchFaqKnowledge(rawQuery: string, lang: 'vi' | 'en' = 'vi'): 
     const normBody = normalizeText(entry.answerVi + ' ' + entry.answerEn);
     const normKeywords = entry.keywords.map(k => normalizeText(k));
     const normPrompts = (entry.quickPromptsVi || []).concat(entry.quickPromptsEn || []).map(p => normalizeText(p));
-    if (normTitle.includes(normQuery)) score += 30;
-    if (normPrompts.some(p => p.includes(normQuery) || normQuery.includes(p))) score += 35;
-    if (normBody.includes(normQuery)) score += 14;
+    if (normTitle.includes(normQuery)) score += 35;
+    if (normPrompts.some(p => p.includes(normQuery) || normQuery.includes(p))) score += 40;
+    if (normBody.includes(normQuery)) score += 16;
     for (const kw of normKeywords) {
-      if (normQuery.includes(kw)) score += 18;
-      else if (tokens.some(tk => kw.includes(tk) || tk.includes(kw))) score += 8;
+      if (normQuery.includes(kw)) score += 20;
+      else if (tokens.some(tk => tk === kw || (kw.length > 3 && tk.length > 3 && (kw.includes(tk) || tk.includes(kw))))) score += 8;
     }
     for (const tk of tokens) {
-      if (normTitle.includes(tk)) score += 6;
+      if (normTitle.includes(tk)) score += 7;
       if (normBody.includes(tk)) score += 3;
+    }
+    if (activeTab && entry.targetTab === activeTab && score > 0) {
+      score += 8;
     }
     return { entry, score };
   }).sort((a, b) => b.score - a.score);
 
-  const topMatches = scored.filter(s => s.score > 0).slice(0, 2).map(s => s.entry);
-  if (topMatches.length === 0) {
-    const fallback = FAQ_KNOWLEDGE_BASE.slice(0, 2);
+  const positive = scored.filter(s => s.score > 0);
+  if (positive.length === 0) {
+    const fallback = FAQ_KNOWLEDGE_BASE.slice(0, 1);
     return {
       bestMatches: fallback,
       formattedAnswer: lang === 'vi'
-        ? `Tôi chưa tìm thấy mục khớp chính xác với **"${cleanQuery}"**, nhưng đây là hướng dẫn nền tảng:\n\n` + fallback.map(item => `### ${item.titleVi}\n${item.answerVi}`).join('\n\n---\n\n')
-        : `I could not find an exact match for **"${cleanQuery}"**, but here is the starter guide:\n\n` + fallback.map(item => `### ${item.titleEn}\n${item.answerEn}`).join('\n\n---\n\n')
+        ? `Tôi chưa tìm thấy mục khớp chính xác với **"${cleanQuery}"**. Bạn có thể gõ rõ hơn (VD: *cách sửa trên Gantt*, *tại sao tiền hiện \*\*\**, hoặc nhập *Mã dự án* để phân tích tiến độ):\n\n` +
+          fallback.map(item => `### ${item.titleVi}\n${item.answerVi}`).join('\n\n')
+        : `I could not find an exact match for **"${cleanQuery}"**. Try asking specifically (e.g., *how to edit on Gantt*, *why money shows \*\*\**, or type a *Project Code* for live analysis):\n\n` +
+          fallback.map(item => `### ${item.titleEn}\n${item.answerEn}`).join('\n\n')
     };
   }
+
+  // Only show 1 primary article if it clearly leads (or if second score is weak) so the user gets a focused answer
+  const top1 = positive[0];
+  const top2 = positive[1];
+  const shouldShowSingle = !top2 || top1.score >= top2.score * 1.35 || top1.score - top2.score >= 14;
+  const selectedEntries = shouldShowSingle ? [top1.entry] : [top1.entry, top2.entry];
+
   return {
-    bestMatches: topMatches,
-    formattedAnswer: topMatches.map(item => `### ${lang === 'vi' ? item.titleVi : item.titleEn}\n${lang === 'vi' ? item.answerVi : item.answerEn}`).join('\n\n---\n\n')
+    bestMatches: positive.slice(0, 2).map(s => s.entry),
+    formattedAnswer: selectedEntries
+      .map(item => `### ${lang === 'vi' ? item.titleVi : item.titleEn}\n${lang === 'vi' ? item.answerVi : item.answerEn}`)
+      .join('\n\n---\n\n')
   };
 }

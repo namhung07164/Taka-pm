@@ -3,7 +3,8 @@ import Draggable from 'react-draggable';
 import {
   Bot, X, Send, Sparkles, BookOpen, MessageSquare, GripHorizontal, RotateCcw, HelpCircle, Globe, Zap, Minimize2, Maximize2
 } from 'lucide-react';
-import { FAQ_KNOWLEDGE_BASE, FaqKnowledgeEntry, searchFaqKnowledge } from './faqKnowledgeEngine';
+import { FAQ_KNOWLEDGE_BASE, FaqKnowledgeEntry } from './faqKnowledgeEngine';
+import { analyzeAndAnswerUserQuestion } from './faqSmartAnalyzer';
 import { FaqQuickChip, TAB_DISPLAY_NAMES, getQuickChipsForTab } from './faqTabQuickChips';
 import { getDailyAiQuotaStatus, incrementDailyAiQuota, getSmartCachedAiAnswer, saveSmartCachedAiAnswer } from './faqAiCacheAndQuota';
 import { FaqMessageList, ChatMessage } from './FaqMessageList';
@@ -36,8 +37,8 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
     role: 'assistant',
     tierSource: 'local_manual',
     text: lang === 'vi'
-      ? `👋 Xin chào! Tôi là **Trợ lý Hướng dẫn Taka PM**.\n\nBạn đang ở **${activeTabDisplay}**. Bạn có thể:\n• Chọn nhanh **câu hỏi gợi ý** ngay phía trên để xem hướng dẫn tức thì.\n• Chuyển sang tab **Cẩm nang theo chủ đề** để tra cứu theo từng nhóm việc.\n• Hoặc gõ câu hỏi bất kỳ vào ô bên dưới để tôi giải đáp ngay!`
-      : `👋 Hello! I am your **Taka PM Guide Assistant**.\n\nYou are viewing **${activeTabDisplay}**. You can:\n• Tap any **suggested topic** above for an instant step-by-step guide.\n• Switch to **Browse Manual** to explore by category.\n• Or type any question below and I will help you right away!`,
+      ? `👋 Xin chào! Tôi là **Trợ lý AI & Phân tích Thông minh Taka PM**.\n\nBạn đang ở **${activeTabDisplay}**. Bạn có thể hỏi tôi:\n• **Phân tích trực tiếp dự án**: Gõ mã dự án (VD: \`L3-333-2\`, \`HN-TKV-BOH\`) hoặc hỏi *"Dự án nào đang bị trễ?"*, *"Tổng hợp dự án hiện tại"*.\n• **Giải đáp nguyên nhân & thao tác**: *"Tại sao không sửa được ở Gantt?"*, *"Cách nối Predecessor #"*, *"Tại sao tiền hiện \*\*\*"*.`
+      : `👋 Hello! I am your **Taka PM Smart AI & Analytics Assistant**.\n\nYou are viewing **${activeTabDisplay}**. You can ask me:\n• **Live Project & Portfolio Analytics**: Type any project code (e.g., \`L3-333-2\`, \`HN-TKV-BOH\`) or ask *"Which projects are delayed?"*, *"Summary of current projects"*.\n• **Troubleshooting & How-To**: *"Why can't I edit on Gantt?"*, *"How to link Predecessor #"*, *"Why do numbers show \*\*\*"*.`,
     primaryEntry: FAQ_KNOWLEDGE_BASE[0],
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   }), [lang, activeTabDisplay]);
@@ -111,47 +112,83 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
     if (!q || isTyping) return;
 
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const recentHistory = messages
+      .filter(m => m.id !== 'welcome')
+      .slice(-4)
+      .map(m => ({ role: m.role, text: m.text.slice(0, 350) }));
+
     setActiveMode('chat');
     setMessages(prev => [...prev, { id: `u_${Date.now()}`, role: 'user', text: q, timestamp: now }]);
     setInputQuery('');
     setIsTyping(true);
 
-    const localResult = searchFaqKnowledge(q, lang);
-    const topEntry = localResult.bestMatches[0];
+    // Run 0ms Smart Analyzer (Intent + Live Project/Portfolio Data + Targeted Q&A)
+    const smartResult = analyzeAndAnswerUserQuestion(q, lang);
+    const topEntry = smartResult.primaryEntry;
+    const targetTabLabel = lang === 'vi' ? smartResult.targetTabLabelVi : smartResult.targetTabLabelEn;
 
-    // 1. Tier 3: Smart Cache (Dexie.js / LocalStorage)
-    const cachedAnswer = await getSmartCachedAiAnswer(q, lang);
-    if (cachedAnswer) {
-      setMessages(prev => [
-        ...prev,
-        { id: `a_${Date.now()}`, role: 'assistant', text: cachedAnswer, tierSource: 'tier3_smart_cache', primaryEntry: topEntry, relatedEntries: localResult.bestMatches, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
-      ]);
-      setIsTyping(false);
-      return;
+    // If it's a direct live project lookup, portfolio analytics, or high-precision targeted Q&A,
+    // check if we can also enrich via Gemini or return immediately
+    if (!smartResult.isLiveDataQuery) {
+      const cachedAnswer = await getSmartCachedAiAnswer(q, lang);
+      if (cachedAnswer) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `a_${Date.now()}`,
+            role: 'assistant',
+            text: cachedAnswer,
+            tierSource: 'tier3_smart_cache',
+            primaryEntry: topEntry,
+            relatedEntries: smartResult.relatedEntries,
+            followUpPrompts: smartResult.followUpPrompts,
+            targetTab: smartResult.targetTab,
+            targetTabLabel,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }
+        ]);
+        setIsTyping(false);
+        return;
+      }
     }
 
-    // 2. Daily Quota Check (taka_ai_quota_YYYY-MM-DD, max 20/day)
+    // Daily Quota Check (max 20/day for external AI calls; local smart analysis is unlimited)
     const currentQuota = getDailyAiQuotaStatus();
     setQuotaState(currentQuota);
     if (currentQuota.isExceeded) {
-      const quotaMsg = lang === 'vi'
-        ? `### 💡 Đã dùng hết ${currentQuota.limit} lượt hỏi AI hôm nay\nDưới đây là hướng dẫn chuẩn từ Cẩm nang Taka PM khớp nhất với câu hỏi của bạn:\n\n---\n\n` + localResult.formattedAnswer
-        : `### 💡 Daily ${currentQuota.limit} Free AI Questions Used\nHere is the closest step-by-step guide from the Taka PM Manual:\n\n---\n\n` + localResult.formattedAnswer;
-
       setMessages(prev => [
         ...prev,
-        { id: `a_${Date.now()}`, role: 'assistant', text: quotaMsg, tierSource: 'quota_exceeded_fallback', primaryEntry: topEntry, relatedEntries: localResult.bestMatches, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+        {
+          id: `a_${Date.now()}`,
+          role: 'assistant',
+          text: smartResult.formattedAnswer,
+          tierSource: smartResult.isLiveDataQuery ? 'live_data_analysis' : 'quota_exceeded_fallback',
+          primaryEntry: topEntry,
+          relatedEntries: smartResult.relatedEntries,
+          followUpPrompts: smartResult.followUpPrompts,
+          targetTab: smartResult.targetTab,
+          targetTabLabel,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }
       ]);
       setIsTyping(false);
       return;
     }
 
-    // 3. Tier 2: Gemini 2.5 Flash via server.ts (maxOutputTokens: 300)
+    // Call Server-Side Gemini AI with Live Workspace Digest + Matched Knowledge Context + Recent History
     try {
       const res = await fetch('/api/faq-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, lang, activeTab, localContext: localResult.formattedAnswer })
+        body: JSON.stringify({
+          question: q,
+          lang,
+          activeTab,
+          intentCategory: smartResult.intentCategory,
+          localContext: smartResult.formattedAnswer,
+          liveDataContext: smartResult.liveWorkspaceDigest,
+          recentHistory
+        })
       });
 
       if (res.ok) {
@@ -161,26 +198,54 @@ export const FaqChatbotModal: React.FC = React.memo(() => {
           if (isGeminiSource) {
             const nextQuota = incrementDailyAiQuota();
             setQuotaState(nextQuota);
-            saveSmartCachedAiAnswer(q, data.answer, lang);
+            if (!smartResult.isLiveDataQuery) {
+              saveSmartCachedAiAnswer(q, data.answer, lang);
+            }
           }
           setMessages(prev => [
             ...prev,
-            { id: `a_${Date.now()}`, role: 'assistant', text: data.answer, tierSource: isGeminiSource ? 'tier2_gemini_flash' : 'local_manual', primaryEntry: topEntry, relatedEntries: localResult.bestMatches, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+            {
+              id: `a_${Date.now()}`,
+              role: 'assistant',
+              text: data.answer,
+              tierSource: smartResult.isLiveDataQuery
+                ? 'live_data_analysis'
+                : isGeminiSource
+                ? 'tier2_gemini_flash'
+                : 'local_manual',
+              primaryEntry: topEntry,
+              relatedEntries: smartResult.relatedEntries,
+              followUpPrompts: smartResult.followUpPrompts,
+              targetTab: smartResult.targetTab,
+              targetTabLabel,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            }
           ]);
           setIsTyping(false);
           return;
         }
       }
     } catch {
-      // Fallback to static manual knowledge on network error
+      // Fallback to local smart analysis on network error
     }
 
     setMessages(prev => [
       ...prev,
-      { id: `a_${Date.now()}`, role: 'assistant', text: localResult.formattedAnswer, tierSource: 'local_manual', primaryEntry: topEntry, relatedEntries: localResult.bestMatches, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+      {
+        id: `a_${Date.now()}`,
+        role: 'assistant',
+        text: smartResult.formattedAnswer,
+        tierSource: smartResult.isLiveDataQuery ? 'live_data_analysis' : 'local_manual',
+        primaryEntry: topEntry,
+        relatedEntries: smartResult.relatedEntries,
+        followUpPrompts: smartResult.followUpPrompts,
+        targetTab: smartResult.targetTab,
+        targetTabLabel,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }
     ]);
     setIsTyping(false);
-  }, [isTyping, lang, activeTab]);
+  }, [isTyping, lang, activeTab, messages]);
 
   const handleSendQuestion = useCallback((e?: React.FormEvent) => {
     if (e) e.preventDefault();
