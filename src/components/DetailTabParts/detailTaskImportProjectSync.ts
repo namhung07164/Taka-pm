@@ -16,7 +16,7 @@ export function buildAffectedProjectsSyncOps(
 
   for (const p of affectedProjects) {
     if (!p?.id) continue;
-    const computed = computedByProjectId.get(p.id);
+    const computed = computedByProjectId.get(String(p.id)) || computedByProjectId.get(p.id);
     if (!computed) continue;
     const cleanSummaries = (computed.taskSummaries || []).map((ts: any) => {
       const item: Record<string, any> = {};

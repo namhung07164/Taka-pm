@@ -117,10 +117,11 @@ function computeSingleProjectInfo(
     tryAddTask(candidates[i]);
   }
 
-  // Fallback or merge p.taskSummaries only when project is not yet authoritatively hydrated and has fewer real tasks than summaries
+  // Merge p.taskSummaries whenever realTasksMap has fewer tasks than authoritative taskSummaries
   const isHydrated = isProjectTasksHydrated(pIdStr);
   const hasSummaries = p.taskSummaries && Array.isArray(p.taskSummaries) && p.taskSummaries.length > 0;
-  if (hasSummaries && !isHydrated && realTasksMap.size < p.taskSummaries!.length) {
+  const hasIncompleteRealTasks = Boolean(hasSummaries && realTasksMap.size < p.taskSummaries!.length);
+  if (hasIncompleteRealTasks) {
     p.taskSummaries!.forEach((ts, idx) => {
       if (isTaskDeletedInTracker(ts.id, pIdStr || undefined)) return;
       if (isForeignSummaryEntry(ts.id, p, taskById)) return;
@@ -167,7 +168,7 @@ function computeSingleProjectInfo(
       realNameStartSet.add(`${nLower}|${startStr}`);
     }
   });
-  if (!isHydrated) {
+  if (!isHydrated || hasIncompleteRealTasks) {
     virtualTasksMap.forEach((vt, key) => {
       if (realTasksMap.has(key)) return;
       const vtCode = vt.taskCodePhu ? String(vt.taskCodePhu).trim().toLowerCase() : '';

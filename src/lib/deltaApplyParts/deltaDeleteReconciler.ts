@@ -99,7 +99,6 @@ export function extractDeltaBatchPreIndex(
           if (pid) {
             const pidStr = String(pid).trim();
             batchTaskCountsByProj.set(pidStr, (batchTaskCountsByProj.get(pidStr) || 0) + 1);
-            if ((item as any).skipSummaryRollup) authoritativeSummaryProjectIds.add(pidStr);
           }
         }
       });

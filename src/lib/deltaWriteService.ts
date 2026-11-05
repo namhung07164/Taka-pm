@@ -55,7 +55,7 @@ export async function recordDelta(delta: {
   try {
     const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION, deltaId);
     const cleanPayload = removeUndefinedDeep(deltaPayload);
-    await setDoc(docRef, cleanPayload);
+    await setDeltaDocWithRetry(docRef, cleanPayload);
 
     // Phát tín hiệu tức thì sang các máy trạm khác trong cùng trình duyệt (0 Read)
     broadcastAppliedDeltas([deltaPayload]);
@@ -80,14 +80,14 @@ function estimateDeltaItemBytes(item: TakaDeltaItem): number {
   }
 }
 
-async function setDeltaDocWithRetry(docRef: any, payload: any, maxAttempts = 3): Promise<void> {
+async function setDeltaDocWithRetry(docRef: any, payload: any, maxAttempts = 5): Promise<void> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       await setDoc(docRef, payload);
       return;
     } catch (err) {
       if (attempt >= maxAttempts) throw err;
-      const delayMs = 300 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 150);
+      const delayMs = 350 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200);
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }

@@ -439,11 +439,11 @@ export async function executeImportTasks({
   const touchedProjectsForPersistence: Project[] = [];
 
   currentProjects.forEach(proj => {
-    const isAffected = finalAffectedProjects.some(ap => ap.id === proj.id);
+    const isAffected = finalAffectedProjects.some(ap => String(ap.id) === String(proj.id));
     if (!isAffected) return;
     const pTasks = getTasksForProject(proj, finalFullTasksList, { realTasksOnly: true });
     const computed = calculateProjectComputedDates(proj, pTasks, delegationGroups);
-    computedByProjectId.set(proj.id, computed);
+    computedByProjectId.set(String(proj.id), computed);
     touchedProjectsForPersistence.push({ ...proj, ...computed, updatedAt: commitNowIso });
   });
 

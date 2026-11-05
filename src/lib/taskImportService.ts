@@ -308,12 +308,14 @@ export async function batchSaveTasksToFirestore(
     .catch(() => {});
 
   // 2. Build unified MassWriteOp list and Delta list for project summaries + tasks + new delegations
-  const [{ executeMassBatchOperations }, { removeUndefinedDeep }] = await Promise.all([
+  const [{ executeMassBatchOperations }, { removeUndefinedDeep }, { waitForNetworkRecovery }] = await Promise.all([
     import('./massBatchWriteEngine'),
     import('./firestoreSanitizer'),
+    import('./syncResilience'),
   ]);
   const writeOps: MassWriteOp[] = [];
   const deltaItems: TakaDeltaItem[] = [];
+  const cleanProjDeltaItems: TakaDeltaItem[] = [];
 
   // Put authoritative project summary delta items FIRST, then all task delta items, then delegation delta items
   // so the first delta batch chunk immediately updates project taskCount/taskSummaries and all tasks on iOS
@@ -323,10 +325,12 @@ export async function batchSaveTasksToFirestore(
 
   if (options?.projectDeltaItems && options.projectDeltaItems.length > 0) {
     for (const pItem of options.projectDeltaItems) {
-      deltaItems.push({
+      const cleanedProjItem: TakaDeltaItem = {
         ...pItem,
         data: pItem.data ? removeUndefinedDeep(pItem.data) : pItem.data,
-      });
+      };
+      cleanProjDeltaItems.push(cleanedProjItem);
+      deltaItems.push(cleanedProjItem);
       if (pItem.docId) syncedSummaryProjectIds.add(String(pItem.docId).trim());
       if (pItem.projectId) syncedSummaryProjectIds.add(String(pItem.projectId).trim());
     }
@@ -398,14 +402,19 @@ export async function batchSaveTasksToFirestore(
 
   deltaItems.push(...taskDeltaItems, ...delegationDeltaItems);
 
-  // 3. Commit Firestore batch FIRST, then broadcast coalesced deltas so remote devices never encounter !snap.exists()
+  // 3. Ensure iPadOS / iOS WebKit socket is awake after native <input type="file"> sheet closes, then commit Firestore batch & broadcast deltas
+  await waitForNetworkRecovery();
   await executeMassBatchOperations(writeOps, {
     suppressAutoDelta: true,
     skipLocalMirror: true,
   });
 
+  const effectiveAuthor = currentUser?.username || currentUser?.id;
   if (deltaItems.length > 0) {
-    await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
+    await recordBatchDeltas(deltaItems, effectiveAuthor);
+  }
+  if (cleanProjDeltaItems.length > 0 && deltaItems.length > 60) {
+    await recordBatchDeltas(cleanProjDeltaItems, effectiveAuthor);
   }
 }
 
