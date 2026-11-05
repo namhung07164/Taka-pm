@@ -27,30 +27,49 @@ interface ExecuteImportTasksParams {
 export async function executeImportTasks({
   rawParsedRowsByProject, projects, tasks, appUsers, currentUser
 }: ExecuteImportTasksParams): Promise<{ count: number; projectCount?: number }> {
-  // 1. Gather all tasks across memory, local storage, and Firestore/summaries for target & referenced projects
-  const initialCandidates = [...useAppStore.getState().tasks];
-  tasks.forEach(t => {
-    if (!initialCandidates.some(existing => existing.id === t.id)) initialCandidates.push(t);
-  });
+  // 1. Gather in-memory tasks in O(N) Map (no full-DB localDb.tasks.toArray() O(N^2) scan on main thread)
+  const candidatesById = new Map<string, Task>();
+  for (const t of useAppStore.getState().tasks || []) {
+    if (t?.id) candidatesById.set(t.id, t);
+  }
+  for (const t of tasks || []) {
+    if (t?.id && !candidatesById.has(t.id)) candidatesById.set(t.id, t);
+  }
 
+  // Hydrate only target & predecessor-referenced projects' tasks from Dexie/Firestore
+  const allInitialTasks = await hydrateImportContextTasks(
+    rawParsedRowsByProject,
+    projects,
+    Array.from(candidatesById.values())
+  );
+
+  // Hydrate delegations from Dexie only for the target projects
   try {
-    const { localDb } = await import('../../lib/localDb');
-    const [dbTasks, dbDels] = await Promise.all([localDb.tasks.toArray(), localDb.delegations.toArray()]);
-    dbTasks.forEach(t => {
-      if (!initialCandidates.some(existing => existing.id === t.id)) initialCandidates.push(t);
-    });
-    if (dbDels && dbDels.length > 0) {
-      const curDels = useAppStore.getState().delegationGroups || [];
-      const delMap = new Map(curDels.map(d => [d.id, d]));
-      let addedDel = false;
-      dbDels.forEach(d => { if (d?.id && !delMap.has(d.id)) { delMap.set(d.id, d); addedDel = true; } });
-      if (addedDel) useAppStore.getState().setDelegationGroups(Array.from(delMap.values()));
+    const { getLocalDelegationsForProjects } = await import('../../lib/localDb');
+    const targetCodes = Array.from(rawParsedRowsByProject.values())
+      .map((g) => String(g[0]?.rowData?.projectCode || '').trim())
+      .filter(Boolean);
+    if (targetCodes.length > 0) {
+      const dbDels = await getLocalDelegationsForProjects(targetCodes);
+      if (dbDels && dbDels.length > 0) {
+        const curDels = useAppStore.getState().delegationGroups || [];
+        const delMap = new Map(curDels.map((d) => [d.id, d]));
+        let addedDel = false;
+        dbDels.forEach((d) => {
+          if (d?.id && !delMap.has(d.id)) {
+            delMap.set(d.id, d);
+            addedDel = true;
+          }
+        });
+        if (addedDel) useAppStore.getState().setDelegationGroups(Array.from(delMap.values()));
+      }
     }
   } catch { /* localDb fallback */ }
 
-  const allInitialTasks = await hydrateImportContextTasks(rawParsedRowsByProject, projects, initialCandidates);
+  // Yield 1 microtask so the browser UI stays responsive at 60 FPS before heavy predecessor/rollup math
+  await new Promise((r) => setTimeout(r, 0));
 
-  // 2. Build multi-index maps for existing tasks
+  // 2. Build multi-index maps for existing tasks in scoped projects
   const existingTasksById = new Map<string, Task>();
   const existingTasksByName = new Map<string, Task>();
   const existingTasksByNorm = new Map<string, Task>();
@@ -348,7 +367,7 @@ export async function executeImportTasks({
     });
   });
 
-  // 4. Resolve parent-child hierarchy across imported tasks and existing tasks
+  // 4. Resolve parent-child hierarchy across imported tasks and scoped existing tasks
   resolveParentChildHierarchy(tasksToImport, allInitialTasks);
   const importedPredById = new Map<string, string>();
   tasksToImport.forEach(t => {
@@ -358,24 +377,23 @@ export async function executeImportTasks({
   const commitNowIso = new Date().toISOString();
   const activeUser = useAppStore.getState().currentUser || currentUser;
 
-  // 5. Sync hydrated context tasks + imported tasks into Zustand so cross-project predecessors resolve
-  const hydratedRealTasks = allInitialTasks.filter(t => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary);
-  useAppStore.getState().optimisticUpdateTasks([...hydratedRealTasks, ...tasksToImport]);
-
-  const allCurrentTasks = useAppStore.getState().tasks;
+  // 5. Compute predecessors, healing, and parent rollups purely in-memory on the scoped project tasks
   const tasksMapAfterCalc = new Map<string, Task>();
   allInitialTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
-  allCurrentTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
+  tasksToImport.forEach(t => tasksMapAfterCalc.set(t.id, t));
+
+  const affectedProjects = findAffectedProjects([...allInitialTasks, ...tasksToImport], projects);
+  const scopedProjects = affectedProjects.length > 0 ? affectedProjects : projects;
 
   const calculatedTasks = calculateDatesFromPredecessorsAndDuration(
     tasksToImport,
     Array.from(tasksMapAfterCalc.values()),
-    projects
+    scopedProjects
   );
 
   calculatedTasks.forEach(t => tasksMapAfterCalc.set(t.id, t));
-  const healedAll = healAllTasksPredecessors(Array.from(tasksMapAfterCalc.values()), projects);
-  const { updatedParents, allTasksMap } = rollupParentTaskDates(healedAll.updatedTasks, undefined, projects);
+  const healedAll = healAllTasksPredecessors(Array.from(tasksMapAfterCalc.values()), scopedProjects);
+  const { updatedParents, allTasksMap } = rollupParentTaskDates(healedAll.updatedTasks, undefined, scopedProjects);
 
   const tasksToSaveIds = new Set<string>();
   lockedExistingTasksToSave.forEach((_, tid) => tasksToSaveIds.add(tid));
@@ -413,19 +431,16 @@ export async function executeImportTasks({
   // 6. Prepare missing delegations on finalTasksToSave (after deduplication & rollup so IDs match 100%)
   const precomputedDelegations = prepareMissingDelegationsForTasks(finalTasksToSave, activeUser, commitNowIso);
 
-  // Optimistic update (0ms UI)
-  useAppStore.getState().optimisticUpdateTasks(finalTasksToSave);
-
-  // Compute & sync project summaries in memory BEFORE overwriting store.projects
+  // Compute project summaries in memory and perform ONE unified Zustand update (1 React render instead of 6)
   const finalFullTasksList = Array.from(allTasksMap.values());
-  const affectedProjects = findAffectedProjects(finalTasksToSave, projects);
+  const finalAffectedProjects = findAffectedProjects(finalTasksToSave, projects);
   const delegationGroups = useAppStore.getState().delegationGroups;
   const currentProjects = projects && projects.length > 0 ? projects : useAppStore.getState().projects;
   const computedByProjectId = new Map<string, ReturnType<typeof calculateProjectComputedDates>>();
   const touchedProjectsForPersistence: Project[] = [];
 
   currentProjects.forEach(proj => {
-    const isAffected = affectedProjects.some(ap => ap.id === proj.id);
+    const isAffected = finalAffectedProjects.some(ap => ap.id === proj.id);
     if (!isAffected) return;
     const pTasks = getTasksForProject(proj, finalFullTasksList, { realTasksOnly: true });
     const computed = calculateProjectComputedDates(proj, pTasks, delegationGroups);
@@ -433,15 +448,19 @@ export async function executeImportTasks({
     touchedProjectsForPersistence.push({ ...proj, ...computed, updatedAt: commitNowIso });
   });
 
+  const hydratedRealTasks = allInitialTasks.filter(t => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary);
+  useAppStore.getState().optimisticUpdateTasks([...hydratedRealTasks, ...finalTasksToSave]);
+
   const storeProjects = useAppStore.getState().projects || [];
   const mergedProjectsMap = new Map<string, Project>(storeProjects.map(p => [p.id, p]));
   touchedProjectsForPersistence.forEach(p => mergedProjectsMap.set(p.id, p));
-  useAppStore.getState().setProjects(Array.from(mergedProjectsMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0)));
-
-  // Auto-expand affected projects in UI so user immediately sees imported tasks
   const curExpanded = useAppStore.getState().expandedProjectIds || [];
-  const affKeys = affectedProjects.map(p => String(p.id || p.code || '')).filter(Boolean);
-  useAppStore.getState().setExpandedProjectIds(Array.from(new Set([...curExpanded, ...affKeys])));
+  const affKeys = finalAffectedProjects.map(p => String(p.id || p.code || '')).filter(Boolean);
+
+  useAppStore.setState({
+    projects: Array.from(mergedProjectsMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0)),
+    expandedProjectIds: Array.from(new Set([...curExpanded, ...affKeys])),
+  });
 
   // Persist affected projects to LocalDB (Dexie) in background and mark tasks_proj as loaded
   if (touchedProjectsForPersistence.length > 0) {
@@ -451,18 +470,12 @@ export async function executeImportTasks({
     }).catch(() => {});
   }
 
-  // Build authoritative project summary ops and commit tasks + delegations + project summaries
-  // in ONE unified Firestore batch + parallel coalesced delta broadcast
+  // Commit tasks + delegations + project summaries in ONE unified Firestore batch + parallel coalesced delta
   const { writeOps: projectWriteOps, projDeltaItems } = buildAffectedProjectsSyncOps(
-    affectedProjects,
-    computedByProjectId,
-    commitNowIso
+    finalAffectedProjects, computedByProjectId, commitNowIso
   );
-
   await batchSaveTasksToFirestore(finalTasksToSave, activeUser, {
-    precomputedDelegations,
-    projectWriteOps,
-    projectDeltaItems: projDeltaItems,
+    precomputedDelegations, projectWriteOps, projectDeltaItems: projDeltaItems,
   });
 
   if (finalTasksToSave.length > 0) {
@@ -470,16 +483,11 @@ export async function executeImportTasks({
       description: 'Import Tasks',
       revert: async () => {
         const revertOps: MassWriteOp[] = [];
-        previousStates.forEach((oldData, id) => {
-          revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'set', data: oldData, merge: false });
-        });
-        newIds.forEach((id) => {
-          revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'delete' });
-        });
+        previousStates.forEach((oldData, id) => revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'set', data: oldData, merge: false }));
+        newIds.forEach((id) => revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'delete' }));
         await executeMassBatchOperations(revertOps);
       },
     });
   }
-
-  return { count: tasksToImport.length, projectCount: affectedProjects.length };
+  return { count: tasksToImport.length, projectCount: finalAffectedProjects.length };
 }

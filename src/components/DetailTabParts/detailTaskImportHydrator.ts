@@ -24,12 +24,6 @@ export async function hydrateImportContextTasks(
 ): Promise<Task[]> {
   const safeProjects = Array.isArray(projects) ? projects : [];
   const tasksMap = new Map<string, Task>();
-  for (const t of initialTasks || []) {
-    if (t && t.id && !t.isDeleted) {
-      tasksMap.set(String(t.id), t);
-    }
-  }
-
   const projectsToHydrate = new Map<string, Project>();
 
   const findMatchingProject = (
@@ -102,9 +96,22 @@ export async function hydrateImportContextTasks(
     }
   }
 
+  const hydratedProjectsList = Array.from(projectsToHydrate.values());
+
+  // Seed tasksMap ONLY with tasks belonging to the target/referenced projects (O(N) instead of loading entire DB)
+  for (const t of initialTasks || []) {
+    if (!t || !t.id || t.isDeleted) continue;
+    if (
+      hydratedProjectsList.length === 0 ||
+      hydratedProjectsList.some((p) => isTaskBelongsToProject(t, p, safeProjects))
+    ) {
+      tasksMap.set(String(t.id), t);
+    }
+  }
+
   // 1. Load real tasks from Dexie / Firestore for all referenced projects
-  if (projectsToHydrate.size > 0) {
-    const hydratePromises = Array.from(projectsToHydrate.values()).map((proj) =>
+  if (hydratedProjectsList.length > 0) {
+    const hydratePromises = hydratedProjectsList.map((proj) =>
       ensureProjectTasksLoaded(proj.code || '', {
         projectId: proj.id,
         store: proj.store,
@@ -121,10 +128,7 @@ export async function hydrateImportContextTasks(
     }
   }
 
-  // 2. Fallback: For any project in `safeProjects` whose `taskSummaries` contain tasks
-  // not yet present in `tasksMap` (e.g. offline or unhydrated external project),
-  // synthesize complete Task records from `project.taskSummaries` so predecessor/hierarchy
-  // resolution and subtask numbering never miss existing tasks.
+  // 2. Fallback: Synthesize virtual tasks ONLY for `hydratedProjectsList` (not all projects in the company)
   const currentTasksList = Array.from(tasksMap.values());
   const existingNameKeyByProj = new Set<string>();
   const existingCodeKeyByProj = new Set<string>();
@@ -141,7 +145,7 @@ export async function hydrateImportContextTasks(
     }
   }
 
-  for (const proj of safeProjects) {
+  for (const proj of hydratedProjectsList) {
     if (!proj || proj.isDeleted || !Array.isArray(proj.taskSummaries) || proj.taskSummaries.length === 0) {
       continue;
     }

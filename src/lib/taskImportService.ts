@@ -315,8 +315,12 @@ export async function batchSaveTasksToFirestore(
   const writeOps: MassWriteOp[] = [];
   const deltaItems: TakaDeltaItem[] = [];
 
-  // Put authoritative project summary delta items FIRST so receiving devices seal project summaries immediately
+  // Put authoritative project summary delta items FIRST, then all task delta items, then delegation delta items
+  // so the first delta batch chunk immediately updates project taskCount/taskSummaries and all tasks on iOS
   const syncedSummaryProjectIds = new Set<string>();
+  const taskDeltaItems: TakaDeltaItem[] = [];
+  const delegationDeltaItems: TakaDeltaItem[] = [];
+
   if (options?.projectDeltaItems && options.projectDeltaItems.length > 0) {
     for (const pItem of options.projectDeltaItems) {
       deltaItems.push({
@@ -326,6 +330,15 @@ export async function batchSaveTasksToFirestore(
       if (pItem.docId) syncedSummaryProjectIds.add(String(pItem.docId).trim());
       if (pItem.projectId) syncedSummaryProjectIds.add(String(pItem.projectId).trim());
     }
+  }
+
+  if (options?.projectWriteOps && options.projectWriteOps.length > 0) {
+    options.projectWriteOps.forEach((op) => {
+      writeOps.push({
+        ...op,
+        data: op.data ? removeUndefinedDeep(op.data) : op.data,
+      });
+    });
   }
 
   for (const t of tasksToSave) {
@@ -342,7 +355,7 @@ export async function batchSaveTasksToFirestore(
     if (!options?.skipTaskDeltaBroadcast) {
       const tProjId = freshTask.projectId ? String(freshTask.projectId).trim() : '';
       const hasAuthProjSummary = Boolean(tProjId && syncedSummaryProjectIds.has(tProjId));
-      deltaItems.push({
+      taskDeltaItems.push({
         docId: freshTask.id,
         collectionName: 'taka_tasks' as const,
         action: 'create' as const,
@@ -368,7 +381,7 @@ export async function batchSaveTasksToFirestore(
       });
 
       if (!options?.skipTaskDeltaBroadcast) {
-        deltaItems.push({
+        delegationDeltaItems.push({
           docId: cleanDelGroup.id,
           collectionName: 'taka_delegations' as const,
           action: 'create' as const,
@@ -383,23 +396,18 @@ export async function batchSaveTasksToFirestore(
     }
   }
 
-  if (options?.projectWriteOps && options.projectWriteOps.length > 0) {
-    options.projectWriteOps.forEach((op) => {
-      writeOps.push({
-        ...op,
-        data: op.data ? removeUndefinedDeep(op.data) : op.data,
-      });
-    });
-  }
+  deltaItems.push(...taskDeltaItems, ...delegationDeltaItems);
 
-  // 3. Commit Firestore batch FIRST, then broadcast coalesced delta so other devices always read committed docs
-  await executeMassBatchOperations(writeOps, {
-    suppressAutoDelta: true,
-    skipLocalMirror: true,
-  });
-  if (deltaItems.length > 0) {
-    await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
-  }
+  // 3. Commit Firestore batch AND broadcast full inline deltas in parallel (all deltaItems carry 100% full data with invalidate: false, so 0 getDocFromServer race on iOS)
+  await Promise.all([
+    executeMassBatchOperations(writeOps, {
+      suppressAutoDelta: true,
+      skipLocalMirror: true,
+    }),
+    deltaItems.length > 0
+      ? recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id)
+      : Promise.resolve(),
+  ]);
 }
 
 /**
