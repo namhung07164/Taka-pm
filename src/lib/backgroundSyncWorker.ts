@@ -370,10 +370,19 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
     setTimeout(async () => {
       try {
         await localDb.transaction('rw', [localDb.projects, localDb.tasks, localDb.costs, localDb.delegations], async () => {
-          const bulkProjects: Project[] = [];
-          const bulkTasks: Task[] = [];
-          const bulkCosts: Cost[] = [];
-          const bulkDelegations: DelegationGroup[] = [];
+          const isFullRecordForCollection = (col: string, obj: any, patchFlag?: boolean): boolean => {
+            if (patchFlag === true || !obj || typeof obj !== 'object') return false;
+            if (col === 'taka_projects') return Boolean(obj.code && obj.name);
+            if (col === 'taka_tasks') return Boolean(obj.name && (obj.projectCode || obj.projectId));
+            if (col === 'taka_costs') {
+              return Boolean(
+                (obj.projectCode || obj.projectId) &&
+                  (obj.actual !== undefined || obj.description !== undefined || obj.costType !== undefined)
+              );
+            }
+            if (col === 'taka_delegations') return Boolean(obj.name && Array.isArray(obj.subTasks));
+            return false;
+          };
 
           const processDeltaItem = async (
             docId?: string, collectionName?: any, action?: string, data?: any, isPatch?: boolean,
@@ -381,32 +390,34 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
           ) => {
             if (!docId || !collectionName) return;
             if (collectionName === 'taka_delegation_groups') collectionName = 'taka_delegations';
-            const enriched = collectionName === 'taka_tasks' && data && typeof data === 'object'
-              ? {
-                  ...(meta?.projectId ? { projectId: meta.projectId } : {}),
-                  ...(meta?.projectCode ? { projectCode: meta.projectCode } : {}),
-                  ...(meta?.projectStore ? { projectStore: meta.projectStore } : {}),
-                  ...(meta?.year ? { projectYear: meta.year } : {}),
-                  ...data,
-                }
-              : data || {};
-            const hasFullIdentity =
-              !isPatch &&
-              Boolean(
-                enriched?.name &&
-                  (enriched?.code || enriched?.projectCode || enriched?.projectId || enriched?.subTasks)
-              );
+            const needsProjectMeta =
+              collectionName === 'taka_tasks' ||
+              collectionName === 'taka_costs' ||
+              collectionName === 'taka_delegations';
+            const enriched =
+              needsProjectMeta && data && typeof data === 'object'
+                ? {
+                    ...(meta?.projectId ? { projectId: meta.projectId } : {}),
+                    ...(meta?.projectCode ? { projectCode: meta.projectCode } : {}),
+                    ...(meta?.projectStore ? { projectStore: meta.projectStore } : {}),
+                    ...(meta?.year
+                      ? {
+                          projectYear:
+                            collectionName === 'taka_costs' && Number.isFinite(Number(meta.year))
+                              ? Number(meta.year)
+                              : meta.year,
+                        }
+                      : {}),
+                    ...data,
+                  }
+                : data || {};
+            const hasFullIdentity = isFullRecordForCollection(collectionName, enriched, isPatch);
             if (action === 'delete' || enriched?.isDeleted === true) {
               await deleteLocalRecord(collectionName, docId);
-            } else if (isPatch === true || (action === 'update' && !hasFullIdentity)) {
-              await patchLocalRecord(collectionName, docId, enriched);
+            } else if (hasFullIdentity) {
+              await upsertLocalRecord(collectionName, { id: docId, ...enriched });
             } else {
-              const fullObj = { id: docId, ...enriched };
-              if (collectionName === 'taka_projects') bulkProjects.push(fullObj as Project);
-              else if (collectionName === 'taka_tasks') bulkTasks.push(fullObj as Task);
-              else if (collectionName === 'taka_costs') bulkCosts.push(fullObj as Cost);
-              else if (collectionName === 'taka_delegations') bulkDelegations.push(fullObj as DelegationGroup);
-              else await upsertLocalRecord(collectionName, fullObj);
+              await patchLocalRecord(collectionName, docId, enriched);
             }
           };
 
@@ -427,13 +438,6 @@ export async function applyDeltasToLocalDatabase(deltas: TakaDelta[]): Promise<v
               });
             }
           }
-
-          await Promise.all([
-            bulkProjects.length > 0 ? localDb.projects.bulkPut(bulkProjects) : Promise.resolve(),
-            bulkTasks.length > 0 ? localDb.tasks.bulkPut(bulkTasks) : Promise.resolve(),
-            bulkCosts.length > 0 ? localDb.costs.bulkPut(bulkCosts) : Promise.resolve(),
-            bulkDelegations.length > 0 ? localDb.delegations.bulkPut(bulkDelegations) : Promise.resolve(),
-          ]);
         });
       } catch (err) {
         console.warn('[backgroundSyncWorker] applyDeltasToLocalDatabase error:', err);

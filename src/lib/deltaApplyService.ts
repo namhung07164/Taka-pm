@@ -241,11 +241,9 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
               mergedTask.projectYear !== undefined && mergedTask.projectYear !== null
                 ? String(mergedTask.projectYear).trim()
                 : '';
-
             const activeYearFilter = store.globalYearFilter ? String(store.globalYearFilter).trim() : '';
             const matchesActiveYear =
               !activeYearFilter || activeYearFilter.toLowerCase() === 'all' || !tYearStr || tYearStr === activeYearFilter;
-
             const projInMemory = tProjId
               ? inMemoryProjectIds.has(tProjId)
               : Boolean(tCode && inMemoryProjectCompositeKeys.has(`${tCode.toLowerCase()}|${tStoreLower}|${tYearStr}`));
@@ -261,14 +259,12 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
                 return true;
               });
             }
-
             const matchingProj = matchingIdx !== undefined ? updatedProjects[matchingIdx] : undefined;
             const isExplicitlyExpanded =
               projInMemory ||
               (tProjId && expandedSet.has(tProjId)) ||
               (matchingProj?.id && expandedSet.has(String(matchingProj.id))) ||
               (!tProjId && tCode && expandedSet.has(tCode));
-
             const isProjExpandedOrEmpty =
               isExplicitlyExpanded ||
               (!hasAuthoritativeProjectDelta &&
@@ -282,6 +278,9 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
               if (tProjId) inMemoryProjectIds.add(tProjId);
             }
           }
+        } else if (action === 'update' && store.isTasksRequested && (!tProjId || inMemoryProjectIds.has(tProjId) || expandedSet.has(tProjId))) {
+          directlyAppliedDocIds.delete(docId);
+          invalidations.push({ docId, collectionName: 'taka_tasks', action: 'update', data: {}, isPatch: true, invalidate: true, year: meta?.year });
         }
         break;
       }
@@ -298,14 +297,25 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           break;
         }
         if (!store.isCostsRequested && updatedCosts.length === 0) return;
+        const enrichedCost = {
+          ...(meta?.projectId ? { projectId: meta.projectId } : {}),
+          ...(meta?.projectCode ? { projectCode: meta.projectCode } : {}),
+          ...(meta?.projectStore ? { projectStore: meta.projectStore } : {}),
+          ...(meta?.year ? { projectYear: Number.isFinite(Number(meta.year)) ? Number(meta.year) : meta.year } : {}),
+          ...(data || {}),
+        };
         if (idx !== -1 && isStaleVsLocal(updatedCosts[idx])) return;
-
-        costsChanged = true;
+        const isFullCost = !meta?.isPatch && Boolean((enrichedCost.projectCode || enrichedCost.projectId) && (enrichedCost.actual !== undefined || enrichedCost.description !== undefined || enrichedCost.costType !== undefined));
         if (idx !== -1) {
-          updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], data) as Cost;
-        } else if (action === 'create') {
+          costsChanged = true;
+          updatedCosts[idx] = applyFieldPatch(updatedCosts[idx], enrichedCost) as Cost;
+        } else if ((action === 'create' && !meta?.isPatch) || (action === 'update' && isFullCost)) {
+          costsChanged = true;
           costsByIdIndex.set(String(docId), updatedCosts.length);
-          updatedCosts.push({ id: docId, ...data } as Cost);
+          updatedCosts.push({ id: docId, ...enrichedCost } as Cost);
+        } else if (action === 'update') {
+          directlyAppliedDocIds.delete(docId);
+          invalidations.push({ docId, collectionName: 'taka_costs', action: 'update', data: {}, isPatch: true, invalidate: true, year: meta?.year });
         }
         break;
       }
@@ -322,14 +332,25 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
           break;
         }
         if (!store.isDelegationsRequested && updatedDelegations.length === 0) return;
+        const enrichedDel = {
+          ...(meta?.projectId ? { projectId: meta.projectId } : {}),
+          ...(meta?.projectCode ? { projectCode: meta.projectCode } : {}),
+          ...(meta?.projectStore ? { projectStore: meta.projectStore } : {}),
+          ...(meta?.year ? { projectYear: meta.year } : {}),
+          ...(data || {}),
+        };
         if (idx !== -1 && isStaleVsLocal(updatedDelegations[idx])) return;
-
-        delegationsChanged = true;
+        const isFullDel = !meta?.isPatch && Boolean(enrichedDel.name && Array.isArray(enrichedDel.subTasks));
         if (idx !== -1) {
-          updatedDelegations[idx] = applyFieldPatch(updatedDelegations[idx], data) as DelegationGroup;
-        } else if (action === 'create') {
+          delegationsChanged = true;
+          updatedDelegations[idx] = applyFieldPatch(updatedDelegations[idx], enrichedDel) as DelegationGroup;
+        } else if ((action === 'create' && !meta?.isPatch) || (action === 'update' && isFullDel)) {
+          delegationsChanged = true;
           delegationsByIdIndex.set(String(docId), updatedDelegations.length);
-          updatedDelegations.push({ id: docId, ...data } as DelegationGroup);
+          updatedDelegations.push({ id: docId, ...enrichedDel } as DelegationGroup);
+        } else if (action === 'update') {
+          directlyAppliedDocIds.delete(docId);
+          invalidations.push({ docId, collectionName: 'taka_delegations', action: 'update', data: {}, isPatch: true, invalidate: true, year: meta?.year });
         }
         break;
       }

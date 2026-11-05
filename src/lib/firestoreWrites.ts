@@ -15,6 +15,42 @@ import {
   enrichPayloadWithStoreCompositeKeys,
 } from './localMutationMirror';
 
+function isCompleteRecordForAutoDelta(
+  docPath: string | undefined,
+  cleanCopy: Record<string, any>
+): boolean {
+  if (!docPath || !cleanCopy) return false;
+  if (docPath.includes('taka_projects')) {
+    return Boolean(
+      cleanCopy.code &&
+        cleanCopy.name &&
+        cleanCopy.store &&
+        cleanCopy.year !== undefined &&
+        cleanCopy.status
+    );
+  }
+  if (docPath.includes('taka_tasks')) {
+    return Boolean(
+      cleanCopy.name &&
+        (cleanCopy.projectCode || cleanCopy.projectId) &&
+        cleanCopy.start !== undefined &&
+        cleanCopy.finish !== undefined
+    );
+  }
+  if (docPath.includes('taka_costs')) {
+    return Boolean(
+      (cleanCopy.projectCode || cleanCopy.projectId) &&
+        cleanCopy.actual !== undefined &&
+        cleanCopy.costType !== undefined &&
+        cleanCopy.firstPaid !== undefined
+    );
+  }
+  if (docPath.includes('taka_delegation')) {
+    return Boolean(cleanCopy.name && Array.isArray(cleanCopy.subTasks));
+  }
+  return false;
+}
+
 function extractAutoDeltaPayload(
   rawData: any,
   docId: string,
@@ -25,9 +61,7 @@ function extractAutoDeltaPayload(
   const { cleanCopy, isCompletePlainObject } = buildCleanLocalPayload(rawData, docId);
   if (!isCompletePlainObject) return undefined;
   const enrichedCopy = enrichPayloadWithStoreCompositeKeys(docPath, docId, cleanCopy);
-  const hasFullIdentity = Boolean(
-    cleanCopy.name || cleanCopy.code || cleanCopy.projectCode || cleanCopy.subTasks
-  );
+  const hasFullIdentity = isCompleteRecordForAutoDelta(docPath, cleanCopy);
   return {
     data: enrichedCopy,
     isPatch: isPatch && !hasFullIdentity,

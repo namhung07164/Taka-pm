@@ -336,3 +336,4 @@ export function removeDeletedTaskSummaryFromProjects(params: {
 
   return { nextProjects, projectsChanged };
 }
+
