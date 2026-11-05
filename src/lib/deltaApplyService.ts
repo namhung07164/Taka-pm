@@ -13,7 +13,7 @@ import { safeSetItemLocal } from './storage';
 import { markTasksDeleted } from './taskDeletedTracker';
 import { markLoaded } from './loadedMarkers';
 import { markProjectTasksHydrated } from './utils';
-import { tsOf, buildIdIndexMap, buildDeltaProjectsIndex, extractDeltaBatchPreIndex, purgeProjectAndTasksOnDeleteDelta, unlinkChildTasksOnTaskDeleteDelta, removeDeletedTaskSummaryFromProjects, reconcileTasksAgainstIncomingProjectSummaries, upsertTaskSummaryIntoMatchingProjects, recalculateTouchedProjectsAfterDeltas } from './deltaApplyParts/deltaProjectReconciler';
+import { tsOf, buildIdIndexMap, buildDeltaProjectsIndex, extractDeltaBatchPreIndex, purgeProjectAndTasksOnDeleteDelta, unlinkChildTasksOnTaskDeleteDelta, removeDeletedTaskSummaryFromProjects, reconcileTasksAgainstIncomingProjectSummaries, upsertTaskSummaryIntoMatchingProjects, recalculateTouchedProjectsAfterDeltas, runBackgroundDexieProjectTaskReconciliation } from './deltaApplyParts/deltaProjectReconciler';
 import { rollupParentTaskDatesAndStatus } from './taskRollupService';
 
 export function applyIncomingDeltas(deltas: TakaDelta[]): number {
@@ -60,6 +60,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   };
 
   const directlyAppliedDocIds = new Set<string>();
+  const reconciledProjectsForDexie: Project[] = [];
 
   const applyItem = (
     docId: string,
@@ -129,11 +130,8 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         }
 
         if (nextProj && Array.isArray(data?.taskSummaries)) {
-          const reconciled = reconcileTasksAgainstIncomingProjectSummaries(
-            nextProj,
-            data.taskSummaries,
-            updatedTasks
-          );
+          reconciledProjectsForDexie.push(nextProj);
+          const reconciled = reconcileTasksAgainstIncomingProjectSummaries(nextProj, data.taskSummaries, updatedTasks);
           if (reconciled.tasksChanged) {
             updatedTasks = reconciled.nextTasks;
             tasksByIdIndex = buildIdIndexMap(updatedTasks);
@@ -204,9 +202,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
         ) as Task;
 
         const tProjId = mergedTask.projectId ? String(mergedTask.projectId).trim() : '';
-        const hasAuthoritativeProjectDelta = Boolean(
-          meta?.skipSummaryRollup || (tProjId && authoritativeSummaryProjectIds.has(tProjId))
-        );
+        const hasAuthoritativeProjectDelta = Boolean(tProjId && authoritativeSummaryProjectIds.has(tProjId));
 
         if (!hasAuthoritativeProjectDelta) {
           noteTouchedProject(existingTask);
@@ -267,8 +263,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
               (!tProjId && tCode && expandedSet.has(tCode));
             const isProjExpandedOrEmpty =
               isExplicitlyExpanded ||
-              (!hasAuthoritativeProjectDelta &&
-                store.isTasksRequested &&
+              (store.isTasksRequested &&
                 (matchesActiveYear || !matchingProj || (matchingProj.taskSummaries?.length || 0) <= 1));
 
             if (isProjExpandedOrEmpty) {
@@ -381,7 +376,10 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     }
 
     if (delta.action === 'batch_update' && Array.isArray(delta.batchItems)) {
-      delta.batchItems.forEach((item) => {
+      const orderedItems = [...delta.batchItems].sort(
+        (a, b) => (a.collectionName === 'taka_projects' ? 1 : 0) - (b.collectionName === 'taka_projects' ? 1 : 0)
+      );
+      orderedItems.forEach((item) => {
         if (item.data?.type === 'USER_MYWORK_SYNC' || String(item.docId || '').startsWith('sys_mywork_')) {
           import('../components/MyWorkTabParts/myWorkAccountSync').then((m) => m.applyIncomingMyWorkSyncDelta(item.data)).catch(() => {});
           return;
@@ -408,23 +406,14 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
       if ((delta as any).invalidate) {
         directlyAppliedDocIds.delete(delta.docId);
         invalidations.push({
-          docId: delta.docId,
-          collectionName: delta.collectionName,
-          action: delta.action as any,
-          data: delta.data || {},
-          isPatch: delta.isPatch,
-          invalidate: true,
-          year: delta.year,
+          docId: delta.docId, collectionName: delta.collectionName, action: delta.action as any,
+          data: delta.data || {}, isPatch: delta.isPatch, invalidate: true, year: delta.year,
         });
         return;
       }
       try {
         applyItem(delta.docId, delta.collectionName, delta.action as any, delta.data, {
-          year: delta.year,
-          projectId: delta.projectId,
-          projectCode: delta.projectCode,
-          projectStore: delta.projectStore,
-          isPatch: delta.isPatch,
+          year: delta.year, projectId: delta.projectId, projectCode: delta.projectCode, projectStore: delta.projectStore, isPatch: delta.isPatch,
         });
       } catch (err) {
         console.warn('[deltaSync] applyItem failed (delta skipped):', delta.docId, err);
@@ -438,7 +427,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     const expectedCount = pIdx !== undefined ? updatedProjects[pIdx]?.taskSummaries?.length || 0 : 0;
     if (receivedCount > 0 && receivedCount >= expectedCount) {
       markLoaded('tasks_proj', pid).catch(() => {});
-      markProjectTasksHydrated(pid);
+      if (inMemoryProjectIds.has(pid)) markProjectTasksHydrated(pid);
     }
   });
 
@@ -482,7 +471,11 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   });
   if (flashEntries.length > 0) triggerBatchChangeFlash(flashEntries);
 
-  applyDeltasToLocalDatabase(deltas).catch(() => {});
+  applyDeltasToLocalDatabase(deltas)
+    .then(() => {
+      if (reconciledProjectsForDexie.length > 0) runBackgroundDexieProjectTaskReconciliation(reconciledProjectsForDexie);
+    })
+    .catch(() => {});
   broadcastAppliedDeltas(deltas);
   if (maxTime > lastSyncTime) safeSetItemLocal(LAST_SYNC_KEY, String(maxTime));
 

@@ -398,9 +398,8 @@ export async function executeImportTasks({
   const tasksToSaveIds = new Set<string>();
   lockedExistingTasksToSave.forEach((_, tid) => tasksToSaveIds.add(tid));
   calculatedTasks.forEach(t => tasksToSaveIds.add(t.id));
-  updatedParents.forEach(p => {
-    if (p.id && !String(p.id).startsWith('ts_')) tasksToSaveIds.add(p.id);
-  });
+  healedAll.updatesToSave.forEach(ct => { if (ct.id && !String(ct.id).startsWith('ts_')) tasksToSaveIds.add(ct.id); });
+  updatedParents.forEach(p => { if (p.id && !String(p.id).startsWith('ts_')) tasksToSaveIds.add(p.id); });
   const finalTasksToSave: Task[] = [];
   tasksToSaveIds.forEach(tid => {
     if (String(tid).startsWith('ts_')) return;
@@ -448,7 +447,7 @@ export async function executeImportTasks({
     touchedProjectsForPersistence.push({ ...proj, ...computed, updatedAt: commitNowIso });
   });
 
-  const hydratedRealTasks = allInitialTasks.filter(t => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary);
+  const hydratedRealTasks = finalFullTasksList.filter(t => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary);
   useAppStore.getState().optimisticUpdateTasks([...hydratedRealTasks, ...finalTasksToSave]);
 
   const storeProjects = useAppStore.getState().projects || [];

@@ -398,16 +398,15 @@ export async function batchSaveTasksToFirestore(
 
   deltaItems.push(...taskDeltaItems, ...delegationDeltaItems);
 
-  // 3. Commit Firestore batch AND broadcast full inline deltas in parallel (all deltaItems carry 100% full data with invalidate: false, so 0 getDocFromServer race on iOS)
-  await Promise.all([
-    executeMassBatchOperations(writeOps, {
-      suppressAutoDelta: true,
-      skipLocalMirror: true,
-    }),
-    deltaItems.length > 0
-      ? recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id)
-      : Promise.resolve(),
-  ]);
+  // 3. Commit Firestore batch FIRST, then broadcast coalesced deltas so remote devices never encounter !snap.exists()
+  await executeMassBatchOperations(writeOps, {
+    suppressAutoDelta: true,
+    skipLocalMirror: true,
+  });
+
+  if (deltaItems.length > 0) {
+    await recordBatchDeltas(deltaItems, currentUser?.username || currentUser?.id);
+  }
 }
 
 /**

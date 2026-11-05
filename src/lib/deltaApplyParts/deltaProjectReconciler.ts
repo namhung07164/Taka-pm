@@ -25,6 +25,7 @@ export {
   purgeProjectAndTasksOnDeleteDelta,
   unlinkChildTasksOnTaskDeleteDelta,
   removeDeletedTaskSummaryFromProjects,
+  runBackgroundDexieProjectTaskReconciliation,
 };
 
 /**
@@ -40,9 +41,6 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
   if (!hasReliableIds) {
     return { nextTasks: updatedTasks, tasksChanged: false };
   }
-
-  // Always reconcile Dexie localDb.tasks in background (crucial when iOS is on GeneralTab with updatedTasks = [])
-  runBackgroundDexieProjectTaskReconciliation([nextProj]);
 
   const summaryByIdLower = new Map<string, any>();
   rawTaskSummaries.forEach((s: any) => {
