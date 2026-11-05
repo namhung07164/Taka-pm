@@ -55,13 +55,18 @@ export function detectDeviceInfo(): { platform: string; deviceName: string } {
 }
 
 let lastReportTimestamp = 0;
+let lastReportedMetricsSig = "";
 let isReporting = false;
 
 /**
  * Report current device metrics to Firestore under `taka_device_metrics/{deviceId}`.
  * Strictly throttled: at most once every 60 seconds unless forced, saving writes.
+ * Skips background writes when tab is hidden or when metrics have not changed.
  */
 export async function reportDevicePerformance(forced: boolean = false) {
+  if (!forced && typeof document !== "undefined" && document.visibilityState === "hidden") {
+    return;
+  }
   const now = Date.now();
   if (!forced && now - lastReportTimestamp < 60_000) {
     return;
@@ -70,7 +75,6 @@ export async function reportDevicePerformance(forced: boolean = false) {
 
   try {
     isReporting = true;
-    lastReportTimestamp = now;
 
     const deviceId = getOrCreateDeviceId();
     const { platform, deviceName } = detectDeviceInfo();
@@ -78,6 +82,14 @@ export async function reportDevicePerformance(forced: boolean = false) {
     const perfState = usePerformanceStore.getState();
     const appState = useAppStore.getState();
     const currentUser = appState.currentUser;
+
+    const currentSig = `${perfState.serverReads}:${perfState.cacheReads}:${perfState.activeListeners}:${perfState.events.length}:${currentUser?.id || ""}`;
+    if (!forced && currentSig === lastReportedMetricsSig && now - lastReportTimestamp < 300_000) {
+      return;
+    }
+
+    lastReportTimestamp = now;
+    lastReportedMetricsSig = currentSig;
 
     const totalOps = perfState.serverReads + perfState.cacheReads;
     const hitRate = totalOps > 0 ? Number(((perfState.cacheReads / totalOps) * 100).toFixed(1)) : 100.0;

@@ -7,7 +7,6 @@ import {
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { TakaDelta, TakaDeltaItem } from '../types';
-import { touchYearMeta } from './yearsFingerprintService';
 import { broadcastAppliedDeltas } from './broadcastSyncService';
 import { markExplicitDelta } from './autoDeltaQueue';
 import { CLIENT_SESSION_ID, DELTA_COLLECTION } from './deltaConstants';
@@ -57,11 +56,6 @@ export async function recordDelta(delta: {
     const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', DELTA_COLLECTION, deltaId);
     const cleanPayload = removeUndefinedDeep(deltaPayload);
     await setDoc(docRef, cleanPayload);
-
-    // Kích hoạt cập nhật fingerprint năm tương ứng
-    if (delta.year) {
-      touchYearMeta(delta.year).catch(() => {});
-    }
 
     // Phát tín hiệu tức thì sang các máy trạm khác trong cùng trình duyệt (0 Read)
     broadcastAppliedDeltas([deltaPayload]);
@@ -176,10 +170,6 @@ export async function recordBatchDeltas(
         })
       );
     }
-
-    // Kích hoạt cập nhật fingerprint các năm bị ảnh hưởng
-    const affectedYears = new Set(items.map((i) => i.year).filter(Boolean));
-    affectedYears.forEach((yr) => touchYearMeta(yr!).catch(() => {}));
 
     // Phát tín hiệu tức thì sang các máy trạm khác (0 Read)
     if (createdPayloads.length > 0) {
