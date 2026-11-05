@@ -200,8 +200,25 @@ export const CostTableRow = React.memo(function CostTableRow({
           </td>
         )}
         {visibleColumns.includes('balance') && (
-          <td className="px-4 py-3 text-right font-mono font-bold text-slate-700 dark:text-[#c3c3c3]">
-            {formatCurrency(totalBalance)}
+          <td
+            className={cn(
+              'px-4 py-3 text-right font-mono font-bold',
+              totalBalance < 0
+                ? 'text-red-600 dark:text-red-400'
+                : 'text-slate-700 dark:text-[#c3c3c3]'
+            )}
+          >
+            <div className="flex flex-col items-end gap-0.5">
+              <span>{formatCurrency(totalBalance)}</span>
+              {totalBalance < 0 && (
+                <span
+                  className="text-[8.5px] px-1 py-0.2 rounded bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 uppercase font-extrabold leading-none"
+                  title="Total Paid (1st + 2nd + 3rd) exceeds Actual/Forecast amount"
+                >
+                  OVERPAID
+                </span>
+              )}
+            </div>
           </td>
         )}
         {visibleColumns.includes('supportingFee') && (
@@ -211,19 +228,52 @@ export const CostTableRow = React.memo(function CostTableRow({
         )}
         {visibleColumns.includes('description') && (
           <td className="px-4 py-3">
-            <div className="flex items-center gap-1.5 justify-end">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                Remaining:
-              </span>
-              <span
-                className={`text-sm font-black ${
-                  pRemaining >= 0
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-red-500'
-                }`}
-              >
-                {formatCurrency(pRemaining)}
-              </span>
+            <div className="flex flex-col items-end gap-1">
+              <div className="flex items-center gap-1.5 justify-end">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  Remaining:
+                </span>
+                <span
+                  className={`text-sm font-black ${
+                    pRemaining >= 0
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-red-500'
+                  }`}
+                >
+                  {formatCurrency(pRemaining)}
+                </span>
+              </div>
+              {trueBudget > 0 && (
+                <div
+                  className="w-28 flex items-center gap-1.5"
+                  title={`Budget Burn Rate: ${Math.max(
+                    0,
+                    Math.round(((trueActual - trueSup) / trueBudget) * 100)
+                  )}%`}
+                >
+                  <div className="flex-1 h-1.5 rounded-full bg-slate-200 dark:bg-[#38383a] overflow-hidden">
+                    <div
+                      className={cn(
+                        'h-full rounded-full transition-all',
+                        pRemaining < 0
+                          ? 'bg-red-500'
+                          : (trueActual - trueSup) / trueBudget >= 0.85
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500'
+                      )}
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(0, Math.round(((trueActual - trueSup) / trueBudget) * 100))
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-[9px] font-mono font-bold text-slate-500 dark:text-slate-400">
+                    {Math.max(0, Math.round(((trueActual - trueSup) / trueBudget) * 100))}%
+                  </span>
+                </div>
+              )}
             </div>
           </td>
         )}

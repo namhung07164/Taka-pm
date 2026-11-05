@@ -63,8 +63,30 @@ export const CommandPaletteItemRow: React.FC<CommandPaletteItemRowProps> = React
           </div>
         </div>
 
-        {/* Right Shortcut or Action Indicator */}
+        {/* Right Shortcut, Quick Actions, or Action Indicator */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {item.quickActions && item.quickActions.length > 0 && (
+            <div className="hidden sm:flex items-center gap-1 mr-1">
+              {item.quickActions.map((qa) => (
+                <button
+                  key={qa.label}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    qa.onClick();
+                  }}
+                  className={cn(
+                    'px-1.5 py-0.5 rounded text-[10px] font-bold border transition-all active:scale-95 cursor-pointer',
+                    qa.colorClass ||
+                      'bg-white dark:bg-[#28282a] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-[#444446] hover:bg-blue-600 hover:text-white hover:border-blue-600'
+                  )}
+                  title={`Open in ${qa.label}`}
+                >
+                  {qa.label}
+                </button>
+              ))}
+            </div>
+          )}
           {item.shortcut && (
             <kbd className="text-[10px] font-mono font-bold bg-white dark:bg-[#28282a] text-slate-500 dark:text-[#a3a3a3] border border-slate-200 dark:border-[#444446] px-1.5 py-0.5 rounded shadow-2xs">
               {item.shortcut}

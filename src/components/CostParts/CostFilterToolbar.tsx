@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Search } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 import { FixedProjectInput } from '../FixedProjectInput';
@@ -28,6 +28,7 @@ interface CostFilterToolbarProps {
   isAdmin: boolean;
   handleExportCosts: () => void;
   handleImportCosts: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onOpenHealthInspector?: () => void;
 }
 
 export const CostFilterToolbar = React.memo(function CostFilterToolbar({
@@ -50,6 +51,7 @@ export const CostFilterToolbar = React.memo(function CostFilterToolbar({
   isAdmin,
   handleExportCosts,
   handleImportCosts,
+  onOpenHealthInspector,
 }: CostFilterToolbarProps) {
   const projects = useAppStore((state) => state.projects);
 
@@ -126,6 +128,17 @@ export const CostFilterToolbar = React.memo(function CostFilterToolbar({
         </div>
 
         <div className="flex items-center gap-2 justify-end shrink-0">
+          {onOpenHealthInspector && (
+            <button
+              type="button"
+              onClick={onOpenHealthInspector}
+              className="px-2.5 py-1.5 h-8 bg-white dark:bg-[#1a1a1c] hover:bg-emerald-50 dark:hover:bg-emerald-950/40 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700/80 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 touch-manipulation cursor-pointer"
+              title="Inspect Orphaned Costs, Overpaid Items & Over-Budget Projects"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span className="hidden sm:inline">Data Health</span>
+            </button>
+          )}
           <ColumnAdder
             availableColumns={AVAILABLE_COLUMNS}
             visibleColumns={visibleColumns}

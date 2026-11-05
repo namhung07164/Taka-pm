@@ -152,7 +152,7 @@ export const TooltipHeaderBar: React.FC<TooltipHeaderBarProps> = ({
               onFocusUnit(unitCode || unitName);
             }}
             className="p-1 rounded-md bg-slate-100 hover:bg-amber-100 text-slate-600 hover:text-amber-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-amber-950/50 dark:hover:text-amber-400 border border-slate-200 dark:border-[#444446] transition-colors active:scale-95 touch-manipulation cursor-pointer"
-            title="Phóng to & Focus gian hàng này (Zoom & Center)"
+            title="Zoom & Focus on this unit"
           >
             <Crosshair className="w-3.5 h-3.5" />
           </button>

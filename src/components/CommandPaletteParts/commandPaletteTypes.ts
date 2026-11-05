@@ -12,6 +12,12 @@ export interface CommandPaletteModalProps {
 
 export type CommandCategory = 'all' | 'actions' | 'navigation' | 'floors' | 'projects' | 'tasks';
 
+export interface PaletteQuickAction {
+  label: string;
+  onClick: () => void;
+  colorClass?: string;
+}
+
 export interface PaletteItem {
   id: string;
   category: 'actions' | 'navigation' | 'floors' | 'projects' | 'tasks';
@@ -24,5 +30,6 @@ export interface PaletteItem {
   iconColor?: string;
   shortcut?: string;
   onSelect: () => void;
+  quickActions?: PaletteQuickAction[];
   score?: number;
 }

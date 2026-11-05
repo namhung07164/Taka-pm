@@ -346,25 +346,13 @@ export function analyzeAndAnswerUserQuestion(
         ? `### 🚨 Phân tích Dự án Trễ tiến độ (\`Delayed\`) — Phạm vi: \`${scopeLabel}\`\n` +
           `• Trong tổng số **\`${workingProjects.length}\` dự án**, hiện có **\`${delayedProjects.length}\` dự án đang báo trễ (\`Delayed\`)**.\n` +
           (delayedProjects.length > 0
-            ? delayedProjects
-                .slice(0, 8)
-                .map(
-                  (p, i) =>
-                    `  ${i + 1}. **\`${p.code}\` — ${p.name}** (\`${p.store} · ${p.location || '-'}\`): Kế hoạch \`${Math.round(p.computedPlanProgress || 0)}%\` vs Thực tế **\`${Math.round(p.computedActProgress || 0)}%\`** · Handover: \`${p.computedTakCompl || p.handover || '-'}\``
-                )
-                .join('\n') +
+            ? delayedProjects.slice(0, 8).map((p, i) => `  ${i + 1}. **\`${p.code}\` — ${p.name}** (\`${p.store} · ${p.location || '-'}\`): Kế hoạch \`${Math.round(p.computedPlanProgress || 0)}%\` vs Thực tế **\`${Math.round(p.computedActProgress || 0)}%\`** · Handover: \`${p.computedTakCompl || p.handover || '-'}\``).join('\n') +
               `\n💡 *Mẹo*: Gõ trực tiếp mã dự án (VD: \`Phân tích ${delayedProjects[0].code}\`) để xem chi tiết từng Task nào đang làm trễ dự án đó!`
             : `🎉 Tuyệt vời! Không có dự án nào bị trễ tiến độ trong phạm vi \`${scopeLabel}\`.`)
         : `### 🚨 Delayed Projects Analysis — Scope: \`${scopeLabel}\`\n` +
           `• Out of **\`${workingProjects.length}\` projects**, **\`${delayedProjects.length}\` are currently \`Delayed\`**.\n` +
           (delayedProjects.length > 0
-            ? delayedProjects
-                .slice(0, 8)
-                .map(
-                  (p, i) =>
-                    `  ${i + 1}. **\`${p.code}\` — ${p.name}** (\`${p.store} · ${p.location || '-'}\`): Plan \`${Math.round(p.computedPlanProgress || 0)}%\` vs Actual **\`${Math.round(p.computedActProgress || 0)}%\`**`
-                )
-                .join('\n')
+            ? delayedProjects.slice(0, 8).map((p, i) => `  ${i + 1}. **\`${p.code}\` — ${p.name}** (\`${p.store} · ${p.location || '-'}\`): Plan \`${Math.round(p.computedPlanProgress || 0)}%\` vs Actual **\`${Math.round(p.computedActProgress || 0)}%\`**`).join('\n')
             : `🎉 All projects in \`${scopeLabel}\` are on track!`);
 
     return {
@@ -377,32 +365,22 @@ export function analyzeAndAnswerUserQuestion(
       targetTab: 'general',
       targetTabLabelVi: 'Mở Tab General xem Dự án',
       targetTabLabelEn: 'Open General Tab',
-      followUpPrompts:
-        delayedProjects.length > 0
-          ? [
-              lang === 'vi' ? `Phân tích chi tiết dự án ${delayedProjects[0].code}` : `Analyze project ${delayedProjects[0].code}`,
-              lang === 'vi' ? 'Tại sao dự án bị báo Delayed?' : 'Why is a project marked Delayed?'
-            ]
-          : [lang === 'vi' ? 'Tổng hợp tình hình các dự án hiện tại?' : 'Summary of current projects?']
+      followUpPrompts: delayedProjects.length > 0
+        ? [lang === 'vi' ? `Phân tích chi tiết dự án ${delayedProjects[0].code}` : `Analyze project ${delayedProjects[0].code}`, lang === 'vi' ? 'Tại sao dự án bị báo Delayed?' : 'Why is a project marked Delayed?']
+        : [lang === 'vi' ? 'Tổng hợp tình hình các dự án hiện tại?' : 'Summary of current projects?']
     };
   }
 
-  const isAskingPortfolioSummary =
-    !isAskingHowTo &&
-    /\b(tong hop|thong ke|tinh hinh|bao nhieu du an|danh sach du an|summary|overview|how many projects|status of projects)\b/.test(nq);
+  const isAskingPortfolioSummary = !isAskingHowTo && /\b(tong hop|thong ke|tinh hinh|bao nhieu du an|danh sach du an|summary|overview|how many projects|status of projects)\b/.test(nq);
 
   if (isAskingPortfolioSummary) {
     const answer =
       lang === 'vi'
         ? `### 📈 Tổng hợp Nhanh Dữ liệu Dự án — Phạm vi: \`${scopeLabel}\`\n` +
           `• **Tổng số dự án**: **\`${workingProjects.length}\` dự án** (Tổng diện tích: **\`${totalAreaM2} m²\`**)\n` +
-          `  - 🟢 **Hoàn thành (\`Completed\`)**: \`${completedProjects.length}\` dự án\n` +
-          `  - 🔵 **Đang thi công (\`On process\`)**: \`${inProgressProjects.length}\` dự án\n` +
-          `  - 🔴 **Trễ tiến độ (\`Delayed\`)**: \`${delayedProjects.length}\` dự án\n` +
-          `  - ⚫ **Sắp triển khai (\`Upcoming\`)**: \`${upcomingProjects.length}\` dự án\n` +
+          `  - 🟢 **Hoàn thành (\`Completed\`)**: \`${completedProjects.length}\` dự án | 🔵 **Đang thi công (\`On process\`)**: \`${inProgressProjects.length}\` dự án | 🔴 **Trễ tiến độ (\`Delayed\`)**: \`${delayedProjects.length}\` dự án | ⚫ **Sắp triển khai (\`Upcoming\`)**: \`${upcomingProjects.length}\` dự án\n` +
           `• **Tài chính & Ngân sách**:\n` +
-          `  - Tổng Ngân sách (\`Budget\`): **\`${fmtMoney(totalBudget, canSeeMoney)}\`** | Đã chi (\`Actual/Forc\`): **\`${fmtMoney(totalActual, canSeeMoney)}\`**\n` +
-          `  - Số dự án vượt ngân sách: **\`${overBudgetProjects.length}\` dự án**\n` +
+          `  - Tổng Ngân sách (\`Budget\`): **\`${fmtMoney(totalBudget, canSeeMoney)}\`** | Đã chi (\`Actual/Forc\`): **\`${fmtMoney(totalActual, canSeeMoney)}\`** | Số dự án vượt ngân sách: **\`${overBudgetProjects.length}\` dự án**\n` +
           `💡 *Bạn có thể gõ mã bất kỳ dự án nào (VD: \`${workingProjects[0]?.code || 'A01'}\`) để tôi phân tích sâu từng Task và chi phí của dự án đó!*`
         : `### 📈 Live Portfolio Summary — Scope: \`${scopeLabel}\`\n` +
           `• **Total Projects**: **\`${workingProjects.length}\`** (Total Area: **\`${totalAreaM2} m²\`**)\n` +
@@ -420,10 +398,9 @@ export function analyzeAndAnswerUserQuestion(
       targetTab: 'summary',
       targetTabLabelVi: 'Mở Tab Summary (Báo cáo)',
       targetTabLabelEn: 'Open Summary Tab',
-      followUpPrompts:
-        lang === 'vi'
-          ? ['Dự án nào đang bị trễ tiến độ hiện nay?', 'Công thức tính Remaining trong Budget là gì?']
-          : ['Which projects are currently delayed?', 'What is the Remaining Budget formula?']
+      followUpPrompts: lang === 'vi'
+        ? ['Dự án nào đang bị trễ tiến độ hiện nay?', 'Công thức tính Remaining trong Budget là gì?']
+        : ['Which projects are currently delayed?', 'What is the Remaining Budget formula?']
     };
   }
 
@@ -437,18 +414,14 @@ export function analyzeAndAnswerUserQuestion(
 
   for (const item of FAQ_TARGETED_QA_BANK) {
     let score = 0;
-    if (item.mustHaveAny && !item.mustHaveAny.some(req => nq.includes(norm(req)))) {
-      continue;
-    }
+    if (item.mustHaveAny && !item.mustHaveAny.some(req => nq.includes(norm(req)))) continue;
     const phrases = item.phrasesVi.concat(item.phrasesEn).map(norm);
     for (const ph of phrases) {
       if (nq.includes(ph)) score += 45;
       else {
         const phWords = ph.split(' ').filter(w => w.length >= 2);
         const matchedWords = phWords.filter(w => nq.includes(w)).length;
-        if (phWords.length >= 2 && matchedWords >= Math.ceil(phWords.length * 0.75)) {
-          score += 26;
-        }
+        if (phWords.length >= 2 && matchedWords >= Math.ceil(phWords.length * 0.75)) score += 26;
       }
     }
     for (const kw of item.keywords.map(norm)) {
@@ -458,7 +431,6 @@ export function analyzeAndAnswerUserQuestion(
     if (isWhyQuestion && (item.intentType === 'why' || item.intentType === 'troubleshoot')) score += 10;
     if (isHowQuestion && (item.intentType === 'how' || item.intentType === 'feature')) score += 8;
     if (item.targetTab === state.activeTab) score += 6;
-
     if (score > bestQaScore) {
       bestQaScore = score;
       bestQa = item;
@@ -496,7 +468,6 @@ export function analyzeAndAnswerUserQuestion(
     targetTab: topEntry?.targetTab,
     targetTabLabelVi: topEntry?.targetTabLabelVi,
     targetTabLabelEn: topEntry?.targetTabLabelEn,
-    followUpPrompts:
-      (lang === 'vi' ? topEntry?.quickPromptsVi : topEntry?.quickPromptsEn) || []
+    followUpPrompts: (lang === 'vi' ? topEntry?.quickPromptsVi : topEntry?.quickPromptsEn) || []
   };
 }

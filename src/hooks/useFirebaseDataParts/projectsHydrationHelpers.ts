@@ -405,18 +405,11 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
               const tParent = t.parentTaskId || undefined;
               const tParentLower = tParent ? String(tParent).trim().toLowerCase() : '';
               const isModernSummary =
-                s.orderIndex !== undefined ||
-                s.runningStatus !== undefined ||
-                s.isModularParent !== undefined ||
-                'parentTaskId' in s;
+                s.orderIndex !== undefined || s.runningStatus !== undefined || s.isModularParent !== undefined || 'parentTaskId' in s;
               const sParent =
                 s.parentTaskId !== undefined && s.parentTaskId !== null && String(s.parentTaskId).trim() !== ''
                   ? s.parentTaskId
-                  : isModernSummary
-                    ? undefined
-                    : tParentLower && summaryIds.has(localParentOrSelf(tParentLower))
-                      ? tParent
-                      : undefined;
+                  : isModernSummary ? undefined : tParentLower && summaryIds.has(tParentLower) ? tParent : undefined;
               const needsPatch =
                 (s.name !== undefined && s.name !== t.name) ||
                 (s.start !== undefined && s.start !== t.start) ||
@@ -447,26 +440,16 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
 
       if (zombieIdsToPurgeFromStore.size > 0) {
         const latestTasks = useAppStore.getState().tasks || [];
-        const filtered = latestTasks.filter(
-          (t) => !t?.id || !zombieIdsToPurgeFromStore.has(String(t.id).trim().toLowerCase())
-        );
-        if (filtered.length !== latestTasks.length) {
-          useAppStore.getState().setTasks(filtered);
-        }
+        const filtered = latestTasks.filter((t) => !t?.id || !zombieIdsToPurgeFromStore.has(String(t.id).trim().toLowerCase()));
+        if (filtered.length !== latestTasks.length) useAppStore.getState().setTasks(filtered);
       }
 
       if (itemsToVerify.length > 0) {
         const resolved = await resolveInvalidations(itemsToVerify);
-        if (resolved.length > 0) {
-          applyIncomingDeltas(resolved);
-        }
+        if (resolved.length > 0) applyIncomingDeltas(resolved);
       }
     } catch {}
   }, 60);
-}
-
-function localParentOrSelf(pLower: string): string {
-  return pLower;
 }
 
 /**
@@ -479,33 +462,18 @@ export function buildZombieProjectRemovalsForYear(
   userRole: string | undefined,
   allowedStores: string[]
 ): any[] {
-  const serverIds = new Set<string>();
-  snapshotDocs.forEach((d) => serverIds.add(d.id));
+  const serverIds = new Set<string>(snapshotDocs.map((d) => d.id));
   const nowMs = Date.now();
   const allowedLower = allowedStores.map((s) => s.toLowerCase());
-  const isStoreRestricted =
-    userRole !== 'admin' && allowedLower.length > 0 && !allowedLower.includes('all');
+  const isStoreRestricted = userRole !== 'admin' && allowedLower.length > 0 && !allowedLower.includes('all');
   const zombieRemovals: any[] = [];
 
   currentProjectsNow.forEach((p) => {
-    if (
-      p?.id &&
-      String(p.year ?? '').trim() === String(year).trim() &&
-      !serverIds.has(p.id)
-    ) {
-      if (
-        isStoreRestricted &&
-        p.store &&
-        !allowedLower.includes(String(p.store).trim().toLowerCase())
-      ) {
-        return;
-      }
+    if (p?.id && String(p.year ?? '').trim() === String(year).trim() && !serverIds.has(p.id)) {
+      if (isStoreRestricted && p.store && !allowedLower.includes(String(p.store).trim().toLowerCase())) return;
       const updatedMs = tsOf(p.updatedAt);
       if (!updatedMs || nowMs - updatedMs > 30000) {
-        zombieRemovals.push({
-          type: 'removed',
-          doc: { id: p.id, data: () => ({ ...p, isDeleted: true }) },
-        });
+        zombieRemovals.push({ type: 'removed', doc: { id: p.id, data: () => ({ ...p, isDeleted: true }) } });
       }
     }
   });

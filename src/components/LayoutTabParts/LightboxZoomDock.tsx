@@ -202,7 +202,7 @@ export const LightboxZoomDock: React.FC<LightboxZoomDockProps> = ({
                     type="button"
                     onClick={onScrollToTop}
                     className="p-1.5 hover:bg-slate-800 rounded-lg text-blue-300 hover:text-white transition-colors active:scale-95 touch-manipulation cursor-pointer flex items-center gap-0.5 text-[11px] font-bold"
-                    title="Scroll to Top (Lên đầu trang)"
+                    title="Scroll to Top"
                   >
                     <ArrowUpToLine className="w-3.5 h-3.5 text-blue-400" />
                     <span className="hidden sm:inline">Top</span>
@@ -213,7 +213,7 @@ export const LightboxZoomDock: React.FC<LightboxZoomDockProps> = ({
                     type="button"
                     onClick={onScrollUp}
                     className="p-1.5 hover:bg-slate-800 rounded-lg text-emerald-300 hover:text-white transition-colors active:scale-95 touch-manipulation cursor-pointer flex items-center gap-0.5 text-[11px] font-bold"
-                    title="Scroll Up (Cuộn lên)"
+                    title="Scroll Up"
                   >
                     <ChevronUp className="w-3.5 h-3.5 text-emerald-400" />
                     <span className="hidden sm:inline">Up</span>
@@ -224,7 +224,7 @@ export const LightboxZoomDock: React.FC<LightboxZoomDockProps> = ({
                     type="button"
                     onClick={onScrollDown}
                     className="p-1.5 hover:bg-slate-800 rounded-lg text-indigo-300 hover:text-white transition-colors active:scale-95 touch-manipulation cursor-pointer flex items-center gap-0.5 text-[11px] font-bold"
-                    title="Scroll Down (Cuộn xuống)"
+                    title="Scroll Down"
                   >
                     <ChevronDown className="w-3.5 h-3.5 text-indigo-400" />
                     <span className="hidden sm:inline">Down</span>

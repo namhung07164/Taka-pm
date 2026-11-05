@@ -366,21 +366,12 @@ export const FAQ_KNOWLEDGE_BASE: FaqKnowledgeEntry[] = [
     category: 'RBAC & Sync',
     titleVi: '10. ☁️ Đồng bộ Đa thiết bị 0ms, Tự dọn Task Ma & Sao lưu Cloudflare R2',
     titleEn: '10. ☁️ 0ms Multi-Device Sync, Zero-Zombie Cleanup & R2 Auto-Backup',
-    keywords: [
-      'sync', 'đồng bộ', 'delta', 'offline', 'mất mạng', 'r2', 'cloudflare', 'backup',
-      'sao lưu', 'zombie', 'task ma', 'qua đêm', 'sleep', 'ipad', 'xóa cache'
-    ],
+    keywords: ['sync', 'đồng bộ', 'delta', 'offline', 'mất mạng', 'r2', 'cloudflare', 'backup', 'sao lưu', 'zombie', 'task ma', 'qua đêm', 'sleep', 'ipad', 'xóa cache'],
     targetTab: 'setting',
     targetTabLabelVi: 'Mở Tab Settings (Cấu hình & Backup)',
     targetTabLabelEn: 'Open Settings Tab',
-    quickPromptsVi: [
-      'Nếu đang sửa mà mất mạng Wi-Fi thì có bị mất dữ liệu không?',
-      'Tại sao không cần bấm xóa cache khi dùng trên nhiều máy?'
-    ],
-    quickPromptsEn: [
-      'Will I lose data if Wi-Fi drops while editing?',
-      'How does the app stay in sync after sleeping overnight?'
-    ],
+    quickPromptsVi: ['Nếu đang sửa mà mất mạng Wi-Fi thì có bị mất dữ liệu không?', 'Tại sao không cần bấm xóa cache khi dùng trên nhiều máy?'],
+    quickPromptsEn: ['Will I lose data if Wi-Fi drops while editing?', 'How does the app stay in sync after sleeping overnight?'],
     answerVi:
       '🎯 **Hiểu đơn giản**: Bạn cứ thoải mái làm việc trên Máy tính, iPad và Điện thoại cùng lúc — hệ thống tự đồng bộ tức thì và bảo hiểm dữ liệu tự động 100%.\n' +
       '⚡ **3 Cơ chế bảo vệ tự động**:\n' +
@@ -400,21 +391,12 @@ export const FAQ_KNOWLEDGE_BASE: FaqKnowledgeEntry[] = [
     category: 'Overview & Scope',
     titleVi: '11. ⌨️ Bảng Phím tắt Thần tốc & Mẹo Xuất PDF / Excel',
     titleEn: '11. ⌨️ Keyboard Shortcuts & PDF / Excel Export Tips',
-    keywords: [
-      'shortcut', 'phím tắt', 'mẹo', 'tips', 'command palette', 'ctrl+k',
-      'undo', 'hoàn tác', 'kéo thả', 'draggable', 'excel', 'csv', 'export', 'import', 'print', 'in ấn', 'pdf'
-    ],
+    keywords: ['shortcut', 'phím tắt', 'mẹo', 'tips', 'command palette', 'ctrl+k', 'undo', 'hoàn tác', 'kéo thả', 'draggable', 'excel', 'csv', 'export', 'import', 'print', 'in ấn', 'pdf'],
     targetTab: 'manual',
     targetTabLabelVi: 'Mở Tab Manual (Xem & Tải PDF Hướng dẫn)',
     targetTabLabelEn: 'Open Manual Tab (View & Download PDF)',
-    quickPromptsVi: [
-      'Làm sao in bản vẽ mặt bằng hoặc biểu đồ Gantt ra PDF khổ A3?',
-      'Cách nhập bình luận hàng loạt từ file Excel/CSV?'
-    ],
-    quickPromptsEn: [
-      'How do I print the Floor Layout or Gantt chart to A3 PDF?',
-      'How does the comments column work when importing Excel/CSV?'
-    ],
+    quickPromptsVi: ['Làm sao in bản vẽ mặt bằng hoặc biểu đồ Gantt ra PDF khổ A3?', 'Cách nhập bình luận hàng loạt từ file Excel/CSV?'],
+    quickPromptsEn: ['How do I print the Floor Layout or Gantt chart to A3 PDF?', 'How does the comments column work when importing Excel/CSV?'],
     answerVi:
       '🎯 **Hiểu đơn giản**: Dùng phím tắt và Menu góc `☰` giúp bạn thao tác nhanh gấp 3 lần!\n' +
       '⌨️ **Top Phím tắt hay dùng nhất**:\n' +
@@ -449,9 +431,8 @@ export function searchFaqKnowledge(
   const cleanQuery = rawQuery.trim();
   const normQuery = normalizeText(cleanQuery);
   if (!normQuery) {
-    const starter = FAQ_KNOWLEDGE_BASE.slice(0, 3);
     return {
-      bestMatches: starter,
+      bestMatches: FAQ_KNOWLEDGE_BASE.slice(0, 3),
       formattedAnswer: lang === 'vi'
         ? 'Xin chào! Tôi là **Trợ lý Hướng dẫn & Phân tích Thông minh Takashimaya PM**.\n\nHãy bấm vào một chủ đề gợi ý, hỏi về mã dự án bất kỳ (VD: `L3-333-2`), hoặc gõ câu hỏi của bạn!'
         : 'Hello! I am the **Takashimaya PM Smart Guide & Analytics Assistant**.\n\nTap any topic, ask about any project code (e.g., `L3-333-2`), or type your question!'
@@ -475,9 +456,7 @@ export function searchFaqKnowledge(
       if (normTitle.includes(tk)) score += 7;
       if (normBody.includes(tk)) score += 3;
     }
-    if (activeTab && entry.targetTab === activeTab && score > 0) {
-      score += 8;
-    }
+    if (activeTab && entry.targetTab === activeTab && score > 0) score += 8;
     return { entry, score };
   }).sort((a, b) => b.score - a.score);
 
@@ -487,23 +466,17 @@ export function searchFaqKnowledge(
     return {
       bestMatches: fallback,
       formattedAnswer: lang === 'vi'
-        ? `Tôi chưa tìm thấy mục khớp chính xác với **"${cleanQuery}"**. Bạn có thể gõ rõ hơn (VD: *cách sửa trên Gantt*, *tại sao tiền hiện \*\*\**, hoặc nhập *Mã dự án* để phân tích tiến độ):\n\n` +
-          fallback.map(item => `### ${item.titleVi}\n${item.answerVi}`).join('\n\n')
-        : `I could not find an exact match for **"${cleanQuery}"**. Try asking specifically (e.g., *how to edit on Gantt*, *why money shows \*\*\**, or type a *Project Code* for live analysis):\n\n` +
-          fallback.map(item => `### ${item.titleEn}\n${item.answerEn}`).join('\n\n')
+        ? `Tôi chưa tìm thấy mục khớp chính xác với **"${cleanQuery}"**. Bạn có thể gõ rõ hơn (VD: *cách sửa trên Gantt*, *tại sao tiền hiện \*\*\**, hoặc nhập *Mã dự án* để phân tích tiến độ):\n\n` + fallback.map(item => `### ${item.titleVi}\n${item.answerVi}`).join('\n\n')
+        : `I could not find an exact match for **"${cleanQuery}"**. Try asking specifically (e.g., *how to edit on Gantt*, *why money shows \*\*\**, or type a *Project Code* for live analysis):\n\n` + fallback.map(item => `### ${item.titleEn}\n${item.answerEn}`).join('\n\n')
     };
   }
 
-  // Only show 1 primary article if it clearly leads (or if second score is weak) so the user gets a focused answer
   const top1 = positive[0];
   const top2 = positive[1];
   const shouldShowSingle = !top2 || top1.score >= top2.score * 1.35 || top1.score - top2.score >= 14;
   const selectedEntries = shouldShowSingle ? [top1.entry] : [top1.entry, top2.entry];
-
   return {
     bestMatches: positive.slice(0, 2).map(s => s.entry),
-    formattedAnswer: selectedEntries
-      .map(item => `### ${lang === 'vi' ? item.titleVi : item.titleEn}\n${lang === 'vi' ? item.answerVi : item.answerEn}`)
-      .join('\n\n---\n\n')
+    formattedAnswer: selectedEntries.map(item => `### ${lang === 'vi' ? item.titleVi : item.titleEn}\n${lang === 'vi' ? item.answerVi : item.answerEn}`).join('\n\n---\n\n')
   };
 }

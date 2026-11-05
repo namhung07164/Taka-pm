@@ -37,16 +37,8 @@ interface LiveCanvasProps {
 }
 
 export const LiveCanvas = React.memo(function LiveCanvas({
-  config,
-  storeFilter,
-  locationFilter,
-  yearFilter,
-  targetUnitSearch,
-  onUnitSelected,
-  onClearFocus,
-  onRefreshConfig,
-  onOpenR2Config,
-  canWrite,
+  config, storeFilter, locationFilter, yearFilter, targetUnitSearch,
+  onUnitSelected, onClearFocus, onRefreshConfig, onOpenR2Config, canWrite,
 }: LiveCanvasProps) {
   const globalYearFilter = useAppStore(state => state.globalYearFilter); const layoutTooltipVisibility = useAppStore(state => state.layoutTooltipVisibility);
   const setLayoutTooltipVisibility = useAppStore(state => state.setLayoutTooltipVisibility); const resetLayoutTooltipVisibility = useAppStore(state => state.resetLayoutTooltipVisibility);
@@ -60,10 +52,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
   const [miniGanttProject, setMiniGanttProject] = useState<Project | null>(null);
   const isAnyModalActive = Boolean(quickNavTarget) || isProjectModalOpen || Boolean(miniGanttProject);
 
-  const savedTooltipStateRef = React.useRef<{
-    hoverInfo: any;
-    isPinned: boolean;
-  } | null>(null);
+  const savedTooltipStateRef = React.useRef<{ hoverInfo: any; isPinned: boolean } | null>(null);
   const prevIsAnyModalActiveRef = React.useRef(isAnyModalActive);
 
   const [showMenu, setShowMenu] = useState(false);
@@ -72,9 +61,7 @@ export const LiveCanvas = React.memo(function LiveCanvas({
     try {
       const saved = localStorage.getItem('taka_layout_legend_collapsed');
       if (saved !== null) return saved === 'true';
-    } catch {
-      // Ignore
-    }
+    } catch {}
     return false;
   });
   const [selectedLegendGroupId, setSelectedLegendGroupId] = useState<string | null>(null);
@@ -220,15 +207,23 @@ export const LiveCanvas = React.memo(function LiveCanvas({
       });
       setIsExporting(false);
       setExportStatus('');
-      alert(`✅ ${res.message}`);
+      useAppStore.getState().setToast({
+        title: 'Export Completed',
+        message: res.message,
+        type: 'success',
+      });
       if (onRefreshConfig) {
         await onRefreshConfig();
       }
     } catch (err: any) {
-      console.error("Lỗi khi Trigger Export:", err);
+      console.error("Trigger Export Error:", err);
       setIsExporting(false);
       setExportStatus('');
-      alert(`⚠️ Lỗi khi Trigger Export:\n${err?.message || err}`);
+      useAppStore.getState().setToast({
+        title: 'Trigger Export Failed',
+        message: err?.message || String(err),
+        type: 'error',
+      });
     }
   };
 
@@ -258,10 +253,10 @@ export const LiveCanvas = React.memo(function LiveCanvas({
           <Layers className="w-8 h-8 text-purple-600 dark:text-purple-400 opacity-80" />
         </div>
         <p className="text-base font-bold text-slate-700 dark:text-slate-200">
-          Chưa có dữ liệu Layout cho {storeFilter} • {targetLoc} ({globalYearFilter || 'Tất cả năm'})
+          No Layout Data Available for {storeFilter} • {targetLoc} ({globalYearFilter || 'All Years'})
         </p>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md leading-relaxed">
-          Bộ lọc và dữ liệu mặt bằng đồng bộ trực tiếp theo các phiên bản tại tab Review. Hãy tạo hoặc gán phiên bản tại tab Picture Mapping để hiển thị tại đây.
+          Floor layout data and filters synchronize directly from active versions in the Review tab. Please create or assign a floor version in Picture Mapping to display it here.
         </p>
       </div>
     );

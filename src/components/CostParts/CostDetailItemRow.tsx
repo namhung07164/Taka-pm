@@ -241,13 +241,33 @@ export const CostDetailItemRow = React.memo(function CostDetailItemRow({
         </td>
       )}
       {visibleColumns.includes('balance') && (
-        <td className="px-4 py-3 text-right font-mono font-bold text-slate-700 dark:text-[#c3c3c3] bg-slate-50 dark:bg-[#1e1e20]/30">
-          {formatCurrency(
-            (c.actual || 0) -
-              (c.firstPaid || 0) -
-              (c.secondPaid || 0) -
-              (c.thirdPaid || 0)
+        <td
+          className={cn(
+            'px-4 py-3 text-right font-mono font-bold bg-slate-50 dark:bg-[#1e1e20]/30',
+            (c.actual || 0) - (c.firstPaid || 0) - (c.secondPaid || 0) - (c.thirdPaid || 0) < 0
+              ? 'text-red-600 dark:text-red-400'
+              : 'text-slate-700 dark:text-[#c3c3c3]'
           )}
+        >
+          <div className="flex flex-col items-end gap-0.5">
+            <span>
+              {formatCurrency(
+                (c.actual || 0) -
+                  (c.firstPaid || 0) -
+                  (c.secondPaid || 0) -
+                  (c.thirdPaid || 0)
+              )}
+            </span>
+            {(c.actual || 0) - (c.firstPaid || 0) - (c.secondPaid || 0) - (c.thirdPaid || 0) <
+              0 && (
+              <span
+                className="text-[8px] px-1 py-0.2 rounded bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 uppercase font-extrabold leading-none"
+                title="1st + 2nd + 3rd Paid exceeds Actual/Forecast"
+              >
+                OVERPAID
+              </span>
+            )}
+          </div>
         </td>
       )}
       {visibleColumns.includes('supportingFee') && (

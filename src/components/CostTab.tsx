@@ -16,18 +16,33 @@ const ConfirmModal = lazyWithRetry(
   'ConfirmModal'
 );
 
+const CostHealthInspectorModal = lazyWithRetry(
+  () =>
+    import('./CostParts/CostHealthInspectorModal').then((m) => ({
+      default: m.CostHealthInspectorModal,
+    })),
+  'CostHealthInspectorModal'
+);
+
 export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) {
   const { enrichedProjects: projects } = useEnrichedData();
   const costs = useAppStore((state) => state.costs);
   const currentUser = useAppStore((state) => state.currentUser)!;
   const isCostsRequested = useAppStore((state) => state.isCostsRequested);
   const setIsCostsRequested = useAppStore((state) => state.setIsCostsRequested);
+  const [isHealthInspectorOpen, setIsHealthInspectorOpen] = React.useState(false);
 
   useEffect(() => {
     if (!isCostsRequested) {
       setIsCostsRequested(true);
     }
   }, [isCostsRequested, setIsCostsRequested]);
+
+  useEffect(() => {
+    const handleOpenHealth = () => setIsHealthInspectorOpen(true);
+    window.addEventListener('taka-open-cost-health', handleOpenHealth);
+    return () => window.removeEventListener('taka-open-cost-health', handleOpenHealth);
+  }, []);
 
   const {
     currency,
@@ -122,6 +137,22 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
             onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
           />
         )}
+        {isHealthInspectorOpen && (
+          <CostHealthInspectorModal
+            isOpen={isHealthInspectorOpen}
+            onClose={() => setIsHealthInspectorOpen(false)}
+            projects={projects}
+            costs={costs}
+            globalYearFilter={globalYearFilter}
+            effectiveStore={effectiveStore}
+            formatCurrency={formatCurrency}
+            canWrite={canWrite}
+            onSelectProjectCode={(code) => {
+              useAppStore.getState().setFixedProjectCode(String(code).trim().toUpperCase());
+            }}
+            onDeleteOrphanCost={(c) => handleDeleteCost(c)}
+          />
+        )}
       </React.Suspense>
 
       {/* Top Filter & Action Bar */}
@@ -145,6 +176,7 @@ export function CostTab({ initialSearchTerm = '', onGoToBudget }: CostTabProps) 
         isAdmin={isAdmin}
         handleExportCosts={handleExportCosts}
         handleImportCosts={handleImportCosts}
+        onOpenHealthInspector={() => setIsHealthInspectorOpen(true)}
       />
 
       {/* Desktop & Mobile Summary Cards with Paid Date Filter */}

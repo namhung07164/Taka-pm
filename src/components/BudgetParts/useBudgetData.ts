@@ -424,78 +424,28 @@ export function useBudgetData({
     useAppStore.getState().setFixedProjectCode(String(p.code || '').trim().toUpperCase());
     setDetailTabFilterCode(p.code);
     setDetailTabStoreFilter(p.store || "all");
-    if (p.year) {
-      setGlobalYearFilter(String(p.year));
-      safeSetItemSession("taka_detail_year", String(p.year));
-    } else {
-      setGlobalYearFilter("all");
-      safeSetItemSession("taka_detail_year", "all");
-    }
-    if (p.store) {
-      setGlobalStoreFilter(p.store);
-      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, String(p.store));
-    } else {
-      setGlobalStoreFilter("all");
-      safeSetItemLocal(`taka_store_filter_${currentUser.id}`, "all");
-    }
+    const targetYear = p.year ? String(p.year) : "all";
+    setGlobalYearFilter(targetYear);
+    safeSetItemSession("taka_detail_year", targetYear);
+    const targetStore = p.store ? String(p.store) : "all";
+    setGlobalStoreFilter(p.store || "all");
+    safeSetItemLocal(`taka_store_filter_${currentUser.id}`, targetStore);
     setActiveTab("detail");
   };
 
   return {
-    currency,
-    jpyRate,
-    usdRate,
-    canWrite,
-    globalYearFilter,
-    setGlobalYearFilter,
-    effectiveStore,
-    setGlobalStoreFilter,
-    globalLocationFilter,
-    setGlobalLocationFilter,
-    searchTerm,
-    setSearchTerm,
-    deferredSearchTerm,
-    moneyFilter,
-    setMoneyFilter,
-    lastSelectedMoneyFilterRef,
-    collapsedInSearch,
-    expandedParents,
-    sortConfig,
-    visibleColumns,
-    colWidths,
-    visibleCount,
-    setVisibleCount,
-    years,
-    stores,
-    locationOptions,
-    filteredRoots,
-    totalGlobalBudget,
-    totalGlobalActual,
-    totalGlobalSupportingFee,
-    totalGlobalRemaining,
-    totalVarianceColor,
-    candidateParentProjects,
-    candidateChildProjects,
-    linkedChildrenCount,
-    selectedParentProject,
-    setSelectedParentProject,
-    isLinkModalOpen,
-    setIsLinkModalOpen,
-    parentSearchTerm,
-    setParentSearchTerm,
-    childSearchTerm,
-    setChildSearchTerm,
-    getProjectFinancials,
-    handleResize,
-    handleToggleColumn,
-    toggleExpand,
-    toggleAllParents,
-    handleSort,
-    handleBudgetScroll,
-    handleOpenLinkModal,
-    handleExportBudget,
-    handleImportBudget,
-    handleProjectLinkClick,
-    formatCurrency
+    currency, jpyRate, usdRate, canWrite,
+    globalYearFilter, setGlobalYearFilter, effectiveStore, setGlobalStoreFilter,
+    globalLocationFilter, setGlobalLocationFilter, searchTerm, setSearchTerm,
+    deferredSearchTerm, moneyFilter, setMoneyFilter, lastSelectedMoneyFilterRef,
+    collapsedInSearch, expandedParents, sortConfig, visibleColumns, colWidths,
+    visibleCount, setVisibleCount, years, stores, locationOptions, filteredRoots,
+    totalGlobalBudget, totalGlobalActual, totalGlobalSupportingFee, totalGlobalRemaining,
+    totalVarianceColor, candidateParentProjects, candidateChildProjects, linkedChildrenCount,
+    selectedParentProject, setSelectedParentProject, isLinkModalOpen, setIsLinkModalOpen,
+    parentSearchTerm, setParentSearchTerm, childSearchTerm, setChildSearchTerm,
+    getProjectFinancials, handleResize, handleToggleColumn, toggleExpand,
+    toggleAllParents, handleSort, handleBudgetScroll, handleOpenLinkModal,
+    handleExportBudget, handleImportBudget, handleProjectLinkClick, formatCurrency
   };
 }

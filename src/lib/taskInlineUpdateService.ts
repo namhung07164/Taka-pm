@@ -27,9 +27,8 @@ import {
   prepareMissingDelegationsForTasks,
 } from './taskImportService';
 import { normalizeTaskNameForComparison } from './taskDeduplicationService';
-import { ensureProjectTasksLoaded, saveTaskStateUnified } from './taskStateService';
-import { recordBatchDeltas } from './deltaSyncService';
-import { createPatchDeltaItem } from './deltaPatchService';
+import { ensureProjectTasksLoaded } from './taskStateService';
+import { offloadTaskInlineBatchCommit } from './taskStateParts/taskInlineCommitHelper';
 
 export interface ExecuteUnifiedTaskUpdateOptions {
   skipPredecessorRecalc?: boolean;
@@ -429,90 +428,17 @@ export async function executeUnifiedTaskUpdate(
     }
 
     // 9. Offload Firestore Batch Commit, LocalDB Mirror, Project Rollup & Delta Sync to microtask
-    setTimeout(async () => {
-      try {
-        if (newDelegations.length > 0) {
-          import('./localDb')
-            .then(({ bulkPersistDelegations }) => bulkPersistDelegations(newDelegations))
-            .catch(() => {});
-        }
-        const prevTaskById = new Map<string, Task>();
-        for (let i = 0; i < latestTasks.length; i++) {
-          const item = latestTasks[i];
-          if (item?.id) prevTaskById.set(item.id, item);
-        }
-
-        const deltaItems: TakaDeltaItem[] = allUpdatesToSave.map((item) => {
-          const prev = prevTaskById.get(item.id);
-          return createPatchDeltaItem({
-            docId: item.id,
-            collectionName: 'taka_tasks',
-            previous: prev,
-            updated: item,
-            action: 'update',
-            year: (item as any).projectYear
-              ? String((item as any).projectYear)
-              : t.projectYear
-              ? String(t.projectYear)
-              : undefined,
-          });
-        });
-
-        deltaItems.forEach((di) => {
-          if (di.action === 'update' && di.data) {
-            if (!di.data.projectId && newT.projectId) di.data.projectId = newT.projectId;
-            if (!di.data.projectCode && newT.projectCode) di.data.projectCode = newT.projectCode;
-            if (!di.data.projectStore && newT.projectStore) di.data.projectStore = newT.projectStore;
-            if (!di.data.projectYear && newT.projectYear) di.data.projectYear = newT.projectYear;
-          }
-        });
-
-        newDelegations.forEach((delGroup) => {
-          deltaItems.push({
-            docId: delGroup.id,
-            collectionName: 'taka_delegations',
-            action: 'create',
-            isPatch: false,
-            data: delGroup,
-            year: delGroup.projectYear ? String(delGroup.projectYear) : undefined,
-            projectId: delGroup.projectId ? String(delGroup.projectId) : undefined,
-            projectCode: delGroup.projectCode ? String(delGroup.projectCode) : undefined,
-            projectStore: delGroup.projectStore ? String(delGroup.projectStore) : undefined,
-          });
-        });
-
-        const { markExplicitDelta } = await import('./autoDeltaQueue');
-        markExplicitDelta(deltaItems);
-        await Promise.all([
-          batch.commit(),
-          saveTaskStateUnified(allUpdatesToSave, { syncProjects: !options?.skipProjectRollup }),
-        ]);
-        const actor = effectiveUser ? effectiveUser.username || effectiveUser.id : 'system';
-        recordBatchDeltas(deltaItems, actor).catch(() => {});
-      } catch (error: any) {
-        console.error('Batch commit failed', error);
-        useAppStore.getState().setToast({
-          title: 'Save Failed',
-          message: 'Network error or permission denied. Data was not saved.',
-          type: 'error',
-        });
-        saveTaskStateUnified([t, ...depUpdates.map((d) => latestTasks.find((tsk) => tsk.id === d.id) || d)]);
-      }
-    }, 0);
-
-    undoManager.push({
-      description: `Update Task Schedule: ${t.name}`,
-      revert: async () => {
-        const revertBatch = writeBatch(db);
-        revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
-        updatesToDependents.forEach((depTask) => {
-          const originalDep = latestTasks.find((tsk) => tsk.id === depTask.id);
-          if (originalDep) {
-            revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), originalDep);
-          }
-        });
-        revertBatch.commit().catch(console.error);
-      },
+    offloadTaskInlineBatchCommit({
+      t,
+      newT,
+      batch,
+      allUpdatesToSave,
+      depUpdates,
+      updatesToDependents,
+      newDelegations,
+      latestTasks,
+      effectiveUser,
+      skipProjectRollup: options?.skipProjectRollup,
     });
   } catch (e) {
     console.error(e);

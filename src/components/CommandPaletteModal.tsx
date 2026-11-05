@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
-import { Search, Command, X, Sparkles, Building2, Tag, List, LayoutDashboard } from 'lucide-react';
+import { motion, useDragControls } from 'motion/react';
+import { Search, Command, X, Sparkles, Building2, Tag, List, LayoutDashboard, GripHorizontal } from 'lucide-react';
 import { DebouncedSearchInput } from './DebouncedSearchInput';
 import { cn } from '../lib/utils';
 import {
@@ -19,6 +19,7 @@ export function CommandPaletteModal({
   onToggleFocusMode,
   onPrintPreviewToggle,
 }: CommandPaletteModalProps) {
+  const dragControls = useDragControls();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CommandCategory>('all');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -113,6 +114,10 @@ export function CommandPaletteModal({
     <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-16 sm:pt-24 p-3 bg-slate-900/50 dark:bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
       <motion.div
         ref={containerRef}
+        drag
+        dragControls={dragControls}
+        dragListener={false}
+        dragMomentum={false}
         initial={{ opacity: 0, scale: 0.96, y: -10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: -10 }}
@@ -122,8 +127,12 @@ export function CommandPaletteModal({
       >
         {/* Top Draggable Handle & Search Bar Header */}
         <div className="border-b border-slate-100 dark:border-[#333336] p-3 sm:p-4 bg-slate-50/70 dark:bg-[#252528]/70">
-          <div className="flex items-center justify-between gap-2 mb-2 px-1 text-slate-400 dark:text-[#838383]">
+          <div
+            onPointerDown={(e) => dragControls.start(e)}
+            className="modal-handle flex items-center justify-between gap-2 mb-2 px-1 text-slate-400 dark:text-[#838383] cursor-grab active:cursor-grabbing select-none"
+          >
             <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-[#a3a3a3]">
+              <GripHorizontal className="w-3.5 h-3.5 text-slate-400" />
               <Command className="w-3.5 h-3.5" />
               <span>Command Palette</span>
             </div>

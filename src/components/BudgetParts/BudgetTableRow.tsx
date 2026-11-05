@@ -95,12 +95,12 @@ export const BudgetTableRow = memo(function BudgetTableRow({
               </button>
             )}
             {isSelfRow && (
-              <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-[#8ab4f8] uppercase shrink-0 border border-blue-200 dark:border-blue-800 flex items-center gap-0.5 leading-none" title="Dòng tự thân (Self)">
+              <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-950/80 text-blue-800 dark:text-[#8ab4f8] uppercase shrink-0 border border-blue-200 dark:border-blue-800 flex items-center gap-0.5 leading-none" title="Self Budget Row">
                 ↳ SELF
               </span>
             )}
             {isSubRow && (
-              <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Dòng con (Sub)">
+              <span className="text-[8.5px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-900 dark:text-amber-300 uppercase shrink-0 border border-amber-300 dark:border-amber-700 flex items-center gap-0.5 leading-none" title="Linked Sub-Project Row">
                 ↳ SUB
               </span>
             )}
@@ -256,7 +256,61 @@ export const BudgetTableRow = memo(function BudgetTableRow({
 
       {visibleColumns.includes('variance') && (
         <td className={cn("px-4 py-3 text-right font-mono font-bold", vColor)}>
-          {formatCurrency(node.remaining)}
+          <div className="flex flex-col items-end gap-1">
+            <span>{formatCurrency(node.remaining)}</span>
+            {node.isParentNode && (node.totalBudget || 0) > 0 && (
+              <div
+                className="w-24 flex items-center gap-1"
+                title={`Budget Burn Rate: ${Math.max(
+                  0,
+                  Math.round(
+                    (((node.totalActual || 0) - (node.totalSupportingFee || 0)) /
+                      (node.totalBudget || 1)) *
+                      100
+                  )
+                )}%`}
+              >
+                <div className="flex-1 h-1 rounded-full bg-slate-200 dark:bg-[#38383a] overflow-hidden">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all",
+                      (node.remaining || 0) < 0
+                        ? "bg-red-500"
+                        : ((node.totalActual || 0) - (node.totalSupportingFee || 0)) /
+                            (node.totalBudget || 1) >=
+                          0.85
+                        ? "bg-amber-500"
+                        : "bg-emerald-500"
+                    )}
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        Math.max(
+                          0,
+                          Math.round(
+                            (((node.totalActual || 0) - (node.totalSupportingFee || 0)) /
+                              (node.totalBudget || 1)) *
+                              100
+                          )
+                        )
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <span className="text-[8.5px] font-mono text-slate-500 dark:text-slate-400">
+                  {Math.max(
+                    0,
+                    Math.round(
+                      (((node.totalActual || 0) - (node.totalSupportingFee || 0)) /
+                        (node.totalBudget || 1)) *
+                        100
+                    )
+                  )}
+                  %
+                </span>
+              </div>
+            )}
+          </div>
         </td>
       )}
 

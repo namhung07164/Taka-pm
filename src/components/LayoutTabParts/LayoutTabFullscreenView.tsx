@@ -233,7 +233,7 @@ export const LayoutTabFullscreenView = React.memo(function LayoutTabFullscreenVi
               </button>
 
               <span className="hidden md:inline text-xs text-slate-400">
-                Nhấn <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-300 font-mono text-[10px]">Esc</kbd> hoặc vuốt lên để thoát
+                Press <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-300 font-mono text-[10px]">Esc</kbd> or swipe up to exit
               </span>
 
               <button
