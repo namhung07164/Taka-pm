@@ -77,12 +77,53 @@ function queueDeferredInvalidation(item: TakaDeltaItem): void {
   persistDeferredInvalidations();
 }
 
+interface InvalidationStoreMaps {
+  isCostsRequested: boolean;
+  isDelegationsRequested: boolean;
+  isTasksRequested: boolean;
+  costsById: Map<string, any>;
+  delegationsById: Map<string, any>;
+  tasksById: Map<string, any>;
+  projectsById: Map<string, any>;
+}
+
+function buildInvalidationStoreMaps(): InvalidationStoreMaps {
+  const store = useAppStore.getState();
+  const costsById = new Map<string, any>();
+  const delegationsById = new Map<string, any>();
+  const tasksById = new Map<string, any>();
+  const projectsById = new Map<string, any>();
+
+  (store.costs || []).forEach((c) => {
+    if (c?.id) costsById.set(c.id, c);
+  });
+  (store.delegationGroups || []).forEach((d) => {
+    if (d?.id) delegationsById.set(d.id, d);
+  });
+  (store.tasks || []).forEach((t) => {
+    if (t?.id) tasksById.set(t.id, t);
+  });
+  (store.projects || []).forEach((p) => {
+    if (p?.id) projectsById.set(p.id, p);
+  });
+
+  return {
+    isCostsRequested: Boolean(store.isCostsRequested),
+    isDelegationsRequested: Boolean(store.isDelegationsRequested),
+    isTasksRequested: Boolean(store.isTasksRequested),
+    costsById,
+    delegationsById,
+    tasksById,
+    projectsById,
+  };
+}
+
 /**
  * Checks Tri-Gate flags and skips re-reading documents that were already delivered
  * within the last 1.5 seconds by an active onSnapshot listener or explicit delta.
  * Deferred items for closed Tri-Gates are queued and resolved only when the gate opens.
  */
-function isRelevant(item: TakaDeltaItem, nowMs: number): boolean {
+function isRelevant(item: TakaDeltaItem, nowMs: number, maps: InvalidationStoreMaps): boolean {
   if (!item || !item.docId || !item.collectionName) return false;
   const key = `${item.collectionName}:${item.docId}`;
   const forceResolve = Boolean((item as any).forceResolve);
@@ -91,32 +132,31 @@ function isRelevant(item: TakaDeltaItem, nowMs: number): boolean {
     return false;
   }
 
-  const store = useAppStore.getState();
   const RECENT_SNAPSHOT_WINDOW_MS = 1500;
 
   if (item.collectionName === 'taka_costs') {
-    const existing = store.costs?.find((c) => c.id === item.docId);
-    if (!store.isCostsRequested && !existing && !forceResolve) {
+    const existing = maps.costsById.get(item.docId);
+    if (!maps.isCostsRequested && !existing && !forceResolve) {
       queueDeferredInvalidation(item);
       return false;
     }
     if (!forceResolve && existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_delegations') {
-    const existing = store.delegationGroups?.find((d) => d.id === item.docId);
-    if (!store.isDelegationsRequested && !existing && !forceResolve) {
+    const existing = maps.delegationsById.get(item.docId);
+    if (!maps.isDelegationsRequested && !existing && !forceResolve) {
       queueDeferredInvalidation(item);
       return false;
     }
     if (!forceResolve && existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_tasks') {
-    const existing = store.tasks?.find((t) => t.id === item.docId);
-    if (!store.isTasksRequested && !existing && !forceResolve) {
+    const existing = maps.tasksById.get(item.docId);
+    if (!maps.isTasksRequested && !existing && !forceResolve) {
       queueDeferredInvalidation(item);
       return false;
     }
     if (!forceResolve && existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_projects') {
-    const existing = store.projects?.find((p) => p.id === item.docId);
+    const existing = maps.projectsById.get(item.docId);
     if (!forceResolve && existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   }
 
@@ -148,10 +188,11 @@ export async function flushDeferredInvalidations(
  */
 export async function resolveInvalidations(items: TakaDeltaItem[]): Promise<TakaDelta[]> {
   const now = Date.now();
+  const storeMaps = buildInvalidationStoreMaps();
   // Khử trùng lặp theo collectionName + docId
   const unique = new Map<string, TakaDeltaItem>();
   for (const it of items) {
-    if (!isRelevant(it, now)) continue;
+    if (!isRelevant(it, now, storeMaps)) continue;
     unique.set(`${it.collectionName}:${it.docId}`, it);
   }
   if (unique.size === 0) return [];

@@ -1,11 +1,10 @@
 import { doc } from 'firebase/firestore';
-import { setDoc, updateDoc } from './firestoreWrites';
+import { setDoc } from './firestoreWrites';
 import { db, APP_ID } from './firebase';
-import { addPendingUpdate } from './syncQueue';
-import { touchYearMeta } from './yearsFingerprintService';
+import { addPendingUpdate, isPermanentWriteError } from './syncQueue';
 import { recordDelta } from './deltaSyncService';
 import { markExplicitDelta, unmarkExplicitDelta } from './autoDeltaQueue';
-import { isPermanentWriteError } from './syncQueue';
+import { enrichPayloadWithStoreCompositeKeys } from './localMutationMirror';
 
 export interface CoalescedMutation {
   collectionPath: string; // Tên collection, vd: taka_tasks
@@ -95,7 +94,6 @@ async function flushQueueItem(queueKey: string): Promise<void> {
   mutationQueue.delete(queueKey);
   clearTimeout(item.timer);
 
-  const fullPath = `artifacts/${APP_ID}/public/data/${item.collectionPath}/${item.docId}`;
   const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', item.collectionPath, item.docId);
 
   const isCoreCollection = ['taka_projects', 'taka_tasks', 'taka_costs', 'taka_delegations'].includes(item.collectionPath);
@@ -113,24 +111,24 @@ async function flushQueueItem(queueKey: string): Promise<void> {
       await setDoc(docRef, item.data);
     }
 
-    // Touch year metadata if available to invalidate client cache fingerprints
-    if (item.year) {
-      touchYearMeta(item.year).catch(() => {});
-    }
+    // Record delta change log with complete composite keys (Rule 16.1 AGENTS.md)
+    if (isCoreCollection) {
+      const enriched = enrichPayloadWithStoreCompositeKeys(item.collectionPath, item.docId, item.data);
+      const resolvedYear =
+        item.year ||
+        (enriched.year !== undefined && enriched.year !== null ? String(enriched.year) : undefined) ||
+        (enriched.projectYear !== undefined && enriched.projectYear !== null ? String(enriched.projectYear) : undefined);
 
-    // Record delta change log for Stage 2 Delta Sync
-    if (
-      ['taka_projects', 'taka_tasks', 'taka_costs', 'taka_delegations'].includes(
-        item.collectionPath
-      )
-    ) {
       recordDelta({
         docId: item.docId,
         collectionName: item.collectionPath as any,
         action: item.isUpdate ? 'update' : 'create',
-        data: item.data,
+        data: enriched,
         isPatch: item.isUpdate,
-        year: item.year,
+        year: resolvedYear,
+        projectId: enriched.projectId ? String(enriched.projectId) : undefined,
+        projectCode: enriched.projectCode || enriched.code,
+        store: enriched.projectStore || enriched.store,
       }).catch(() => {});
     }
   } catch (err) {

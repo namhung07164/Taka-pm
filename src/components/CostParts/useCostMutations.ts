@@ -7,6 +7,8 @@ import { generateId } from '../../lib/utils';
 import { deleteStorageFiles, extractStorageUrls } from '../../lib/storageUtils';
 import { undoManager } from '../../lib/undoManager';
 import { useAppStore } from '../../store/useAppStore';
+import { queueCoalescedMutation } from '../../lib/mutationCoalescer';
+import { addPendingUpdate, isPermanentWriteError } from '../../lib/syncQueue';
 
 interface UseCostMutationsParams {
   canWrite: boolean;
@@ -85,12 +87,20 @@ export function useCostMutations({
         toggleProjectExpansion(groupKey);
       }
 
-      // 2. Push Firestore network operation to background without blocking UI
+      // 2. Push Firestore network operation to background with Offline Queue fallback (Rule 2 AGENTS.md)
       try {
         Promise.resolve(
           setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', newCost.id), newCost)
         ).catch((err) => {
           console.error('[CostTab] Background setDoc error:', err);
+          if (!isPermanentWriteError(err)) {
+            addPendingUpdate({
+              collectionPath: `artifacts/${APP_ID}/public/data/taka_costs`,
+              docId: newCost.id,
+              action: 'set',
+              data: newCost,
+            }).catch(() => {});
+          }
         });
 
         undoManager.push({
@@ -120,10 +130,19 @@ export function useCostMutations({
         // 2. Push Firestore soft-delete and storage cleanup to background
         try {
           const nowIso = new Date().toISOString();
+          const deletePayload = {
+            id: c.id,
+            isDeleted: true,
+            updatedAt: nowIso,
+            ...(c.projectId ? { projectId: c.projectId } : {}),
+            ...(c.projectCode ? { projectCode: c.projectCode } : {}),
+            ...(c.projectYear !== undefined ? { projectYear: c.projectYear } : {}),
+            ...(c.projectStore ? { projectStore: c.projectStore } : {}),
+          };
           const batch = writeBatch(db);
           batch.set(
             doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id),
-            { id: c.id, isDeleted: true, updatedAt: nowIso },
+            deletePayload,
             { merge: true }
           );
 
@@ -131,7 +150,17 @@ export function useCostMutations({
           if (urlsToDelete.length > 0) {
             deleteStorageFiles(urlsToDelete).catch(console.error);
           }
-          batch.commit().catch((e) => console.error('Batch commit cost delete failed:', e));
+          batch.commit().catch((err) => {
+            console.error('Batch commit cost delete failed:', err);
+            if (!isPermanentWriteError(err)) {
+              addPendingUpdate({
+                collectionPath: `artifacts/${APP_ID}/public/data/taka_costs`,
+                docId: c.id,
+                action: 'update',
+                data: deletePayload,
+              }).catch(() => {});
+            }
+          });
 
           undoManager.push({
             description: `Delete Cost`,
@@ -171,24 +200,32 @@ export function useCostMutations({
         }
       });
 
-      // Optimistically update the UI in 0ms to prevent input lag
+      // 1. Optimistically update the UI in 0ms to prevent input lag (Rule 2 & 8 AGENTS.md)
       useAppStore.getState().optimisticUpdateCosts([newCostData]);
 
-      Promise.resolve(
-        setDoc(
-          doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id),
-          newCostData
-        )
-      ).catch((err) => console.error('[CostTab] Background update error:', err));
+      // 2. Debounce 400ms via queueCoalescedMutation so rapid consecutive edits coalesce into 1 write
+      queueCoalescedMutation({
+        collectionPath: 'taka_costs',
+        docId: c.id,
+        data: newCostData,
+        isUpdate: false,
+        debounceMs: 400,
+        maxWaitMs: 1600,
+        year: newCostData.projectYear !== undefined ? String(newCostData.projectYear) : undefined,
+      });
 
       undoManager.push({
         description: `Update Cost: ${field}`,
         revert: async () => {
           useAppStore.getState().optimisticUpdateCosts([c]);
-          setDoc(
-            doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id),
-            c
-          );
+          queueCoalescedMutation({
+            collectionPath: 'taka_costs',
+            docId: c.id,
+            data: c as Record<string, any>,
+            isUpdate: false,
+            debounceMs: 100,
+            year: c.projectYear !== undefined ? String(c.projectYear) : undefined,
+          });
         },
       });
     } catch (e) {

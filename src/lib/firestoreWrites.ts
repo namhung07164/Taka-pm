@@ -9,21 +9,27 @@ import {
 import { queueAutoDelta, type SafeAutoDeltaPayload } from './autoDeltaQueue';
 import { removeUndefinedDeep } from './firestoreSanitizer';
 import { recordAuditLog } from './auditLogService';
-import { mirrorLocalWrite, buildCleanLocalPayload } from './localMutationMirror';
+import {
+  mirrorLocalWrite,
+  buildCleanLocalPayload,
+  enrichPayloadWithStoreCompositeKeys,
+} from './localMutationMirror';
 
 function extractAutoDeltaPayload(
   rawData: any,
   docId: string,
-  isPatch: boolean
+  isPatch: boolean,
+  docPath?: string
 ): SafeAutoDeltaPayload | undefined {
   if (!rawData || typeof rawData !== 'object' || !docId) return undefined;
   const { cleanCopy, isCompletePlainObject } = buildCleanLocalPayload(rawData, docId);
   if (!isCompletePlainObject) return undefined;
+  const enrichedCopy = enrichPayloadWithStoreCompositeKeys(docPath, docId, cleanCopy);
   const hasFullIdentity = Boolean(
     cleanCopy.name || cleanCopy.code || cleanCopy.projectCode || cleanCopy.subTasks
   );
   return {
-    data: cleanCopy,
+    data: enrichedCopy,
     isPatch: isPatch && !hasFullIdentity,
   };
 }
@@ -41,7 +47,7 @@ export const setDoc = ((ref: any, data: any, ...rest: any[]) => {
   const cleanData = removeUndefinedDeep(data);
   const isDel = Boolean(cleanData?.isDeleted);
   const isMerge = Boolean(rest[0]?.merge);
-  const safePayload = !isDel ? extractAutoDeltaPayload(cleanData, ref?.id, isMerge) : undefined;
+  const safePayload = !isDel ? extractAutoDeltaPayload(cleanData, ref?.id, isMerge, ref?.path) : undefined;
 
   mirrorLocalWrite(ref?.path, ref?.id, isDel ? 'delete' : 'set', cleanData, isMerge);
 
@@ -72,7 +78,7 @@ export const setDoc = ((ref: any, data: any, ...rest: any[]) => {
 export const updateDoc = ((ref: any, data: any, ...rest: any[]) => {
   const cleanData = removeUndefinedDeep(data);
   const isDel = Boolean(cleanData?.isDeleted);
-  const safePayload = !isDel ? extractAutoDeltaPayload(cleanData, ref?.id, true) : undefined;
+  const safePayload = !isDel ? extractAutoDeltaPayload(cleanData, ref?.id, true, ref?.path) : undefined;
 
   mirrorLocalWrite(ref?.path, ref?.id, isDel ? 'delete' : 'update', cleanData, true);
 
@@ -143,7 +149,7 @@ export function writeBatch(dbInstance: any): WriteBatch {
     const rawSnapshot = cleanData && typeof cleanData === 'object' ? { ...cleanData } : cleanData;
     const safePayload =
       !isDel && !batch.__suppressAutoDelta
-        ? extractAutoDeltaPayload(rawSnapshot, ref?.id, isMerge)
+        ? extractAutoDeltaPayload(rawSnapshot, ref?.id, isMerge, ref?.path)
         : undefined;
     if (cleanData && typeof cleanData === 'object' && !isDel) {
       (cleanData as any).updatedAt = serverTimestamp();
@@ -157,7 +163,7 @@ export function writeBatch(dbInstance: any): WriteBatch {
     const rawSnapshot = cleanData && typeof cleanData === 'object' ? { ...cleanData } : cleanData;
     const safePayload =
       !isDel && !batch.__suppressAutoDelta
-        ? extractAutoDeltaPayload(rawSnapshot, ref?.id, true)
+        ? extractAutoDeltaPayload(rawSnapshot, ref?.id, true, ref?.path)
         : undefined;
     if (cleanData && typeof cleanData === 'object' && !isDel) {
       (cleanData as any).updatedAt = serverTimestamp();

@@ -5,68 +5,27 @@ import { rollupTaskSummaries } from '../taskRollupHelpers';
 import { unmarkProjectTasksHydrated } from '../utils';
 import { runBackgroundDexieProjectTaskReconciliation } from '../../hooks/useFirebaseDataParts/projectsHydrationHelpers';
 
-export {
+import {
+  tsOf,
+  DeltaProjectsIndex,
+  buildIdIndexMap,
+  buildDeltaProjectsIndex,
+  extractDeltaBatchPreIndex,
   purgeProjectAndTasksOnDeleteDelta,
   unlinkChildTasksOnTaskDeleteDelta,
   removeDeletedTaskSummaryFromProjects,
 } from './deltaDeleteReconciler';
 
-export const tsOf = (v: any): number => {
-  if (!v) return 0;
-  if (typeof v === 'string') {
-    const n = Date.parse(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.toMillis === 'function') {
-    const n = v.toMillis();
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.seconds === 'number') {
-    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
-  }
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+export {
+  tsOf,
+  type DeltaProjectsIndex,
+  buildIdIndexMap,
+  buildDeltaProjectsIndex,
+  extractDeltaBatchPreIndex,
+  purgeProjectAndTasksOnDeleteDelta,
+  unlinkChildTasksOnTaskDeleteDelta,
+  removeDeletedTaskSummaryFromProjects,
 };
-
-export interface DeltaProjectsIndex {
-  byId: Map<string, number>;
-  byCodePart: Map<string, number[]>;
-}
-
-/**
- * Pre-indexes projects array by ID and lowercase code parts in O(P) for O(1) lookup during delta application.
- */
-export function buildDeltaProjectsIndex(projects: Project[]): DeltaProjectsIndex {
-  const byId = new Map<string, number>();
-  const byCodePart = new Map<string, number[]>;
-
-  for (let i = 0; i < projects.length; i++) {
-    const p = projects[i];
-    if (!p) continue;
-    if (p.id) {
-      byId.set(String(p.id), i);
-    }
-    const rawCodes = (p as any).linkCodes
-      ? `${p.code || ''}, ${(p as any).linkCodes}`
-      : String(p.code || '');
-    const parts = rawCodes
-      .toLowerCase()
-      .split(/[,;/]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    for (let j = 0; j < parts.length; j++) {
-      const part = parts[j];
-      let list = byCodePart.get(part);
-      if (!list) {
-        list = [];
-        byCodePart.set(part, list);
-      }
-      list.push(i);
-    }
-  }
-
-  return { byId, byCodePart };
-}
 
 /**
  * Reconciles local in-memory tasks against authoritative incoming `project.taskSummaries` on project delta.

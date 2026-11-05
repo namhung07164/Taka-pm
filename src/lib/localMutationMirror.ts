@@ -92,6 +92,82 @@ export function buildCleanLocalPayload(
 }
 
 /**
+ * Enriches a partial patch payload with the 4 composite identity keys
+ * (projectId, projectCode, projectYear/year, projectStore/store) from the existing
+ * in-memory Zustand record so receiving devices can apply patches directly in 0ms
+ * without triggering a redundant getDocFromServer invalidation (Rule 15 & 16.1 AGENTS.md).
+ */
+export function enrichPayloadWithStoreCompositeKeys(
+  docPathOrCollection: string | undefined,
+  docId: string | undefined,
+  cleanCopy: Record<string, any>
+): Record<string, any> {
+  if (!docPathOrCollection || !docId || !cleanCopy || typeof cleanCopy !== 'object') {
+    return cleanCopy;
+  }
+  const logical = resolveLogicalCollection(docPathOrCollection);
+  if (!logical) return cleanCopy;
+
+  const store = useAppStore.getState();
+  if (logical === 'taka_tasks') {
+    if (cleanCopy.projectId && cleanCopy.projectCode && cleanCopy.projectYear !== undefined && cleanCopy.projectStore) {
+      return cleanCopy;
+    }
+    const existing = (store.tasks || []).find((t) => t.id === docId);
+    if (!existing) return cleanCopy;
+    return {
+      ...(existing.projectId ? { projectId: existing.projectId } : {}),
+      ...(existing.projectCode ? { projectCode: existing.projectCode } : {}),
+      ...(existing.projectYear !== undefined ? { projectYear: existing.projectYear } : {}),
+      ...(existing.projectStore ? { projectStore: existing.projectStore } : {}),
+      ...cleanCopy,
+    };
+  }
+  if (logical === 'taka_costs') {
+    if (cleanCopy.projectId && cleanCopy.projectCode && cleanCopy.projectYear !== undefined && cleanCopy.projectStore) {
+      return cleanCopy;
+    }
+    const existing = (store.costs || []).find((c) => c.id === docId);
+    if (!existing) return cleanCopy;
+    return {
+      ...(existing.projectId ? { projectId: existing.projectId } : {}),
+      ...(existing.projectCode ? { projectCode: existing.projectCode } : {}),
+      ...(existing.projectYear !== undefined ? { projectYear: existing.projectYear } : {}),
+      ...(existing.projectStore ? { projectStore: existing.projectStore } : {}),
+      ...cleanCopy,
+    };
+  }
+  if (logical === 'taka_projects') {
+    if (cleanCopy.code && cleanCopy.year !== undefined && cleanCopy.store) {
+      return cleanCopy;
+    }
+    const existing = (store.projects || []).find((p) => p.id === docId);
+    if (!existing) return cleanCopy;
+    return {
+      ...(existing.code ? { code: existing.code } : {}),
+      ...(existing.year !== undefined ? { year: existing.year } : {}),
+      ...(existing.store ? { store: existing.store } : {}),
+      ...cleanCopy,
+    };
+  }
+  if (logical === 'taka_delegations') {
+    if (cleanCopy.projectId && cleanCopy.projectCode && cleanCopy.projectYear !== undefined && cleanCopy.projectStore) {
+      return cleanCopy;
+    }
+    const existing = (store.delegationGroups || []).find((g) => g.id === docId);
+    if (!existing) return cleanCopy;
+    return {
+      ...(existing.projectId ? { projectId: existing.projectId } : {}),
+      ...(existing.projectCode ? { projectCode: existing.projectCode } : {}),
+      ...(existing.projectYear !== undefined ? { projectYear: existing.projectYear } : {}),
+      ...(existing.projectStore ? { projectStore: existing.projectStore } : {}),
+      ...cleanCopy,
+    };
+  }
+  return cleanCopy;
+}
+
+/**
  * Mirrors a direct Firestore write (setDoc / updateDoc / deleteDoc / writeBatch)
  * into Dexie (localDb) and Zustand (useAppStore) on the originating device so that
  * when DELTA_FIRST detaches collection listeners and skips self-session deltas,

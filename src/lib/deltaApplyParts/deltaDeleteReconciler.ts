@@ -1,7 +1,141 @@
-import { Project, Task } from '../../types';
+import { Project, Task, TakaDelta } from '../../types';
 import { localDb } from '../localDb';
 import { markTasksDeleted, markProjectsDeleted } from '../taskDeletedTracker';
 import { isTaskBelongsToProject } from '../utils';
+
+export const tsOf = (v: any): number => {
+  if (!v) return 0;
+  if (typeof v === 'string') {
+    const n = Date.parse(v);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.toMillis === 'function') {
+    const n = v.toMillis();
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof v?.seconds === 'number') {
+    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+export interface DeltaProjectsIndex {
+  byId: Map<string, number>;
+  byCodePart: Map<string, number[]>;
+}
+
+export function buildIdIndexMap<T extends { id?: string }>(items: T[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (let i = 0; i < items.length; i++) {
+    const id = items[i]?.id;
+    if (id) map.set(String(id), i);
+  }
+  return map;
+}
+
+/**
+ * Pre-indexes projects array by ID and lowercase code parts in O(P) for O(1) lookup during delta application.
+ */
+export function buildDeltaProjectsIndex(projects: Project[]): DeltaProjectsIndex {
+  const byId = new Map<string, number>();
+  const byCodePart = new Map<string, number[]>();
+
+  for (let i = 0; i < projects.length; i++) {
+    const p = projects[i];
+    if (!p) continue;
+    if (p.id) {
+      byId.set(String(p.id), i);
+    }
+    const rawCodes = (p as any).linkCodes
+      ? `${p.code || ''}, ${(p as any).linkCodes}`
+      : String(p.code || '');
+    const parts = rawCodes
+      .toLowerCase()
+      .split(/[,;/]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    for (let j = 0; j < parts.length; j++) {
+      const part = parts[j];
+      let list = byCodePart.get(part);
+      if (!list) {
+        list = [];
+        byCodePart.set(part, list);
+      }
+      list.push(i);
+    }
+  }
+
+  return { byId, byCodePart };
+}
+
+export function extractDeltaBatchPreIndex(
+  deltas: TakaDelta[],
+  updatedTasks: Task[],
+  clientSessionId: string
+): {
+  authoritativeSummaryProjectIds: Set<string>;
+  batchTaskCountsByProj: Map<string, number>;
+  inMemoryProjectIds: Set<string>;
+  inMemoryProjectCompositeKeys: Set<string>;
+} {
+  const authoritativeSummaryProjectIds = new Set<string>();
+  const batchTaskCountsByProj = new Map<string, number>();
+
+  deltas.forEach((d) => {
+    if (d.sessionId && d.sessionId === clientSessionId) return;
+    if (d.action === 'batch_update' && Array.isArray(d.batchItems)) {
+      d.batchItems.forEach((item) => {
+        if (
+          item.collectionName === 'taka_projects' &&
+          item.action !== 'delete' &&
+          !item.data?.isDeleted &&
+          Array.isArray(item.data?.taskSummaries) &&
+          item.docId
+        ) {
+          authoritativeSummaryProjectIds.add(String(item.docId).trim());
+        } else if (item.collectionName === 'taka_tasks' && item.action !== 'delete') {
+          const pid = (item as any).projectId || item.data?.projectId || d.projectId;
+          if (pid) {
+            const pidStr = String(pid).trim();
+            batchTaskCountsByProj.set(pidStr, (batchTaskCountsByProj.get(pidStr) || 0) + 1);
+            if ((item as any).skipSummaryRollup) authoritativeSummaryProjectIds.add(pidStr);
+          }
+        }
+      });
+    } else if (
+      d.collectionName === 'taka_projects' &&
+      d.action !== 'delete' &&
+      !d.data?.isDeleted &&
+      Array.isArray(d.data?.taskSummaries) &&
+      d.docId
+    ) {
+      authoritativeSummaryProjectIds.add(String(d.docId).trim());
+    }
+  });
+
+  const inMemoryProjectIds = new Set<string>();
+  const inMemoryProjectCompositeKeys = new Set<string>();
+  for (let i = 0; i < updatedTasks.length; i++) {
+    const t = updatedTasks[i];
+    if (!t || t.isDeleted) continue;
+    if (t.projectId) {
+      inMemoryProjectIds.add(String(t.projectId).trim());
+    } else if (t.projectCode) {
+      const c = String(t.projectCode).trim().toLowerCase();
+      const s = t.projectStore ? String(t.projectStore).trim().toLowerCase() : '';
+      const y = t.projectYear !== undefined && t.projectYear !== null ? String(t.projectYear).trim() : '';
+      inMemoryProjectCompositeKeys.add(`${c}|${s}|${y}`);
+    }
+  }
+
+  return {
+    authoritativeSummaryProjectIds,
+    batchTaskCountsByProj,
+    inMemoryProjectIds,
+    inMemoryProjectCompositeKeys,
+  };
+}
 
 /**
  * Purges a deleted project and all of its tasks from memory and Dexie when a project delete delta arrives.

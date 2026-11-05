@@ -33,9 +33,25 @@ function compactAuditData(data: any): any {
   return copy;
 }
 
+const pendingUpdateAudits = new Map<
+  string,
+  { timer: ReturnType<typeof setTimeout>; payload: Record<string, any> }
+>();
+const AUDIT_COALESCE_MS = 1500;
+
+async function commitAuditPayload(auditPayload: Record<string, any>): Promise<void> {
+  try {
+    const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'audit_logs');
+    await addDoc(colRef, auditPayload);
+  } catch (err) {
+    console.warn('[auditLog] Failed to record audit log:', err);
+  }
+}
+
 /**
  * Ghi log kiểm toán (Append-only) cho các biến động quan trọng / tài chính (Rule 4).
- * Loại bỏ các bản cập nhật chỉ đồng bộ tiến độ/taskSummaries tự động để chống phình to Firestore.
+ * Loại bỏ các bản cập nhật chỉ đồng bộ tiến độ/taskSummaries tự động để chống phình to Firestore,
+ * và gom (coalesce) các lệnh UPDATE liên tiếp trên cùng 1 docId trong cửa sổ 1.5s thành 1 lần ghi duy nhất.
  */
 export async function recordAuditLog(log: {
   action: 'CREATE' | 'UPDATE' | 'DELETE';
@@ -52,26 +68,59 @@ export async function recordAuditLog(log: {
   }
 
   const now = Date.now();
-  const auditPayload: any = {
+  const entityType = log.entityType || resolveEntityType(log.docPath);
+  const compactData = compactAuditData(log.data);
+  const compactPrev = log.previousData ? compactAuditData(log.previousData) : null;
+
+  const auditPayload: Record<string, any> = {
     timestamp: now,
     serverTime: serverTimestamp(),
     expireAt: Timestamp.fromMillis(now + 90 * 24 * 60 * 60 * 1000),
     userId: user.id,
     userEmail: user.email || user.username || 'unknown',
     action: log.action,
-    entityType: log.entityType || resolveEntityType(log.docPath),
+    entityType,
     docPath: log.docPath,
     docId: log.docId,
-    data: compactAuditData(log.data),
-    previousData: log.previousData ? compactAuditData(log.previousData) : null,
+    data: compactData,
+    previousData: compactPrev,
   };
 
-  try {
-    const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'audit_logs');
-    await addDoc(colRef, auditPayload);
-  } catch (err) {
-    console.warn('[auditLog] Failed to record audit log:', err);
+  if (log.action === 'UPDATE' && log.docId) {
+    const coalesceKey = `${entityType}:${log.docId}`;
+    const existing = pendingUpdateAudits.get(coalesceKey);
+    if (existing) {
+      clearTimeout(existing.timer);
+      const mergedData =
+        existing.payload.data &&
+        typeof existing.payload.data === 'object' &&
+        compactData &&
+        typeof compactData === 'object'
+          ? { ...existing.payload.data, ...compactData }
+          : compactData;
+      const mergedPayload = {
+        ...existing.payload,
+        ...auditPayload,
+        data: mergedData,
+        previousData: existing.payload.previousData ?? compactPrev,
+      };
+      const timer = setTimeout(() => {
+        pendingUpdateAudits.delete(coalesceKey);
+        commitAuditPayload(mergedPayload);
+      }, AUDIT_COALESCE_MS);
+      pendingUpdateAudits.set(coalesceKey, { timer, payload: mergedPayload });
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      pendingUpdateAudits.delete(coalesceKey);
+      commitAuditPayload(auditPayload);
+    }, AUDIT_COALESCE_MS);
+    pendingUpdateAudits.set(coalesceKey, { timer, payload: auditPayload });
+    return;
   }
+
+  await commitAuditPayload(auditPayload);
 }
 
 function resolveEntityType(docPath: string): string {

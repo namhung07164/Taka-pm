@@ -23,6 +23,7 @@ interface UseCostsHydrationProps {
 
 const TTL_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 const secondaryCostsYearsFetched = new Set<string>();
+const legacyCostsYearsChecked = new Set<string>();
 
 // Chuyển updatedAt (ISO string / Firestore Timestamp / plain {seconds} / number) về ms
 const tsOf = (v: any): number => {
@@ -121,9 +122,20 @@ export function useCostsHydration({
   // Sleep/Wake & Network Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      // Preserve active onSnapshot listeners in costsPool so Firestore SDK resumes via resumeToken
       if (useAppStore.getState().isCostsRequested) {
         hydrateCostsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+        import("../../lib/deltaInvalidateService")
+          .then(({ flushDeferredInvalidations }) =>
+            flushDeferredInvalidations("taka_costs").then((synthetic) => {
+              if (synthetic.length > 0) {
+                import("../../lib/deltaApplyService").then(({ applyIncomingDeltas }) =>
+                  applyIncomingDeltas(synthetic)
+                );
+              }
+            })
+          )
+          .catch(() => {});
+        pullAndApplyDeltas(undefined, true).catch(() => {});
       }
     };
 
@@ -135,40 +147,67 @@ export function useCostsHydration({
     };
   }, []);
 
-  // Project-targeted hydration: when fixedProjectCode is set, hydrate immediately from Dexie & query Firestore
+  // Project-targeted hydration: when fixedProjectCode is set, hydrate immediately from Dexie & only query Firestore if year is not already fresh
   const fixedProjectCode = useAppStore((state) => state.fixedProjectCode);
   useEffect(() => {
     if (!isCostsRequested || !fixedProjectCode || !fixedProjectCode.trim()) return;
     const targetCode = fixedProjectCode.trim();
-    hydrateCostsForProjects([targetCode], globalYearFilter, null).catch(() => {});
 
-    const colRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_costs");
-    const queries = [
-      query(colRef, where("projectCode", "==", targetCode)),
-      query(colRef, where("projectCode", "==", targetCode.toUpperCase())),
-      query(colRef, where("code", "==", targetCode)),
-      query(colRef, where("code", "==", targetCode.toUpperCase())),
-    ];
-    const targetProject = (useAppStore.getState().projects || []).find(
-      (p) =>
-        String(p.code || '').trim().toLowerCase() === targetCode.toLowerCase() ||
-        String(p.id).trim() === targetCode
-    );
-    if (targetProject?.id) {
-      queries.push(query(colRef, where("projectId", "==", String(targetProject.id).trim())));
-    }
+    let isCancelled = false;
+    (async () => {
+      const localCount = await hydrateCostsForProjects([targetCode], globalYearFilter, null).catch(() => 0);
+      if (isCancelled) return;
 
-    Promise.all(queries.map((q) => getDocsFromServer(q).catch(() => getDocsFromCache(q))))
-      .then((snaps) => {
+      const storeState = useAppStore.getState();
+      const targetProject = (storeState.projects || []).find(
+        (p) =>
+          String(p.code || '').trim().toLowerCase() === targetCode.toLowerCase() ||
+          String(p.id).trim() === targetCode
+      );
+      const effectiveYear = String(targetProject?.year || globalYearFilter || '').trim();
+      const markers = await getLoadedMarkers();
+      if (isCancelled) return;
+
+      // Anti-Read-Storm (Rule 3 AGENTS.md): Skip 5 redundant server queries if the year is already verified fresh in Dexie/Zustand
+      if (
+        DELTA_FIRST.costs &&
+        effectiveYear &&
+        effectiveYear.toLowerCase() !== 'all' &&
+        hasFreshMarker(markers, 'costs_year', effectiveYear) &&
+        (localCount > 0 || (storeState.costs || []).some((c) => String(c.projectYear ?? (c as any).year ?? '').trim() === effectiveYear))
+      ) {
+        return;
+      }
+
+      const colRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_costs");
+      const queries = [
+        query(colRef, where("projectCode", "==", targetCode)),
+        query(colRef, where("projectCode", "==", targetCode.toUpperCase())),
+        query(colRef, where("code", "==", targetCode)),
+        query(colRef, where("code", "==", targetCode.toUpperCase())),
+      ];
+      if (targetProject?.id) {
+        queries.push(query(colRef, where("projectId", "==", String(targetProject.id).trim())));
+      }
+
+      try {
+        const snaps = await Promise.all(
+          queries.map((q) => getDocsFromServer(q).catch(() => getDocsFromCache(q)))
+        );
+        if (isCancelled) return;
         snaps.forEach((snap) => {
           if (snap && !snap.empty) {
             batchCostsUpdate(snap.docChanges(), false);
           }
         });
-      })
-      .catch((err) => {
+      } catch (err) {
         console.warn("[useCostsHydration] Project-targeted cost query error:", err);
-      });
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [isCostsRequested, fixedProjectCode, globalYearFilter, batchCostsUpdate]);
 
   // Cleanup on unmount
@@ -317,8 +356,10 @@ export function useCostsHydration({
               batchCostsUpdate(changesToApply, fromCache);
               setCloudStatus("online");
 
-              // Also check for legacy schema with year/store to ensure all costs are fetched
-              if (!fromCache) {
+              // Check for legacy schema with year/store at most once per year per session
+              const legacyKey = `${querySignature}_${year}`;
+              if (!fromCache && !legacyCostsYearsChecked.has(legacyKey)) {
+                legacyCostsYearsChecked.add(legacyKey);
                 const qLegacy = buildStoreAndYearQuery(colRef, "store", "year", year, userRole, allowedStores);
                 getDocsFromServer(qLegacy)
                   .then((legacySnap) => {

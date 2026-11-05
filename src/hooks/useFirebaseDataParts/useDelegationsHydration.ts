@@ -126,9 +126,20 @@ export function useDelegationsHydration({
   // Sleep/Wake & Network Recovery Listener
   useEffect(() => {
     const handleSleepWakeRecovery = () => {
-      // Preserve active onSnapshot listeners in delegationsPool so Firestore SDK resumes via resumeToken
       if (useAppStore.getState().isDelegationsRequested) {
         hydrateDelegationsFromLocal(useAppStore.getState().globalYearFilter).catch(() => {});
+        import("../../lib/deltaInvalidateService")
+          .then(({ flushDeferredInvalidations }) =>
+            flushDeferredInvalidations("taka_delegations").then((synthetic) => {
+              if (synthetic.length > 0) {
+                import("../../lib/deltaApplyService").then(({ applyIncomingDeltas }) =>
+                  applyIncomingDeltas(synthetic)
+                );
+              }
+            })
+          )
+          .catch(() => {});
+        pullAndApplyDeltas(undefined, true).catch(() => {});
       }
     };
 
