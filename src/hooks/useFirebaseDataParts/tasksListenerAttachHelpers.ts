@@ -362,10 +362,28 @@ export function attachProjectTasksListener(params: {
         const serverDocIdsLower = new Set(
           compatibleServerDocs.map((d) => String(d.id || '').trim().toLowerCase())
         );
+        const inMemoryRealIdsLower = new Set(
+          currentTasksNow
+            .filter(
+              (t) =>
+                t &&
+                t.id &&
+                !t.isDeleted &&
+                !String(t.id).startsWith('ts_') &&
+                !(t as any)._isVirtualSummary
+            )
+            .map((t) => String(t.id).trim().toLowerCase())
+        );
         const missingSummaryIds = Array.isArray(latestProj.taskSummaries)
           ? latestProj.taskSummaries
               .map((s: any) => String(s?.id || '').trim())
-              .filter((id: string) => id && !id.startsWith('ts_') && !serverDocIdsLower.has(id.toLowerCase()))
+              .filter(
+                (id: string) =>
+                  id &&
+                  !id.startsWith('ts_') &&
+                  !serverDocIdsLower.has(id.toLowerCase()) &&
+                  !inMemoryRealIdsLower.has(id.toLowerCase())
+              )
           : [];
 
         if (missingSummaryIds.length > 0) {

@@ -3,6 +3,7 @@ import { db, APP_ID } from './firebase';
 import { writeBatch } from './firestoreWrites';
 import { markExplicitDelta, resolveLogicalCollection } from './autoDeltaQueue';
 import { syncQueueManager, isPermanentWriteError } from './syncQueue';
+import { resetStalledFirestoreConnection } from './syncResilience';
 
 export interface MassWriteOp {
   collectionName: string;
@@ -27,10 +28,17 @@ export interface ExecuteMassBatchResult {
   queuedOfflineOps: number;
 }
 
-const DEFAULT_MAX_OPS_PER_BATCH = 180;
-const DEFAULT_MAX_BYTES_PER_BATCH = 1_500_000;
-const DEFAULT_CONCURRENCY = 2;
+const isMobileOrTabletDevice =
+  typeof navigator !== 'undefined' &&
+  (/iPad|iPhone|iPod|Android/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+
+const DEFAULT_MAX_OPS_PER_BATCH = isMobileOrTabletDevice ? 45 : 80;
+const DEFAULT_MAX_BYTES_PER_BATCH = isMobileOrTabletDevice ? 260_000 : 600_000;
+const DEFAULT_CONCURRENCY = isMobileOrTabletDevice ? 1 : 2;
 const MAX_RETRY_ATTEMPTS = 4;
+const COMMIT_WAKE_SOCKET_MS = 3800;
+const COMMIT_HARD_TIMEOUT_MS = 12000;
 
 let activeMassWriteSessions = 0;
 
@@ -142,7 +150,7 @@ export function buildSafeBatchChunks(
   return chunks;
 }
 
-function executeSingleBatchCommit(
+async function executeSingleBatchCommit(
   chunk: MassWriteOp[],
   suppressAutoDelta: boolean,
   skipLocalMirror: boolean
@@ -173,7 +181,27 @@ function executeSingleBatchCommit(
     markExplicitDelta(explicitMarks);
   }
 
-  return batch.commit();
+  const commitPromise = batch.commit();
+  let wakeTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    wakeTimer = null;
+    resetStalledFirestoreConnection().catch(() => {});
+  }, COMMIT_WAKE_SOCKET_MS);
+  let hardTimer: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    await Promise.race([
+      commitPromise,
+      new Promise<never>((_, reject) => {
+        hardTimer = setTimeout(
+          () => reject(new Error('FIRESTORE_BATCH_COMMIT_TIMEOUT')),
+          COMMIT_HARD_TIMEOUT_MS
+        );
+      }),
+    ]);
+  } finally {
+    if (wakeTimer) clearTimeout(wakeTimer);
+    if (hardTimer) clearTimeout(hardTimer);
+  }
 }
 
 /**
@@ -194,6 +222,11 @@ async function commitChunkResilient(
       await executeSingleBatchCommit(chunk, suppressAutoDelta, skipLocalMirror);
       return { committed: chunk.length, queuedOffline: 0 };
     } catch (err: any) {
+      if (String(err?.message || '').includes('FIRESTORE_BATCH_COMMIT_TIMEOUT')) {
+        // The batch is already persisted in Firestore's IndexedDB MutationQueue and flushing after socket reset
+        await resetStalledFirestoreConnection().catch(() => {});
+        return { committed: chunk.length, queuedOffline: 0 };
+      }
       const code = String(err?.code || '').toLowerCase();
       // If payload size or invalid-argument on a multi-item batch, bisect immediately without waiting
       if (

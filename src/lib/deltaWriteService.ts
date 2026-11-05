@@ -11,6 +11,7 @@ import { broadcastAppliedDeltas } from './broadcastSyncService';
 import { markExplicitDelta } from './autoDeltaQueue';
 import { CLIENT_SESSION_ID, DELTA_COLLECTION } from './deltaConstants';
 import { removeUndefinedDeep } from './firestoreSanitizer';
+import { resetStalledFirestoreConnection } from './syncResilience';
 
 /**
  * Ghi lại 1 delta change log khi có mutation phát sinh
@@ -66,11 +67,11 @@ export async function recordDelta(delta: {
 
 /**
  * Giai đoạn 2: Ghi gom hàng loạt mutation vào Document Delta theo lô an toàn
- * Kẹp kép: tối đa 60 items/doc VÀ tối đa ~380KB/doc để tuyệt đối không vượt trần 1MB của Firestore khi import mass
+ * Kẹp kép: tối đa 45 items/doc VÀ tối đa ~240KB/doc để tuyệt đối không vượt trần HTTP Long-Polling của iPadOS/iOS và 1MB của Firestore
  */
-const MAX_ITEMS_PER_DELTA_DOC = 60;
-const MAX_BYTES_PER_DELTA_DOC = 380_000;
-const DELTA_WRITE_CONCURRENCY = 3;
+const MAX_ITEMS_PER_DELTA_DOC = 45;
+const MAX_BYTES_PER_DELTA_DOC = 240_000;
+const DELTA_WRITE_CONCURRENCY = 2;
 
 function estimateDeltaItemBytes(item: TakaDeltaItem): number {
   try {
@@ -82,13 +83,31 @@ function estimateDeltaItemBytes(item: TakaDeltaItem): number {
 
 async function setDeltaDocWithRetry(docRef: any, payload: any, maxAttempts = 5): Promise<void> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let wakeTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      wakeTimer = null;
+      resetStalledFirestoreConnection().catch(() => {});
+    }, 3500);
+    let hardTimer: ReturnType<typeof setTimeout> | null = null;
     try {
-      await setDoc(docRef, payload);
+      await Promise.race([
+        setDoc(docRef, payload),
+        new Promise<never>((_, reject) => {
+          hardTimer = setTimeout(() => reject(new Error('DELTA_WRITE_TIMEOUT')), 10000);
+        }),
+      ]);
       return;
-    } catch (err) {
+    } catch (err: any) {
+      if (String(err?.message || '').includes('DELTA_WRITE_TIMEOUT')) {
+        // setDoc is already buffered in Firestore's persistent IndexedDB queue and flushing after socket reset
+        await resetStalledFirestoreConnection().catch(() => {});
+        return;
+      }
       if (attempt >= maxAttempts) throw err;
       const delayMs = 350 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200);
       await new Promise((r) => setTimeout(r, delayMs));
+    } finally {
+      if (wakeTimer) clearTimeout(wakeTimer);
+      if (hardTimer) clearTimeout(hardTimer);
     }
   }
 }

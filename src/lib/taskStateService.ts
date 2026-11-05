@@ -166,44 +166,47 @@ export async function ensureProjectTasksLoaded(
         return [];
       }
 
-      // 4. Fallback to Firestore when local cache is incomplete or empty
+      // 4. Fallback to Firestore when local cache is incomplete or empty (bounded by timeout so sleepy iPadOS sockets never stall imports)
       const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks');
-      const queries = [];
+      const loadedMap = new Map<string, Task>();
+      const getDocsWithTimeout = (q: any, ms = 3500) =>
+        Promise.race([
+          getDocs(q),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+        ]).catch(() => null);
+
       if (ctxProjectId) {
-        queries.push(getDocs(query(colRef, where('projectId', '==', ctxProjectId))));
+        const idSnap: any = await getDocsWithTimeout(query(colRef, where('projectId', '==', ctxProjectId)));
+        if (idSnap) {
+          idSnap.forEach((docSnap: any) => {
+            const d = { id: docSnap.id, ...docSnap.data() } as Task;
+            if (matchesContext(d)) loadedMap.set(docSnap.id, d);
+          });
+        }
       }
-      if (cleanCode) {
+
+      if (cleanCode && !coversExpected(Array.from(loadedMap.values()))) {
         const dashHyphen = cleanCode.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
         const dashEn = cleanCode.replace(/-/g, '–');
         const codeVariants = Array.from(
           new Set([
-            cleanCode,
-            cleanCode.toUpperCase(),
-            cleanCode.toLowerCase(),
-            dashHyphen,
-            dashHyphen.toUpperCase(),
-            dashHyphen.toLowerCase(),
-            dashEn,
-            dashEn.toUpperCase(),
-            dashEn.toLowerCase(),
+            cleanCode, cleanCode.toUpperCase(), cleanCode.toLowerCase(),
+            dashHyphen, dashHyphen.toUpperCase(), dashHyphen.toLowerCase(),
+            dashEn, dashEn.toUpperCase(), dashEn.toLowerCase(),
           ])
         ).slice(0, 10);
-        queries.push(
-          getDocs(
-            codeVariants.length > 1
-              ? query(colRef, where('projectCode', 'in', codeVariants))
-              : query(colRef, where('projectCode', '==', codeVariants[0]))
-          )
+        const codeSnap: any = await getDocsWithTimeout(
+          codeVariants.length > 1
+            ? query(colRef, where('projectCode', 'in', codeVariants))
+            : query(colRef, where('projectCode', '==', codeVariants[0]))
         );
+        if (codeSnap) {
+          codeSnap.forEach((docSnap: any) => {
+            const d = { id: docSnap.id, ...docSnap.data() } as Task;
+            if (matchesContext(d)) loadedMap.set(docSnap.id, d);
+          });
+        }
       }
-      const snaps = await Promise.all(queries);
-      const loadedMap = new Map<string, Task>();
-      snaps.forEach((snap) => {
-        snap.forEach((docSnap) => {
-          const d = { id: docSnap.id, ...docSnap.data() } as Task;
-          if (matchesContext(d)) loadedMap.set(docSnap.id, d);
-        });
-      });
       const loaded = Array.from(loadedMap.values());
 
       if (loaded.length > 0) {

@@ -290,38 +290,45 @@ export async function batchSaveTasksToFirestore(
     skipTaskDeltaBroadcast?: boolean;
   }
 ): Promise<void> {
-  if (!tasksToSave || tasksToSave.length === 0) return;
+  const hasTasks = Boolean(tasksToSave && tasksToSave.length > 0);
+  const hasProjOps = Boolean(options?.projectWriteOps && options.projectWriteOps.length > 0);
+  if (!hasTasks && !hasProjOps) return;
 
   const now = new Date().toISOString();
-  const { newDelegations, taskDelegationMap } =
+  const { newDelegations } =
     options?.precomputedDelegations ||
-    prepareMissingDelegationsForTasks(tasksToSave, currentUser, now);
+    (hasTasks
+      ? prepareMissingDelegationsForTasks(tasksToSave, currentUser, now)
+      : { newDelegations: [], taskDelegationMap: new Map<string, DelegationGroup>() });
+
+  // Map ONLY newly created or repaired delegations by parentTaskId so unchanged existing delegations are never re-written
+  const newDelegationByTaskId = new Map<string, DelegationGroup>();
+  for (const d of newDelegations) {
+    if (d?.parentTaskId) newDelegationByTaskId.set(d.parentTaskId, d);
+  }
 
   // 1. Offload persistence to local Dexie database in background (non-blocking)
   import('./localDb')
     .then(({ bulkPersistTasks, bulkPersistDelegations }) => {
-      bulkPersistTasks(tasksToSave).catch(() => {});
+      if (hasTasks) bulkPersistTasks(tasksToSave).catch(() => {});
       if (newDelegations.length > 0) {
         bulkPersistDelegations(newDelegations).catch(() => {});
       }
     })
     .catch(() => {});
 
-  // 2. Build unified MassWriteOp list and Delta list for project summaries + tasks + new delegations
+  // 2. Build MassWriteOp and Delta lists (separating fast-path project summaries from task/delegation chunks)
   const [{ executeMassBatchOperations }, { removeUndefinedDeep }, { waitForNetworkRecovery }] = await Promise.all([
     import('./massBatchWriteEngine'),
     import('./firestoreSanitizer'),
     import('./syncResilience'),
   ]);
-  const writeOps: MassWriteOp[] = [];
-  const deltaItems: TakaDeltaItem[] = [];
+  const projWriteOps: MassWriteOp[] = [];
   const cleanProjDeltaItems: TakaDeltaItem[] = [];
-
-  // Put authoritative project summary delta items FIRST, then all task delta items, then delegation delta items
-  // so the first delta batch chunk immediately updates project taskCount/taskSummaries and all tasks on iOS
-  const syncedSummaryProjectIds = new Set<string>();
+  const taskWriteOps: MassWriteOp[] = [];
   const taskDeltaItems: TakaDeltaItem[] = [];
   const delegationDeltaItems: TakaDeltaItem[] = [];
+  const syncedSummaryProjectIds = new Set<string>();
 
   if (options?.projectDeltaItems && options.projectDeltaItems.length > 0) {
     for (const pItem of options.projectDeltaItems) {
@@ -330,7 +337,6 @@ export async function batchSaveTasksToFirestore(
         data: pItem.data ? removeUndefinedDeep(pItem.data) : pItem.data,
       };
       cleanProjDeltaItems.push(cleanedProjItem);
-      deltaItems.push(cleanedProjItem);
       if (pItem.docId) syncedSummaryProjectIds.add(String(pItem.docId).trim());
       if (pItem.projectId) syncedSummaryProjectIds.add(String(pItem.projectId).trim());
     }
@@ -338,17 +344,17 @@ export async function batchSaveTasksToFirestore(
 
   if (options?.projectWriteOps && options.projectWriteOps.length > 0) {
     options.projectWriteOps.forEach((op) => {
-      writeOps.push({
+      projWriteOps.push({
         ...op,
         data: op.data ? removeUndefinedDeep(op.data) : op.data,
       });
     });
   }
 
-  for (const t of tasksToSave) {
+  for (const t of tasksToSave || []) {
     if (!t || !t.id || String(t.id).startsWith('ts_')) continue;
     const freshTask: Task = removeUndefinedDeep({ ...t, updatedAt: t.updatedAt || now });
-    writeOps.push({
+    taskWriteOps.push({
       collectionName: 'taka_tasks',
       docId: freshTask.id,
       action: 'set',
@@ -373,10 +379,10 @@ export async function batchSaveTasksToFirestore(
       } as TakaDeltaItem);
     }
 
-    const delGroup = taskDelegationMap.get(freshTask.id);
+    const delGroup = newDelegationByTaskId.get(freshTask.id);
     if (delGroup) {
       const cleanDelGroup = removeUndefinedDeep(delGroup);
-      writeOps.push({
+      taskWriteOps.push({
         collectionName: 'taka_delegation_groups',
         docId: cleanDelGroup.id,
         action: 'set',
@@ -400,21 +406,36 @@ export async function batchSaveTasksToFirestore(
     }
   }
 
-  deltaItems.push(...taskDeltaItems, ...delegationDeltaItems);
-
-  // 3. Ensure iPadOS / iOS WebKit socket is awake after native <input type="file"> sheet closes, then commit Firestore batch & broadcast deltas
+  // 3. Ensure iPadOS / iOS WebKit socket is awake, then commit project summaries immediately alongside task chunks
   await waitForNetworkRecovery();
-  await executeMassBatchOperations(writeOps, {
-    suppressAutoDelta: true,
-    skipLocalMirror: true,
-  });
-
   const effectiveAuthor = currentUser?.username || currentUser?.id;
-  if (deltaItems.length > 0) {
-    await recordBatchDeltas(deltaItems, effectiveAuthor);
+
+  // Fast-path: commit project summaries + project deltas FIRST so iPhone/Desktop immediately see updated taskCount & taskSummaries
+  if (projWriteOps.length > 0 || cleanProjDeltaItems.length > 0) {
+    await Promise.all([
+      projWriteOps.length > 0
+        ? executeMassBatchOperations(projWriteOps, {
+            suppressAutoDelta: true,
+            skipLocalMirror: true,
+          })
+        : Promise.resolve(),
+      cleanProjDeltaItems.length > 0
+        ? recordBatchDeltas(cleanProjDeltaItems, effectiveAuthor)
+        : Promise.resolve(),
+    ]);
   }
-  if (cleanProjDeltaItems.length > 0 && deltaItems.length > 60) {
-    await recordBatchDeltas(cleanProjDeltaItems, effectiveAuthor);
+
+  // Commit modified/new tasks & delegations and broadcast their deltas
+  if (taskWriteOps.length > 0) {
+    await executeMassBatchOperations(taskWriteOps, {
+      suppressAutoDelta: true,
+      skipLocalMirror: true,
+    });
+  }
+
+  const allTaskAndDelDeltas = [...taskDeltaItems, ...delegationDeltaItems];
+  if (allTaskAndDelDeltas.length > 0) {
+    await recordBatchDeltas(allTaskAndDelDeltas, effectiveAuthor);
   }
 }
 

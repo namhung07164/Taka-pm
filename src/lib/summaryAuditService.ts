@@ -1,13 +1,14 @@
 /**
  * summaryAuditService.ts - Kiểm tra chéo 3 lớp dữ liệu: (1) Task Firestore, (2) Summary dự án, (3) Local (Zustand + Dexie).
  */
-import { collection, getDocsFromServer } from 'firebase/firestore';
+import { collection, getDocs, getDocsFromServer, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { Project, Task } from '../types';
 import { calculateProjectComputedDates } from './projectDatesService';
 import { bulkPersistTasks, bulkPersistProjects, deleteLocalRecord, localDb } from './localDb';
 import { markTasksDeleted } from './taskDeletedTracker';
+import { waitForNetworkRecovery, resetStalledFirestoreConnection } from './syncResilience';
 import {
   AuditRow,
   AuditReport,
@@ -21,19 +22,51 @@ import {
 export type { AuditRow, AuditReport };
 export { repairLocalDevice, purgeExcessFirestoreTasks };
 
+async function fetchCollectionResilientForAudit(
+  collectionName: string,
+  label: string,
+  onProgress?: (msg: string) => void
+): Promise<QuerySnapshot<DocumentData>> {
+  await waitForNetworkRecovery();
+  const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', collectionName);
+
+  const tryFromServerWithTimeout = async (timeoutMs: number) => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        getDocsFromServer(colRef),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('AUDIT_SERVER_READ_TIMEOUT')), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  try {
+    return await tryFromServerWithTimeout(6500);
+  } catch {
+    onProgress?.(`Kết nối ${label} đang bận trên thiết bị, đang làm mới kênh Firestore...`);
+    await resetStalledFirestoreConnection();
+    try {
+      return await tryFromServerWithTimeout(8000);
+    } catch {
+      onProgress?.(`Đang đọc ${label} qua kênh dự phòng Firestore...`);
+      return await getDocs(colRef);
+    }
+  }
+}
+
 export async function runSummaryAudit(onProgress?: (msg: string) => void): Promise<AuditReport> {
   onProgress?.('Đang đọc dự án từ Firestore (server)...');
-  const projSnap = await getDocsFromServer(
-    collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects')
-  );
+  const projSnap = await fetchCollectionResilientForAudit('taka_projects', 'dự án', onProgress);
   const projects = projSnap.docs
     .map((d) => ({ ...(d.data() as any), id: d.id }) as Project)
     .filter((p) => !p.isDeleted);
 
   onProgress?.(`Đã đọc ${projects.length} dự án. Đang đọc task từ Firestore (server)...`);
-  const taskSnap = await getDocsFromServer(
-    collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks')
-  );
+  const taskSnap = await fetchCollectionResilientForAudit('taka_tasks', 'task', onProgress);
   const serverTasks = taskSnap.docs
     .map((d) => ({ ...(d.data() as any), id: d.id }) as Task)
     .filter((t) => !t.isDeleted);

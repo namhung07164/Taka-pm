@@ -13,7 +13,7 @@ import { extractExplicitSubtaskNumber, extractSubtaskIndex } from '../../lib/gan
 import { findAffectedProjects } from '../../lib/taskStateService';
 import { buildCanonicalProjectKey, normalizeTaskNameForComparison } from '../../lib/taskDeduplicationService';
 import { resolveParentChildHierarchy } from './detailTaskImportHierarchy';
-import { buildAffectedProjectsSyncOps } from './detailTaskImportProjectSync';
+import { buildAffectedProjectsSyncOps, hasImportedTaskMeaningfullyChanged, commitImportedStateToStoreAndLocal } from './detailTaskImportProjectSync';
 import { hydrateImportContextTasks, lockExistingProjectTasksOrder } from './detailTaskImportHydrator';
 
 interface ExecuteImportTasksParams {
@@ -24,9 +24,7 @@ interface ExecuteImportTasksParams {
   currentUser: AppUser;
 }
 
-export async function executeImportTasks({
-  rawParsedRowsByProject, projects, tasks, appUsers, currentUser
-}: ExecuteImportTasksParams): Promise<{ count: number; projectCount?: number }> {
+export async function executeImportTasks({ rawParsedRowsByProject, projects, tasks, appUsers, currentUser }: ExecuteImportTasksParams): Promise<{ count: number; projectCount?: number }> {
   // 1. Gather in-memory tasks in O(N) Map (no full-DB localDb.tasks.toArray() O(N^2) scan on main thread)
   const candidatesById = new Map<string, Task>();
   for (const t of useAppStore.getState().tasks || []) {
@@ -422,17 +420,33 @@ export async function executeImportTasks({
         updatedAt: commitNowIso,
       };
       delete (stamped as any)._isVirtualSummary;
-      allTasksMap.set(tid, stamped);
-      finalTasksToSave.push(stamped);
+      const isTaskDirty =
+        lockedExistingTasksToSave.has(tid) ||
+        hasImportedTaskMeaningfullyChanged(prevExisting, stamped, newIds.has(tid));
+      if (isTaskDirty) {
+        allTasksMap.set(tid, stamped);
+        finalTasksToSave.push(stamped);
+      } else if (prevExisting) {
+        allTasksMap.set(tid, prevExisting);
+      }
     }
   });
 
-  // 6. Prepare missing delegations on finalTasksToSave (after deduplication & rollup so IDs match 100%)
-  const precomputedDelegations = prepareMissingDelegationsForTasks(finalTasksToSave, activeUser, commitNowIso);
+  // 6. Prepare missing delegations ONLY for new tasks, newly delegated tasks, or tasks with loaded delegation groups
+  const loadedDelSet = new Set(
+    (useAppStore.getState().delegationGroups || []).flatMap(d => [d?.id, d?.parentTaskId].filter(Boolean))
+  );
+  const tasksNeedingDelegationCheck = finalTasksToSave.filter(
+    t => newIds.has(t.id) || !previousStates.get(t.id)?.delegation || loadedDelSet.has(`del_${t.id}`) || loadedDelSet.has(t.id)
+  );
+  const precomputedDelegations = prepareMissingDelegationsForTasks(tasksNeedingDelegationCheck, activeUser, commitNowIso);
 
-  // Compute project summaries in memory and perform ONE unified Zustand update (1 React render instead of 6)
+  // Compute project summaries in memory and perform ONE unified Zustand + LocalDB update
   const finalFullTasksList = Array.from(allTasksMap.values());
-  const finalAffectedProjects = findAffectedProjects(finalTasksToSave, projects);
+  const finalAffectedProjects = findAffectedProjects(
+    finalTasksToSave.length > 0 ? finalTasksToSave : tasksToImport,
+    projects
+  );
   const delegationGroups = useAppStore.getState().delegationGroups;
   const currentProjects = projects && projects.length > 0 ? projects : useAppStore.getState().projects;
   const computedByProjectId = new Map<string, ReturnType<typeof calculateProjectComputedDates>>();
@@ -447,29 +461,17 @@ export async function executeImportTasks({
     touchedProjectsForPersistence.push({ ...proj, ...computed, updatedAt: commitNowIso });
   });
 
-  const hydratedRealTasks = finalFullTasksList.filter(t => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary);
-  useAppStore.getState().optimisticUpdateTasks([...hydratedRealTasks, ...finalTasksToSave]);
+  const hydratedRealTasks = finalFullTasksList.filter(
+    t => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary
+  );
+  await commitImportedStateToStoreAndLocal(
+    hydratedRealTasks,
+    finalTasksToSave,
+    touchedProjectsForPersistence,
+    finalAffectedProjects
+  );
 
-  const storeProjects = useAppStore.getState().projects || [];
-  const mergedProjectsMap = new Map<string, Project>(storeProjects.map(p => [p.id, p]));
-  touchedProjectsForPersistence.forEach(p => mergedProjectsMap.set(p.id, p));
-  const curExpanded = useAppStore.getState().expandedProjectIds || [];
-  const affKeys = finalAffectedProjects.map(p => String(p.id || p.code || '')).filter(Boolean);
-
-  useAppStore.setState({
-    projects: Array.from(mergedProjectsMap.values()).sort((a, b) => (a.no || 0) - (b.no || 0)),
-    expandedProjectIds: Array.from(new Set([...curExpanded, ...affKeys])),
-  });
-
-  // Persist affected projects to LocalDB (Dexie) in background and mark tasks_proj as loaded
-  if (touchedProjectsForPersistence.length > 0) {
-    import('../../lib/localDb').then(({ bulkPersistProjects }) => bulkPersistProjects(touchedProjectsForPersistence)).catch(() => {});
-    import('../../lib/loadedMarkers').then(({ markLoaded }) => {
-      touchedProjectsForPersistence.forEach(proj => { if (proj.id) markLoaded('tasks_proj', proj.id).catch(() => {}); });
-    }).catch(() => {});
-  }
-
-  // Commit tasks + delegations + project summaries in ONE unified Firestore batch + parallel coalesced delta
+  // Commit project summaries (fast-path) + modified/new tasks & delegations to Firestore + Delta bus
   const { writeOps: projectWriteOps, projDeltaItems } = buildAffectedProjectsSyncOps(
     finalAffectedProjects, computedByProjectId, commitNowIso
   );

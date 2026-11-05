@@ -1,3 +1,5 @@
+import { enableNetwork, disableNetwork } from 'firebase/firestore';
+import { db } from './firebase';
 import { localDb } from './localDb';
 import { processPendingSync, getConnectionStatus } from './syncQueue';
 
@@ -9,6 +11,8 @@ import { processPendingSync, getConnectionStatus } from './syncQueue';
  *    connection channels or stream tokens (which avoids 1.2K+ full collection re-read spikes).
  * 2. resyncIfStale: delta documents are purged after 7 days. A device that has not synced for longer
  *    than that can never catch up through deltas, so wipe the local cache and reload once.
+ * 3. resetStalledFirestoreConnection: tears down a half-open / zombie WebKit Long-Polling XHR stream
+ *    (e.g. after iPadOS native <input type="file"> sheet closes) ONLY when an active RPC/commit stalls.
  */
 
 const HIDDEN_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes hidden before delta catch-up
@@ -18,16 +22,63 @@ const STALE_RESYNC_MS = 6 * 24 * 60 * 60 * 1000; // < 7-day delta retention
 const RESYNC_GUARD_KEY = 'taka_full_resync_guard_v1';
 
 let activeRecoveryPromise: Promise<void> | null = null;
+let activeSocketResetPromise: Promise<void> | null = null;
+let lastSocketResetAt = 0;
 
 /**
- * If recovery is in progress, wait for it before issuing subsequent operations.
+ * If recovery is in progress or browser is temporarily offline after native file picker closes,
+ * wait for it before issuing subsequent Firestore operations.
  */
-export async function waitForNetworkRecovery(): Promise<void> {
+export async function waitForNetworkRecovery(maxWaitMs = 5000): Promise<void> {
   if (activeRecoveryPromise) {
     try {
       await activeRecoveryPromise;
     } catch {}
   }
+  if (typeof window !== 'undefined' && typeof navigator !== 'undefined' && navigator.onLine === false) {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        window.removeEventListener('online', onOnline);
+        resolve();
+      }, maxWaitMs);
+      const onOnline = () => {
+        clearTimeout(timer);
+        window.removeEventListener('online', onOnline);
+        resolve();
+      };
+      window.addEventListener('online', onOnline, { once: true });
+    });
+  }
+  try {
+    await enableNetwork(db);
+  } catch {}
+}
+
+/**
+ * Gently cycles Firestore's network transport when an active commit or server read stalls on
+ * iPadOS/iOS WebKit HTTP Long-Polling (e.g. after UIDocumentPickerViewController suspends sockets).
+ * Automatically flushes pending IndexedDB MutationBatches upon reconnect.
+ */
+export async function resetStalledFirestoreConnection(): Promise<void> {
+  if (activeSocketResetPromise) return activeSocketResetPromise;
+  const now = Date.now();
+  if (now - lastSocketResetAt < 2500) return;
+  lastSocketResetAt = now;
+
+  activeSocketResetPromise = (async () => {
+    try {
+      await disableNetwork(db);
+    } catch {}
+    await new Promise((r) => setTimeout(r, 60));
+    try {
+      await enableNetwork(db);
+    } catch {}
+    await new Promise((r) => setTimeout(r, 80));
+  })().finally(() => {
+    activeSocketResetPromise = null;
+  });
+
+  return activeSocketResetPromise;
 }
 
 export function initNetworkRecovery(onRecovered?: () => void): () => void {
