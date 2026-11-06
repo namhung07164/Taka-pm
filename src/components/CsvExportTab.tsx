@@ -36,6 +36,11 @@ export default function CsvExportTab() {
     setKeepOriginal,
     constantMapping,
     setConstantMapping,
+    presets,
+    activePresetId,
+    handleSelectPreset,
+    handleSavePreset,
+    handleDeletePreset,
     switchTab,
     processSheet,
     handleTemplateUpload,
@@ -121,6 +126,11 @@ export default function CsvExportTab() {
               constantMapping={constantMapping}
               setConstantMapping={setConstantMapping}
               excelHeaders={excelHeaders}
+              presets={presets}
+              activePresetId={activePresetId}
+              onSelectPreset={handleSelectPreset}
+              onSavePreset={handleSavePreset}
+              onDeletePreset={handleDeletePreset}
               onLockToggle={
                 isLocked ? () => setShowUnlockModal(true) : handleSaveMapping
               }
