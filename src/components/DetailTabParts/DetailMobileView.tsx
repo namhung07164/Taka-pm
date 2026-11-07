@@ -125,7 +125,7 @@ export const DetailMobileView = memo(function DetailMobileView({
 
       <div 
         onScroll={handleMobileScroll}
-        className="xl:hidden flex-grow overflow-y-auto flex flex-col gap-4 pb-16 px-2 bg-slate-50/60 dark:bg-[#131314] overscroll-y-contain transition-colors"
+        className="xl:hidden flex-grow overflow-y-auto flex flex-col gap-4 pb-24 px-2 bg-slate-50/60 dark:bg-[#131314] overscroll-y-contain transition-colors"
       >
         {filteredProjects.slice(0, visibleCount).map((p) => (
           <DetailMobileProjectCard

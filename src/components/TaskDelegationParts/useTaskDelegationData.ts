@@ -45,16 +45,16 @@ export function useTaskDelegationData({
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
   const [colWidths, setColWidths] = useState<DelegationColWidths>({
-    expand: 50,
+    expand: 52,
     taskName: 300,
     projectCode: 150,
-    comments: 400,
-    status: 120,
+    comments: 380,
+    status: 140,
     startAct: 120,
     finishAct: 120,
     priority: 120,
     party: 150,
-    actions: 80,
+    actions: 210,
   });
 
   const availableColumnsForUser = useMemo(() => AVAILABLE_COLUMNS, []);
@@ -70,7 +70,10 @@ export function useTaskDelegationData({
       const saved = safeGetDeviceItemLocal('taka_delegation_col_widths', currentUser.id);
       if (saved) {
         try {
-          setColWidths(JSON.parse(saved));
+          const parsed = JSON.parse(saved);
+          if (parsed.actions && parsed.actions < 200) parsed.actions = 210;
+          if (parsed.status && parsed.status < 135) parsed.status = 140;
+          setColWidths((prev) => ({ ...prev, ...parsed }));
         } catch (e) {
           console.error(e);
         }

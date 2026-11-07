@@ -197,27 +197,11 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
             />
           </div>
         </div>
-      </div>
 
-      {/* Floating Edit Mode Button - Moved to bottom-16 right-4 to avoid overlapping search bar */}
-      {hasWritePermission && !isEditMode && (
-        <div className="fixed bottom-16 right-4 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
-          <button
-            onClick={() => setIsEditMode(true)}
-            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-blue-600 dark:bg-blue-600 border border-blue-400 text-white hover:bg-blue-700 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-2xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer ring-2 ring-blue-500/30"
-            title="Edit Mode"
-          >
-            <Edit3 className="w-4 h-4 text-white pointer-events-none" />
-            <span className="pointer-events-none">
-              Edit Mode
-            </span>
-          </button>
-        </div>
-      )}
-
-      {hasWritePermission && isEditMode && (
-        <div className="fixed top-[154px] sm:top-[160px] left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-3 py-2 sm:px-4 sm:py-3 bg-white dark:bg-[#28282a] border border-slate-200 dark:border-[#444446] rounded-2xl shadow-2xl backdrop-blur-md bg-opacity-95 w-[calc(100vw-1rem)] sm:w-max max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] print:hidden pointer-events-auto">
-            <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
+        {/* Row 3: Docked Editing Mode Action Bar (never overlaps filters or search input) */}
+        {hasWritePermission && isEditMode && (
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5 sm:gap-2 px-2.5 py-1.5 bg-white dark:bg-[#1e1e22] border border-blue-200/80 dark:border-blue-900/50 rounded-xl shadow-xs w-full print:hidden">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-1 rounded-lg border border-blue-200 dark:border-blue-800 shrink-0">
               <Edit3 className="w-3.5 h-3.5 text-blue-500" />
               <span>Editing Mode</span>
             </div>
@@ -344,9 +328,26 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
             </button>
           </div>
         )}
+      </div>
 
-        {hasWritePermission && (
-          <>
+      {/* Floating Edit Mode Button */}
+      {hasWritePermission && !isEditMode && (
+        <div className="fixed bottom-16 right-4 z-40 flex flex-row gap-2 justify-end items-start print:hidden pointer-events-auto">
+          <button
+            onClick={() => setIsEditMode(true)}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-blue-600 dark:bg-blue-600 border border-blue-400 text-white hover:bg-blue-700 dark:hover:bg-blue-500 rounded-xl font-bold transition-all shadow-2xl hover:scale-105 active:scale-95 shrink-0 touch-manipulation text-xs cursor-pointer ring-2 ring-blue-500/30"
+            title="Edit Mode"
+          >
+            <Edit3 className="w-4 h-4 text-white pointer-events-none" />
+            <span className="pointer-events-none">
+              Edit Mode
+            </span>
+          </button>
+        </div>
+      )}
+
+      {hasWritePermission && (
+        <>
             <div className="flex gap-1 items-center">
               {currentUser.role === 'admin' && (
                 <FullReplaceImport 

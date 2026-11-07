@@ -51,7 +51,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
 
   return (
     <div
-      className="sticky left-0 z-30 bg-slate-100 dark:bg-[#28282b] flex items-stretch h-10 min-h-[40px] border-r border-slate-300 dark:border-slate-700 font-bold text-xs text-slate-900 dark:text-[#c3c3c3] shrink-0 box-border"
+      className="sticky left-0 z-30 bg-slate-100 dark:bg-[#28282b] flex items-stretch h-10 min-h-[40px] border-r border-slate-300 dark:border-slate-700 font-bold text-xs text-slate-900 dark:text-[#c3c3c3] shrink-0 box-border overflow-hidden"
       style={{ width: `${sideWidth}px`, minWidth: `${sideWidth}px`, maxWidth: `${sideWidth}px` }}
     >
       <div className="w-10 px-1 h-full flex items-center justify-center text-center border-r border-slate-200 dark:border-slate-800 shrink-0 box-border">
@@ -67,7 +67,7 @@ export const GanttLeftHeader: React.FC<GanttLeftHeaderProps> = React.memo(({
           <span>#</span>
         )}
       </div>
-      <div className="flex-1 min-w-[140px] px-2 h-full flex items-center gap-1.5 overflow-hidden box-border">
+      <div className="flex-1 min-w-0 px-2 h-full flex items-center gap-1.5 overflow-hidden box-border">
         <div className="flex flex-col items-center justify-center gap-0.5 shrink-0 print:hidden hide-on-actual-print">
           <button
             type="button"

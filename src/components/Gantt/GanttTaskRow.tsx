@@ -280,8 +280,8 @@ export const GanttTaskRow = React.memo(function GanttTaskRow({
     >
       {/* Left Side Columns Container */}
       <div
-        className="sticky left-0 z-20 bg-white dark:bg-[#1e1e20] flex border-r border-slate-200 dark:border-slate-800 shrink-0 h-full items-center overflow-hidden"
-        style={{ width: `${sideWidth}px` }}
+        className="sticky left-0 z-20 bg-white dark:bg-[#1e1e20] flex border-r border-slate-200 dark:border-slate-800 shrink-0 h-full items-center overflow-hidden box-border"
+        style={{ width: `${sideWidth}px`, minWidth: `${sideWidth}px`, maxWidth: `${sideWidth}px` }}
       >
         <div className="flex-1 min-w-0 h-full flex items-center overflow-hidden">
           <GanttTaskLeftColumns

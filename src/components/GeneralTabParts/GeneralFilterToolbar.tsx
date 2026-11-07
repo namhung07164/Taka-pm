@@ -50,25 +50,6 @@ export function GeneralFilterToolbar({
 
   return (
     <>
-      {/* Sticky Action Controls (matching DetailTab design) */}
-      {currentUser.role === 'admin' && (
-        <div className="fixed top-[76px] xl:top-[84px] right-4 md:right-8 z-50 flex flex-row gap-2 justify-end items-start print:hidden">
-          <button 
-            onClick={handleGoogleSync}
-            disabled={isSyncing}
-            className={`flex items-center justify-center gap-1.5 px-3 py-2 border rounded-lg font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs ${
-              isSyncing
-                ? "bg-red-50 hover:bg-red-100 border-red-200 text-red-600 dark:text-red-400 disabled:opacity-50"
-                : "bg-slate-900 dark:bg-blue-600 border border-slate-800 dark:border-blue-500 text-white rounded-lg hover:bg-slate-800 dark:hover:bg-blue-500 shadow-md"
-            }`}
-            title="Google Sync"
-          >
-            <RefreshCw className={cn("w-4 h-4 pointer-events-none", isSyncing && "animate-spin")} />
-            <span className="hidden sm:inline pointer-events-none">{isSyncing ? t('Syncing...') : t('Google Sync')}</span>
-          </button>
-        </div>
-      )}
-      
       <div className="p-2 sm:p-3 bg-slate-100 dark:bg-[#121214] border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2 shrink-0 print:hidden rounded-t-xl text-slate-800 dark:text-slate-100">
         {/* Row 1: 4 Compact Filter Boxes in 2x2 grid on mobile and 4 cols on desktop */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 flex-grow w-full">
@@ -124,8 +105,8 @@ export function GeneralFilterToolbar({
           </select>
         </div>
 
-        {/* Row 2: Search */}
-        <div className="flex items-center gap-2 w-full">
+        {/* Row 2: Search & Action Controls */}
+        <div className="flex items-center justify-between gap-2 w-full">
           <div className="relative flex-1 min-w-[150px] sm:min-w-[180px] md:min-w-[240px] max-w-full sm:max-w-xs md:max-w-md lg:max-w-lg xl:max-w-xl">
             <DebouncedSearchInput 
               value={searchTerm}
@@ -133,6 +114,22 @@ export function GeneralFilterToolbar({
               placeholder={t('Search anything...')}
             />
           </div>
+
+          {currentUser.role === 'admin' && (
+            <button 
+              onClick={handleGoogleSync}
+              disabled={isSyncing}
+              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 border rounded-lg font-bold transition-all shadow-xs shrink-0 touch-manipulation text-xs active:scale-95 cursor-pointer ml-auto ${
+                isSyncing
+                  ? "bg-red-50 hover:bg-red-100 border-red-200 text-red-600 dark:text-red-400 disabled:opacity-50"
+                  : "bg-slate-900 dark:bg-blue-600 border border-slate-800 dark:border-blue-500 text-white hover:bg-slate-800 dark:hover:bg-blue-500"
+              }`}
+              title="Google Sync"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5 pointer-events-none", isSyncing && "animate-spin")} />
+              <span className="hidden sm:inline pointer-events-none">{isSyncing ? t('Syncing...') : t('Google Sync')}</span>
+            </button>
+          )}
         </div>
       </div>
     </>

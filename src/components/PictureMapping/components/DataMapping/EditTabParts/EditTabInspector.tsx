@@ -54,7 +54,9 @@ export const EditTabInspector = memo(function EditTabInspector({
   handleToggleAllLock,
   handleDeleteAll,
 }: EditTabInspectorProps) {
-  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(false);
+  const [isInspectorCollapsed, setIsInspectorCollapsed] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
   const [librarySearchTerm, setLibrarySearchTerm] = useState('');
 
   const filteredUnits = useMemo(() => {
@@ -68,31 +70,37 @@ export const EditTabInspector = memo(function EditTabInspector({
       "flex flex-col bg-slate-900/90 rounded-lg border border-slate-800/80 transition-all duration-300 relative shrink-0 overflow-hidden",
       isInspectorCollapsed ? "w-7 p-1 items-center" : "w-44 sm:w-48 p-1.5 gap-1.5 glass"
     )}>
-      {/* Toggle Collapse Button */}
-      <button 
-        onClick={() => setIsInspectorCollapsed(!isInspectorCollapsed)}
-        className={cn(
-          "p-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm",
-          isInspectorCollapsed ? "w-5 h-5 flex items-center justify-center my-0.5" : "absolute right-1.5 top-1.5 z-30 border border-slate-700 bg-slate-900"
-        )}
-        title={isInspectorCollapsed ? "Expand Inspector" : "Collapse Inspector to expand Canvas"}
-      >
-        {isInspectorCollapsed ? <ChevronLeft size={11} className="rotate-180" /> : <ChevronRight size={11} />}
-      </button>
-
       {isInspectorCollapsed ? (
-        <div className="flex flex-col items-center gap-2 mt-3 text-slate-400">
-          <span className="text-[8px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
-            INSPECTOR ({units.length})
-          </span>
-        </div>
+        <>
+          <button 
+            onClick={() => setIsInspectorCollapsed(false)}
+            className="w-5 h-5 flex items-center justify-center my-0.5 p-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm cursor-pointer"
+            title="Expand Inspector"
+          >
+            <ChevronLeft size={11} className="rotate-180" />
+          </button>
+          <div className="flex flex-col items-center gap-2 mt-3 text-slate-400">
+            <span className="text-[8px] font-bold uppercase tracking-widest [writing-mode:vertical-rl] rotate-180 select-none">
+              INSPECTOR ({units.length})
+            </span>
+          </div>
+        </>
       ) : (
         <div className="flex flex-col h-full overflow-hidden w-full gap-1.5">
           <div className="space-y-1 border-b border-slate-800 pb-1.5">
-            <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-widest flex items-center justify-between pr-6">
-              <span>Inspector</span>
-              <span className="text-[8.5px] font-normal text-slate-500 font-mono">{units.length} units</span>
-            </h4>
+            <div className="flex items-center justify-between gap-1">
+              <h4 className="text-[10px] font-bold text-slate-300 uppercase tracking-widest flex items-center gap-1.5 min-w-0">
+                <span>Inspector</span>
+                <span className="text-[8.5px] font-normal text-slate-500 font-mono shrink-0">{units.length} units</span>
+              </h4>
+              <button 
+                onClick={() => setIsInspectorCollapsed(true)}
+                className="p-0.5 rounded border border-slate-700 bg-slate-900 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shadow-sm shrink-0 cursor-pointer"
+                title="Collapse Inspector to expand Canvas"
+              >
+                <ChevronRight size={11} />
+              </button>
+            </div>
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500 z-10 pointer-events-none" size={11} />
               <input 

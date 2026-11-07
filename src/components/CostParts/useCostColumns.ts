@@ -12,20 +12,20 @@ export function useCostColumns({ userId }: UseCostColumnsParams) {
   );
 
   const [colWidths, setColWidths] = useState<CostColWidths>({
-    no: 64,
+    no: 76,
     year: 80,
     store: 80,
-    code: 128,
+    code: 136,
     projectName: 192,
-    actual: 128,
+    actual: 132,
     firstPaid: 128,
     secondPaid: 128,
     thirdPaid: 128,
     balance: 128,
-    supportingFee: 128,
+    supportingFee: 132,
     description: 256,
     vendor: 192,
-    action: 96,
+    action: 104,
   });
 
   const prevScreenTypeRef = useRef(getDeviceScreenType());
@@ -35,7 +35,9 @@ export function useCostColumns({ userId }: UseCostColumnsParams) {
       const saved = safeGetDeviceItemLocal('taka_cost_col_widths', userId);
       if (saved) {
         try {
-          setColWidths(JSON.parse(saved));
+          const parsed = JSON.parse(saved);
+          if (parsed.no && parsed.no < 72) parsed.no = 76;
+          setColWidths((prev) => ({ ...prev, ...parsed }));
         } catch (e) {
           console.error(e);
         }

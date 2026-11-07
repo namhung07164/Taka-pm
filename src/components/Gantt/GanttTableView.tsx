@@ -147,6 +147,9 @@ export function GanttTableView({
 
   const showStart = visibleColumns.includes('start'), showFinish = visibleColumns.includes('finish'), showParty = visibleColumns.includes('party'), showDuration = visibleColumns.includes('duration'), showPredecessor = visibleColumns.includes('predecessor');
   const startColWidth = colWidths?.start ?? 85, finishColWidth = colWidths?.finish ?? 85, partyColWidth = colWidths?.party ?? 80, durationColWidth = colWidths?.duration ?? 60, predecessorColWidth = colWidths?.predecessor ?? 90;
+  const extraColsWidth = (showStart ? startColWidth : 0) + (showFinish ? finishColWidth : 0) + (showParty ? partyColWidth : 0) + (showDuration ? durationColWidth : 0) + (showPredecessor ? predecessorColWidth : 0);
+  const minNameColWidth = typeof window !== 'undefined' && window.innerWidth < 640 ? 115 : 160;
+  const effectiveSideWidth = Math.max(sideWidth, 40 + minNameColWidth + extraColsWidth);
 
   const taskCodeMap = useMemo(() => allCodesMap || computeAllTaskCodes(projects, tasks), [allCodesMap, projects, tasks]);
 
@@ -172,9 +175,9 @@ export function GanttTableView({
   }, [timeUnits, totalDays]);
 
   const totalTimelineWidth = Math.round(totalUnitDays * dayWidth);
-  const totalChartWidth = Math.round(sideWidth + totalTimelineWidth);
+  const totalChartWidth = Math.round(effectiveSideWidth + totalTimelineWidth);
 
-  const { isPanning, handlePointerDown, handleStartMonthResize } = useGanttZoomAndPan({ mainScrollRef, topScrollRef, sideWidth });
+  const { isPanning, handlePointerDown, handleStartMonthResize } = useGanttZoomAndPan({ mainScrollRef, topScrollRef, sideWidth: effectiveSideWidth });
 
   const allOrderedTaskIds = useMemo(() => {
     const fromRows = (flatGanttRows && flatGanttRows.length > 0 ? flatGanttRows : visibleGanttRows)
@@ -250,7 +253,7 @@ export function GanttTableView({
         className="sticky top-[86px] sm:top-[48px] z-30 w-full max-w-full min-w-0 overflow-x-hidden overflow-y-hidden border-b border-slate-200 dark:border-slate-800 bg-slate-50/95 dark:bg-[#18181a]/95 backdrop-blur-md flex shrink-0 shadow-xs overscroll-x-contain"
       >
         <GanttLeftHeader
-          sideWidth={sideWidth}
+          sideWidth={effectiveSideWidth}
           isEditMode={isEditMode}
           isAllSelected={isAllSelected}
           handleToggleSelectAll={handleToggleSelectAll}
@@ -297,7 +300,7 @@ export function GanttTableView({
         <div
           onMouseDown={startResizingSide}
           className="absolute top-0 bottom-0 z-40 w-1.5 cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors print:hidden hide-on-actual-print"
-          style={{ left: `${sideWidth - 1}px` }}
+          style={{ left: `${effectiveSideWidth - 1}px` }}
         />
 
         {/* Rows Virtual Container */}
@@ -314,7 +317,7 @@ export function GanttTableView({
           <GanttGridOverlay
             totalDays={totalDays}
             dayWidth={dayWidth}
-            sideWidth={sideWidth}
+            sideWidth={effectiveSideWidth}
             timeUnits={timeUnits}
           />
 
@@ -326,7 +329,7 @@ export function GanttTableView({
             setIsDraggingToday={setIsDraggingToday}
             startDate={startDate}
             dayWidth={dayWidth}
-            sideWidth={sideWidth}
+            sideWidth={effectiveSideWidth}
             showStart={showStart} startColWidth={startColWidth} showFinish={showFinish} finishColWidth={finishColWidth}
             showParty={showParty} partyColWidth={partyColWidth} showDuration={showDuration} durationColWidth={durationColWidth}
             showPredecessor={showPredecessor} predecessorColWidth={predecessorColWidth}
@@ -353,7 +356,7 @@ export function GanttTableView({
                     expandedModularTasks={expandedModularTasks}
                     setExpandedModularTasks={setExpandedModularTasks}
                     toggleProjectExpansion={toggleProjectExpansion}
-                    sideWidth={sideWidth}
+                    sideWidth={effectiveSideWidth}
                     showStart={showStart} startColWidth={startColWidth} showFinish={showFinish} finishColWidth={finishColWidth}
                     showParty={showParty} partyColWidth={partyColWidth} showDuration={showDuration} durationColWidth={durationColWidth}
                     showPredecessor={showPredecessor} predecessorColWidth={predecessorColWidth}
@@ -404,7 +407,7 @@ export function GanttTableView({
                   handleUnlinkModularTasks={handleUnlinkModularTasks}
                   toggleModularParent={toggleModularParent}
                   getRowVisibilityClass={getRowVisibilityClass}
-                  sideWidth={sideWidth}
+                  sideWidth={effectiveSideWidth}
                   showStart={showStart} startColWidth={startColWidth} showFinish={showFinish} finishColWidth={finishColWidth}
                   showParty={showParty} partyColWidth={partyColWidth} showDuration={showDuration} durationColWidth={durationColWidth}
                   showPredecessor={showPredecessor} predecessorColWidth={predecessorColWidth}

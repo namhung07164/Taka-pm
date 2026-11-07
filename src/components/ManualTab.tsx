@@ -84,24 +84,24 @@ export function ManualTab() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-3 sm:p-6 md:p-8 animate-in fade-in duration-300">
+    <div className="w-full max-w-5xl min-w-0 mx-auto p-3 sm:p-6 md:p-8 overflow-x-hidden animate-in fade-in duration-300">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white rounded-2xl p-5 sm:p-6 mb-6 shadow-lg border border-blue-800/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="flex items-start gap-3.5">
+      <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white rounded-2xl p-4 sm:p-6 mb-6 shadow-lg border border-blue-800/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 min-w-0">
+        <div className="flex items-start gap-3.5 min-w-0">
           <div className="w-12 h-12 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center shrink-0">
             <Book className="w-6 h-6 text-blue-300" />
           </div>
-          <div>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-400/30 text-[10px] font-bold text-blue-200 uppercase tracking-wider mb-1">
-              <Sparkles className="w-3 h-3" />
-              <span>USER_MANUAL.md & BUSINESS_LOGIC.md</span>
+          <div className="min-w-0">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-400/30 text-[10px] font-bold text-blue-200 uppercase tracking-wider mb-1 max-w-full truncate">
+              <Sparkles className="w-3 h-3 shrink-0" />
+              <span className="truncate">USER_MANUAL.md & BUSINESS_LOGIC.md</span>
             </div>
-            <h1 className="text-lg sm:text-2xl font-black tracking-tight">
+            <h1 className="text-lg sm:text-2xl font-black tracking-tight break-words">
               {lang === 'vi'
                 ? 'Cẩm Nang Hướng Dẫn Sử Dụng Takashimaya PM'
                 : 'Takashimaya PM Interactive User Manual'}
             </h1>
-            <p className="text-xs sm:text-sm text-blue-200/80 mt-0.5">
+            <p className="text-xs sm:text-sm text-blue-200/80 mt-0.5 break-words">
               {lang === 'vi'
                 ? 'Thiết kế tinh gọn, trực quan theo cấu trúc: Hiểu đơn giản ➔ Thao tác 3 bước ➔ Công thức & Ví dụ thực tế'
                 : 'Concise, visual step-by-step guide for new and existing users'}
@@ -138,8 +138,8 @@ export function ManualTab() {
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="bg-white dark:bg-[#1e1e20] rounded-2xl p-3.5 mb-5 border border-slate-200 dark:border-[#38383c] shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+      <div className="bg-white dark:bg-[#1e1e20] rounded-2xl p-3.5 mb-5 border border-slate-200 dark:border-[#38383c] shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 min-w-0">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1">
           {FAQ_CATEGORIES.map(cat => {
             const active = selectedCategory === cat.id;
             return (
@@ -147,7 +147,7 @@ export function ManualTab() {
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all active:scale-95 cursor-pointer shrink-0 ${
                   active
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'bg-slate-100 dark:bg-[#27272a] text-slate-600 dark:text-slate-300 hover:bg-slate-200'
@@ -159,7 +159,7 @@ export function ManualTab() {
           })}
         </div>
 
-        <div className="relative min-w-[220px]">
+        <div className="relative w-full sm:w-64 sm:min-w-[220px] shrink-0">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -172,7 +172,7 @@ export function ManualTab() {
       </div>
 
       {/* Printable Manual Cards */}
-      <div ref={printRef} className="space-y-4">
+      <div ref={printRef} className="space-y-4 min-w-0">
         {filteredEntries.map(entry => {
           const title = lang === 'vi' ? entry.titleVi : entry.titleEn;
           const body = lang === 'vi' ? entry.answerVi : entry.answerEn;
@@ -182,10 +182,10 @@ export function ManualTab() {
           return (
             <div
               key={entry.id}
-              className="bg-white dark:bg-[#1e1e20] rounded-2xl p-5 border border-slate-200 dark:border-[#38383c] shadow-xs hover:border-blue-400/60 transition-all"
+              className="bg-white dark:bg-[#1e1e20] rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-[#38383c] shadow-xs hover:border-blue-400/60 transition-all min-w-0 overflow-hidden"
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-100 dark:border-slate-800">
-                <h3 className="text-sm sm:text-base font-bold text-blue-700 dark:text-blue-400 flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-blue-700 dark:text-blue-400 flex items-center gap-2 break-words">
                   <HelpCircle className="w-4 h-4 shrink-0 text-blue-500" />
                   <span>{title}</span>
                 </h3>
@@ -193,7 +193,7 @@ export function ManualTab() {
                   <button
                     type="button"
                     onClick={() => handleJumpToTab(entry.targetTab!)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs active:scale-95 transition-all self-start sm:self-auto cursor-pointer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs active:scale-95 transition-all self-start sm:self-auto shrink-0 cursor-pointer"
                   >
                     <span>{tabLabel}</span>
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -201,7 +201,7 @@ export function ManualTab() {
                 )}
               </div>
 
-              <div className="space-y-1.5">{renderManualBody(body)}</div>
+              <div className="space-y-1.5 break-words">{renderManualBody(body)}</div>
 
               {prompts && prompts.length > 0 && (
                 <div className="mt-3.5 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center gap-2">
@@ -213,7 +213,7 @@ export function ManualTab() {
                       key={pIdx}
                       type="button"
                       onClick={handleOpenFaqBot}
-                      className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/50 hover:bg-indigo-100 transition-colors cursor-pointer"
+                      className="text-[11px] text-left break-words whitespace-normal font-medium px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/60 dark:border-indigo-800/50 hover:bg-indigo-100 transition-colors cursor-pointer"
                     >
                       💬 {p}
                     </button>

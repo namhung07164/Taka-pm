@@ -77,7 +77,7 @@ export const TaskDelegationTableView = React.memo(function TaskDelegationTableVi
   );
 
   return (
-    <div className="hidden lg:block overflow-auto flex-grow h-0 min-h-[300px] relative scroll-smooth [-webkit-overflow-scrolling:touch]">
+    <div className="hidden lg:block overflow-auto flex-grow h-0 min-h-[300px] pb-16 relative scroll-smooth [-webkit-overflow-scrolling:touch]">
       <table
         className="text-sm text-left text-slate-600 dark:text-[#a3a3a3] table-fixed"
         style={{ width: `${tableWidth}px` }}
@@ -88,7 +88,7 @@ export const TaskDelegationTableView = React.memo(function TaskDelegationTableVi
               <ResizableHeader
                 width={colWidths.expand}
                 onResize={(w) => handleResize('expand', w)}
-                className="px-4 py-3 font-bold text-center"
+                className="px-2 py-3 font-bold text-center"
                 hideable
                 onHide={() => handleToggleColumn('expand')}
               >
@@ -149,7 +149,7 @@ export const TaskDelegationTableView = React.memo(function TaskDelegationTableVi
               <ResizableHeader
                 width={colWidths.status}
                 onResize={(w) => handleResize('status', w)}
-                className="px-4 py-3 font-bold"
+                className="px-3 py-3 font-bold"
                 hideable
                 onHide={() => handleToggleColumn('status')}
               >
@@ -182,7 +182,7 @@ export const TaskDelegationTableView = React.memo(function TaskDelegationTableVi
               <ResizableHeader
                 width={colWidths.actions}
                 onResize={(w) => handleResize('actions', w)}
-                className="px-4 py-3 font-bold text-center"
+                className="px-2 py-3 font-bold text-center"
                 hideable
                 onHide={() => handleToggleColumn('actions')}
               >

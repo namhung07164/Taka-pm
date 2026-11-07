@@ -119,7 +119,7 @@ export function BudgetTableView({
       onScroll={handleBudgetScroll}
       className="hidden xl:block flex-grow overflow-auto border-t border-slate-200 dark:border-[#444446] bg-white dark:bg-[#1e1e20] relative min-h-0"
     >
-      <table className="w-full text-left border-collapse table-fixed">
+      <table className="w-full min-w-[1180px] text-left border-collapse table-fixed">
         <thead className="sticky top-0 z-30 bg-slate-100 dark:bg-[#28282b] text-slate-700 dark:text-[#c3c3c3] font-bold shadow-xs text-xs border-b border-slate-200 dark:border-[#38383a]">
           <tr>
             {visibleColumns.includes('no') && (
@@ -168,13 +168,13 @@ export function BudgetTableView({
                 width={colWidths.variance} 
                 onResize={(w) => handleResize('variance', w)} 
                 onClick={() => handleSort('variance')} 
-                className="cursor-pointer hover:bg-slate-200 dark:hover:bg-[#333336] text-right"
+                className="cursor-pointer hover:bg-slate-200 dark:hover:bg-[#333336] text-right pr-4"
               >
                 {t('Remaining')} {sortConfig?.key === 'variance' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
               </ResizableHeader>
             )}
             {visibleColumns.includes('type') && (
-              <ResizableHeader width={colWidths.type} onResize={(w) => handleResize('type', w)}>{t('Type')}</ResizableHeader>
+              <ResizableHeader width={colWidths.type} onResize={(w) => handleResize('type', w)} className="pl-4">{t('Type')}</ResizableHeader>
             )}
             {visibleColumns.includes('note') && (
               <ResizableHeader width={colWidths.note} onResize={(w) => handleResize('note', w)}>{t('Note')}</ResizableHeader>

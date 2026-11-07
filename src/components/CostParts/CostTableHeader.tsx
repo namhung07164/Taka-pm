@@ -30,7 +30,7 @@ export const CostTableHeader = React.memo(function CostTableHeader({
           <ResizableHeader
             width={colWidths.no}
             onResize={(w) => handleResize('no', w)}
-            className="px-4 py-3 font-bold text-center"
+            className="px-2 py-3 font-bold text-center"
             hideable
             onHide={() => handleToggleColumn('no')}
           >

@@ -303,8 +303,8 @@ export default function App() {
               activeTab === "layout"
                 ? "p-0 pb-0 border-none shadow-none rounded-none"
                 : activeTab === "picture_mapping"
-                ? "p-1.5 sm:p-2.5 pb-2 sm:pb-2.5 rounded-xl shadow-sm border border-slate-200 dark:border-[#333336]"
-                : "p-4 lg:p-6 pb-20 lg:pb-6 rounded-xl shadow-sm border border-slate-200 dark:border-[#333336]"
+                ? "p-1.5 sm:p-2.5 pb-16 lg:pb-2.5 rounded-xl shadow-sm border border-slate-200 dark:border-[#333336]"
+                : "p-3 sm:p-4 lg:p-6 pb-24 lg:pb-14 rounded-xl shadow-sm border border-slate-200 dark:border-[#333336]"
             } transition-colors print:p-0 print:m-0 print:border-none print:shadow-none print:rounded-none print-content-wrapper ${
               isPrintPreview ? "print-preview-content-active" : ""
             }`}

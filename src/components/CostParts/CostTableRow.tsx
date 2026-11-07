@@ -96,7 +96,7 @@ export const CostTableRow = React.memo(function CostTableRow({
         )}
       >
         {visibleColumns.includes('no') && (
-          <td className="px-4 py-3 text-center">
+          <td className="px-2 py-3 text-center">
             <button
               onClick={() => toggleGroup(groupKey)}
               className={cn(

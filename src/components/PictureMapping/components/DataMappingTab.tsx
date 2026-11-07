@@ -252,21 +252,21 @@ export default React.memo(function DataMappingTab() {
         : "h-full relative"
     )}>
       <div className="relative z-10 px-0.5 py-0.5 shrink-0">
-        <div className="glass rounded-md py-0.5 px-1.5 border border-slate-800/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between bg-slate-950/90 backdrop-blur-xl gap-1">
+        <div className="glass rounded-md py-1 px-1.5 border border-slate-800/80 shadow-sm flex flex-wrap items-center justify-between bg-slate-950/90 backdrop-blur-xl gap-1 min-w-0">
           {/* Top Row on Mobile: Title & SubTab Switcher + Fullscreen */}
-          <div className="flex items-center justify-between sm:justify-start gap-1 w-full sm:w-auto">
-            <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center justify-between sm:justify-start gap-1 w-full sm:w-auto min-w-0">
+            <div className="flex items-center gap-1 flex-wrap min-w-0">
               <div className="w-4 h-4 bg-brand-600/20 border border-brand-500/30 rounded flex items-center justify-center text-brand-400 shrink-0">
                 <Split size={10} />
               </div>
-              <h3 className="text-[10px] font-bold italic serif tracking-wide text-white flex items-center gap-1 whitespace-nowrap">
-                Picture Mapping
-                <span id="data-mapping-toolbar-portal" className="flex items-center gap-0.5"></span>
+              <h3 className="text-[10px] font-bold italic serif tracking-wide text-white flex items-center gap-1 flex-wrap min-w-0">
+                <span className="whitespace-nowrap">Picture Mapping</span>
+                <span id="data-mapping-toolbar-portal" className="flex items-center gap-0.5 flex-wrap"></span>
               </h3>
             </div>
 
             {/* Sub-tab Selector & Fullscreen on Mobile Right */}
-            <div className="flex items-center gap-1 ml-auto sm:ml-0">
+            <div className="flex items-center gap-1 ml-auto sm:ml-0 shrink-0">
               <div className="flex bg-slate-900/70 p-0.5 rounded border border-slate-800/80">
                 <button
                   onClick={() => setActiveSubTab('edit')}
