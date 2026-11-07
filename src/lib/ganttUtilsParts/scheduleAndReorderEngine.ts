@@ -332,8 +332,64 @@ export function scheduleDependentTasks(updatedTask: Task, allTasks: Task[], proj
   return Array.from(updatesToApply.values());
 }
 
+export function isCyclic(
+  targetTaskId: string,
+  candidatePredecessor: Task,
+  allTasks: Task[],
+  projects: Project[]
+): boolean {
+  if (!targetTaskId || !candidatePredecessor?.id) return false;
+  if (targetTaskId === candidatePredecessor.id) return true;
+
+  const taskNoMap = buildTaskNoMap(projects, allTasks);
+  const taskById = new Map<string, Task>();
+  for (let i = 0; i < allTasks.length; i++) {
+    const t = allTasks[i];
+    if (t && !t.isDeleted) taskById.set(t.id, t);
+  }
+
+  const visited = new Set<string>();
+  const stack: Task[] = [candidatePredecessor];
+
+  while (stack.length > 0 && visited.size < 500) {
+    const cur = stack.pop()!;
+    if (cur.id === targetTaskId) return true;
+    if (visited.has(cur.id)) continue;
+    visited.add(cur.id);
+
+    if (cur.predecessor && cur.predecessor.trim()) {
+      try {
+        const parsed = parsePredecessors(cur.predecessor, taskNoMap, cur);
+        for (let i = 0; i < parsed.length; i++) {
+          const pt = parsed[i]?.task;
+          if (pt?.id) {
+            if (pt.id === targetTaskId) return true;
+            const fullTask = taskById.get(pt.id) || (pt as Task);
+            if (!visited.has(fullTask.id)) stack.push(fullTask);
+          }
+        }
+      } catch {
+        // Ignore malformed predecessor tokens during traversal
+      }
+    }
+
+    if (cur.predecessorTaskIds && cur.predecessorTaskIds.length > 0) {
+      for (let i = 0; i < cur.predecessorTaskIds.length; i++) {
+        const pid = cur.predecessorTaskIds[i];
+        if (!pid) continue;
+        if (pid === targetTaskId) return true;
+        const pt = taskById.get(pid);
+        if (pt && !visited.has(pt.id)) stack.push(pt);
+      }
+    }
+  }
+
+  return false;
+}
+
 export {
   type ReorderCalculationResult,
   reorderAndCalculateTasks,
 } from './ganttReorderSubEngine';
+
 

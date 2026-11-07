@@ -1234,4 +1234,24 @@ export declare function applyStemWorkbenchToProject(params: {
   userEmail?: string;
 }): Promise<{ createdTasks: Task[]; createdDelegationCount: number }>;
 
+// --- SOURCE: src/lib/ganttUtilsParts/scheduleAndReorderEngine.ts & src/components/Gantt/useGanttLinkDrag.ts ---
+export declare function isCyclic(
+  targetTaskId: string,
+  candidatePredecessor: Task,
+  allTasks: Task[],
+  projects: Project[]
+): boolean;
+
+export type GanttAnchorSide = 'start' | 'end';
+export declare function startGanttLinkDrag(
+  e: any,
+  params: {
+    taskId: string;
+    taskCode?: string;
+    taskName: string;
+    anchor: GanttAnchorSide;
+  }
+): void;
+
+
 

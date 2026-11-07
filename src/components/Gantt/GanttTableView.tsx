@@ -9,6 +9,7 @@ import { GanttTimelineHeader } from './GanttTimelineHeader';
 import { GanttGridOverlay } from './GanttGridOverlay';
 import { GanttTodayLine } from './GanttTodayLine';
 import { GanttDependencyLinks } from './GanttDependencyLinks';
+import { GanttDragLinkOverlay } from './GanttDragLinkOverlay';
 import { GanttSumBadge } from './GanttSumBadge';
 import { GanttExportOverlay } from './GanttExportOverlay';
 import { GanttEmptyState } from './GanttEmptyState';
@@ -445,6 +446,9 @@ export function GanttTableView({
       {isExporting && (
         <GanttExportOverlay />
       )}
+
+      {/* Interactive Drag-to-Link Predecessor Connector Overlay */}
+      <GanttDragLinkOverlay />
     </div>
   );
 }

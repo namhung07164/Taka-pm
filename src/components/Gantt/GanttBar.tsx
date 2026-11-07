@@ -4,6 +4,7 @@ import { positionTooltip, formatGanttDate } from './GanttUtils';
 import { Task, Project } from '../../types';
 import { GanttBarTooltip } from './GanttBarTooltip';
 import { useGanttBarDateDrag } from './useGanttBarDateDrag';
+import { startGanttLinkDrag } from './useGanttLinkDrag';
 
 export interface GanttBarProps {
   startStr: string | undefined;
@@ -173,9 +174,13 @@ export const GanttBar = React.memo(function GanttBar({
 
   const actProgress = extraVars?.actPrg ?? 0;
 
+  const canLinkTask = isEditMode && isTask && !isSimulation && extraVars?.canWrite !== false;
+
   return (
     <>
       <div
+        data-gantt-bar-task-id={isTask && !isSimulation ? rawTaskId : undefined}
+        data-gantt-bar-task-code={extraVars?.taskCode || undefined}
         onClick={(e) => {
           e.stopPropagation();
           lastMousePos.current = { x: e.clientX, y: e.clientY };
@@ -190,7 +195,7 @@ export const GanttBar = React.memo(function GanttBar({
         onMouseEnter={handleBarMouseEnter}
         onMouseLeave={handleBarMouseLeave}
         className={cn(
-          "gantt-bar absolute flex items-center transition-shadow cursor-pointer select-none group shadow-2xs before:absolute before:-inset-y-1.5 before:-inset-x-1 before:content-['']",
+          "gantt-bar absolute flex items-center transition-shadow cursor-pointer select-none group shadow-2xs before:absolute before:-inset-y-1.5 before:-inset-x-4 before:content-['']",
           isMilestone
             ? "top-1/2 -translate-y-1/2 -ml-[7px] w-3.5 h-3.5 rotate-45 rounded-[2px] shadow-md z-20"
             : "top-1.5 bottom-1.5 h-6 rounded-md",
@@ -208,6 +213,48 @@ export const GanttBar = React.memo(function GanttBar({
           ...(customColor && !isMilestone ? { backgroundColor: customColor, borderColor: customColor } : {})
         }}
       >
+        {/* Left Anchor Dot (Start Link Handle: Drag for SS/SF or Drop for FS/SS) */}
+        {canLinkTask && !isMilestone && (
+          <div
+            data-gantt-anchor="start"
+            data-gantt-task-id={rawTaskId}
+            onPointerDown={(e) =>
+              startGanttLinkDrag(e, {
+                taskId: rawTaskId,
+                taskCode: extraVars?.taskCode,
+                taskName: label,
+                anchor: 'start',
+              })
+            }
+            onClick={(e) => e.stopPropagation()}
+            title="Start Anchor: Drag to link (SS / SF) or drop here to connect to Start"
+            className="gantt-anchor-dot absolute -left-3 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white dark:bg-slate-900 border-2 border-blue-500 hover:border-emerald-500 hover:bg-emerald-500 hover:scale-125 shadow-md z-40 cursor-crosshair opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 [[data-gantt-linking=true]_&]:opacity-100 [[data-gantt-linking=true]_&]:scale-100 transition-all duration-150 flex items-center justify-center"
+          >
+            <span className="w-1 h-1 rounded-full bg-blue-500 group-hover:bg-white pointer-events-none" />
+          </div>
+        )}
+
+        {/* Right Anchor Dot (Finish Link Handle: Drag for FS/FF or Drop for FF/SF) */}
+        {canLinkTask && !isMilestone && (
+          <div
+            data-gantt-anchor="end"
+            data-gantt-task-id={rawTaskId}
+            onPointerDown={(e) =>
+              startGanttLinkDrag(e, {
+                taskId: rawTaskId,
+                taskCode: extraVars?.taskCode,
+                taskName: label,
+                anchor: 'end',
+              })
+            }
+            onClick={(e) => e.stopPropagation()}
+            title="Finish Anchor: Drag to link (FS / FF) or drop here to connect to Finish"
+            className="gantt-anchor-dot absolute -right-3 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white dark:bg-slate-900 border-2 border-blue-500 hover:border-emerald-500 hover:bg-emerald-500 hover:scale-125 shadow-md z-40 cursor-crosshair opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 [[data-gantt-linking=true]_&]:opacity-100 [[data-gantt-linking=true]_&]:scale-100 transition-all duration-150 flex items-center justify-center"
+          >
+            <span className="w-1 h-1 rounded-full bg-blue-500 group-hover:bg-white pointer-events-none" />
+          </div>
+        )}
+
         {/* Left Resize Handle for Start Date */}
         {isEditMode && isTask && !isMilestone && (
           <div
@@ -263,8 +310,8 @@ export const GanttBar = React.memo(function GanttBar({
           }
           return (
             <div
-              className="absolute top-1/2 -translate-y-1/2 flex items-center gap-1 whitespace-nowrap pointer-events-none z-20 px-1 py-0.5 rounded bg-white/90 dark:bg-[#1e1e20]/90 text-[10px] font-bold text-slate-800 dark:text-slate-200 leading-none shadow-2xs"
-              style={{ left: `${widthPx + 4}px` }}
+              className="absolute top-1/2 -translate-y-1/2 flex items-center gap-1 whitespace-nowrap pointer-events-none z-20 px-1 py-0.5 rounded bg-white/90 dark:bg-[#1e1e20]/90 text-[10px] font-bold text-slate-800 dark:text-slate-200 leading-none shadow-2xs transition-all"
+              style={{ left: `${canLinkTask ? widthPx + 14 : widthPx + 4}px` }}
             >
               <span>{label}</span>
               {actProgress > 0 && (
