@@ -268,6 +268,8 @@ export function useGanttDragReorder({
     // Save to Firestore in batch with dirty-checking to eliminate redundant writes
     const batch = writeBatch(db);
     let writeCount = 0;
+    const prevTasksForUndo: Task[] = [];
+    const nextTasksForRedo: Task[] = [];
 
     allUpdatedTasks.forEach(t => {
       const orig = tasks.find(o => o.id === t.id);
@@ -281,6 +283,8 @@ export function useGanttDragReorder({
       const parentChanged = orig ? (orig.parentTaskId || null) !== (t.parentTaskId || null) : true;
 
       if (isNew || orderChanged || orderIndexChanged || codeChanged || predChanged || parentChanged) {
+        if (orig) prevTasksForUndo.push(orig);
+        nextTasksForRedo.push(t);
         const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
         batch.update(docRef, {
           order: (t as any).order,
@@ -298,6 +302,17 @@ export function useGanttDragReorder({
     if (writeCount > 0) {
       try {
         await batch.commit();
+        const { undoManager } = await import('../../lib/undoManager');
+        const { restoreTasksSnapshot } = await import('../../lib/undoStateHelpers');
+        undoManager.push({
+          description: `Reorder Task: ${draggedTask.name}`,
+          revert: async () => {
+            await restoreTasksSnapshot({ tasksToRestore: prevTasksForUndo });
+          },
+          redo: async () => {
+            await restoreTasksSnapshot({ tasksToRestore: nextTasksForRedo });
+          },
+        });
         useAppStore.getState().setToast({
           title: "Success",
           message: `Reordered task ${draggedTask.name}`

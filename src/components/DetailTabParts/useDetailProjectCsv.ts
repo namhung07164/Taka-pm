@@ -261,38 +261,23 @@ export function useDetailProjectCsv({ filteredProjects, projects }: UseDetailPro
           await executeMassBatchOperations(writeOps, { suppressAutoDelta: true });
           await recordBatchDeltas(deltaItems);
 
+          const prevProjsList = Array.from(previousStates.values());
+          const createdProjIdsList = Array.from(newIds);
           undoManager.push({
-            description: 'Import Projects',
+            description: `Import Projects (${importCount} projects)`,
             revert: async () => {
-              const revertOps: MassWriteOp[] = [];
-              previousStates.forEach((oldData, id) => {
-                const toSave = { ...oldData };
-                delete toSave.computedTakStart;
-                delete toSave.computedTakCompl;
-                delete toSave.computedOpening;
-                delete toSave.id;
-                revertOps.push({
-                  collectionName: 'taka_projects',
-                  docId: id,
-                  action: 'set',
-                  data: toSave,
-                  merge: false,
-                });
+              const { restoreProjectsSnapshot } = await import('../../lib/undoStateHelpers');
+              await restoreProjectsSnapshot({
+                projectsToRestore: prevProjsList,
+                projectIdsToDelete: createdProjIdsList,
               });
-              newIds.forEach(id => {
-                revertOps.push({
-                  collectionName: 'taka_projects',
-                  docId: id,
-                  action: 'delete',
-                });
+            },
+            redo: async () => {
+              const { restoreProjectsSnapshot } = await import('../../lib/undoStateHelpers');
+              await restoreProjectsSnapshot({
+                projectsToRestore: touchedList,
               });
-              try {
-                await executeMassBatchOperations(revertOps);
-              } catch (error: any) {
-                console.error("Batch commit failed", error);
-                useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
-              }
-            }
+            },
           });
         }
         

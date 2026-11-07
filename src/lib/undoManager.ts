@@ -47,6 +47,8 @@ export const logUserAction = async (description: string) => {
   }
 };
 
+let isExecutingUndoRedo = false;
+
 export const undoManager = {
   startBatch: (description: string) => {
     if (currentBatch) {
@@ -109,24 +111,41 @@ export const undoManager = {
   },
 
   pop: async () => {
+    if (isExecutingUndoRedo || stack.length === 0) return;
     const action = stack.pop();
     if (action) {
+      isExecutingUndoRedo = true;
       notify();
       try {
         await action.revert();
         redoStack.push(action);
         if (redoStack.length > MAX_UNDO_STACK) redoStack.shift();
         notify();
+        import("../store/useAppStore")
+          .then(({ useAppStore }) => {
+            useAppStore.getState().setToast({
+              title: "Undone",
+              message: action.description,
+              type: "info",
+            });
+          })
+          .catch(() => {});
         logUserAction(`Undo: ${action.description}`);
       } catch (e) {
         console.error("Failed to revert action:", e);
+        stack.push(action);
+        notify();
+      } finally {
+        isExecutingUndoRedo = false;
       }
     }
   },
 
   redo: async () => {
+    if (isExecutingUndoRedo || redoStack.length === 0) return;
     const action = redoStack.pop();
     if (action) {
+      isExecutingUndoRedo = true;
       notify();
       try {
         if (action.redo) {
@@ -135,15 +154,28 @@ export const undoManager = {
         stack.push(action);
         if (stack.length > MAX_UNDO_STACK) stack.shift();
         notify();
+        import("../store/useAppStore")
+          .then(({ useAppStore }) => {
+            useAppStore.getState().setToast({
+              title: "Redone",
+              message: action.description,
+              type: "info",
+            });
+          })
+          .catch(() => {});
         logUserAction(`Redo: ${action.description}`);
       } catch (e) {
         console.error("Failed to redo action:", e);
+        redoStack.push(action);
+        notify();
+      } finally {
+        isExecutingUndoRedo = false;
       }
     }
   },
 
-  canUndo: () => stack.length > 0,
-  canRedo: () => redoStack.length > 0,
+  canUndo: () => stack.length > 0 && !isExecutingUndoRedo,
+  canRedo: () => redoStack.length > 0 && !isExecutingUndoRedo,
 
   getStack: () => stack,
   getRedoStack: () => redoStack,
@@ -152,6 +184,7 @@ export const undoManager = {
     stack = [];
     redoStack = [];
     currentBatch = null;
+    isExecutingUndoRedo = false;
     notify();
   },
 

@@ -9,7 +9,8 @@ import { isTaskBelongsToProject as isTaskBelongsToProjectCore } from '../utils';
  */
 export async function deleteProjectStateUnified(
   projectIdOrCode: string,
-  projectObj?: Project
+  projectObj?: Project,
+  options?: { skipUndo?: boolean }
 ): Promise<void> {
   if (!projectIdOrCode) return;
 
@@ -304,6 +305,28 @@ export async function deleteProjectStateUnified(
     recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username).catch(() => {});
   } catch (err) {
     console.error('[taskStateService] deleteProjectStateUnified Firestore batch commit failed:', err);
+  }
+
+  if (!options?.skipUndo && targetProject) {
+    const { undoManager } = await import('../undoManager');
+    const { restoreProjectsSnapshot } = await import('../undoStateHelpers');
+    const realRelatedTasks = allRelatedTasks.filter(
+      (t) => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary
+    );
+    undoManager.push({
+      description: `Delete Project: ${targetProject.code || pId}`,
+      revert: async () => {
+        await restoreProjectsSnapshot({
+          projectsToRestore: [targetProject],
+          tasksToRestore: realRelatedTasks,
+          costsToRestore: relatedCosts,
+          delegationsToRestore: relatedDelegations,
+        });
+      },
+      redo: async () => {
+        await deleteProjectStateUnified(pId, targetProject, { skipUndo: true });
+      },
+    });
   }
 }
 

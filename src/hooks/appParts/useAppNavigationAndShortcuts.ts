@@ -382,6 +382,11 @@ export function useAppNavigationAndShortcuts({
   };
 
   const handleDataUndo = async () => {
+    if (undoStack.length > 0 || undoManager.getStack().length > 0) {
+      await undoManager.pop();
+      return;
+    }
+
     if (activeTab === "detail" && detailTabFocusTaskId) {
       const prev = tabHistory.length > 0 ? tabHistory[tabHistory.length - 1] : "gantt";
       setTabHistory((h) => h.slice(0, -1));
@@ -395,9 +400,7 @@ export function useAppNavigationAndShortcuts({
       window.dispatchEvent(new CustomEvent("taka_clear_delegation_focus"));
     }
 
-    if (undoStack.length > 0) {
-      await undoManager.pop();
-    } else if (tabHistory.length > 0) {
+    if (tabHistory.length > 0) {
       const prev = tabHistory[tabHistory.length - 1];
       setTabHistory((h) => h.slice(0, -1));
       if (activeTab === "detail") {

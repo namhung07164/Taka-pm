@@ -107,21 +107,32 @@ export function offloadTaskInlineBatchCommit({
     }
   }, 0);
 
+  const previousTasksSnapshot: Task[] = [
+    t,
+    ...updatesToDependents
+      .map((depTask) => latestTasks.find((tsk) => tsk.id === depTask.id))
+      .filter((item): item is Task => Boolean(item)),
+  ];
+  const newTasksSnapshot: Task[] = allUpdatesToSave.map((u) => {
+    const base = u.id === newT.id ? newT : latestTasks.find((tsk) => tsk.id === u.id) || t;
+    return { ...base, ...u } as Task;
+  });
+
   undoManager.push({
-    description: `Update Task Schedule: ${t.name}`,
+    description: `Update Task: ${newT.name || t.name}`,
     revert: async () => {
-      const revertBatch = writeBatch(db);
-      revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
-      updatesToDependents.forEach((depTask) => {
-        const originalDep = latestTasks.find((tsk) => tsk.id === depTask.id);
-        if (originalDep) {
-          revertBatch.set(
-            doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id),
-            originalDep
-          );
-        }
+      const { restoreTasksSnapshot } = await import('../undoStateHelpers');
+      await restoreTasksSnapshot({
+        tasksToRestore: previousTasksSnapshot,
+        delegationIdsToDelete: newDelegations.map((d) => d.id),
       });
-      revertBatch.commit().catch(console.error);
+    },
+    redo: async () => {
+      const { restoreTasksSnapshot } = await import('../undoStateHelpers');
+      await restoreTasksSnapshot({
+        tasksToRestore: newTasksSnapshot,
+        delegationsToRestore: newDelegations,
+      });
     },
   });
 }

@@ -317,15 +317,28 @@ export function useProjectModalMutations({
           });
         }
 
+        const savedProjectObj: Project = {
+          ...(project || {}),
+          ...dataToSave,
+          isDeleted: false,
+          id: project?.id || docId,
+          updatedAt: new Date().toISOString(),
+        } as Project;
+
         undoManager.push({
           description: project ? `Update Project: ${formData.code}` : `Create Project: ${formData.code}`,
           revert: async () => {
+            const { restoreProjectsSnapshot } = await import('../../lib/undoStateHelpers');
             if (project) {
-              setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId), project, { merge: true });
+              await restoreProjectsSnapshot({ projectsToRestore: [project] });
             } else {
-              deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId));
+              await restoreProjectsSnapshot({ projectIdsToDelete: [docId] });
             }
-          }
+          },
+          redo: async () => {
+            const { restoreProjectsSnapshot } = await import('../../lib/undoStateHelpers');
+            await restoreProjectsSnapshot({ projectsToRestore: [savedProjectObj] });
+          },
         });
       }
       syncProjectSizeToUnits({

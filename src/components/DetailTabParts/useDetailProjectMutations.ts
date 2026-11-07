@@ -211,40 +211,46 @@ export function useDetailProjectMutations({
           useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
         });
         
+        const updatedProjectObj: Project = { ...p, ...dataToSave, id: p.id, updatedAt: new Date().toISOString() };
+        const modifiedTaskIds = new Set<string>([
+          ...Array.from(taskUpdates.keys()),
+          ...predecessorUpdates.map((pu) => pu.id),
+        ]);
+        const prevTasksForUndo = tasks.filter((t) => modifiedTaskIds.has(t.id));
+        const nextTasksForRedo = updatedTasks.filter((t) => modifiedTaskIds.has(t.id));
+        const nextCostsForRedo = relatedCosts.map((c) => ({
+          ...c,
+          projectCode: projectCodeUpdate,
+          projectYear: projectYearUpdate,
+          projectStore: projectStoreUpdate,
+          updatedAt: new Date().toISOString(),
+        }));
+
         undoManager.push({
           description: `Update Project Identity: ${p.code}(${p.year || ''}) -> ${projectCodeUpdate}(${projectYearUpdate || ''})`,
           revert: async () => {
-            const revertBatch = writeBatch(db);
-            revertBatch.set(pRef, p);
-            relatedTasks.forEach(t => {
-              const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-              revertBatch.update(tRef, { 
-                projectCode: p.code, 
-                projectYear: p.year,
-                projectStore: p.store,
-                ...(t.taskCodePhu !== undefined ? { taskCodePhu: t.taskCodePhu } : {}),
-                ...(t.predecessor !== undefined ? { predecessor: t.predecessor } : {})
-              });
+            const { restoreProjectsSnapshot } = await import('../../lib/undoStateHelpers');
+            await restoreProjectsSnapshot({
+              projectsToRestore: [p],
+              tasksToRestore: prevTasksForUndo,
+              costsToRestore: relatedCosts,
             });
-            predecessorUpdates.forEach(pu => {
-              if (!relatedTaskIds.has(pu.id)) {
-                const originalTask = tasks.find(st => st.id === pu.id);
-                revertBatch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), {
-                  predecessor: originalTask?.predecessor || ''
-                });
-              }
+          },
+          redo: async () => {
+            const { restoreProjectsSnapshot } = await import('../../lib/undoStateHelpers');
+            await restoreProjectsSnapshot({
+              projectsToRestore: [updatedProjectObj],
+              tasksToRestore: nextTasksForRedo,
+              costsToRestore: nextCostsForRedo,
             });
-            relatedCosts.forEach(c => {
-              const cRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id);
-              revertBatch.update(cRef, { projectCode: p.code, projectYear: p.year, projectStore: p.store });
-            });
-            revertBatch.commit().catch(console.error);
-          }
+          },
         });
       } else {
         const docId = p.id || p.id!;
         const pRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId);
-        const dataToSave = { ...p, [field]: value, updatedAt: new Date().toISOString() };
+        const nowIso = new Date().toISOString();
+        const updatedProjectObj: Project = { ...p, [field]: value, updatedAt: nowIso };
+        const dataToSave = { ...updatedProjectObj };
         
         // Preserve computed fields and summaries on p
         if (p.computedTakStart && !dataToSave.computedTakStart) dataToSave.computedTakStart = p.computedTakStart;
@@ -260,6 +266,12 @@ export function useDetailProjectMutations({
             delete (dataToSave as any)[key];
           }
         });
+
+        // 0ms Optimistic UI update
+        const storeProjects = useAppStore.getState().projects || projects;
+        useAppStore.getState().setProjects(
+          storeProjects.map((proj) => (proj.id === p.id ? updatedProjectObj : proj))
+        );
         
         const batch = writeBatch(db);
         batch.set(pRef, dataToSave, { merge: true });
@@ -310,8 +322,13 @@ export function useDetailProjectMutations({
         undoManager.push({
           description: `Update Project: ${p.code}`,
           revert: async () => {
-            setDoc(pRef, p);
-          }
+            const { restoreProjectsSnapshot } = await import('../../lib/undoStateHelpers');
+            await restoreProjectsSnapshot({ projectsToRestore: [p] });
+          },
+          redo: async () => {
+            const { restoreProjectsSnapshot } = await import('../../lib/undoStateHelpers');
+            await restoreProjectsSnapshot({ projectsToRestore: [updatedProjectObj] });
+          },
         });
       }
     } catch (e) {

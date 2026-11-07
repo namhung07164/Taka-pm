@@ -126,6 +126,22 @@ export async function executeSortSubTasks(
       message: "Subtasks sorted and predecessors re-indexed.",
       type: "success"
     });
+
+    if (updatesPerTask.size > 0) {
+      const prevModified = scopedOldTasks.filter((t) => updatesPerTask.has(t.id));
+      const nextModified = scopedFinalTasks.filter((t) => updatesPerTask.has(t.id));
+      const { undoManager } = await import('../../lib/undoManager');
+      const { restoreTasksSnapshot } = await import('../../lib/undoStateHelpers');
+      undoManager.push({
+        description: `Sort Subtasks: ${p.code}`,
+        revert: async () => {
+          await restoreTasksSnapshot({ tasksToRestore: prevModified });
+        },
+        redo: async () => {
+          await restoreTasksSnapshot({ tasksToRestore: nextModified });
+        },
+      });
+    }
   } catch (error) {
     console.error(error);
   }
@@ -221,6 +237,23 @@ export async function executeMoveTask(
 
     // 0ms Optimistic UI update in Zustand
     reorderTasksStateUnified(allUpdatedTasks, { affectedProjectIds: [p.id] });
+
+    if (updatesPerTask.size > 0) {
+      const prevModified = scopedOldTasks.filter((t) => updatesPerTask.has(t.id));
+      const nextModified = scopedFinalTasks.filter((t) => updatesPerTask.has(t.id));
+      import('../../lib/undoManager').then(async ({ undoManager }) => {
+        const { restoreTasksSnapshot } = await import('../../lib/undoStateHelpers');
+        undoManager.push({
+          description: `Move Task ${direction === 'up' ? 'Up' : 'Down'}: ${movedTask.name}`,
+          revert: async () => {
+            await restoreTasksSnapshot({ tasksToRestore: prevModified });
+          },
+          redo: async () => {
+            await restoreTasksSnapshot({ tasksToRestore: nextModified });
+          },
+        });
+      }).catch(() => {});
+    }
 
     setTimeout(() => {
       try {

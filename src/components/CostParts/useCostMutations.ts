@@ -106,8 +106,12 @@ export function useCostMutations({
         undoManager.push({
           description: `Add Cost to ${project.code} (${derivedYear})`,
           revert: async () => {
-            useAppStore.getState().optimisticDeleteCosts([newCost.id]);
-            deleteDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', newCost.id));
+            const { restoreCostsSnapshot } = await import('../../lib/undoStateHelpers');
+            await restoreCostsSnapshot({ costIdsToDelete: [newCost.id] });
+          },
+          redo: async () => {
+            const { restoreCostsSnapshot } = await import('../../lib/undoStateHelpers');
+            await restoreCostsSnapshot({ costsToRestore: [newCost] });
           },
         });
       } catch (e) {
@@ -163,10 +167,14 @@ export function useCostMutations({
           });
 
           undoManager.push({
-            description: `Delete Cost`,
+            description: `Delete Cost: ${c.description || c.projectCode}`,
             revert: async () => {
-              useAppStore.getState().optimisticUpdateCosts([c]);
-              setDoc(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id), c);
+              const { restoreCostsSnapshot } = await import('../../lib/undoStateHelpers');
+              await restoreCostsSnapshot({ costsToRestore: [c] });
+            },
+            redo: async () => {
+              const { restoreCostsSnapshot } = await import('../../lib/undoStateHelpers');
+              await restoreCostsSnapshot({ costIdsToDelete: [c.id] });
             },
           });
         } catch (e) {
@@ -225,6 +233,17 @@ export function useCostMutations({
             isUpdate: false,
             debounceMs: 100,
             year: c.projectYear !== undefined ? String(c.projectYear) : undefined,
+          });
+        },
+        redo: async () => {
+          useAppStore.getState().optimisticUpdateCosts([newCostData]);
+          queueCoalescedMutation({
+            collectionPath: 'taka_costs',
+            docId: c.id,
+            data: newCostData as Record<string, any>,
+            isUpdate: false,
+            debounceMs: 100,
+            year: newCostData.projectYear !== undefined ? String(newCostData.projectYear) : undefined,
           });
         },
       });

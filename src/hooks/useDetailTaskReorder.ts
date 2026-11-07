@@ -226,6 +226,29 @@ export function useDetailTaskReorder({
         affectedProjectIds: Array.from(affectedProjectIdsSet),
       });
 
+      const changedIds = new Set<string>([
+        ...result.taskUpdates.map((tu) => tu.id),
+        ...result.predecessorUpdates.map((pu) => pu.id),
+      ]);
+      const prevTasksForUndo = currentRealTasks.filter((t) => changedIds.has(t.id));
+      const nextTasksForRedo = result.allUpdatedTasks.filter((t) => changedIds.has(t.id));
+      if (prevTasksForUndo.length > 0) {
+        import('../lib/undoManager')
+          .then(async ({ undoManager }) => {
+            const { restoreTasksSnapshot } = await import('../lib/undoStateHelpers');
+            undoManager.push({
+              description: `Reorder ${tasksToMoveIds.length} Task(s)`,
+              revert: async () => {
+                await restoreTasksSnapshot({ tasksToRestore: prevTasksForUndo });
+              },
+              redo: async () => {
+                await restoreTasksSnapshot({ tasksToRestore: nextTasksForRedo });
+              },
+            });
+          })
+          .catch(() => {});
+      }
+
       // Clear selection so newly positioned tasks don't drag unintended items next
       setSelectedTaskIds(new Set());
 

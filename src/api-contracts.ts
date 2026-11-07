@@ -908,11 +908,37 @@ export declare function reorderTasksStateUnified(
 ): Promise<void>;
 
 export declare function deleteTaskStateUnified(
-  taskId: string,
-  options?: { projectId?: string; syncProjects?: boolean }
+  taskIdsOrTasks: (string | Task)[],
+  options?: { syncProjects?: boolean; skipUndo?: boolean }
 ): Promise<void>;
 
-export declare function deleteProjectStateUnified(projectId: string): Promise<void>;
+export declare function deleteProjectStateUnified(
+  projectIdOrCode: string,
+  projectObj?: Project,
+  options?: { skipUndo?: boolean }
+): Promise<void>;
+
+// --- SOURCE: src/lib/undoStateHelpers.ts ---
+export declare function restoreTasksSnapshot(params: {
+  tasksToRestore?: Task[];
+  taskIdsToDelete?: string[];
+  delegationsToRestore?: DelegationGroup[];
+  delegationIdsToDelete?: string[];
+}): Promise<void>;
+
+export declare function restoreProjectsSnapshot(params: {
+  projectsToRestore?: Project[];
+  projectIdsToDelete?: string[];
+  tasksToRestore?: Task[];
+  costsToRestore?: Cost[];
+  delegationsToRestore?: DelegationGroup[];
+}): Promise<void>;
+
+export declare function restoreCostsSnapshot(params: {
+  costsToRestore?: Cost[];
+  costIdsToDelete?: string[];
+  projectBudgetMap?: Map<string, number | undefined>;
+}): Promise<void>;
 
 // --- SOURCE: src/lib/financialAtomicService.ts ---
 export declare function saveCostWithAtomicSummary(

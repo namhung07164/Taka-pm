@@ -22,7 +22,7 @@ export function useBudgetMutations({ projects }: UseBudgetMutationsParams) {
       currentProjects.map(item => item.id === p.id ? { ...item, [field]: value } : item)
     );
 
-    // Register undo
+    // Register undo & redo
     undoManager.push({
       description: `Update ${field} on project ${p.code}`,
       revert: async () => {
@@ -35,6 +35,18 @@ export function useBudgetMutations({ projects }: UseBudgetMutationsParams) {
           await writeBatch(db).update(docRef, { [field]: prevValue, updatedAt: new Date().toISOString() }).commit();
         } catch (err) {
           console.error('Failed to revert project update', err);
+        }
+      },
+      redo: async () => {
+        const projs = useAppStore.getState().projects;
+        useAppStore.getState().setProjects(
+          projs.map(item => item.id === p.id ? { ...item, [field]: value } : item)
+        );
+        try {
+          const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', docId);
+          await writeBatch(db).update(docRef, { [field]: value, updatedAt: new Date().toISOString() }).commit();
+        } catch (err) {
+          console.error('Failed to redo project update', err);
         }
       }
     });
@@ -104,7 +116,7 @@ export function useBudgetMutations({ projects }: UseBudgetMutationsParams) {
       type: "success"
     });
 
-    // 4. Register Undo action
+    // 4. Register Undo & Redo action
     undoManager.push({
       description: parentCode ? `Link ${childProject.code} to ${parentCode}` : `Unlink ${childProject.code}`,
       revert: async () => {
@@ -122,6 +134,25 @@ export function useBudgetMutations({ projects }: UseBudgetMutationsParams) {
           await writeBatch(db).set(cRef, { parentId: prevParentId, updatedAt: new Date().toISOString() }, { merge: true }).commit();
         } catch (err) {
           console.error("Revert link failed", err);
+        }
+      },
+      redo: async () => {
+        const reapplyingProjects = useAppStore.getState().projects.map(p => {
+          const pCode = String(p.code || '').trim().toUpperCase();
+          const isTargetChild = (childId && p.id === childId) || pCode === childCode;
+          const isDescendant = parentCode && allDescendantCodes.has(pCode);
+          if (isTargetChild || isDescendant) {
+            return { ...p, parentId: parentCode, updatedAt: new Date().toISOString() };
+          }
+          return p;
+        });
+        useAppStore.getState().setProjects(reapplyingProjects);
+        try {
+          const cDocId = childProject.id || String(childProject.no);
+          const cRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_projects', cDocId);
+          await writeBatch(db).set(cRef, { parentId: parentCode, updatedAt: new Date().toISOString() }, { merge: true }).commit();
+        } catch (err) {
+          console.error("Redo link failed", err);
         }
       }
     });

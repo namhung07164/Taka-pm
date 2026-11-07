@@ -31,30 +31,6 @@ export function useDetailTaskMutations({
       onConfirm: async () => {
         try {
           await deleteTaskStateUnified([t]);
-
-          undoManager.push({
-            description: `Delete Task: ${t.name}`,
-            revert: async () => {
-              const { doc } = await import('firebase/firestore');
-              const { writeBatch } = await import('../../lib/firestoreWrites');
-              const { db, APP_ID } = await import('../../lib/firebase');
-              const revertBatch = writeBatch(db);
-              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id), t);
-
-              const storeDelegations = useAppStore.getState().delegationGroups || [];
-              const relatedDelGroups = storeDelegations.filter(
-                (d) => d.parentTaskId === t.id || d.id === `del_${t.id}`
-              );
-              relatedDelGroups.forEach((d) => {
-                revertBatch.set(
-                  doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_delegation_groups', d.id),
-                  d
-                );
-              });
-
-              revertBatch.commit().catch(console.error);
-            },
-          });
         } catch (e) {
           console.error(e);
         }

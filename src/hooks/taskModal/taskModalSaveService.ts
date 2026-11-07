@@ -429,31 +429,45 @@ export async function executeTaskSave({
           syncProjectDatesByCode(task.projectCode, task.projectStore, task.projectYear, allTasksCurrent, oldProjId);
         }
 
+        const prevNeighborTasks: Task[] = [];
+        const seenNeighborIds = new Set<string>();
+        depUpdates.forEach((depTask) => {
+          const orig = tasks.find((tsk) => tsk.id === depTask.id);
+          if (orig && !seenNeighborIds.has(orig.id)) {
+            seenNeighborIds.add(orig.id);
+            prevNeighborTasks.push(orig);
+          }
+        });
+        predecessorUpdates.forEach((pu) => {
+          const orig = tasks.find((tk) => tk.id === pu.id);
+          if (orig && !seenNeighborIds.has(orig.id)) {
+            seenNeighborIds.add(orig.id);
+            prevNeighborTasks.push(orig);
+          }
+        });
+
+        const redoTasksSnapshot: Task[] = optimisticList.map((item) => {
+          const prev = tasks.find((t) => t.id === item.id);
+          return (prev ? { ...prev, ...item } : item) as Task;
+        });
+
         undoManager.push({
           description: task ? `Update Task: ${formData.name}` : `Create Task: ${formData.name}`,
           revert: async () => {
-            const revertBatch = writeBatch(db);
-            if (task) {
-              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), { ...task, updatedAt: new Date().toISOString() });
-            } else {
-              revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', id), { isDeleted: true, updatedAt: new Date().toISOString() }, { merge: true });
-            }
-            depUpdates.forEach(depTask => {
-              const originalDep = tasks.find(tsk => tsk.id === depTask.id);
-              if (originalDep) {
-                revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', depTask.id), originalDep);
-              }
+            const { restoreTasksSnapshot } = await import('../../lib/undoStateHelpers');
+            await restoreTasksSnapshot({
+              tasksToRestore: task ? [task, ...prevNeighborTasks] : prevNeighborTasks,
+              taskIdsToDelete: task ? [] : [id],
+              delegationIdsToDelete: newDelegations.map((d) => d.id),
             });
-            predecessorUpdates.forEach(pu => {
-              if (!mappedDepUpdates.has(pu.id)) {
-                const originalTask = tasks.find(tk => tk.id === pu.id);
-                if (originalTask) {
-                  revertBatch.update(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', originalTask.id), { predecessor: originalTask.predecessor || '' });
-                }
-              }
+          },
+          redo: async () => {
+            const { restoreTasksSnapshot } = await import('../../lib/undoStateHelpers');
+            await restoreTasksSnapshot({
+              tasksToRestore: redoTasksSnapshot,
+              delegationsToRestore: newDelegations,
             });
-            revertBatch.commit().catch(console.error);
-          }
+          },
         });
       } catch (error: any) {
         console.error("Background task save failed:", error);

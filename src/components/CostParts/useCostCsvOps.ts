@@ -354,37 +354,27 @@ export function useCostCsvOps({
           await executeMassBatchOperations(writeOps, { suppressAutoDelta: true });
           await recordBatchDeltas(deltaItems);
 
+          const prevCostsList = Array.from(previousStates.values());
+          const createdCostIdsList = Array.from(newIds);
+          const redoBudgetMap = new Map<string, number | undefined>();
+          updatedProjectBudgets.forEach((v, k) => redoBudgetMap.set(k, v.budget));
+
           undoManager.push({
             description: `Import Costs (${importCount} entries)`,
             revert: async () => {
-              const revertOps: MassWriteOp[] = [];
-              newIds.forEach((id) => {
-                revertOps.push({
-                  collectionName: 'taka_costs',
-                  docId: id,
-                  action: 'delete',
-                });
+              const { restoreCostsSnapshot } = await import('../../lib/undoStateHelpers');
+              await restoreCostsSnapshot({
+                costsToRestore: prevCostsList,
+                costIdsToDelete: createdCostIdsList,
+                projectBudgetMap: previousProjectBudgets,
               });
-              previousStates.forEach((oldData, id) => {
-                revertOps.push({
-                  collectionName: 'taka_costs',
-                  docId: id,
-                  action: 'set',
-                  data: oldData,
-                  merge: false,
-                });
+            },
+            redo: async () => {
+              const { restoreCostsSnapshot } = await import('../../lib/undoStateHelpers');
+              await restoreCostsSnapshot({
+                costsToRestore: touchedCostsList,
+                projectBudgetMap: redoBudgetMap,
               });
-              previousProjectBudgets.forEach((oldBudget, projectNo) => {
-                revertOps.push({
-                  collectionName: 'taka_projects',
-                  docId: projectNo,
-                  action: 'update',
-                  data: { budget: oldBudget || 0, updatedAt: new Date().toISOString() },
-                });
-              });
-              await executeMassBatchOperations(revertOps).catch((e) =>
-                console.error('Batch commit undo failed', e)
-              );
             },
           });
         }

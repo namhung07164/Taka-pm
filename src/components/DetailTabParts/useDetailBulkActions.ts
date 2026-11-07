@@ -212,12 +212,36 @@ export function useDetailBulkActions({
           saveTaskStateUnified(updatedTasksList);
         }
 
+        const prevSelectedTasks = updatedTasksList
+          .map((u) => tasks.find((t) => t.id === u.id))
+          .filter((item): item is Task => Boolean(item));
+        const nextSelectedTasks = updatedTasksList
+          .map((u) => {
+            const orig = tasks.find((t) => t.id === u.id);
+            return orig ? ({ ...orig, ...u } as Task) : null;
+          })
+          .filter((item): item is Task => Boolean(item));
+
         try {
           await batch.commit();
         } catch (error: any) {
           console.error("Batch commit failed", error);
           useAppStore.getState().setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
           return;
+        }
+
+        if (prevSelectedTasks.length > 0) {
+          const { undoManager } = await import('../../lib/undoManager');
+          const { restoreTasksSnapshot } = await import('../../lib/undoStateHelpers');
+          undoManager.push({
+            description: `Bulk ${action.replace('_', ' ')} (${updateCount} tasks)`,
+            revert: async () => {
+              await restoreTasksSnapshot({ tasksToRestore: prevSelectedTasks });
+            },
+            redo: async () => {
+              await restoreTasksSnapshot({ tasksToRestore: nextSelectedTasks });
+            },
+          });
         }
 
         useAppStore.getState().setToast({ title: "Success", message: `Successfully updated ${updateCount} tasks.` });

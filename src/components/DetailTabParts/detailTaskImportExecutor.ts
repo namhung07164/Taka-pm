@@ -1,6 +1,5 @@
 import { Task, Project, AppUser } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { executeMassBatchOperations, MassWriteOp } from '../../lib/massBatchWriteEngine';
 import { undoManager } from '../../lib/undoManager';
 import { formatToDatetimeLocal, getDefaultDatetimeLocal } from '../../lib/utils';
 import { getTasksForProject, calculateProjectComputedDates, matchProjectCode } from '../../lib/projectDatesService';
@@ -461,32 +460,25 @@ export async function executeImportTasks({ rawParsedRowsByProject, projects, tas
     touchedProjectsForPersistence.push({ ...proj, ...computed, updatedAt: commitNowIso });
   });
 
-  const hydratedRealTasks = finalFullTasksList.filter(
-    t => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary
-  );
-  await commitImportedStateToStoreAndLocal(
-    hydratedRealTasks,
-    finalTasksToSave,
-    touchedProjectsForPersistence,
-    finalAffectedProjects
-  );
+  const hydratedRealTasks = finalFullTasksList.filter(t => t?.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary);
+  await commitImportedStateToStoreAndLocal(hydratedRealTasks, finalTasksToSave, touchedProjectsForPersistence, finalAffectedProjects);
 
-  // Commit project summaries (fast-path) + modified/new tasks & delegations to Firestore + Delta bus
-  const { writeOps: projectWriteOps, projDeltaItems } = buildAffectedProjectsSyncOps(
-    finalAffectedProjects, computedByProjectId, commitNowIso
-  );
-  await batchSaveTasksToFirestore(finalTasksToSave, activeUser, {
-    precomputedDelegations, projectWriteOps, projectDeltaItems: projDeltaItems,
-  });
+  const { writeOps: projectWriteOps, projDeltaItems } = buildAffectedProjectsSyncOps(finalAffectedProjects, computedByProjectId, commitNowIso);
+  await batchSaveTasksToFirestore(finalTasksToSave, activeUser, { precomputedDelegations, projectWriteOps, projectDeltaItems: projDeltaItems });
 
   if (finalTasksToSave.length > 0) {
+    const prevTasksList = Array.from(previousStates.values());
+    const createdIdsList = Array.from(newIds);
+    const createdDelegations = precomputedDelegations?.newDelegations || [];
     undoManager.push({
-      description: 'Import Tasks',
+      description: `Import Tasks (${finalTasksToSave.length} items)`,
       revert: async () => {
-        const revertOps: MassWriteOp[] = [];
-        previousStates.forEach((oldData, id) => revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'set', data: oldData, merge: false }));
-        newIds.forEach((id) => revertOps.push({ collectionName: 'taka_tasks', docId: id, action: 'delete' }));
-        await executeMassBatchOperations(revertOps);
+        const { restoreTasksSnapshot } = await import('../../lib/undoStateHelpers');
+        await restoreTasksSnapshot({ tasksToRestore: prevTasksList, taskIdsToDelete: createdIdsList, delegationIdsToDelete: createdDelegations.map(d => d.id) });
+      },
+      redo: async () => {
+        const { restoreTasksSnapshot } = await import('../../lib/undoStateHelpers');
+        await restoreTasksSnapshot({ tasksToRestore: finalTasksToSave, delegationsToRestore: createdDelegations });
       },
     });
   }

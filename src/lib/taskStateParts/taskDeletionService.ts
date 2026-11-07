@@ -14,7 +14,7 @@ import { findAffectedProjects } from '../taskStateService';
  */
 export async function deleteTaskStateUnified(
   taskIdsOrTasks: (string | Task)[],
-  _options?: { syncProjects?: boolean }
+  options?: { syncProjects?: boolean; skipUndo?: boolean }
 ): Promise<void> {
   if (!taskIdsOrTasks || taskIdsOrTasks.length === 0) return;
 
@@ -97,6 +97,7 @@ export async function deleteTaskStateUnified(
 
   const unlinkedChildTasks: Task[] = [];
   const unlinkedChildIdSet = new Set<string>();
+  const modifiedNeighborsBeforeDeletion: Task[] = [];
   const cleanedTasks = tasksAfterDeletion.map((t) => {
     let updated = t;
 
@@ -139,6 +140,10 @@ export async function deleteTaskStateUnified(
       if (newPred !== updated.predecessor) {
         updated = { ...updated, predecessor: newPred, updatedAt: now };
       }
+    }
+
+    if (updated !== t) {
+      modifiedNeighborsBeforeDeletion.push(t);
     }
 
     return updated;
@@ -407,6 +412,34 @@ export async function deleteTaskStateUnified(
     await recordBatchDeltas(deltaItems, currentUser?.email || currentUser?.username);
   } catch (e) {
     console.warn('[taskStateService] Failed to persist task deletion to Firestore:', e);
+  }
+
+  // 6. Register full Local-First + Firestore Undo & Redo
+  const realTasksDeleted = tasksToDelete.filter(
+    (t) => t && t.id && !String(t.id).startsWith('ts_') && !(t as any)._isVirtualSummary
+  );
+  if (!options?.skipUndo && realTasksDeleted.length > 0) {
+    const relatedDelGroups = delegationGroups.filter((d) =>
+      realTasksDeleted.some((t) => d.parentTaskId === t.id || d.id === `del_${t.id}`)
+    );
+    const { undoManager } = await import('../undoManager');
+    const { restoreTasksSnapshot } = await import('../undoStateHelpers');
+    const desc =
+      realTasksDeleted.length === 1
+        ? `Delete Task: ${realTasksDeleted[0].name || realTasksDeleted[0].taskCodePhu || realTasksDeleted[0].id}`
+        : `Delete ${realTasksDeleted.length} Tasks`;
+    undoManager.push({
+      description: desc,
+      revert: async () => {
+        await restoreTasksSnapshot({
+          tasksToRestore: [...realTasksDeleted, ...modifiedNeighborsBeforeDeletion],
+          delegationsToRestore: relatedDelGroups,
+        });
+      },
+      redo: async () => {
+        await deleteTaskStateUnified(realTasksDeleted, { skipUndo: true });
+      },
+    });
   }
 }
 

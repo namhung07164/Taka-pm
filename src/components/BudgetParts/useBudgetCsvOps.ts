@@ -135,16 +135,12 @@ export function useBudgetCsvOps({ projects, filteredRoots }: UseBudgetCsvOpsPara
             undoManager.push({
               description: `Import Budget (${importCount} projects)`,
               revert: async () => {
-                const revertOps: MassWriteOp[] = [];
-                previousBudgets.forEach((oldBudget, projDocId) => {
-                  revertOps.push({
-                    collectionName: 'taka_projects',
-                    docId: projDocId,
-                    action: 'update',
-                    data: { budget: oldBudget || 0, updatedAt: new Date().toISOString() },
-                  });
-                });
-                await executeMassBatchOperations(revertOps);
+                const { restoreCostsSnapshot } = await import('../../lib/undoStateHelpers');
+                await restoreCostsSnapshot({ projectBudgetMap: previousBudgets });
+              },
+              redo: async () => {
+                const { restoreCostsSnapshot } = await import('../../lib/undoStateHelpers');
+                await restoreCostsSnapshot({ projectBudgetMap: updatedBudgetByProjId });
               },
             });
 

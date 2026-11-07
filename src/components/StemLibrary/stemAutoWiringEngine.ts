@@ -211,6 +211,25 @@ export async function applyStemWorkbenchToProject(params: {
     }
   }
 
+  // 5. Register 0ms Local-First + Firestore Undo & Redo
+  const { undoManager } = await import('../../lib/undoManager');
+  const { restoreTasksSnapshot } = await import('../../lib/undoStateHelpers');
+  undoManager.push({
+    description: `STEM Auto-Wire (${newTasks.length} tasks) → ${cleanCode}`,
+    revert: async () => {
+      await restoreTasksSnapshot({
+        taskIdsToDelete: newTasks.map((t) => t.id),
+        delegationIdsToDelete: newDelegationGroups.map((d) => d.id),
+      });
+    },
+    redo: async () => {
+      await restoreTasksSnapshot({
+        tasksToRestore: newTasks,
+        delegationsToRestore: newDelegationGroups,
+      });
+    },
+  });
+
   return {
     createdTasks: newTasks,
     createdDelegationCount: newDelegationGroups.length,

@@ -212,38 +212,43 @@ export async function handleProjectIdentityChange({
     setToast({ title: "Save Failed", message: "Network error or permission denied. Data was not saved.", type: "error" });
   });
 
+  const modifiedTaskIds = new Set<string>([
+    ...Array.from(taskUpdates.keys()),
+    ...predecessorUpdates.map((pu) => pu.id),
+  ]);
+  const prevTasksForUndo = rawTasks.filter((t) => modifiedTaskIds.has(t.id));
+  const nextTasksForRedo = updatedTasks.filter((t) => modifiedTaskIds.has(t.id));
+  const updatedProjectObj: Project = {
+    ...project,
+    ...dataToSave,
+    id: project.id || docId,
+    updatedAt: new Date().toISOString(),
+  };
+  const nextCostsForRedo = relatedCosts.map((c) => ({
+    ...c,
+    projectCode: String(formData.code).trim(),
+    projectYear: yearNum,
+    projectStore: formData.store,
+    updatedAt: new Date().toISOString(),
+  }));
+
   undoManager.push({
     description: `Update Identity: ${project.code}(${project.year}) -> ${formData.code}(${formData.year})`,
     revert: async () => {
-      const revertBatch = writeBatch(db);
-      revertBatch.set(projectRef, project, { merge: true });
-      relatedTasks.forEach(t => {
-        const tRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', t.id);
-        revertBatch.set(tRef, {
-          projectCode: project.code,
-          projectYear: project.year,
-          projectStore: project.store,
-          ...(t.taskCodePhu !== undefined ? { taskCodePhu: t.taskCodePhu } : {}),
-          ...(t.predecessor !== undefined ? { predecessor: t.predecessor } : {})
-        }, { merge: true });
+      const { restoreProjectsSnapshot } = await import('../../lib/undoStateHelpers');
+      await restoreProjectsSnapshot({
+        projectsToRestore: [project],
+        tasksToRestore: prevTasksForUndo,
+        costsToRestore: relatedCosts,
       });
-      predecessorUpdates.forEach(pu => {
-        if (!relatedTaskIds.has(pu.id)) {
-          const originalTask = rawTasks.find(st => st.id === pu.id);
-          revertBatch.set(doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks', pu.id), {
-            predecessor: originalTask?.predecessor || ''
-          }, { merge: true });
-        }
+    },
+    redo: async () => {
+      const { restoreProjectsSnapshot } = await import('../../lib/undoStateHelpers');
+      await restoreProjectsSnapshot({
+        projectsToRestore: [updatedProjectObj],
+        tasksToRestore: nextTasksForRedo,
+        costsToRestore: nextCostsForRedo,
       });
-      relatedCosts.forEach(c => {
-        const cRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'taka_costs', c.id);
-        revertBatch.set(cRef, {
-          projectCode: project.code,
-          projectYear: project.year,
-          projectStore: project.store
-        }, { merge: true });
-      });
-      revertBatch.commit().catch(console.error);
-    }
+    },
   });
 }
