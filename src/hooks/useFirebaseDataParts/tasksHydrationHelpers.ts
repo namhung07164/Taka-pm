@@ -1,7 +1,7 @@
 import { Task, Project, DelegationGroup } from '../../types';
 import { isTaskBelongsToProject, matchProjectCode } from '../../lib/utils';
 import { isTaskDeletedInTracker } from '../../lib/taskDeletedTracker';
-import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS, calculateProjectComputedDates } from '../../lib/projectDatesService';
+import { getAppBootAgeMs, BOOT_SYNC_GUARD_MS, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../../lib/projectDatesService';
 import { bulkPersistProjects } from '../../lib/localDb';
 
 export { matchProjectCode };
@@ -221,7 +221,7 @@ export function healProjectsAfterTasksBatch(params: {
 
   let projectsNeedUpdate = false;
   const canRunServerSelfHeal =
-    !fromCache &&
+    (!fromCache || knownHydratedProjectCodes.size > 0) &&
     (getAppBootAgeMs() >= BOOT_SYNC_GUARD_MS ||
       knownHydratedProjectCodes.size > 0 ||
       tasksPool.size > 0);
@@ -402,8 +402,14 @@ export function healProjectsAfterTasksBatch(params: {
       !summaryRemoved &&
       hasUnloadedServerSummaries &&
       (computed.taskSummaries?.length || 0) < (workingProj.taskSummaries?.length || 0);
-    if (!fromCache && hasStructuralChange && !wouldShrinkUnloadedServerSummary) {
+    const recoveredMissingSummaries =
+      !hasUnloadedServerSummaries &&
+      (computed.taskSummaries?.length || 0) > (workingProj.taskSummaries?.length || 0);
+    if ((!fromCache || recoveredMissingSummaries || isAuthoritativelyHydrated) && hasStructuralChange && !wouldShrinkUnloadedServerSummary) {
       bulkPersistProjects([healedProj]).catch(() => {});
+      if (workingProj.id) {
+        syncProjectDatesToFirestore(String(workingProj.id), computed).catch(() => {});
+      }
     }
     return healedProj;
   });

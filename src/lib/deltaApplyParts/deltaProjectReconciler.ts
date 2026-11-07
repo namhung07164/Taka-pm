@@ -435,11 +435,16 @@ export function recalculateTouchedProjectsAfterDeltas(params: {
       taskSummaries: computedDates.taskSummaries !== undefined ? computedDates.taskSummaries : existingSummaries,
     };
     touchedProjectsToPersist.push(nextProj);
-    if (
-      syncRecoveredSummariesToServer &&
-      p.id &&
-      (nextProj.taskSummaries?.length || 0) > existingSummaries.length
-    ) {
+    const recoveredMoreSummaries =
+      !hasUnloadedRealSummary && (nextProj.taskSummaries?.length || 0) > existingSummaries.length;
+    const hasRollupOrCountDiff =
+      !hasUnloadedRealSummary &&
+      realProjTasks.length > 0 &&
+      realProjTasks.length >= existingSummaries.length &&
+      (p.taskCount !== nextProj.taskCount ||
+        (p.computedTakStart || '') !== (nextProj.computedTakStart || '') ||
+        (p.computedTakCompl || '') !== (nextProj.computedTakCompl || ''));
+    if (p.id && (recoveredMoreSummaries || (syncRecoveredSummariesToServer && hasRollupOrCountDiff))) {
       syncProjectDatesToFirestore(String(p.id), computedDates).catch(() => {});
     }
     return nextProj;

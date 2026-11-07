@@ -1,3 +1,4 @@
+import { collection, getDocs, getDocsFromServer, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { Project, Task } from '../types';
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
@@ -5,6 +6,41 @@ import { matchProjectCode } from './projectDatesService';
 import { normalizeStoreCode, normalizeYearString, normalizeTaskNameForComparison } from './taskDeduplicationService';
 import { bulkPersistTasks, bulkPersistProjects, deleteLocalRecord } from './localDb';
 import { markTasksDeleted } from './taskDeletedTracker';
+import { waitForNetworkRecovery, resetStalledFirestoreConnection } from './syncResilience';
+
+export async function fetchCollectionResilientForAudit(
+  collectionName: string,
+  label: string,
+  onProgress?: (msg: string) => void
+): Promise<QuerySnapshot<DocumentData>> {
+  await waitForNetworkRecovery();
+  const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', collectionName);
+  const tryFromServerWithTimeout = async (timeoutMs: number) => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        getDocsFromServer(colRef),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('AUDIT_SERVER_READ_TIMEOUT')), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+  try {
+    return await tryFromServerWithTimeout(6500);
+  } catch {
+    onProgress?.(`Kết nối ${label} đang bận trên thiết bị, đang làm mới kênh Firestore...`);
+    await resetStalledFirestoreConnection();
+    try {
+      return await tryFromServerWithTimeout(8000);
+    } catch {
+      onProgress?.(`Đang đọc ${label} qua kênh dự phòng Firestore...`);
+      return await getDocs(colRef);
+    }
+  }
+}
 
 export const RECENT_EDIT_GUARD_MS = 10 * 60 * 1000;
 

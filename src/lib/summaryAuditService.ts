@@ -1,17 +1,16 @@
 /**
  * summaryAuditService.ts - Kiểm tra chéo 3 lớp dữ liệu: (1) Task Firestore, (2) Summary dự án, (3) Local (Zustand + Dexie).
  */
-import { collection, getDocs, getDocsFromServer, QuerySnapshot, DocumentData } from 'firebase/firestore';
 import { db, APP_ID } from './firebase';
 import { useAppStore } from '../store/useAppStore';
 import { Project, Task } from '../types';
 import { calculateProjectComputedDates } from './projectDatesService';
 import { bulkPersistTasks, bulkPersistProjects, deleteLocalRecord, localDb } from './localDb';
 import { markTasksDeleted, unmarkTaskDeleted } from './taskDeletedTracker';
-import { waitForNetworkRecovery, resetStalledFirestoreConnection } from './syncResilience';
 import {
   AuditRow,
   AuditReport,
+  fetchCollectionResilientForAudit,
   buildOwnerResolver,
   isRecent,
   matchDriftedSummaryAndServerTasks,
@@ -22,42 +21,6 @@ import {
 
 export type { AuditRow, AuditReport };
 export { repairLocalDevice, purgeExcessFirestoreTasks };
-
-async function fetchCollectionResilientForAudit(
-  collectionName: string,
-  label: string,
-  onProgress?: (msg: string) => void
-): Promise<QuerySnapshot<DocumentData>> {
-  await waitForNetworkRecovery();
-  const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', collectionName);
-
-  const tryFromServerWithTimeout = async (timeoutMs: number) => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    try {
-      return await Promise.race([
-        getDocsFromServer(colRef),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error('AUDIT_SERVER_READ_TIMEOUT')), timeoutMs);
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  };
-
-  try {
-    return await tryFromServerWithTimeout(6500);
-  } catch {
-    onProgress?.(`Kết nối ${label} đang bận trên thiết bị, đang làm mới kênh Firestore...`);
-    await resetStalledFirestoreConnection();
-    try {
-      return await tryFromServerWithTimeout(8000);
-    } catch {
-      onProgress?.(`Đang đọc ${label} qua kênh dự phòng Firestore...`);
-      return await getDocs(colRef);
-    }
-  }
-}
 
 export async function runSummaryAudit(onProgress?: (msg: string) => void): Promise<AuditReport> {
   onProgress?.('Đang đọc dự án từ Firestore (server)...');
@@ -228,7 +191,7 @@ export async function runSummaryAudit(onProgress?: (msg: string) => void): Promi
   });
 
   issues.sort((a, b) => a.code.localeCompare(b.code));
-  return {
+  const initialReport: AuditReport = {
     generatedAt: Date.now(),
     projectCount: projects.length,
     taskCount: serverTasks.length,
@@ -237,6 +200,46 @@ export async function runSummaryAudit(onProgress?: (msg: string) => void): Promi
     issues,
     internal: { projects: projectsById, ownerTasks, serverTasksById },
   };
+
+  const summaryIssueRows = issues.filter((r) => r.summaryIssue);
+  if (summaryIssueRows.length > 0) {
+    onProgress?.(`Đang tự động đồng bộ ${summaryIssueRows.length} dự án lệch Summary ⇄ Firestore...`);
+    try {
+      await repairServerSummaries(
+        initialReport,
+        undefined,
+        summaryIssueRows.map((r) => r.projectId)
+      );
+      const remainingIssues = issues
+        .map((r) => {
+          if (!r.summaryIssue) return r;
+          const healedProj = projectsById.get(r.projectId);
+          const healedCount = healedProj?.taskSummaries?.length ?? r.serverTaskCount;
+          return {
+            ...r,
+            serverTaskCount: healedCount,
+            summaryTaskCount: healedCount,
+            summaryEntryCount: healedCount,
+            missingInSummary: [],
+            ghostInSummary: [],
+            noIdEntries: 0,
+            countMismatch: false,
+            summaryIssue: false,
+            localProjectStale: false,
+            deviceIssue: r.missingLocal.length > 0 || r.ghostLocal.length > 0,
+          };
+        })
+        .filter((r) => r.summaryIssue || r.deviceIssue);
+      return {
+        ...initialReport,
+        issues: remainingIssues,
+      };
+    } catch (err) {
+      console.warn('[summaryAuditService] Auto repairServerSummaries failed:', err);
+    }
+  }
+
+  return initialReport;
 }
 
 /**
@@ -427,7 +430,9 @@ export async function repairServerSummaries(
       data: projPayload,
       year: serverProject.year ? String(serverProject.year) : undefined,
     });
-    updatedServerProjects.set(row.projectId, { ...serverProject, ...projPayload } as Project);
+    const healedServerProject = { ...serverProject, ...projPayload } as Project;
+    updatedServerProjects.set(row.projectId, healedServerProject);
+    report.internal.projects.set(row.projectId, healedServerProject);
     fixed++;
   }
 

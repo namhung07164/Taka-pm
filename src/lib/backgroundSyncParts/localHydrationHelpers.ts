@@ -15,21 +15,13 @@ import { isTaskBelongsToProject, isDelegationGroupBelongsToProject } from '../ut
 import { isTaskDeletedInTracker, isProjectDeletedInTracker, markTasksDeleted } from '../taskDeletedTracker';
 import { rollupTaskSummaries } from '../taskRollupHelpers';
 import { deduplicateTasksInMemory } from '../taskDeduplicationService';
-import { syncProjectDatesToFirestore } from '../projectDatesService';
+import { getTasksForProject, calculateProjectComputedDates, syncProjectDatesToFirestore } from '../projectDatesService';
 
 export const tsOf = (v: any): number => {
   if (!v) return 0;
-  if (typeof v === 'string') {
-    const n = Date.parse(v);
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.toMillis === 'function') {
-    const n = v.toMillis();
-    return Number.isFinite(n) ? n : 0;
-  }
-  if (typeof v?.seconds === 'number') {
-    return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
-  }
+  if (typeof v === 'string') { const n = Date.parse(v); return Number.isFinite(n) ? n : 0; }
+  if (typeof v?.toMillis === 'function') { const n = v.toMillis(); return Number.isFinite(n) ? n : 0; }
+  if (typeof v?.seconds === 'number') return v.seconds * 1000 + Math.floor((v.nanoseconds || 0) / 1e6);
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
@@ -247,6 +239,40 @@ export async function reconcileAndDeduplicateLocalStore(): Promise<void> {
       if (ramTasks.length > 0 || useAppStore.getState().isTasksRequested) {
         useAppStore.getState().setTasks(dedupedTasks);
       }
+    }
+
+    const syncedProjectsToPersist: Project[] = [];
+    const currentProjs = useAppStore.getState().projects || activeProjects;
+    const delegationGroups = useAppStore.getState().delegationGroups || [];
+    const nextSyncedProjects = currentProjs.map((p) => {
+      if (!p || p.isDeleted || !p.id) return p;
+      const realProjTasks = getTasksForProject(p, dedupedTasks, { realTasksOnly: true });
+      const existingSummaries = Array.isArray(p.taskSummaries) ? p.taskSummaries : [];
+      if (realProjTasks.length === 0 || realProjTasks.length < existingSummaries.length) return p;
+      const realIdSet = new Set(realProjTasks.map((t) => String(t.id || '').trim().toLowerCase()).filter(Boolean));
+      const hasUnloadedSummary = existingSummaries.some((s: any) => {
+        const sId = String(s?.id || '').trim().toLowerCase();
+        return Boolean(sId && !sId.startsWith('ts_') && !isTaskDeletedInTracker(sId, String(p.id)) && !realIdSet.has(sId));
+      });
+      if (hasUnloadedSummary) return p;
+      const computed = calculateProjectComputedDates({ ...p, taskSummaries: [] }, realProjTasks, delegationGroups);
+      const nextSummaries = computed.taskSummaries || [];
+      const summaryById = new Map<string, any>(existingSummaries.map((s: any) => [String(s?.id || ''), s]));
+      const hasRollupDrift = nextSummaries.some((es: any) => {
+        const cur = es?.id ? summaryById.get(String(es.id)) : null;
+        return !cur || (cur.start || '') !== (es.start || '') || (cur.finish || '') !== (es.finish || '') || Boolean(cur.isModularParent) !== Boolean(es.isModularParent);
+      });
+      if (nextSummaries.length > existingSummaries.length || Number(p.taskCount ?? 0) !== nextSummaries.length || hasRollupDrift) {
+        const healedP: Project = { ...p, ...computed };
+        syncedProjectsToPersist.push(healedP);
+        syncProjectDatesToFirestore(String(p.id), computed).catch(() => {});
+        return healedP;
+      }
+      return p;
+    });
+    if (syncedProjectsToPersist.length > 0) {
+      useAppStore.getState().setProjects(nextSyncedProjects);
+      bulkPersistProjects(syncedProjectsToPersist).catch(() => {});
     }
   } catch (err) {
     console.warn('[localHydrationHelpers] reconcileAndDeduplicateLocalStore error:', err);
