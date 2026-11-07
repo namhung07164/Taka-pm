@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Trash2, Unlink, X } from 'lucide-react';
+import { Trash2, Unlink, X, PackagePlus } from 'lucide-react';
 
 interface DetailFloatingActionBarProps {
   selectedCount?: number;
@@ -76,6 +76,20 @@ export const DetailFloatingActionBar = memo(function DetailFloatingActionBar({
         title="Unlink selected tasks from parent modular link"
       >
         <Unlink className="w-3.5 h-3.5" /> Unlink
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          const ids = selectedTaskIds ? Array.from(selectedTaskIds) : undefined;
+          window.dispatchEvent(
+            new CustomEvent('taka_capture_stem_preset', { detail: { taskIds: ids } })
+          );
+        }}
+        className="px-3 py-1.5 text-xs font-bold bg-purple-50 text-purple-700 hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 rounded-md border border-purple-200 dark:border-purple-800 transition-colors flex items-center gap-1 cursor-pointer active:scale-95 touch-manipulation"
+        title="Đóng gói các công việc đang chọn thành Gói mẫu tái sử dụng trong Thư viện STEM"
+      >
+        <PackagePlus className="w-3.5 h-3.5" /> 📦 Đóng gói vào Thư viện
       </button>
 
       <div className="hidden sm:block h-6 w-px bg-slate-200 dark:bg-[#333336]" />

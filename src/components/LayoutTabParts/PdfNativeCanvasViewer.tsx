@@ -5,29 +5,17 @@ import { PdfNativeViewerToolbar } from './PdfNativeViewerToolbar';
 import { PdfScrollablePagesView } from './PdfScrollablePagesView';
 import { PdfPageThumbnailStrip } from './PdfPageThumbnailStrip';
 import { PdfDocumentErrorView, PdfPageRenderErrorOverlay } from './PdfViewerErrorState';
-import {
-  fetchPdfBinaryUnified,
-  getCachedPageThumbSync,
-  setCachedPageThumb,
-  normalizePdfSourceUrl,
-} from '../../lib/pdfBinaryCache';
+import { fetchPdfBinaryUnified, getCachedPageThumbSync, setCachedPageThumb, normalizePdfSourceUrl } from '../../lib/pdfBinaryCache';
 
 export interface PdfNativeCanvasViewerProps {
-  url: string;
-  isFullscreen?: boolean;
-  onOpenFullscreen?: () => void;
-  className?: string;
-  onFallbackToIframe?: () => void;
+  url: string; isFullscreen?: boolean; onOpenFullscreen?: () => void;
+  className?: string; onFallbackToIframe?: () => void;
 }
 
 const MAX_CANVAS_DIMENSION = 2400; // Safe GPU canvas texture cap for iOS Safari & Desktop
 
 export function PdfNativeCanvasViewer({
-  url,
-  isFullscreen = false,
-  onOpenFullscreen,
-  className = '',
-  onFallbackToIframe,
+  url, isFullscreen = false, onOpenFullscreen, className = '', onFallbackToIframe,
 }: PdfNativeCanvasViewerProps) {
   const [pdfDoc, setPdfDoc] = useState<any | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
@@ -51,9 +39,7 @@ export function PdfNativeCanvasViewer({
 
   const prevUrlRef = useRef<string | null>(null);
   const onFallbackToIframeRef = useRef(onFallbackToIframe);
-  useEffect(() => {
-    onFallbackToIframeRef.current = onFallbackToIframe;
-  }, [onFallbackToIframe]);
+  useEffect(() => { onFallbackToIframeRef.current = onFallbackToIframe; }, [onFallbackToIframe]);
 
   const initialThumbPlaceholder = getCachedPageThumbSync(url, 1);
 
@@ -85,15 +71,12 @@ export function PdfNativeCanvasViewer({
       try {
         const [pdfjsLib, binaryData] = await Promise.all([
           import('pdfjs-dist/legacy/build/pdf.mjs'),
-          fetchPdfBinaryUnified(url, (pct) => {
-            if (isMounted) setLoadingProgress(pct);
-          }),
+          fetchPdfBinaryUnified(url, (pct) => { if (isMounted) setLoadingProgress(pct); }),
         ]);
         if (!isMounted) return;
 
         if (pdfjsLib.GlobalWorkerOptions) {
-          pdfjsLib.GlobalWorkerOptions.workerSrc =
-            'https://unpkg.com/pdfjs-dist@6.3.289/legacy/build/pdf.worker.min.mjs';
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@6.3.289/legacy/build/pdf.worker.min.mjs';
         }
 
         const docConfig: any = {

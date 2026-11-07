@@ -16,48 +16,24 @@ import { useDetailFocusTracking } from './useDetailFocusTracking';
 import { useDetailFilterSync, doesTaskMatchSearchTerm } from './useDetailFilterSync';
 
 interface UseDetailDataParams {
-  projects: Project[];
-  tasks: Task[];
-  delegationGroups: DelegationGroup[];
-  currentUser: AppUser;
-  effectiveStore: string;
-  globalYearFilter: string;
-  setGlobalYearFilter: (year: string) => void;
-  globalStoreFilter: string;
-  setGlobalStoreFilter: (store: string) => void;
-  globalLocationFilter: string[];
-  setGlobalLocationFilter: (locs: string[]) => void;
-  initialFilterCode?: string;
-  initialFocusTaskId?: string;
-  returnScrollId?: string;
-  onClearFocus?: () => void;
-  onBackToGantt?: () => void;
-  sortConfig: SortConfig | null;
-  expandedCodes: string[];
-  setExpandedCodes: (codes: string[]) => void;
-  setVisibleActiveProjectIds: (ids: string[]) => void;
-  canWrite: boolean;
+  projects: Project[]; tasks: Task[]; delegationGroups: DelegationGroup[]; currentUser: AppUser;
+  effectiveStore: string; globalYearFilter: string; setGlobalYearFilter: (year: string) => void;
+  globalStoreFilter: string; setGlobalStoreFilter: (store: string) => void;
+  globalLocationFilter: string[]; setGlobalLocationFilter: (locs: string[]) => void;
+  initialFilterCode?: string; initialFocusTaskId?: string; returnScrollId?: string;
+  onClearFocus?: () => void; onBackToGantt?: () => void; sortConfig: SortConfig | null;
+  expandedCodes: string[]; setExpandedCodes: (codes: string[]) => void;
+  setVisibleActiveProjectIds: (ids: string[]) => void; canWrite: boolean;
 }
 
-function collectTaskAliases(
-  pId: string,
-  tasks: Task[],
-  projectInfoMap: Map<string, any>
-): { targetTask?: Task; aliases: Set<string> } {
+function collectTaskAliases(pId: string, tasks: Task[], projectInfoMap: Map<string, any>): { targetTask?: Task; aliases: Set<string> } {
   const pIdStr = String(pId).trim();
   const pIdLower = pIdStr.toLowerCase();
-  let targetTask = tasks.find(
-    (t) => String(t.id) === pIdStr || (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pIdLower)
-  );
+  let targetTask = tasks.find((t) => String(t.id) === pIdStr || (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pIdLower));
   if (!targetTask) {
     for (const info of projectInfoMap.values()) {
-      const found = info.sortedTasks?.find(
-        (t: Task) => String(t.id) === pIdStr || (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pIdLower)
-      );
-      if (found) {
-        targetTask = found;
-        break;
-      }
+      const found = info.sortedTasks?.find((t: Task) => String(t.id) === pIdStr || (t.taskCodePhu && String(t.taskCodePhu).trim().toLowerCase() === pIdLower));
+      if (found) { targetTask = found; break; }
     }
   }
   const aliases = new Set<string>([pIdStr, pIdLower]);
@@ -75,26 +51,11 @@ function collectTaskAliases(
 }
 
 export function useDetailData({
-  projects,
-  tasks,
-  delegationGroups,
-  currentUser: _currentUser,
-  effectiveStore,
-  globalYearFilter,
-  setGlobalYearFilter,
-  globalStoreFilter,
-  setGlobalStoreFilter,
-  globalLocationFilter,
-  setGlobalLocationFilter,
-  initialFilterCode,
-  initialFocusTaskId,
-  returnScrollId: _returnScrollId,
-  onClearFocus,
-  onBackToGantt,
-  sortConfig,
-  expandedCodes,
-  setExpandedCodes,
-  setVisibleActiveProjectIds,
+  projects, tasks, delegationGroups, currentUser: _currentUser, effectiveStore,
+  globalYearFilter, setGlobalYearFilter, globalStoreFilter, setGlobalStoreFilter,
+  globalLocationFilter, setGlobalLocationFilter, initialFilterCode, initialFocusTaskId,
+  returnScrollId: _returnScrollId, onClearFocus, onBackToGantt, sortConfig,
+  expandedCodes, setExpandedCodes, setVisibleActiveProjectIds,
 }: UseDetailDataParams) {
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);

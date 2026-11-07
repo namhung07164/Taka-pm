@@ -1,18 +1,6 @@
-import React, { Dispatch, FC, SetStateAction, memo, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Draggable from 'react-draggable';
-import {
-  Palette,
-  ChevronUp,
-  ChevronDown,
-  Download,
-  RefreshCw,
-  GripHorizontal,
-  Compass,
-  Search,
-  X,
-  Layers,
-  Image as ImageIcon
-} from 'lucide-react';
+import { Palette, ChevronUp, ChevronDown, Download, RefreshCw, GripHorizontal, Compass, Search, X, Layers, Image as ImageIcon } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { getHatchCssStyle } from './layoutPatternUtils';
 import { LayoutLegendExportMenu } from './LayoutLegendExportMenu';
@@ -23,37 +11,21 @@ import { LayoutUnitLightboxModal } from './LayoutUnitLightboxModal';
 export type LegendDockPosition = 'top-right' | 'bottom-right' | 'bottom-left';
 
 export interface LayoutColorLegendBarProps {
-  layoutTooltipVisibility: any;
-  activeGroups: any[];
-  selectedLegendGroupId: string | null;
-  setSelectedLegendGroupId: (id: string | null) => void;
-  setShowLegendModal?: (show: boolean) => void;
-  isLegendStripCollapsed?: boolean;
+  layoutTooltipVisibility: any; activeGroups: any[];
+  selectedLegendGroupId: string | null; setSelectedLegendGroupId: (id: string | null) => void;
+  setShowLegendModal?: (show: boolean) => void; isLegendStripCollapsed?: boolean;
   setIsLegendStripCollapsed?: React.Dispatch<React.SetStateAction<boolean>>;
-  canWrite?: boolean;
-  handleTriggerExport?: () => void | Promise<void>;
-  isExporting?: boolean;
-  exportStatus?: string;
-  handleExport?: (type: 'jpeg' | 'pdf') => void;
-  setIsPrintPreview?: (show: boolean) => void;
+  canWrite?: boolean; handleTriggerExport?: () => void | Promise<void>;
+  isExporting?: boolean; exportStatus?: string;
+  handleExport?: (type: 'jpeg' | 'pdf') => void; setIsPrintPreview?: (show: boolean) => void;
 }
 
 const DEFAULT_DOCK_STORAGE_KEY = 'taka_layout_legend_dock_pos';
 
 export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.memo(({
-  layoutTooltipVisibility,
-  activeGroups,
-  selectedLegendGroupId,
-  setSelectedLegendGroupId,
-  setShowLegendModal,
-  isLegendStripCollapsed: propIsCollapsed,
-  setIsLegendStripCollapsed: propSetIsCollapsed,
-  canWrite = false,
-  handleTriggerExport,
-  isExporting = false,
-  exportStatus = '',
-  handleExport,
-  setIsPrintPreview,
+  layoutTooltipVisibility, activeGroups, selectedLegendGroupId, setSelectedLegendGroupId,
+  setShowLegendModal, isLegendStripCollapsed: propIsCollapsed, setIsLegendStripCollapsed: propSetIsCollapsed,
+  canWrite = false, handleTriggerExport, isExporting = false, exportStatus = '', handleExport, setIsPrintPreview,
 }) => {
   const [internalCollapsed, setInternalCollapsed] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -61,30 +33,15 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
   const [dockPosition, setDockPosition] = useState<LegendDockPosition>(() => {
     try {
       const saved = localStorage.getItem(DEFAULT_DOCK_STORAGE_KEY);
-      if (saved === 'top-right' || saved === 'bottom-right' || saved === 'bottom-left') {
-        return saved;
-      }
-    } catch {
-      // Ignore storage errors
-    }
+      if (saved === 'top-right' || saved === 'bottom-right' || saved === 'bottom-left') return saved;
+    } catch {}
     return 'top-right';
   });
 
   const {
-    cleanCode,
-    showImagePanel,
-    setShowImagePanel,
-    showAddLinkInput,
-    setShowAddLinkInput,
-    newLinkInput,
-    setNewLinkInput,
-    copiedLink,
-    enlargedImage,
-    setEnlargedImage,
-    allLegendImages,
-    handleAddCustomImage,
-    handleDeleteCustomImage,
-    handleCopyLink,
+    cleanCode, showImagePanel, setShowImagePanel, showAddLinkInput, setShowAddLinkInput,
+    newLinkInput, setNewLinkInput, copiedLink, enlargedImage, setEnlargedImage,
+    allLegendImages, handleAddCustomImage, handleDeleteCustomImage, handleCopyLink,
   } = useColorLegendImages(canWrite);
 
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -92,11 +49,8 @@ export const LayoutColorLegendBar: React.FC<LayoutColorLegendBarProps> = React.m
 
   const isCollapsed = propIsCollapsed !== undefined ? propIsCollapsed : internalCollapsed;
   const toggleCollapsed = () => {
-    if (propSetIsCollapsed) {
-      propSetIsCollapsed(!isCollapsed);
-    } else {
-      setInternalCollapsed(prev => !prev);
-    }
+    if (propSetIsCollapsed) propSetIsCollapsed(!isCollapsed);
+    else setInternalCollapsed(prev => !prev);
   };
 
   const cycleDockPosition = (e: React.MouseEvent) => {

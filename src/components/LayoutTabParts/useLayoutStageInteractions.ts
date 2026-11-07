@@ -4,44 +4,20 @@ import { useAppStore } from '../../store/useAppStore';
 import { HoverInfo } from './layoutViewerTypes';
 import { useLayoutGestures } from './useLayoutGestures';
 import { useLayoutWindowListeners } from './useLayoutWindowListeners';
-import { 
-  calculateUnitFocalPoint, 
-  computeTooltipPosition, 
-  triggerStageDownload, 
-  findUnitInOtherFloorVersions,
-  hasAggregatedDataChanged
-} from './layoutStageUtils';
+import { calculateUnitFocalPoint, computeTooltipPosition, triggerStageDownload, findUnitInOtherFloorVersions, hasAggregatedDataChanged } from './layoutStageUtils';
 
 interface UseLayoutStageInteractionsProps {
-  bgImage: any;
-  version: any;
-  units: any[];
-  targetUnitSearch?: string | null;
-  onUnitSelected?: (unit: any) => void;
-  onClearFocus?: () => void;
-  availableStoreVersions: any[];
-  selectedVersionId: string | null;
+  bgImage: any; version: any; units: any[]; targetUnitSearch?: string | null;
+  onUnitSelected?: (unit: any) => void; onClearFocus?: () => void;
+  availableStoreVersions: any[]; selectedVersionId: string | null;
   setSelectedVersionId: (id: string | null) => void;
-  storeFilter: string;
-  targetLoc: string;
-  isProjectModalOpen: boolean;
-  miniGanttProject: any;
+  storeFilter: string; targetLoc: string; isProjectModalOpen: boolean; miniGanttProject: any;
 }
 
 export function useLayoutStageInteractions({
-  bgImage,
-  version,
-  units,
-  targetUnitSearch,
-  onUnitSelected,
-  onClearFocus,
-  availableStoreVersions,
-  selectedVersionId,
-  setSelectedVersionId,
-  storeFilter,
-  targetLoc,
-  isProjectModalOpen,
-  miniGanttProject,
+  bgImage, version, units, targetUnitSearch, onUnitSelected, onClearFocus,
+  availableStoreVersions, selectedVersionId, setSelectedVersionId,
+  storeFilter, targetLoc, isProjectModalOpen, miniGanttProject,
 }: UseLayoutStageInteractionsProps) {
   const isPrintPreview = useAppStore(state => state.isPrintPreview);
 
@@ -57,33 +33,19 @@ export function useLayoutStageInteractions({
   const focusedTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastHandledSearchRef = useRef<string | null>(null);
 
-  // Mutable refs for data aggregates to eliminate circular dependencies and prevent infinite loops
   const aggregatedDataRef = useRef<Record<string, any>>({});
   const restrictedProjectCodesRef = useRef<Set<string>>(new Set());
 
   // Zoom & Pan smoothly to target unit and highlight it
   const zoomAndPanToUnit = useCallback((targetUnitOrName: string | any) => {
-    const focalPoint = calculateUnitFocalPoint(
-      targetUnitOrName,
-      units,
-      aggregatedDataRef.current,
-      restrictedProjectCodesRef.current
-    );
+    const focalPoint = calculateUnitFocalPoint(targetUnitOrName, units, aggregatedDataRef.current, restrictedProjectCodesRef.current);
     if (!focalPoint) return false;
-
     const { targetUnit, cx, cy } = focalPoint;
-
     const containerW = containerRef.current?.offsetWidth || dimensions.width || 800;
     const containerH = containerRef.current?.offsetHeight || dimensions.height || 600;
-
     const targetScale = 0.7;
-
-    // Center unit perfectly at exact 50% width and 50% height of viewport
-    const targetScreenCenterX = containerW * 0.50;
-    const targetScreenCenterY = containerH * 0.50;
-
-    const posX = targetScreenCenterX - cx * targetScale;
-    const posY = targetScreenCenterY - cy * targetScale;
+    const posX = containerW * 0.50 - cx * targetScale;
+    const posY = containerH * 0.50 - cy * targetScale;
     const newPos = { x: posX, y: posY };
 
     setStageScale(targetScale);

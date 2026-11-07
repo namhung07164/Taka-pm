@@ -116,26 +116,16 @@ export function GanttTab({
   // 5. Dynamic Column Width Resizing & Print Aspect-Ratio Auto-Calibration
   const { colWidths, startResizingColumn } = useGanttColumnResize();
   const { effectiveSideWidth, effectiveDayWidth } = useGanttPrintDimensions({
-    sideWidth,
-    dayWidth,
-    totalDays,
-    visibleGanttRows,
-    visibleColumns,
-    colWidths,
+    sideWidth, dayWidth, totalDays, visibleGanttRows, visibleColumns, colWidths,
   });
 
   // 6. Dependencies and Tooltips
   const { activeTooltip, setActiveTooltip, dependencyLines, allCodesMap } = useGanttDependencies({
     tasks, projects, delegationGroups, visibleGanttRows, startDate,
-    dayWidth: effectiveDayWidth,
-    sideWidth: effectiveSideWidth,
-    paddingTop,
-    showStart: visibleColumns.includes('start'),
-    showFinish: visibleColumns.includes('finish'),
-    showParty: visibleColumns.includes('party'),
-    showDuration: visibleColumns.includes('duration'),
-    showPredecessor: visibleColumns.includes('predecessor'),
-    showPredecessorLines,
+    dayWidth: effectiveDayWidth, sideWidth: effectiveSideWidth, paddingTop,
+    showStart: visibleColumns.includes('start'), showFinish: visibleColumns.includes('finish'),
+    showParty: visibleColumns.includes('party'), showDuration: visibleColumns.includes('duration'),
+    showPredecessor: visibleColumns.includes('predecessor'), showPredecessorLines,
   });
 
   // 7. Drag & Drop Task Reordering
@@ -153,19 +143,16 @@ export function GanttTab({
     e.preventDefault();
     const startX = e.clientX;
     const startW = sideWidth;
-
     const onMouseMove = (moveEvent: MouseEvent) => {
       const delta = moveEvent.clientX - startX;
       const newW = Math.max(180, Math.min(600, startW + delta));
       setSideWidth(newW);
       safeSetDeviceItemLocal('taka_gantt_side_width', String(newW), currentUser?.id);
     };
-
     const onMouseUp = () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
   }, [sideWidth]);
@@ -175,31 +162,14 @@ export function GanttTab({
   useEffect(() => {
     if (hasInitialScrolledTodayRef.current) return;
     hasInitialScrolledTodayRef.current = true;
-    const timer = setTimeout(() => {
-      handleTodayClick();
-    }, 180);
+    const timer = setTimeout(() => handleTodayClick(), 180);
     return () => clearTimeout(timer);
   }, [handleTodayClick]);
 
   // 9. Focus Mode, Auto-Reveal & Auto-Center
-  const {
-    activeFocusId,
-    focusedTask,
-    focusedProject,
-    locateTask,
-    handleClearFocus
-  } = useGanttFocus({
-    tasks,
-    projects,
-    initialFocusTaskId,
-    ganttTabFocusTaskId,
-    setGanttTabFocusTaskId,
-    setExpandedModularTasks,
-    mainScrollRef,
-    topScrollRef,
-    startDate,
-    dayWidth,
-    sideWidth,
+  const { handleClearFocus } = useGanttFocus({
+    tasks, projects, initialFocusTaskId, ganttTabFocusTaskId, setGanttTabFocusTaskId,
+    setExpandedModularTasks, mainScrollRef, topScrollRef, startDate, dayWidth, sideWidth,
     onClearFocus: () => {
       setSearchTerm('');
       if (onClearFocus) onClearFocus();
@@ -209,9 +179,8 @@ export function GanttTab({
   const isArchiveYear = globalYearFilter !== 'all' && Number(globalYearFilter) < new Date().getFullYear();
   const canWrite = Boolean(
     currentUser && (
-      currentUser.role === 'admin' || 
-      currentUser.canWrite === true || 
-      (currentUser.role && !!permissionMatrix?.[currentUser.role]?.Write?.detail) || 
+      currentUser.role === 'admin' || currentUser.canWrite === true ||
+      (currentUser.role && !!permissionMatrix?.[currentUser.role]?.Write?.detail) ||
       (currentUser.role && !!permissionMatrix?.[currentUser.role]?.Write?.report) ||
       (currentUser.role && !!(permissionMatrix?.[currentUser.role]?.Write as any)?.gantt)
     )
@@ -224,69 +193,29 @@ export function GanttTab({
     >
       {/* Top Filter & Toolbar */}
       <GanttToolbar
-        globalYearFilter={globalYearFilter}
-        setGlobalYearFilter={setGlobalYearFilter}
-        uniqueYears={uniqueYears}
-        effectiveStore={effectiveStore}
-        setGlobalStoreFilter={setGlobalStoreFilter}
-        uniqueStores={uniqueStores}
-        globalLocationFilter={globalLocationFilter}
-        setGlobalLocationFilter={setGlobalLocationFilter}
-        locationOptions={locationOptions}
-        filterProjectStatus={filterProjectStatus}
-        onStatusFilterChange={onStatusFilterChange}
-        isTasksLoading={isTasksLoading}
-        canWrite={canWrite}
-        isEditMode={isEditMode}
-        setIsEditMode={setIsEditMode}
-        isHighlightDelegationOn={isHighlightDelegationOn}
-        setIsHighlightDelegationOn={setIsHighlightDelegationOn}
-        selectedProjectIds={selectedProjectIds}
-        selectedTaskIds={selectedTaskIds}
-        setSelectedProjectIds={setSelectedProjectIds}
-        setSelectedTaskIds={setSelectedTaskIds}
-        handleSetTextColor={handleSetTextColor}
-        handleSetBaselineSelected={handleSetBaselineSelected}
-        handleToggleRealtimeUpdate={handleToggleRealtimeUpdate}
-        handleUnlinkModularTasks={handleUnlinkModularTasks}
-        isTaskModularModalOpen={isTaskModularModalOpen}
-        setIsTaskModularModalOpen={setIsTaskModularModalOpen}
-        sumMode={sumMode}
-        setSumMode={setSumMode}
-        handleDeleteSelected={handleDeleteSelected}
-        handleDragStart={() => {}}
-        isHideMode={isHideMode}
-        setIsHideMode={setIsHideMode}
-        hiddenRows={hiddenRows}
-        setHiddenRows={setHiddenRows}
-        showPredecessorLines={showPredecessorLines}
-        setShowPredecessorLines={setShowPredecessorLines}
-        handleExportToPDF={handleExportToPDF}
-        isExporting={isExporting}
-        tempStartDate={tempStartDate}
-        setTempStartDate={setTempStartDate}
-        tempEndDate={tempEndDate}
-        setTempEndDate={setTempEndDate}
-        setFilterStartDate={setFilterStartDate}
-        setFilterEndDate={setFilterEndDate}
-        visibleColumns={visibleColumns}
-        handleToggleColumn={handleToggleColumn}
-        handleTodayClick={handleTodayClick}
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        scaleInput={scaleInput}
-        setScaleInput={setScaleInput}
-        dayWidth={dayWidth}
-        setDayWidth={setDayWidth}
-        isWidthChanged={isWidthChanged}
-        setIsWidthChanged={setIsWidthChanged}
-        saveDayWidth={saveDayWidth}
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        initialFocusTaskId={initialFocusTaskId}
-        ganttTabFocusTaskId={ganttTabFocusTaskId}
-        ganttTabFilterProjectId={ganttTabFilterProjectId}
-        handleClearFocus={handleClearFocus}
+        globalYearFilter={globalYearFilter} setGlobalYearFilter={setGlobalYearFilter} uniqueYears={uniqueYears}
+        effectiveStore={effectiveStore} setGlobalStoreFilter={setGlobalStoreFilter} uniqueStores={uniqueStores}
+        globalLocationFilter={globalLocationFilter} setGlobalLocationFilter={setGlobalLocationFilter} locationOptions={locationOptions}
+        filterProjectStatus={filterProjectStatus} onStatusFilterChange={onStatusFilterChange}
+        isTasksLoading={isTasksLoading} canWrite={canWrite} isEditMode={isEditMode} setIsEditMode={setIsEditMode}
+        isHighlightDelegationOn={isHighlightDelegationOn} setIsHighlightDelegationOn={setIsHighlightDelegationOn}
+        selectedProjectIds={selectedProjectIds} selectedTaskIds={selectedTaskIds}
+        setSelectedProjectIds={setSelectedProjectIds} setSelectedTaskIds={setSelectedTaskIds}
+        handleSetTextColor={handleSetTextColor} handleSetBaselineSelected={handleSetBaselineSelected}
+        handleToggleRealtimeUpdate={handleToggleRealtimeUpdate} handleUnlinkModularTasks={handleUnlinkModularTasks}
+        isTaskModularModalOpen={isTaskModularModalOpen} setIsTaskModularModalOpen={setIsTaskModularModalOpen}
+        sumMode={sumMode} setSumMode={setSumMode} handleDeleteSelected={handleDeleteSelected} handleDragStart={() => {}}
+        isHideMode={isHideMode} setIsHideMode={setIsHideMode} hiddenRows={hiddenRows} setHiddenRows={setHiddenRows}
+        showPredecessorLines={showPredecessorLines} setShowPredecessorLines={setShowPredecessorLines}
+        handleExportToPDF={handleExportToPDF} isExporting={isExporting}
+        tempStartDate={tempStartDate} setTempStartDate={setTempStartDate} tempEndDate={tempEndDate} setTempEndDate={setTempEndDate}
+        setFilterStartDate={setFilterStartDate} setFilterEndDate={setFilterEndDate}
+        visibleColumns={visibleColumns} handleToggleColumn={handleToggleColumn} handleTodayClick={handleTodayClick}
+        viewMode={viewMode} setViewMode={setViewMode} scaleInput={scaleInput} setScaleInput={setScaleInput}
+        dayWidth={dayWidth} setDayWidth={setDayWidth} isWidthChanged={isWidthChanged} setIsWidthChanged={setIsWidthChanged}
+        saveDayWidth={saveDayWidth} searchTerm={searchTerm} setSearchTerm={setSearchTerm}
+        initialFocusTaskId={initialFocusTaskId} ganttTabFocusTaskId={ganttTabFocusTaskId}
+        ganttTabFilterProjectId={ganttTabFilterProjectId} handleClearFocus={handleClearFocus}
       />
 
       {/* Main Gantt Table View */}

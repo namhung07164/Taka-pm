@@ -5,25 +5,13 @@ import { SortConfig } from './generalTypes';
 import { useAppStore } from '../../store/useAppStore';
 
 interface DrawGeneralCanvasParams {
-  canvas: HTMLCanvasElement;
-  wrapper: HTMLDivElement;
-  paginatedProjects: Project[];
-  pinnedProjects: string[];
-  sortConfig: SortConfig | null;
-  theme: string;
-  flashToggle: boolean;
-  t: (key: string) => string;
+  canvas: HTMLCanvasElement; wrapper: HTMLDivElement; paginatedProjects: Project[];
+  pinnedProjects: string[]; sortConfig: SortConfig | null; theme: string;
+  flashToggle: boolean; t: (key: string) => string;
 }
 
 export function drawGeneralCanvas({
-  canvas,
-  wrapper,
-  paginatedProjects,
-  pinnedProjects,
-  sortConfig,
-  theme,
-  flashToggle,
-  t
+  canvas, wrapper, paginatedProjects, pinnedProjects, sortConfig, theme, flashToggle, t
 }: DrawGeneralCanvasParams) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -44,7 +32,6 @@ export function drawGeneralCanvas({
   canvas.height = totalHeight * dpr;
   canvas.style.width = totalWidth + 'px';
   canvas.style.height = totalHeight + 'px';
-
   ctx.scale(dpr, dpr);
 
   const isDark = theme === 'dark' || (typeof document !== 'undefined' && document.documentElement.classList.contains('dark'));
@@ -52,16 +39,11 @@ export function drawGeneralCanvas({
   ctx.fillRect(0, 0, totalWidth, totalHeight);
 
   const cols = [
-    { label: t('Year'), key: 'year' },
-    { label: t('Store'), key: 'store' },
-    { label: t('Location'), key: 'location' },
-    { label: t('Code'), key: 'code' },
-    { label: t('Project'), key: 'name' },
-    { label: t('Status'), key: 'status' },
-    { label: t('Details'), key: 'detail' },
-    { label: t('Pj Start'), key: 'start' },
-    { label: t('Pj Compl'), key: 'handover' },
-    { label: t('Opening'), key: 'opening' }
+    { label: t('Year'), key: 'year' }, { label: t('Store'), key: 'store' },
+    { label: t('Location'), key: 'location' }, { label: t('Code'), key: 'code' },
+    { label: t('Project'), key: 'name' }, { label: t('Status'), key: 'status' },
+    { label: t('Details'), key: 'detail' }, { label: t('Pj Start'), key: 'start' },
+    { label: t('Pj Compl'), key: 'handover' }, { label: t('Opening'), key: 'opening' }
   ];
 
   const fontSans = 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';

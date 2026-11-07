@@ -10,32 +10,17 @@ import { extractAllProjectCodes, projectMatchesUnitCode, extractProjectMetadata 
 export type MediaPlacementType = 'comment_modular' | 'layout_picture';
 
 export interface ProjectMediaLinkItem {
-  key: string;
-  url: string;
-  projectId: string;
-  projectCode: string;
-  linkCodes: string;
-  unitCode: string;
-  year: string;
-  store: 'HCM' | 'HN' | string;
-  projectName: string;
-  location: string;
-  placements: MediaPlacementType[];
-  placementDetails: string[];
+  key: string; url: string; projectId: string; projectCode: string; linkCodes: string;
+  unitCode: string; year: string; store: 'HCM' | 'HN' | string; projectName: string;
+  location: string; placements: MediaPlacementType[]; placementDetails: string[];
   mediaType: 'image' | 'pdf_drive' | 'link';
   storageHost: 'R2 Cloud' | 'Firebase Storage' | 'Google Drive' | 'External URL';
-  title: string;
-  createdAt: string;
-  authorName?: string;
-  commentSnippet?: string;
-  taskIds?: string[];
-  unitDocIds?: string[];
+  title: string; createdAt: string; authorName?: string; commentSnippet?: string;
+  taskIds?: string[]; unitDocIds?: string[];
 }
 
 export interface RemoteUnitImagesDoc {
-  docId: string;
-  unitCode: string;
-  store: string;
+  docId: string; unitCode: string; store: string;
   images: Array<{ id?: string; url: string; title?: string; createdAt?: string; store?: string }>;
   updatedAt?: string;
 }
@@ -50,17 +35,10 @@ function normalizeStore(store?: string | null): string {
 
 export function detectMediaType(url: string): 'image' | 'pdf_drive' | 'link' {
   const lower = url.toLowerCase().trim();
-  if (
-    /\.(jpe?g|png|webp|gif|svg|bmp|avif)(\?.*)?$/i.test(lower) ||
-    lower.includes('hcm.taka-pm.org') ||
-    lower.includes('taka-pm-folder') ||
-    lower.includes('firebasestorage.googleapis.com')
-  ) {
+  if (/\.(jpe?g|png|webp|gif|svg|bmp|avif)(\?.*)?$/i.test(lower) || lower.includes('hcm.taka-pm.org') || lower.includes('taka-pm-folder') || lower.includes('firebasestorage.googleapis.com')) {
     return lower.includes('.pdf') ? 'pdf_drive' : 'image';
   }
-  if (/\.pdf($|\?|#)/i.test(lower) || lower.includes('drive.google.com') || lower.includes('docs.google.com')) {
-    return 'pdf_drive';
-  }
+  if (/\.pdf($|\?|#)/i.test(lower) || lower.includes('drive.google.com') || lower.includes('docs.google.com')) return 'pdf_drive';
   return 'link';
 }
 

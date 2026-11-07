@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { FixedProjectInput } from '../FixedProjectInput';
-import { Search, Edit3, Plus, Wand2, Hash, X, ArrowUpDown, Unlink } from 'lucide-react';
+import { Search, Edit3, Plus, Wand2, Hash, X, ArrowUpDown, Unlink, Zap, PackagePlus } from 'lucide-react';
 import { MultiCheckboxSelect } from '../MultiCheckboxSelect';
 import { DebouncedSearchInput } from '../DebouncedSearchInput';
 import { ColumnAdder } from '../ColumnAdder';
@@ -166,6 +166,30 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
           </div>
 
           <div className="flex items-center gap-2 shrink-0 ml-auto">
+            {hasWritePermission && canWrite && (
+              <button
+                type="button"
+                onClick={() => {
+                  const targetProj =
+                    activeProjectInView ||
+                    (filteredProjects && filteredProjects.length > 0
+                      ? filteredProjects[0]
+                      : projects && projects.length > 0
+                        ? projects[0]
+                        : null);
+                  window.dispatchEvent(
+                    new CustomEvent('taka_open_stem_workbench', {
+                      detail: { projectId: targetProj?.id, projectCode: targetProj?.code },
+                    })
+                  );
+                }}
+                className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-lg font-bold transition-all shadow-xs shrink-0 touch-manipulation text-xs active:scale-95 cursor-pointer"
+                title="⚡ Lắp ghép từ Thư viện (Visual STEM Task Library Builder)"
+              >
+                <Zap className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">⚡ Lắp ghép từ Thư viện</span>
+              </button>
+            )}
             <ColumnAdder 
               availableColumns={availableColumnsForUser} 
               visibleColumns={visibleColumns} 
@@ -222,6 +246,31 @@ export const DetailFilterToolbar = memo(function DetailFilterToolbar({
                   <Plus className="w-4 h-4 pointer-events-none" />
                   <span className="hidden sm:inline pointer-events-none">
                     {activeProjectInView?.code ? `+ Task (${activeProjectInView.code})` : 'Add New Task'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetProj =
+                      activeProjectInView ||
+                      (filteredProjects && filteredProjects.length > 0
+                        ? filteredProjects[0]
+                        : projects && projects.length > 0
+                          ? projects[0]
+                          : null);
+                    window.dispatchEvent(
+                      new CustomEvent('taka_open_stem_workbench', {
+                        detail: { projectId: targetProj?.id, projectCode: targetProj?.code },
+                      })
+                    );
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-orange-600 border border-orange-700 text-white rounded-lg hover:bg-orange-700 font-bold transition-all shadow-md shrink-0 touch-manipulation text-xs active:scale-95 cursor-pointer"
+                  title="⚡ Lắp ghép từ Thư viện (Visual STEM Task Library Builder)"
+                >
+                  <Zap className="w-4 h-4 pointer-events-none" />
+                  <span className="hidden sm:inline pointer-events-none">
+                    ⚡ Lắp ghép từ Thư viện
                   </span>
                 </button>
 

@@ -1176,3 +1176,36 @@ export declare function synchronizeImportedProjectRollups(
   tasksToHardDelete: Task[]
 ): Promise<void>;
 
+// --- SOURCE: src/components/StemLibrary/stemLibraryTypes.ts & stemAutoWiringEngine.ts ---
+export type StemConnectorType = 'FS' | 'SS' | 'FF' | 'NONE';
+export type StemDepartmentId = 'prep_bql' | 'mep_pccc' | 'interior_hoarding' | 'it_pos_handover';
+export type StemAnchorMode = 'forward' | 'backward';
+export interface StemWorkbenchBlock {
+  instanceId: string;
+  templateId: string;
+  name: string;
+  duration: number;
+  department: StemDepartmentId;
+  party: string;
+  delegation: boolean;
+  connectorToPrev: StemConnectorType;
+  lagDays: number;
+  customStart?: string;
+  computedStart?: string;
+  computedFinish?: string;
+  previewCode?: string;
+}
+export declare function computeWorkbenchSchedule(
+  blocks: StemWorkbenchBlock[],
+  project: Project | null,
+  allTasks: Task[],
+  anchorMode: StemAnchorMode,
+  customAnchorDate?: string
+): any;
+export declare function applyStemWorkbenchToProject(params: {
+  project: Project;
+  computedBlocks: StemWorkbenchBlock[];
+  userEmail?: string;
+}): Promise<{ createdTasks: Task[]; createdDelegationCount: number }>;
+
+

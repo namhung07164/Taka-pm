@@ -8,11 +8,13 @@ import { db, APP_ID } from "../lib/firebase";
 import { requestNotificationPermission } from "../lib/notifications";
 import { useAppStore } from "../store/useAppStore";
 import { bumpConfigVersion } from "../lib/configCacheService";
+import { recordAuditLog } from "../lib/auditLogService";
 import { lazyWithRetry } from "../lib/lazyWithRetry";
 import { FirestorePerformanceDashboard } from "./FirestorePerformanceDashboard";
 import { SettingNotificationRules } from "./SettingTabParts/SettingNotificationRules";
 import { SettingDataMaintenance } from "./SettingTabParts/SettingDataMaintenance";
 import { R2AutoBackupPanel } from "./SettingTabParts/R2AutoBackupPanel";
+import { executeZeroReadForceUpdate } from "./SettingTabParts/maintenanceHelpers";
 import { SettingTabProps, ConfirmModalState } from "./SettingTabParts/settingTypes";
 
 const ConfirmModal = lazyWithRetry(() => import('./ConfirmModal').then(m => ({ default: m.ConfirmModal })), 'ConfirmModal');
@@ -57,15 +59,22 @@ export function SettingTab({ rules }: SettingTabProps) {
       return;
     }
     
+    const prevRates = { jpyRate, usdRate };
+    const nextRates = { jpyRate: parsedJpy, usdRate: parsedUsd };
     useAppStore.getState().setJpyRate(parsedJpy);
     useAppStore.getState().setUsdRate(parsedUsd);
     
     try {
-      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_settings", "exchange_rates"), { 
-        jpyRate: parsedJpy,
-        usdRate: parsedUsd
-      }, { merge: true });
+      await setDoc(doc(db, "artifacts", APP_ID, "public", "data", "taka_settings", "exchange_rates"), nextRates, { merge: true });
       bumpConfigVersion('rates');
+      recordAuditLog({
+        action: 'UPDATE',
+        entityType: 'config',
+        docPath: `artifacts/${APP_ID}/public/data/taka_settings/exchange_rates`,
+        docId: 'exchange_rates',
+        data: nextRates,
+        previousData: prevRates,
+      }).catch(() => {});
       useAppStore.getState().setToast({ title: "Notice", message: "Exchange rates updated successfully." });
     } catch (error) { 
       console.error(error); 
@@ -137,70 +146,7 @@ export function SettingTab({ rules }: SettingTabProps) {
                 triggerConfirmAction(
                   "Force Update App (Zero-Read Smart Update)",
                   "This will fetch the latest application build from Cloudflare and refresh static assets while preserving your local database (IndexedDB/Dexie) and Delta Sync state (0 extra Firestore Reads/Writes). Proceed?",
-                  async () => {
-                    try {
-                      if ('serviceWorker' in navigator) {
-                        const swTask = (async () => {
-                          try {
-                            const registrations = await navigator.serviceWorker.getRegistrations();
-                            for (const reg of registrations) {
-                              try {
-                                if (reg.waiting) {
-                                  reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-                                }
-                                await reg.update().catch(() => {});
-                                await reg.unregister().catch(() => {});
-                              } catch {}
-                            }
-                          } catch {}
-                        })();
-                        await Promise.race([
-                          swTask,
-                          new Promise(resolve => setTimeout(resolve, 600))
-                        ]);
-                      }
-                    } catch (e) {
-                      console.warn('[ForceUpdate] SW warning:', e);
-                    }
-
-                    try {
-                      if ('caches' in window) {
-                        const cacheTask = (async () => {
-                          try {
-                            const cacheNames = await window.caches.keys();
-                            await Promise.all(cacheNames.map((name) => window.caches.delete(name).catch(() => {})));
-                          } catch {}
-                        })();
-                        await Promise.race([
-                          cacheTask,
-                          new Promise(resolve => setTimeout(resolve, 600))
-                        ]);
-                      }
-                    } catch (e) {
-                      console.warn('[ForceUpdate] Cache purge warning:', e);
-                    }
-
-                    try {
-                      sessionStorage.clear();
-                    } catch {}
-
-                    const timestamp = Date.now();
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('v', String(timestamp));
-                    url.searchParams.set('force_update', String(timestamp));
-
-                    try {
-                      window.location.href = url.toString();
-                    } catch {}
-
-                    setTimeout(() => {
-                      try {
-                        window.location.reload();
-                      } catch {
-                        window.location.href = url.toString();
-                      }
-                    }, 100);
-                  },
+                  executeZeroReadForceUpdate,
                   "primary",
                   "OK"
                 );

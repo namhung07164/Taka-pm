@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import {
   FolderPlus, PlusCircle, Sun, Moon, Maximize2, Minimize2, CalendarCheck, Printer,
   DollarSign, ImageDown, LayoutDashboard, Calendar, BarChartHorizontal, List,
-  PieChart, Shield, FileText, Settings, HelpCircle, Building2, Tag, AlertCircle,
+  PieChart, Shield, FileText, Settings, HelpCircle, Building2, Tag, AlertCircle, Zap,
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { useEnrichedData } from '../../hooks/useEnrichedData';
@@ -93,6 +93,25 @@ export function useCommandPaletteItems({
           setPrefillProjectCode(safeP?.code || '');
           setPrefillProjectYear(safeP?.year || null);
           setIsTaskModalOpen(true);
+          onClose();
+        },
+      });
+
+      items.push({
+        id: 'action-stem-workbench',
+        category: 'actions',
+        title: '⚡ Lắp ghép từ Thư viện (STEM Task Library Builder)',
+        subtitle: 'Open 3-Zone Visual STEM Workbench (F&B, Fashion, Pop-up, Reinstatement)',
+        icon: Zap,
+        iconColor: 'text-amber-500 bg-amber-50 dark:bg-amber-950/50',
+        shortcut: 'L',
+        onSelect: () => {
+          const safeP = projects && projects.length > 0 ? projects[0] : null;
+          window.dispatchEvent(
+            new CustomEvent('taka_open_stem_workbench', {
+              detail: { projectId: safeP?.id, projectCode: safeP?.code },
+            })
+          );
           onClose();
         },
       });

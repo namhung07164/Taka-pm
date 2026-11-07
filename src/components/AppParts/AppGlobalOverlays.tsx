@@ -34,6 +34,20 @@ const ExecutiveDeckModal = lazyWithRetry(
     })),
   "ExecutiveDeckModal"
 );
+const StemTaskLibraryModal = lazyWithRetry(
+  () =>
+    import("../StemLibrary/StemTaskLibraryModal").then((m) => ({
+      default: m.StemTaskLibraryModal,
+    })),
+  "StemTaskLibraryModal"
+);
+const StemCapturePresetModal = lazyWithRetry(
+  () =>
+    import("../StemLibrary/StemCapturePresetModal").then((m) => ({
+      default: m.StemCapturePresetModal,
+    })),
+  "StemCapturePresetModal"
+);
 
 interface AppGlobalOverlaysProps {
   quickNavTarget: any;
@@ -75,6 +89,15 @@ export const AppGlobalOverlays: React.FC<AppGlobalOverlaysProps> = memo(
   }) => {
     const [execDeckPayload, setExecDeckPayload] = React.useState<any | null>(null);
     const [isExecDeckOpen, setIsExecDeckOpen] = React.useState(false);
+    const [stemWorkbenchPayload, setStemWorkbenchPayload] = React.useState<{
+      projectId?: string;
+      projectCode?: string;
+    } | null>(null);
+    const [isStemWorkbenchOpen, setIsStemWorkbenchOpen] = React.useState(false);
+    const [stemCaptureTaskIds, setStemCaptureTaskIds] = React.useState<string[] | undefined>(
+      undefined
+    );
+    const [isStemCaptureOpen, setIsStemCaptureOpen] = React.useState(false);
 
     React.useEffect(() => {
       const handleOpenExecDeck = (e: Event) => {
@@ -82,12 +105,56 @@ export const AppGlobalOverlays: React.FC<AppGlobalOverlaysProps> = memo(
         setExecDeckPayload(detail);
         setIsExecDeckOpen(true);
       };
+      const handleOpenStemWorkbench = (e: Event) => {
+        const detail = (e as CustomEvent).detail || {};
+        setStemWorkbenchPayload(detail);
+        setIsStemWorkbenchOpen(true);
+      };
+      const handleCaptureStemPreset = (e: Event) => {
+        const detail = (e as CustomEvent).detail || {};
+        setStemCaptureTaskIds(Array.isArray(detail.taskIds) ? detail.taskIds : undefined);
+        setIsStemCaptureOpen(true);
+      };
       window.addEventListener("taka_open_executive_deck", handleOpenExecDeck);
-      return () => window.removeEventListener("taka_open_executive_deck", handleOpenExecDeck);
+      window.addEventListener("taka_open_stem_workbench", handleOpenStemWorkbench);
+      window.addEventListener("taka_capture_stem_preset", handleCaptureStemPreset);
+      return () => {
+        window.removeEventListener("taka_open_executive_deck", handleOpenExecDeck);
+        window.removeEventListener("taka_open_stem_workbench", handleOpenStemWorkbench);
+        window.removeEventListener("taka_capture_stem_preset", handleCaptureStemPreset);
+      };
     }, []);
 
     return (
       <>
+        {isStemWorkbenchOpen && (
+          <Suspense fallback={null}>
+            <StemTaskLibraryModal
+              isOpen={isStemWorkbenchOpen}
+              onClose={() => setIsStemWorkbenchOpen(false)}
+              initialProjectId={stemWorkbenchPayload?.projectId}
+              initialProjectCode={stemWorkbenchPayload?.projectCode}
+            />
+          </Suspense>
+        )}
+
+        {isStemCaptureOpen && (
+          <Suspense fallback={null}>
+            <StemCapturePresetModal
+              isOpen={isStemCaptureOpen}
+              onClose={() => setIsStemCaptureOpen(false)}
+              taskIds={stemCaptureTaskIds}
+              onSaved={(preset) =>
+                setToast({
+                  title: "Đã đóng gói vào Thư viện STEM",
+                  message: `Đã lưu gói "${preset.emoji} ${preset.title}" (${preset.blocks.length} khối) vào taka_config.`,
+                  type: "success",
+                })
+              }
+            />
+          </Suspense>
+        )}
+
         {isExecDeckOpen && (
           <Suspense fallback={null}>
             <ExecutiveDeckModal

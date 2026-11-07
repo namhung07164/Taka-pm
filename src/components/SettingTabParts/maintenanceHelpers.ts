@@ -301,3 +301,64 @@ export async function archiveHistoricalData(): Promise<number> {
   return Object.values(archiveData).reduce((acc: number, arr: any) => acc + arr.length, 0);
 }
 
+/**
+ * Forces a smart Cloudflare/PWA static asset update while preserving local Dexie database & Delta Sync state (0 extra Firestore Reads/Writes).
+ */
+export async function executeZeroReadForceUpdate(): Promise<void> {
+  try {
+    if ('serviceWorker' in navigator) {
+      const swTask = (async () => {
+        try {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          for (const reg of registrations) {
+            try {
+              if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+              await reg.update().catch(() => {});
+              await reg.unregister().catch(() => {});
+            } catch {}
+          }
+        } catch {}
+      })();
+      await Promise.race([swTask, new Promise(resolve => setTimeout(resolve, 600))]);
+    }
+  } catch (e) {
+    console.warn('[ForceUpdate] SW warning:', e);
+  }
+
+  try {
+    if ('caches' in window) {
+      const cacheTask = (async () => {
+        try {
+          const cacheNames = await window.caches.keys();
+          await Promise.all(cacheNames.map((name) => window.caches.delete(name).catch(() => {})));
+        } catch {}
+      })();
+      await Promise.race([cacheTask, new Promise(resolve => setTimeout(resolve, 600))]);
+    }
+  } catch (e) {
+    console.warn('[ForceUpdate] Cache purge warning:', e);
+  }
+
+  try {
+    sessionStorage.clear();
+  } catch {}
+
+  const timestamp = Date.now();
+  const url = new URL(window.location.href);
+  url.searchParams.set('v', String(timestamp));
+  url.searchParams.set('force_update', String(timestamp));
+
+  try {
+    window.location.href = url.toString();
+  } catch {}
+
+  setTimeout(() => {
+    try {
+      window.location.reload();
+    } catch {
+      window.location.href = url.toString();
+    }
+  }, 100);
+}
+
+
