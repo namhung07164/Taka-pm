@@ -1,10 +1,4 @@
-import React, {
-  useRef,
-  useEffect,
-  useCallback,
-  useImperativeHandle,
-  forwardRef,
-} from 'react';
+import React, { useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
 
 export interface TouchPinchZoomStageHandle {
   zoomIn: (step?: number) => void;
@@ -29,63 +23,34 @@ export interface TouchPinchZoomStageProps {
   contentClassName?: string;
 }
 
-export const TouchPinchZoomStage = forwardRef<
-  TouchPinchZoomStageHandle,
-  TouchPinchZoomStageProps
->(function TouchPinchZoomStage(
-  {
-    children,
-    initialScale = 1,
-    minScale = 0.5,
-    maxScale = 8,
-    onScaleChange,
-    onSwipeUp,
-    onSwipeDown,
-    captureOverlay = false,
-    allowNativeTouch = false,
-    alwaysPan = true,
-    className = '',
-    contentClassName = '',
-  },
-  ref
-) {
+export const TouchPinchZoomStage = forwardRef<TouchPinchZoomStageHandle, TouchPinchZoomStageProps>(
+  function TouchPinchZoomStage(
+    {
+      children, initialScale = 1, minScale = 0.5, maxScale = 8,
+      onScaleChange, onSwipeUp, onSwipeDown, captureOverlay = false,
+      allowNativeTouch = false, alwaysPan = true, className = '', contentClassName = '',
+    },
+    ref
+  ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-
-  const stateRef = useRef<{ scale: number; x: number; y: number }>({
-    scale: initialScale,
-    x: 0,
-    y: 0,
-  });
-
+  const stateRef = useRef<{ scale: number; x: number; y: number }>({ scale: initialScale, x: 0, y: 0 });
   const rafIdRef = useRef<number | null>(null);
   const lastReportedScaleRef = useRef<number>(initialScale);
   const scaleReportTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const pinchStartRef = useRef<{
-    startDist: number;
-    startScale: number;
-    startX: number;
-    startY: number;
-    startMidX: number;
-    startMidY: number;
+    startDist: number; startScale: number; startX: number; startY: number; startMidX: number; startMidY: number;
   } | null>(null);
 
   const panStartRef = useRef<{
-    clientX: number;
-    clientY: number;
-    startX: number;
-    startY: number;
-    moved: boolean;
+    clientX: number; clientY: number; startX: number; startY: number; moved: boolean;
   } | null>(null);
 
   const isMouseDraggingRef = useRef(false);
   const lastTapRef = useRef<{ time: number; x: number; y: number }>({ time: 0, x: 0, y: 0 });
 
-  const clampScale = useCallback(
-    (s: number) => Math.max(minScale, Math.min(maxScale, s)),
-    [minScale, maxScale]
-  );
+  const clampScale = useCallback((s: number) => Math.max(minScale, Math.min(maxScale, s)), [minScale, maxScale]);
 
   const notifyScale = useCallback(
     (s: number, immediate = false) => {

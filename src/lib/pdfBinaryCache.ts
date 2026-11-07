@@ -47,17 +47,11 @@ export function extractDriveIdFromUrl(rawUrl: string): string | null {
 export function canonicalizePdfKey(rawUrl: string): string {
   if (!rawUrl) return '';
   const driveId = extractDriveIdFromUrl(rawUrl);
-  if (driveId) {
-    return `gdrive:${driveId}`;
-  }
+  if (driveId) return `gdrive:${driveId}`;
   const normalized = normalizePdfSourceUrl(rawUrl);
   try {
     const u = new URL(normalized, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
-    if (
-      u.searchParams.has('X-Amz-Signature') ||
-      u.searchParams.has('x-amz-signature') ||
-      u.searchParams.has('token')
-    ) {
+    if (u.searchParams.has('X-Amz-Signature') || u.searchParams.has('x-amz-signature') || u.searchParams.has('token')) {
       return `${u.origin}${u.pathname}`;
     }
   } catch {}
@@ -75,17 +69,10 @@ function openThumbIdb(): Promise<IDBDatabase | null> {
       const req = indexedDB.open(IDB_NAME, IDB_VERSION);
       req.onupgradeneeded = () => {
         const db = req.result;
-        if (!db.objectStoreNames.contains(IDB_STORE)) {
-          db.createObjectStore(IDB_STORE);
-        }
-        if (!db.objectStoreNames.contains(IDB_BINARY_STORE)) {
-          db.createObjectStore(IDB_BINARY_STORE);
-        }
+        if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+        if (!db.objectStoreNames.contains(IDB_BINARY_STORE)) db.createObjectStore(IDB_BINARY_STORE);
       };
-      req.onblocked = () => {
-        idbPromise = null;
-        resolve(null);
-      };
+      req.onblocked = () => { idbPromise = null; resolve(null); };
       req.onsuccess = () => {
         const db = req.result;
         db.onclose = () => { idbPromise = null; };
@@ -95,16 +82,8 @@ function openThumbIdb(): Promise<IDBDatabase | null> {
         };
         resolve(db);
       };
-      req.onerror = () => {
-        idbPromise = null;
-        resolve(null);
-      };
-      // Timeout guard: never hang indefinitely if IDB open is blocked or slow
-      setTimeout(() => {
-        if (idbPromise) {
-          resolve(null);
-        }
-      }, 500);
+      req.onerror = () => { idbPromise = null; resolve(null); };
+      setTimeout(() => { if (idbPromise) resolve(null); }, 500);
     } catch {
       idbPromise = null;
       resolve(null);

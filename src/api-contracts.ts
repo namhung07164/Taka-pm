@@ -1134,3 +1134,45 @@ export declare function getEffectiveTaskDuration(t?: {
   start?: string;
   finish?: string;
 } | null): string;
+
+// --- SOURCE: src/components/CsvExportParts/csvExportHabitService.ts ---
+export interface CsvMappingPreset {
+  id: string;
+  name: string;
+  tabId: string;
+  mapping: Record<string, string>;
+  keepOriginal: Record<string, boolean>;
+  constantMapping: Record<string, string>;
+  explicitEmptyCols?: Record<string, boolean>;
+  isDefault?: boolean;
+  updatedAt: number;
+}
+export interface CsvTabHabitState {
+  mapping: Record<string, string>;
+  keepOriginal: Record<string, boolean>;
+  constantMapping: Record<string, string>;
+  explicitEmptyCols: Record<string, boolean>;
+  preferredHeaders: Record<string, string[]>;
+  isLocked: boolean;
+  activePresetId: string;
+}
+export declare function loadLocalTabHabit(tabId: string): CsvTabHabitState;
+export declare function saveLocalTabHabit(tabId: string, partial: Partial<CsvTabHabitState>): CsvTabHabitState;
+export declare function resolveSmartColumnMappingForFile(params: {
+  tabId: string;
+  headers: string[];
+  currentMapping: Record<string, string>;
+  preferredHeaders: Record<string, string[]>;
+  explicitEmptyCols: Record<string, boolean>;
+  constantMapping: Record<string, string>;
+}): Record<string, string>;
+
+// --- SOURCE: src/components/DetailTabParts/detailTaskImportProjectSync.ts ---
+export declare function synchronizeImportedProjectRollups(
+  projectMap: Map<string, Project>,
+  nextTasks: Task[],
+  tasksToUpsert: Task[],
+  deletedIdsSet: Set<string>,
+  tasksToHardDelete: Task[]
+): Promise<void>;
+

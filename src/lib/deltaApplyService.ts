@@ -34,10 +34,7 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   let delegationsByIdIndex = buildIdIndexMap(updatedDelegations);
 
   const {
-    authoritativeSummaryProjectIds,
-    batchTaskCountsByProj,
-    inMemoryProjectIds,
-    inMemoryProjectCompositeKeys,
+    authoritativeSummaryProjectIds, batchTaskCountsByProj, inMemoryProjectIds, inMemoryProjectCompositeKeys,
   } = extractDeltaBatchPreIndex(deltas, updatedTasks, CLIENT_SESSION_ID);
 
   const expandedSet = new Set([...(store.expandedProjectIds || []), ...(store.searchActiveProjectIds || [])].map(String));
@@ -63,25 +60,12 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
   const reconciledProjectsForDexie: Project[] = [];
 
   const applyItem = (
-    docId: string,
-    collectionNameRaw: string,
-    action: 'create' | 'update' | 'delete',
-    data: any,
-    meta?: {
-      year?: string;
-      projectId?: string;
-      projectCode?: string;
-      projectStore?: string;
-      isPatch?: boolean;
-      skipSummaryRollup?: boolean;
-      serverMs?: number;
-    }
+    docId: string, collectionNameRaw: string, action: 'create' | 'update' | 'delete', data: any,
+    meta?: { year?: string; projectId?: string; projectCode?: string; projectStore?: string; isPatch?: boolean; skipSummaryRollup?: boolean; serverMs?: number }
   ) => {
     if (docId) directlyAppliedDocIds.add(docId);
-    const collectionName =
-      collectionNameRaw === 'taka_delegation_groups' ? 'taka_delegations' : collectionNameRaw;
+    const collectionName = collectionNameRaw === 'taka_delegation_groups' ? 'taka_delegations' : collectionNameRaw;
     const isDelete = action === 'delete' || data?.isDeleted === true;
-
     const isStaleVsLocal = (existing: any): boolean => {
       if (isDelete || !data || Array.isArray(data.taskSummaries)) return false;
       const incoming = Math.max(tsOf(data.updatedAt), meta?.serverMs || 0);

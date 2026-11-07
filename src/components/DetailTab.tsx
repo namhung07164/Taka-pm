@@ -92,24 +92,10 @@ export function DetailTab({
 
   // Options & Permissions Hook
   const {
-    hasWritePermission,
-    isEditMode,
-    setIsEditMode,
-    canWrite,
-    stores,
-    allowedStoreOptions,
-    locationFilterOptions,
-    allowedLocationOptions,
-    years,
+    hasWritePermission, isEditMode, setIsEditMode, canWrite,
+    stores, allowedStoreOptions, locationFilterOptions, allowedLocationOptions, years,
   } = useDetailOptions({
-    currentUser,
-    locations,
-    projects,
-    tasks,
-    globalYearFilter,
-    globalLocationFilter,
-    setGlobalLocationFilter,
-    permissionMatrix,
+    currentUser, locations, projects, tasks, globalYearFilter, globalLocationFilter, setGlobalLocationFilter, permissionMatrix,
   });
 
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1280 : true);
@@ -127,83 +113,31 @@ export function DetailTab({
 
   // Column management
   const {
-    availableColumnsForUser,
-    visibleColumns,
-    colWidths,
-    sortConfig,
-    handleResize,
-    handleToggleColumn,
-    handleSort,
-    effectiveVisibleColumns,
-    totalTableWidth,
+    availableColumnsForUser, visibleColumns, colWidths, sortConfig,
+    handleResize, handleToggleColumn, handleSort, effectiveVisibleColumns, totalTableWidth,
   } = useDetailColumns({ currentUser, canWrite });
 
   // Core Data & Virtualization Rows Hook
   const {
-    searchTerm,
-    setSearchTerm,
-    visibleCount,
-    setVisibleCount,
-    statusFilter,
-    setStatusFilter,
-    lastSelectedStatusFilterRef,
-    selectedTaskIds,
-    setSelectedTaskIds,
-    lastCheckedTaskIdRef,
-    activeProjectInView,
-    delegationGroupByParentKey,
-    projectInfoMap,
-    getProjectInfo,
-    filteredProjects,
-    allVisibleTaskIds,
-    lowerSearchTerm,
-    taskCodeMap,
-    taskActualStatusMap,
-    childTasksCountMap,
-    expandedModularTasks,
-    handleToggleModularParent,
-    handleToggleProjectModularTasks,
-    isAllModularExpanded,
-    handleToggleExpandAllModular,
-    totalChildTasksCount,
-    modularParentsCount,
-    flatTableRows,
-    handleSelectAllTasksInProject,
-    handleToggleSelectTask,
-    handleClearFocus,
-    handleBackToGantt,
+    searchTerm, setSearchTerm, visibleCount, setVisibleCount, statusFilter, setStatusFilter,
+    lastSelectedStatusFilterRef, selectedTaskIds, setSelectedTaskIds, lastCheckedTaskIdRef,
+    activeProjectInView, delegationGroupByParentKey, projectInfoMap, getProjectInfo,
+    filteredProjects, allVisibleTaskIds, lowerSearchTerm, taskCodeMap, taskActualStatusMap,
+    childTasksCountMap, expandedModularTasks, handleToggleModularParent, handleToggleProjectModularTasks,
+    isAllModularExpanded, handleToggleExpandAllModular, totalChildTasksCount, modularParentsCount,
+    flatTableRows, handleSelectAllTasksInProject, handleToggleSelectTask, handleClearFocus, handleBackToGantt,
   } = useDetailData({
-    projects,
-    tasks,
-    delegationGroups,
-    currentUser,
-    effectiveStore,
-    globalYearFilter,
-    setGlobalYearFilter,
-    globalStoreFilter,
-    setGlobalStoreFilter,
-    globalLocationFilter,
-    setGlobalLocationFilter,
-    initialFilterCode,
-    initialFocusTaskId,
-    returnScrollId,
-    onClearFocus,
-    onBackToGantt,
-    sortConfig,
-    expandedCodes,
-    setExpandedCodes,
-    setVisibleActiveProjectIds,
-    canWrite,
+    projects, tasks, delegationGroups, currentUser, effectiveStore,
+    globalYearFilter, setGlobalYearFilter, globalStoreFilter, setGlobalStoreFilter,
+    globalLocationFilter, setGlobalLocationFilter, initialFilterCode, initialFocusTaskId,
+    returnScrollId, onClearFocus, onBackToGantt, sortConfig, expandedCodes, setExpandedCodes,
+    setVisibleActiveProjectIds, canWrite,
   });
 
   // Virtual Windowing Table
   const { tableContainerRef, handleTableScroll, startIndex, endIndex, paddingTop, paddingBottom } =
     useDetailVirtualization({
-      flatTableRows,
-      initialFocusTaskId,
-      initialFilterCode,
-      visibleCount,
-      setVisibleCount,
+      flatTableRows, initialFocusTaskId, initialFilterCode, visibleCount, setVisibleCount,
       filteredProjectsLength: filteredProjects.length,
     });
 
@@ -212,76 +146,40 @@ export function DetailTab({
     useDetailPredecessorSync({ tasks, projects, hasWritePermission });
 
   const {
-    draggingTaskIds,
-    dragOverTaskId,
-    dropPosition,
-    draggingTaskNames,
-    handleSortSubTasks,
-    handleMoveTask,
-    handleDetailTaskDragStart,
-    handleDetailTaskDragOver,
-    handleDetailTaskDragLeave,
-    handleDetailTaskDragEnd,
-    handleDetailTaskDrop,
+    draggingTaskIds, dragOverTaskId, dropPosition, draggingTaskNames,
+    handleSortSubTasks, handleMoveTask, handleDetailTaskDragStart, handleDetailTaskDragOver,
+    handleDetailTaskDragLeave, handleDetailTaskDragEnd, handleDetailTaskDrop,
   } = useDetailTaskReorder({ tasks, projects, selectedTaskIds, setSelectedTaskIds });
 
   const { isSortingSubTasks, handleSortActiveOrAll } = useDetailSubTaskSort({
-    tasks,
-    filteredProjects,
-    activeProjectInView,
-    handleSortSubTasks,
+    tasks, filteredProjects, activeProjectInView, handleSortSubTasks,
   });
 
   // Project & Task Mutations
   const { handleDeleteProject, handleUpdateProject } = useDetailProjectMutations({
-    projects,
-    tasks,
-    delegationGroups,
-    currentUser,
-    setConfirmModal,
+    projects, tasks, delegationGroups, currentUser, setConfirmModal,
   });
 
   const { handleDeleteTask, handleUpdateTask, handleSaveNotes } = useDetailTaskMutations({
-    tasks,
-    projects,
-    delegationGroups,
-    currentUser,
-    setConfirmModal,
+    tasks, projects, delegationGroups, currentUser, setConfirmModal,
   });
 
   const { handleExportProjects, handleImportProjects, projectImportErrorModal } = useDetailProjectCsv({
-    filteredProjects,
-    projects,
+    filteredProjects, projects,
   });
 
   const { handleExportTasks, handleImportTasks, parseCSVDate, importErrorModal } = useDetailTaskCsv({
-    filteredProjects,
-    projects,
-    tasks,
-    appUsers,
-    currentUser,
+    filteredProjects, projects, tasks, appUsers, currentUser,
   });
 
   // Bulk Actions
   const { handleBulkAction } = useDetailBulkActions({
-    selectedTaskIds,
-    setSelectedTaskIds,
-    lastCheckedTaskIdRef,
-    tasks,
-    projects,
-    delegationGroups,
-    currentUser,
+    selectedTaskIds, setSelectedTaskIds, lastCheckedTaskIdRef, tasks, projects, delegationGroups, currentUser,
   });
 
   // Initial Filter Code Scrolling & Backfill Missing Dates Hook
   useDetailInitialScroll({
-    projects,
-    tasks,
-    delegationGroups,
-    initialFilterCode,
-    initialFocusTaskId,
-    setSearchTerm,
-    setStatusFilter,
+    projects, tasks, delegationGroups, initialFilterCode, initialFocusTaskId, setSearchTerm, setStatusFilter,
   });
 
   const toggleGroup = useCallback((id: string) => {

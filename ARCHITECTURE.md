@@ -121,8 +121,8 @@ src/components/
 | TabId | Phân Hệ | File Container Chính | Submodules & Hooks Chính Cần Mở | Modals / Dialogs Liên Quan |
 | :--- | :--- | :--- | :--- | :--- |
 | `general` | Tổng quan dự án | `src/components/GeneralTab.tsx` | `GeneralTabParts/ProjectTableView.tsx`, `GeneralFilterToolbar.tsx`, `useGeneralData.ts` | `ProjectModal`, `ProjectQuickNavModal` |
-| `myWork` | Việc của tôi (My Work) | `src/components/MyWorkTab.tsx` | `MyWorkTabParts/MyWorkHeader.tsx`, `MyWorkKanbanView.tsx`, `MyWorkStreamView.tsx`, `MyWorkRowItem.tsx`, `useMyWorkData.ts`, `myWorkDataBuilders.ts`, `myWorkMutationService.ts`, `myWorkAccountSync.ts` | `TaskModal`, `ProjectModal`, `CalendarSyncModal` |
-| `detail` | Chi tiết công việc | `src/components/DetailTab.tsx` | `DetailTabParts/DetailTableView.tsx`, `DetailFilterToolbar.tsx`, `DetailMobileView.tsx`, `detailTaskMoveService.ts`, `useDetailData.ts`, `useDetailFilterSync.ts`, `useDetailTaskReorder.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal`, `TaskModularModal`, `FullReplaceImport` |
+| `myWork` | Việc của tôi (My Work) | `src/components/MyWorkTab.tsx` | `MyWorkTabParts/MyWorkHeader.tsx`, `MyWorkKanbanView.tsx`, `MyWorkStreamView.tsx`, `MyWorkRowItem.tsx`, `useMyWorkData.ts`, `useMyWorkActions.ts`, `myWorkDataBuilders.ts`, `myWorkMutationService.ts`, `myWorkAccountSync.ts` | `TaskModal`, `ProjectModal`, `CalendarSyncModal` |
+| `detail` | Chi tiết công việc | `src/components/DetailTab.tsx` | `DetailTabParts/DetailTableView.tsx`, `DetailFilterToolbar.tsx`, `DetailMobileView.tsx`, `detailTaskMoveService.ts`, `detailTaskImportExecutor.ts`, `detailTaskImportProjectSync.ts`, `useDetailData.ts`, `useDetailFilterSync.ts`, `useDetailTaskReorder.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal`, `TaskModularModal`, `FullReplaceImport` |
 | `gantt` | Biểu đồ tiến độ Gantt | `src/components/GanttTab.tsx` | `Gantt/GanttTableView.tsx`, `GanttTimeline.tsx`, `GanttProjectRow.tsx`, `GanttTaskRow.tsx`, `GanttTaskEditableColumns.tsx`, `useGanttProjectsFilter.ts`, `useGanttRowVirtualizer.ts`, `useGanttDependencies.ts` | `TaskModal`, `ProjectModal`, `TaskNoteModal` |
 | `calendar` | Lịch tiến độ công việc | `src/components/CalendarTab.tsx` | `CalendarTabParts/CalendarMonthlyView.tsx`, `useCalendarEvents.ts` | `CalendarSyncModal`, `TaskModal` |
 | `budget` | Quản lý ngân sách | `src/components/BudgetTab.tsx` | `BudgetParts/BudgetTableView.tsx`, `BudgetFilterToolbar.tsx`, `BudgetTreeRow.tsx`, `useBudgetData.ts`, `useBudgetFilterSort.ts` | `BudgetLinkModal` (kèm `BudgetLinkParentColumn.tsx`, `BudgetLinkChildColumn.tsx`) |
@@ -135,7 +135,8 @@ src/components/
 | `notification` | Trung tâm thông báo | `src/components/NotificationTab.tsx`| `NotificationParts/NotificationList.tsx`, `NotificationItem.tsx` | `NotificationDetailModal` |
 | `accControl` | Quản lý truy cập / User | `src/components/AccControlTab.tsx` | `AccControlTabParts/UserTable.tsx`, `RoleMatrixView.tsx` | `UserModal` |
 | `audit` | Nhật ký kiểm toán | `src/components/AuditLogTab.tsx` | `AuditLogParts/AuditLogTable.tsx`, `AuditLogFilterToolbar.tsx` | `AuditDiffViewerModal` |
-| `setting` | Cấu hình & Backup | `src/components/SettingTab.tsx` | `SettingTabParts/SystemConfigPanel.tsx`, `DataBackupPanel.tsx` | `ProjectLinksImagesManagerModal`, `FirestoreSummarizedExportModal`, `DesktopOptimizationModal` |
-| `csv_export` | Xuất nhập file | `src/components/CsvExportTab.tsx` | `CsvExportParts/ExportPreviewTable.tsx` | `CsvImportModal` |
+| `setting` | Cấu hình & Backup | `src/components/SettingTab.tsx` | `SettingTabParts/SystemConfigPanel.tsx`, `DataBackupPanel.tsx`, `maintenanceHelpers.ts` | `ProjectLinksImagesManagerModal`, `FirestoreSummarizedExportModal`, `DesktopOptimizationModal` |
+| `csv_export` | Xuất nhập file | `src/components/CsvExportTab.tsx` | `CsvExportParts/CsvExportMappingTable.tsx`, `CsvExportPreviewSection.tsx`, `useCsvExportState.ts`, `csvExportHabitService.ts`, `csvExportProcessing.ts` | `CsvExportR2TemplateModal`, `CsvExportUnlockModal` |
 | `manual` | Hướng dẫn sử dụng | `src/components/ManualTab.tsx` | `FaqBot/FaqChatWindow.tsx`, `FaqKnowledgeViewer.tsx` | `FaqChatbotModal` |
+
 

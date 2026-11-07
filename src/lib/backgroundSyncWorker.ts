@@ -31,7 +31,6 @@ export async function refreshProjectTasksAndDates(pId: string): Promise<void> {
   if (!p) return;
 
   const pTasks = getTasksForProject(p, store.tasks);
-
   const computed = calculateProjectComputedDates(p, pTasks, store.delegationGroups);
   if (
     computed.taskCount !== p.taskCount ||
@@ -41,21 +40,13 @@ export async function refreshProjectTasksAndDates(pId: string): Promise<void> {
   }
 }
 
-let bootstrapInFlightPromise: Promise<{
-  projectCount: number;
-  taskCount: number;
-  costCount: number;
-}> | null = null;
+let bootstrapInFlightPromise: Promise<{ projectCount: number; taskCount: number; costCount: number }> | null = null;
 let activeLocalDeltaWritePromise: Promise<void> | null = null;
 
 /**
  * Nạp tức thì (Instant Boot ~5ms, 0 Read) dữ liệu từ Dexie Local-First Engine vào Zustand Store
  */
-export function bootstrapLocalStore(): Promise<{
-  projectCount: number;
-  taskCount: number;
-  costCount: number;
-}> {
+export function bootstrapLocalStore(): Promise<{ projectCount: number; taskCount: number; costCount: number }> {
   if (bootstrapInFlightPromise) return bootstrapInFlightPromise;
 
   bootstrapInFlightPromise = (async () => {
@@ -81,10 +72,7 @@ export function bootstrapLocalStore(): Promise<{
           return {
             ...p,
             taskSummaries: dedupedSummaries,
-            taskCount:
-              Array.isArray(dedupedSummaries) && dedupedSummaries.length > 0
-                ? dedupedSummaries.length
-                : (p.taskCount ?? 0),
+            taskCount: Array.isArray(dedupedSummaries) && dedupedSummaries.length > 0 ? dedupedSummaries.length : (p.taskCount ?? 0),
           };
         })
         .sort((a, b) => (a.no || 0) - (b.no || 0));
@@ -103,38 +91,23 @@ export function bootstrapLocalStore(): Promise<{
           }
         });
         const { dedupedTasks, removedTaskIds } = deduplicateTasksInMemory(cleanTasks, normalizedProjects);
-        removedTaskIds.forEach((id) => {
-          deleteLocalRecord('taka_tasks', id).catch(() => {});
-        });
+        removedTaskIds.forEach((id) => deleteLocalRecord('taka_tasks', id).catch(() => {}));
         store.setTasks(dedupedTasks);
       }
       if (costs.length > 0 && store.isCostsRequested && (!store.costs || store.costs.length === 0)) {
         store.setCosts(costs);
       }
-      if (
-        delegations.length > 0 &&
-        store.isDelegationsRequested &&
-        (!store.delegationGroups || store.delegationGroups.length === 0)
-      ) {
+      if (delegations.length > 0 && store.isDelegationsRequested && (!store.delegationGroups || store.delegationGroups.length === 0)) {
         store.setDelegationGroups(delegations);
       }
 
       const duration = Math.round(performance.now() - start);
       if (validProjects.length > 0) {
-        usePerformanceStore
-          .getState()
-          .trackGetDoc('dexie_local_db', true, validProjects.length, `Local-First Boot in ${duration}ms`);
+        usePerformanceStore.getState().trackGetDoc('dexie_local_db', true, validProjects.length, `Local-First Boot in ${duration}ms`);
       }
 
-      setTimeout(() => {
-        enforceStorageBudget().catch(() => {});
-      }, 1000);
-
-      return {
-        projectCount: validProjects.length,
-        taskCount: tasks.length,
-        costCount: costs.length,
-      };
+      setTimeout(() => enforceStorageBudget().catch(() => {}), 1000);
+      return { projectCount: validProjects.length, taskCount: tasks.length, costCount: costs.length };
     } catch (err) {
       console.warn('[backgroundSyncWorker] bootstrapLocalStore error:', err);
       return { projectCount: 0, taskCount: 0, costCount: 0 };
@@ -149,10 +122,7 @@ export function bootstrapLocalStore(): Promise<{
 /**
  * Nạp tức thời Projects từ Dexie khi mở app hoặc chuyển năm (0ms UI, 0 Firestore Read)
  */
-export async function hydrateProjectsFromLocal(
-  year?: string,
-  _storeFilter?: string
-): Promise<number> {
+export async function hydrateProjectsFromLocal(year?: string, _storeFilter?: string): Promise<number> {
   try {
     if (activeLocalDeltaWritePromise) await activeLocalDeltaWritePromise;
     const store = useAppStore.getState();

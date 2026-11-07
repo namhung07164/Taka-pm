@@ -138,11 +138,11 @@ export async function optimizeFirestoreStorage(): Promise<FirestoreOptimizationR
 
 export async function standardizeFiscalYears(): Promise<number> {
   let totalUpdated = 0;
-  const collectionsConfig = [
-    { name: "taka_projects", field: "year" },
-    { name: "taka_tasks", field: "projectYear" },
-    { name: "taka_costs", field: "projectYear" },
-    { name: "taka_delegation_groups", field: "projectYear" }
+  const collectionsConfig: Array<{ name: string; field: string; targetType: 'number' | 'string' }> = [
+    { name: "taka_projects", field: "year", targetType: "number" },
+    { name: "taka_tasks", field: "projectYear", targetType: "string" },
+    { name: "taka_costs", field: "projectYear", targetType: "number" },
+    { name: "taka_delegation_groups", field: "projectYear", targetType: "string" }
   ];
 
   for (const item of collectionsConfig) {
@@ -154,17 +154,19 @@ export async function standardizeFiscalYears(): Promise<number> {
     for (const d of snap.docs) {
       const data = d.data();
       const rawYear = data[item.field];
-      if (typeof rawYear === "string") {
-        const numYear = Number(rawYear.trim());
-        if (!isNaN(numYear) && numYear > 2000 && numYear < 2100) {
-          batch.update(doc(db, "artifacts", APP_ID, "public", "data", item.name, d.id), { [item.field]: numYear });
-          count++;
-          totalUpdated++;
-          if (count >= 400) {
-            await batch.commit();
-            batch = writeBatch(db);
-            count = 0;
-          }
+      if (rawYear === undefined || rawYear === null || rawYear === '') continue;
+      const numYear = Number(String(rawYear).trim());
+      if (isNaN(numYear) || numYear <= 2000 || numYear >= 2100) continue;
+
+      const normalizedValue = item.targetType === 'number' ? numYear : String(numYear);
+      if (rawYear !== normalizedValue) {
+        batch.update(doc(db, "artifacts", APP_ID, "public", "data", item.name, d.id), { [item.field]: normalizedValue });
+        count++;
+        totalUpdated++;
+        if (count >= 400) {
+          await batch.commit();
+          batch = writeBatch(db);
+          count = 0;
         }
       }
     }
@@ -176,19 +178,62 @@ export async function standardizeFiscalYears(): Promise<number> {
 export async function repairMissingTaskYears(): Promise<number> {
   const projRef = collection(db, "artifacts", APP_ID, "public", "data", "taka_projects");
   const projSnap = await getDocs(projRef);
-  const projectYearMap = new Map<string, number>();
+
+  // Rule 16.1 Composite Key Isolation: Index by projectId (#1), code+store (#2), and unambiguous code (#3)
+  const yearByProjectId = new Map<string, number>();
+  const yearsByCodeAndStore = new Map<string, Set<number>>();
+  const yearsByCodeOnly = new Map<string, Set<number>>();
+
   projSnap.docs.forEach(docSnap => {
     const data = docSnap.data();
-    if (data.code && data.year && typeof data.year === 'number') {
-      projectYearMap.set(data.code, data.year);
+    if (data.isDeleted) return;
+    const numYear = Number(String(data.year ?? '').trim());
+    if (isNaN(numYear) || numYear <= 2000 || numYear >= 2100) return;
+
+    yearByProjectId.set(docSnap.id, numYear);
+    const codeLower = String(data.code || '').trim().toLowerCase();
+    const storeLower = String(data.store || '').trim().toLowerCase();
+    if (codeLower) {
+      if (storeLower) {
+        const csKey = `${codeLower}|${storeLower}`;
+        if (!yearsByCodeAndStore.has(csKey)) yearsByCodeAndStore.set(csKey, new Set());
+        yearsByCodeAndStore.get(csKey)!.add(numYear);
+      }
+      if (!yearsByCodeOnly.has(codeLower)) yearsByCodeOnly.set(codeLower, new Set());
+      yearsByCodeOnly.get(codeLower)!.add(numYear);
     }
   });
 
+  const resolveIsolatedProjectYear = (data: Record<string, any>): number | null => {
+    const pid = data.projectId ? String(data.projectId).trim() : '';
+    if (pid) {
+      // Rule 16.1 Priority #1: If projectId is present, never fallback to a different project's code
+      return yearByProjectId.get(pid) ?? null;
+    }
+    const codeLower = String(data.projectCode || data.code || '').trim().toLowerCase();
+    const storeLower = String(data.projectStore || data.store || '').trim().toLowerCase();
+    if (!codeLower) return null;
+
+    if (storeLower) {
+      const csYears = yearsByCodeAndStore.get(`${codeLower}|${storeLower}`);
+      if (csYears && csYears.size === 1) {
+        return Array.from(csYears)[0];
+      }
+      return null;
+    }
+
+    const codeYears = yearsByCodeOnly.get(codeLower);
+    if (codeYears && codeYears.size === 1) {
+      return Array.from(codeYears)[0];
+    }
+    return null;
+  };
+
   let totalUpdated = 0;
-  const collectionsConfig = [
-    { name: "taka_tasks", field: "projectYear" },
-    { name: "taka_costs", field: "projectYear" },
-    { name: "taka_delegation_groups", field: "projectYear" }
+  const collectionsConfig: Array<{ name: string; field: string; targetType: 'number' | 'string' }> = [
+    { name: "taka_tasks", field: "projectYear", targetType: "string" },
+    { name: "taka_costs", field: "projectYear", targetType: "number" },
+    { name: "taka_delegation_groups", field: "projectYear", targetType: "string" }
   ];
 
   for (const item of collectionsConfig) {
@@ -201,11 +246,11 @@ export async function repairMissingTaskYears(): Promise<number> {
       const data = d.data();
       const rawYear = data[item.field];
       if (rawYear === undefined || rawYear === null || rawYear === '' || isNaN(Number(rawYear))) {
-        const code = data.projectCode || data.code;
-        if (code && projectYearMap.has(code)) {
-          const correctYear = projectYearMap.get(code);
+        const resolvedYear = resolveIsolatedProjectYear(data);
+        if (resolvedYear !== null) {
+          const formattedYear = item.targetType === 'number' ? resolvedYear : String(resolvedYear);
           batch.update(doc(db, "artifacts", APP_ID, "public", "data", item.name, d.id), {
-            [item.field]: correctYear
+            [item.field]: formattedYear
           });
           count++;
           totalUpdated++;
@@ -234,14 +279,19 @@ export async function archiveHistoricalData(): Promise<number> {
   };
 
   for (const colName of Object.keys(archiveData)) {
+    const seenIds = new Set<string>();
     for (const year of yearsToArchive) {
       const field = colName === "taka_projects" ? "year" : "projectYear";
-      const q = query(
-        collection(db, "artifacts", APP_ID, "public", "data", colName),
-        where(field, "==", year)
-      );
-      const snap = await getDocs(q);
-      snap.docs.forEach(d => archiveData[colName].push({ id: d.id, ...d.data() }));
+      const [numSnap, strSnap] = await Promise.all([
+        getDocs(query(collection(db, "artifacts", APP_ID, "public", "data", colName), where(field, "==", year))),
+        getDocs(query(collection(db, "artifacts", APP_ID, "public", "data", colName), where(field, "==", String(year)))),
+      ]);
+      for (const d of [...numSnap.docs, ...strSnap.docs]) {
+        if (!seenIds.has(d.id)) {
+          seenIds.add(d.id);
+          archiveData[colName].push({ id: d.id, ...d.data() });
+        }
+      }
     }
   }
 
@@ -250,3 +300,4 @@ export async function archiveHistoricalData(): Promise<number> {
   await uploadString(archiveRef, jsonStr, 'raw', { contentType: 'application/json' });
   return Object.values(archiveData).reduce((acc: number, arr: any) => acc + arr.length, 0);
 }
+
