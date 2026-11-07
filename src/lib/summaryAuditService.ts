@@ -7,7 +7,7 @@ import { useAppStore } from '../store/useAppStore';
 import { Project, Task } from '../types';
 import { calculateProjectComputedDates } from './projectDatesService';
 import { bulkPersistTasks, bulkPersistProjects, deleteLocalRecord, localDb } from './localDb';
-import { markTasksDeleted } from './taskDeletedTracker';
+import { markTasksDeleted, unmarkTaskDeleted } from './taskDeletedTracker';
 import { waitForNetworkRecovery, resetStalledFirestoreConnection } from './syncResilience';
 import {
   AuditRow,
@@ -15,6 +15,7 @@ import {
   buildOwnerResolver,
   isRecent,
   matchDriftedSummaryAndServerTasks,
+  autoHealLocalDeviceFromServerAudit,
   repairLocalDevice,
   purgeExcessFirestoreTasks,
 } from './summaryAuditHelpers';
@@ -71,7 +72,7 @@ export async function runSummaryAudit(onProgress?: (msg: string) => void): Promi
     .map((d) => ({ ...(d.data() as any), id: d.id }) as Task)
     .filter((t) => !t.isDeleted);
 
-  onProgress?.(`Đã đọc ${serverTasks.length} task. Đang đối chiếu...`);
+  onProgress?.(`Đã đọc ${serverTasks.length} task. Đang đối chiếu & đồng bộ bộ nhớ thiết bị...`);
 
   const resolve = buildOwnerResolver(projects);
   const projectsById = new Map<string, Project>();
@@ -82,6 +83,7 @@ export async function runSummaryAudit(onProgress?: (msg: string) => void): Promi
   let orphanCount = 0;
   let ambiguousCount = 0;
   serverTasks.forEach((t) => {
+    unmarkTaskDeleted(t.id);
     serverTasksById.set(t.id, t);
     const r = resolve(t);
     if (r.status === 'ok' && r.owner?.id) {
@@ -93,7 +95,7 @@ export async function runSummaryAudit(onProgress?: (msg: string) => void): Promi
     else orphanCount++;
   });
 
-  // Dữ liệu trên thiết bị này (kết hợp cả Zustand RAM + Dexie IndexedDB để phát hiện mọi zombie task ẩn trong cache)
+  // Dữ liệu trên thiết bị này (kết hợp cả Zustand RAM + Dexie IndexedDB)
   const st = useAppStore.getState();
   const dexieTasks = await localDb.tasks.toArray().catch(() => [] as Task[]);
   const combinedLocalMap = new Map<string, Task>();
@@ -107,8 +109,11 @@ export async function runSummaryAudit(onProgress?: (msg: string) => void): Promi
       combinedLocalMap.set(String(t.id), t);
     }
   });
+
+  await autoHealLocalDeviceFromServerAudit(projects, serverTasks, serverTasksById, combinedLocalMap);
+
   const localTasks: Task[] = Array.from(combinedLocalMap.values());
-  const localProjects: Project[] = st.projects || [];
+  const localProjects: Project[] = useAppStore.getState().projects || [];
   const localProjectsById = new Map<string, Project>();
   localProjects.forEach((p) => p.id && localProjectsById.set(String(p.id), p));
   const localOwner = new Map<string, Task[]>();

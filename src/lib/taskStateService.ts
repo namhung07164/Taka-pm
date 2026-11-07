@@ -50,41 +50,12 @@ export async function ensureProjectTasksLoaded(
 
   const matchesContext = (t: Partial<Task>): boolean => {
     if (t.isDeleted || (t.id && isTaskDeletedInTracker(t.id))) return false;
-    if (ctxProjectId && t.projectId) {
-      return String(t.projectId).trim() === ctxProjectId;
-    }
+    if (ctxProjectId && t.projectId) return String(t.projectId).trim() === ctxProjectId;
     const tCodeLower = t.projectCode ? normalizeDashes(t.projectCode).trim().toLowerCase() : '';
-    if (ctxProjectId && !t.projectId) {
-      if (cleanCodeLower && (!tCodeLower || tCodeLower !== cleanCodeLower)) {
-        return false;
-      }
-      if (ctxStoreLower && t.projectStore && t.projectStore.trim().toLowerCase() !== ctxStoreLower) {
-        return false;
-      }
-      if (
-        ctxYearStr &&
-        t.projectYear !== undefined &&
-        t.projectYear !== null &&
-        String(t.projectYear).trim() !== ctxYearStr
-      ) {
-        return false;
-      }
-      return Boolean(cleanCodeLower);
-    }
-    if (cleanCodeLower && (!tCodeLower || tCodeLower !== cleanCodeLower)) {
-      return false;
-    }
-    if (ctxStoreLower && t.projectStore && t.projectStore.trim().toLowerCase() !== ctxStoreLower) {
-      return false;
-    }
-    if (
-      ctxYearStr &&
-      t.projectYear !== undefined &&
-      t.projectYear !== null &&
-      String(t.projectYear).trim() !== ctxYearStr
-    ) {
-      return false;
-    }
+    if (ctxProjectId && !t.projectId && !cleanCodeLower) return false;
+    if (cleanCodeLower && (!tCodeLower || tCodeLower !== cleanCodeLower)) return false;
+    if (ctxStoreLower && t.projectStore && t.projectStore.trim().toLowerCase() !== ctxStoreLower) return false;
+    if (ctxYearStr && t.projectYear !== undefined && t.projectYear !== null && String(t.projectYear).trim() !== ctxYearStr) return false;
     return true;
   };
 
@@ -319,10 +290,29 @@ export async function syncAffectedProjects(
 
   const currentTasks = allTasks || useAppStore.getState().tasks;
   const delegationGroups = useAppStore.getState().delegationGroups;
+  const { getLocalTasksForProjects } = await import('./localDb');
 
   for (const project of affectedProjects) {
     if (!project.id) continue;
-    const projectTasks = getTasksForProject(project, currentTasks);
+    let candidateTasks = currentTasks;
+    try {
+      const dexieProjTasks = await getLocalTasksForProjects(
+        [String(project.id), String(project.code || '')].filter(Boolean),
+        project.year,
+        project.store
+      );
+      if (dexieProjTasks && dexieProjTasks.length > 0) {
+        const inMemIds = new Set(currentTasks.map((t) => String(t.id)));
+        const missingFromRam = dexieProjTasks.filter(
+          (dt) => dt && dt.id && !dt.isDeleted && !isTaskDeletedInTracker(dt.id, String(project.id)) && !inMemIds.has(String(dt.id))
+        );
+        if (missingFromRam.length > 0) {
+          candidateTasks = [...currentTasks, ...missingFromRam];
+        }
+      }
+    } catch {}
+
+    const projectTasks = getTasksForProject(project, candidateTasks);
     const computedDates = calculateProjectComputedDates(
       project,
       projectTasks,
@@ -340,6 +330,11 @@ export async function saveTaskStateUnified(
   options?: { syncProjects?: boolean; allTasksOverride?: Task[] }
 ): Promise<void> {
   if (!taskUpdates || taskUpdates.length === 0) return;
+
+  const { unmarkTaskDeleted } = await import('./taskDeletedTracker');
+  taskUpdates.forEach((u) => {
+    if (u?.id && !u.isDeleted) unmarkTaskDeleted(u.id);
+  });
 
   useAppStore.getState().optimisticUpdateTasks(taskUpdates);
 

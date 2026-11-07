@@ -172,12 +172,13 @@ export function reconcileTasksAgainstIncomingProjectSummaries(
     }
 
     const tNameStart = `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`;
-    if (isRecentLocal || (t.name && unmatchedSummaryNameStarts.has(tNameStart))) {
+    const isZeroTaskProj = rawTaskSummaries.length === 0 && (nextProj.taskCount ?? 0) === 0;
+    if (!isZeroTaskProj || isRecentLocal || (t.name && unmatchedSummaryNameStarts.has(tNameStart))) {
       unmatchedSummaryNameStarts.delete(tNameStart);
       nextTasks.push(t);
       continue;
     }
-    // Task is older than 60s and no longer in authoritative project.taskSummaries -> purge zombie task locally (0 Firestore reads)
+    // Project explicitly has 0 tasks on server and local task is >60s old -> purge zombie task locally
     zombieIds.push(t.id);
     anyTaskPatched = true;
   }

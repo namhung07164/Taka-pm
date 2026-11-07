@@ -175,6 +175,50 @@ export function matchDriftedSummaryAndServerTasks(
   return { driftedOwnedIds, driftedSummaryIds, summaryIdToOwnedTask };
 }
 
+export async function autoHealLocalDeviceFromServerAudit(
+  projects: Project[],
+  serverTasks: Task[],
+  serverTasksById: Map<string, Task>,
+  combinedLocalMap: Map<string, Task>
+): Promise<void> {
+  const st = useAppStore.getState();
+  const autoHealTasksToAdd: Task[] = [];
+  const autoHealTaskIdsToRemove = new Set<string>();
+  combinedLocalMap.forEach((lt, lid) => {
+    if (!serverTasksById.has(lid) && !isRecent(lt)) {
+      autoHealTaskIdsToRemove.add(lid);
+      combinedLocalMap.delete(lid);
+    }
+  });
+  serverTasks.forEach((stTask) => {
+    const existingLocal = combinedLocalMap.get(String(stTask.id));
+    if (!existingLocal || (stTask.updatedAt && existingLocal.updatedAt && stTask.updatedAt > existingLocal.updatedAt)) {
+      combinedLocalMap.set(String(stTask.id), stTask);
+      autoHealTasksToAdd.push(stTask);
+    }
+  });
+  if (autoHealTaskIdsToRemove.size > 0) {
+    for (const delId of autoHealTaskIdsToRemove) {
+      await deleteLocalRecord('taka_tasks', delId).catch(() => {});
+    }
+  }
+  if (autoHealTasksToAdd.length > 0) {
+    await bulkPersistTasks(autoHealTasksToAdd).catch(() => {});
+  }
+  if (projects.length > 0) {
+    await bulkPersistProjects(projects).catch(() => {});
+    st.setProjects([...projects].sort((a, b) => (a.no || 0) - (b.no || 0)));
+  }
+  if (st.isTasksRequested || (st.tasks && st.tasks.length > 0)) {
+    const activeYr = st.globalYearFilter ? String(st.globalYearFilter).trim() : '';
+    const isAllYr = !activeYr || activeYr.toLowerCase() === 'all';
+    const nextRamTasks = Array.from(combinedLocalMap.values()).filter(
+      (t) => isAllYr || !t.projectYear || String(t.projectYear).trim() === activeYr
+    );
+    st.setTasks(nextRamTasks);
+  }
+}
+
 export async function repairLocalDevice(
   report: AuditReport
 ): Promise<{ added: number; removed: number; projectsRefreshed: number }> {

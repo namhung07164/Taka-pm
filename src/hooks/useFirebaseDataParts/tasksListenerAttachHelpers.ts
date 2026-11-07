@@ -155,29 +155,28 @@ export function evaluateProjectTaskHydrationState(params: {
  */
 export function buildProjectCodeTasksQuery(p: Project) {
   const codeSet = new Set<string>();
+  const addCodeVariants = (rawVal: string) => {
+    const raw = rawVal.trim();
+    if (!raw) return;
+    codeSet.add(raw);
+    codeSet.add(raw.toUpperCase());
+    codeSet.add(raw.toLowerCase());
+    const titleCase = raw.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+    codeSet.add(titleCase);
+  };
   if (p.code) {
-    const raw = String(p.code).trim();
-    if (raw) {
-      codeSet.add(raw);
-      codeSet.add(raw.toUpperCase());
-      codeSet.add(raw.toLowerCase());
-    }
+    addCodeVariants(String(p.code));
   }
   if (p.linkCodes) {
-    const extra = String(p.linkCodes)
+    String(p.linkCodes)
       .split(/[,;/]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    extra.forEach((c) => {
-      codeSet.add(c);
-      codeSet.add(c.toUpperCase());
-      codeSet.add(c.toLowerCase());
-    });
+      .forEach((c) => addCodeVariants(c));
   }
   const codeList = Array.from(codeSet);
   const colRef = collection(db, 'artifacts', APP_ID, 'public', 'data', 'taka_tasks');
+  const pIdStr = p.id ? String(p.id).trim() : '';
   if (codeList.length === 0) {
-    return query(colRef, where('projectId', '==', String(p.id || '').trim()));
+    return query(colRef, where('projectId', '==', pIdStr));
   }
   return codeList.length > 1
     ? query(colRef, where('projectCode', 'in', codeList.slice(0, 10)))
@@ -350,7 +349,7 @@ export function attachProjectTasksListener(params: {
       const latestProj =
         (useAppStore.getState().projects || []).find((proj) => proj.id === p.id) || p;
 
-      let compatibleChanges = filterCompatibleProjectChanges(snapshot.docChanges(), latestProj);
+      const compatibleChanges = filterCompatibleProjectChanges(snapshot.docChanges(), latestProj);
 
       if (!fromCache && !snapshot.metadata.hasPendingWrites) {
         const currentTasksNow = getCurrentPendingOrStoreTasks();
@@ -362,33 +361,34 @@ export function attachProjectTasksListener(params: {
         const serverDocIdsLower = new Set(
           compatibleServerDocs.map((d) => String(d.id || '').trim().toLowerCase())
         );
-        const inMemoryRealIdsLower = new Set(
-          currentTasksNow
-            .filter(
-              (t) =>
-                t &&
-                t.id &&
-                !t.isDeleted &&
-                !String(t.id).startsWith('ts_') &&
-                !(t as any)._isVirtualSummary
-            )
-            .map((t) => String(t.id).trim().toLowerCase())
-        );
-        const missingSummaryIds = Array.isArray(latestProj.taskSummaries)
-          ? latestProj.taskSummaries
-              .map((s: any) => String(s?.id || '').trim())
-              .filter(
-                (id: string) =>
-                  id &&
-                  !id.startsWith('ts_') &&
-                  !serverDocIdsLower.has(id.toLowerCase()) &&
-                  !inMemoryRealIdsLower.has(id.toLowerCase())
-              )
-          : [];
 
-        if (missingSummaryIds.length > 0) {
-          // Some taskSummaries may be linked by projectId or another code variation; fetch them by ID before reconciling
-          const fakeDeltas: TakaDeltaItem[] = missingSummaryIds.map((id) => ({
+        const candidateVerifyIds = new Map<string, string>();
+        if (Array.isArray(latestProj.taskSummaries)) {
+          latestProj.taskSummaries.forEach((s: any) => {
+            const id = String(s?.id || '').trim();
+            if (id && !id.startsWith('ts_') && !serverDocIdsLower.has(id.toLowerCase())) {
+              candidateVerifyIds.set(id.toLowerCase(), id);
+            }
+          });
+        }
+
+        const zombieCandidateDocs = buildZombieTaskRemovalsForProject(
+          compatibleServerDocs,
+          currentTasksNow,
+          latestProj
+        );
+        zombieCandidateDocs.forEach((zr: any) => {
+          const zId = String(zr?.doc?.id || '').trim();
+          if (zId && !zId.startsWith('ts_') && !serverDocIdsLower.has(zId.toLowerCase())) {
+            candidateVerifyIds.set(zId.toLowerCase(), zId);
+          }
+        });
+
+        const idsToVerify = Array.from(candidateVerifyIds.values());
+        if (idsToVerify.length > 0) {
+          // Verify any summary/local tasks not returned by the projectCode query by exact docId
+          // (handles tasks linked by projectId with different projectCode casing, or confirms true server deletion)
+          const fakeDeltas: TakaDeltaItem[] = idsToVerify.map((id) => ({
             docId: id,
             collectionName: 'taka_tasks',
             action: 'update',
@@ -399,7 +399,8 @@ export function attachProjectTasksListener(params: {
             projectCode: latestProj.code,
             year: String(latestProj.year || ''),
             projectStore: latestProj.store,
-          }));
+            forceResolve: true,
+          } as any));
           resolveInvalidations(fakeDeltas)
             .then((resolved) => {
               if (resolved.length > 0) {
@@ -415,15 +416,6 @@ export function attachProjectTasksListener(params: {
         } else {
           knownHydratedProjectCodes.add(String(p.id));
           markProjectTasksHydrated(p.id);
-        }
-
-        const zombieRemovals = buildZombieTaskRemovalsForProject(
-          compatibleServerDocs,
-          currentTasksNow,
-          latestProj
-        );
-        if (zombieRemovals.length > 0) {
-          compatibleChanges = [...compatibleChanges, ...zombieRemovals];
         }
       } else if (!fromCache) {
         knownHydratedProjectCodes.add(String(p.id));

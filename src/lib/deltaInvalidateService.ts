@@ -150,10 +150,6 @@ function isRelevant(item: TakaDeltaItem, nowMs: number, maps: InvalidationStoreM
     if (!forceResolve && existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_tasks') {
     const existing = maps.tasksById.get(item.docId);
-    if (!maps.isTasksRequested && !existing && !forceResolve) {
-      queueDeferredInvalidation(item);
-      return false;
-    }
     if (!forceResolve && existing && nowMs - tsOf(existing.updatedAt) < RECENT_SNAPSHOT_WINDOW_MS) return false;
   } else if (item.collectionName === 'taka_projects') {
     const existing = maps.projectsById.get(item.docId);

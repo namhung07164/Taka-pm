@@ -169,14 +169,21 @@ export function startDeltaRealtimeListener(): () => void {
   };
 
   const handleOnline = () => {
-    if (!unsub) {
-      attach();
-    }
+    scheduleReconnect();
+  };
+
+  let blurredAt = 0;
+  const handleBlur = () => {
+    blurredAt = Date.now();
   };
 
   const handleFocus = () => {
+    const blurMs = blurredAt > 0 ? Date.now() - blurredAt : 0;
+    blurredAt = 0;
     if (!unsub) {
       attach();
+    } else if (blurMs >= 60000) {
+      scheduleReconnect();
     }
   };
 
@@ -191,6 +198,7 @@ export function startDeltaRealtimeListener(): () => void {
   window.addEventListener('taka_sleep_wake_recovery', onSleepWake);
   window.addEventListener('pageshow', handlePageShow as any);
   window.addEventListener('online', handleOnline);
+  window.addEventListener('blur', handleBlur);
   window.addEventListener('focus', handleFocus);
 
   return () => {
@@ -201,6 +209,7 @@ export function startDeltaRealtimeListener(): () => void {
     window.removeEventListener('taka_sleep_wake_recovery', onSleepWake);
     window.removeEventListener('pageshow', handlePageShow as any);
     window.removeEventListener('online', handleOnline);
+    window.removeEventListener('blur', handleBlur);
     window.removeEventListener('focus', handleFocus);
     if (flushTimer) clearTimeout(flushTimer);
     if (detachTimer) clearTimeout(detachTimer);

@@ -67,9 +67,9 @@ export function applyIncomingDeltas(deltas: TakaDelta[]): number {
     const collectionName = collectionNameRaw === 'taka_delegation_groups' ? 'taka_delegations' : collectionNameRaw;
     const isDelete = action === 'delete' || data?.isDeleted === true;
     const isStaleVsLocal = (existing: any): boolean => {
-      if (isDelete || !data || Array.isArray(data.taskSummaries)) return false;
+      if (isDelete || !data) return false;
       const incoming = Math.max(tsOf(data.updatedAt), meta?.serverMs || 0);
-      return Boolean(incoming && tsOf(existing?.updatedAt) > incoming + 60000);
+      return Boolean(incoming && tsOf(existing?.updatedAt) > incoming + 15000);
     };
 
     switch (collectionName) {

@@ -15,7 +15,7 @@ import { processPendingSync, getConnectionStatus } from './syncQueue';
  *    (e.g. after iPadOS native <input type="file"> sheet closes) ONLY when an active RPC/commit stalls.
  */
 
-const HIDDEN_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes hidden before delta catch-up
+const HIDDEN_THRESHOLD_MS = 60 * 1000; // 60 seconds hidden/idle before delta catch-up per Rule 16.2
 const WALL_CLOCK_CHECK_INTERVAL_MS = 20 * 1000;
 const WALL_CLOCK_JUMP_THRESHOLD_MS = 60 * 1000; // 60s OS sleep jump per Rule 16.2
 const STALE_RESYNC_MS = 6 * 24 * 60 * 60 * 1000; // < 7-day delta retention
@@ -85,13 +85,14 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return () => {};
 
   let hiddenAt = 0;
+  let blurredAt = 0;
   let lastWallClockTick = Date.now();
   let lastRecoveredAt = 0;
   let busy = false;
 
-  const recover = async () => {
+  const recover = async (elapsedSleepMs: number = 0) => {
     const now = Date.now();
-    if (busy || now - lastRecoveredAt < 30000) return;
+    if (busy || now - lastRecoveredAt < 5000) return;
     busy = true;
     lastRecoveredAt = now;
     const p = (async () => {
@@ -105,6 +106,11 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
         busy = false;
         activeRecoveryPromise = null;
         lastWallClockTick = Date.now();
+        try {
+          window.dispatchEvent(
+            new CustomEvent('taka_sleep_wake_recovery', { detail: { elapsedSleepMs } })
+          );
+        } catch {}
         try { onRecovered?.(); } catch {}
       }
     })();
@@ -121,43 +127,56 @@ export function initNetworkRecovery(onRecovered?: () => void): () => void {
     const hiddenDuration = hiddenAt ? now - hiddenAt : 0;
     hiddenAt = 0;
     if (hiddenDuration > HIDDEN_THRESHOLD_MS) {
-      recover();
+      recover(hiddenDuration);
     }
   };
 
-  // Page restored from the iOS back/forward cache: sockets are certainly dead.
+  const handleBlur = () => {
+    blurredAt = Date.now();
+  };
+
+  const handleFocus = () => {
+    const now = Date.now();
+    const blurDuration = blurredAt ? now - blurredAt : 0;
+    const wallElapsed = now - lastWallClockTick;
+    blurredAt = 0;
+    const maxInactive = Math.max(blurDuration, wallElapsed);
+    if (maxInactive > HIDDEN_THRESHOLD_MS) {
+      recover(maxInactive);
+    }
+  };
+
+  // Page restored from the iOS/Desktop back/forward cache: sockets are certainly dead.
   const handlePageShow = (e: Event) => {
-    if ((e as PageTransitionEvent).persisted) recover();
+    if ((e as PageTransitionEvent).persisted) recover(HIDDEN_THRESHOLD_MS + 1000);
   };
 
-  // Network came back: flush queued offline writes and pull deltas without abruptly cycling Firestore network
+  // Network came back: flush queued offline writes and pull deltas
   const handleOnline = () => {
-    processPendingSync().catch(() => {});
-    try { onRecovered?.(); } catch {}
+    recover(HIDDEN_THRESHOLD_MS + 1000);
   };
 
-  // Wall-clock sleep detector: catches OS sleep/wake even when tab stayed visible and focused
+  // Wall-clock sleep detector: catches OS sleep/wake even when tab stayed visible and focused (Rule 16.2: >60s gap)
   const wallClockTimer = setInterval(() => {
     const now = Date.now();
     const elapsed = now - lastWallClockTick;
     lastWallClockTick = now;
     if (elapsed > WALL_CLOCK_JUMP_THRESHOLD_MS && document.visibilityState === 'visible') {
-      if (elapsed > 15 * 60 * 1000) {
-        recover();
-      } else {
-        processPendingSync().catch(() => {});
-        try { onRecovered?.(); } catch {}
-      }
+      recover(elapsed);
     }
   }, WALL_CLOCK_CHECK_INTERVAL_MS);
 
   document.addEventListener('visibilitychange', handleVisibility);
+  window.addEventListener('blur', handleBlur);
+  window.addEventListener('focus', handleFocus);
   window.addEventListener('pageshow', handlePageShow);
   window.addEventListener('online', handleOnline);
 
   return () => {
     clearInterval(wallClockTimer);
     document.removeEventListener('visibilitychange', handleVisibility);
+    window.removeEventListener('blur', handleBlur);
+    window.removeEventListener('focus', handleFocus);
     window.removeEventListener('pageshow', handlePageShow);
     window.removeEventListener('online', handleOnline);
   };

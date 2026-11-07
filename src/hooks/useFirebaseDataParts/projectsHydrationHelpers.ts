@@ -171,9 +171,12 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
         !serverSummaryIds.has(oldId.toLowerCase()) &&
         !serverSummaryNameStarts.has(oldNameStart)
       ) {
-        // Server summary no longer has this task -> purge locally (0 Firestore reads)
-        markTasksDeleted([oldId], String(id));
-        pendingDeletedTaskIds.add(oldId);
+        if (isZeroTaskServer) {
+          markTasksDeleted([oldId], String(id));
+          pendingDeletedTaskIds.add(oldId);
+        } else {
+          pendingInvalidatedTaskIds.set(oldId, projYearStr);
+        }
       }
     });
   }
@@ -196,7 +199,7 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
     if (!sIdLower || !localProjTasksById.has(sIdLower)) {
       if (sId && !sId.startsWith('ts_')) {
         hasMissingLocalTasks = true;
-        if (isTasksRequested && isProjectCurrentlyExpanded) {
+        if (isProjectExpandedOrLoaded || (isTasksRequested && isProjectCurrentlyExpanded)) {
           pendingInvalidatedTaskIds.set(sId, projYearStr);
         }
       }
@@ -222,9 +225,12 @@ export function reconcileProjectSummaryWithLocalTasks(params: {
       }
       const updatedMs = tsOf(t.updatedAt);
       if (!updatedMs || nowMs - updatedMs > 60000) {
-        // Zombie task in memory -> purge locally (0 Firestore reads)
-        markTasksDeleted([t.id], String(id));
-        pendingDeletedTaskIds.add(t.id);
+        if (isZeroTaskServer) {
+          markTasksDeleted([t.id], String(id));
+          pendingDeletedTaskIds.add(t.id);
+        } else {
+          pendingInvalidatedTaskIds.set(String(t.id), projYearStr);
+        }
       }
     }
   });
@@ -344,9 +350,14 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           if (t?.id && isTaskBelongsToProject(t, p)) candidateMap.set(t.id, t);
         });
 
-        const candidateIdsLower = new Set(
-          Array.from(candidateMap.keys()).map((k) => String(k).trim().toLowerCase())
-        );
+        const queueTaskVerify = (docId: string) => {
+          itemsToVerify.push({
+            docId, collectionName: 'taka_tasks', action: 'update', data: {}, isPatch: true, invalidate: true,
+            year: String(p.year || ''), projectId: String(p.id), projectCode: p.code, projectStore: p.store, forceResolve: true,
+          } as any);
+        };
+
+        const candidateIdsLower = new Set(Array.from(candidateMap.keys()).map((k) => String(k).trim().toLowerCase()));
         let missingInDexie = false;
         const unmatchedSummaryNameStarts = new Set<string>();
         summaries.forEach((s: any) => {
@@ -355,21 +366,7 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
           if (!sIdLower || !candidateIdsLower.has(sIdLower)) {
             if (sId && !sId.startsWith('ts_')) {
               missingInDexie = true;
-              if (isTasksRequested && isExpanded && candidateMap.size > 0) {
-                itemsToVerify.push({
-                  docId: sId,
-                  collectionName: 'taka_tasks',
-                  action: 'update',
-                  data: {},
-                  isPatch: true,
-                  invalidate: true,
-                  year: String(p.year || ''),
-                  projectId: String(p.id),
-                  projectCode: p.code,
-                  projectStore: p.store,
-                  forceResolve: true,
-                } as any);
-              }
+              if (candidateMap.size > 0 || (isTasksRequested && isExpanded)) queueTaskVerify(sId);
             }
             const sName = String(s?.name || '').trim().toLowerCase();
             const sStart = String(s?.start || '').trim();
@@ -393,11 +390,12 @@ export function runBackgroundDexieProjectTaskReconciliation(changed: Project[]):
               unmatchedSummaryNameStarts.delete(tNameStart);
               continue;
             }
-            if (isZeroTask || allSummariesHaveIds) {
-              // Purge zombie task directly from local Dexie & Zustand (0 Firestore reads)
+            if (isZeroTask) {
               markTasksDeleted([tid], String(p.id));
               zombieIdsToPurgeFromStore.add(tidLower);
               await localDb.tasks.delete(tid).catch(() => {});
+            } else if (allSummariesHaveIds) {
+              queueTaskVerify(String(tid));
             }
           } else {
             const s = summaryById.get(tidLower);

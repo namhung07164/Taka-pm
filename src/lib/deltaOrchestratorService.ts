@@ -85,7 +85,7 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     window.dispatchEvent(new CustomEvent('taka_network_recovered'));
   });
 
-  // 2. Tab Visibility Listener (Page Visibility API - Hibernation)
+  // 2. Tab Visibility Listener (Page Visibility API - Hibernation & Rule 16.2 Wake Guard)
   let hiddenSince = 0;
   const handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
@@ -93,8 +93,9 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
       hiddenSince = 0;
       lastActivityTime = Date.now();
       startPolling();
-      // Give deltaRealtimeListener 250ms to re-attach onSnapshot(taka_deltas); fallback to getDocsFromServer if disconnected
-      if (hiddenDuration >= 2000) {
+      if (hiddenDuration >= 60000) {
+        wakeAndSync(true);
+      } else if (hiddenDuration >= 2000) {
         setTimeout(() => {
           if (!isDeltaRealtimeConnected()) {
             wakeAndSync(true);
@@ -107,13 +108,22 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     }
   };
 
-  // 3. Online network reconnection
+  // 3. Online network reconnection & Focus after idle
   const handleOnline = () => {
-    wakeAndSync(!isDeltaRealtimeConnected());
+    wakeAndSync(true);
+  };
+
+  const handleFocus = () => {
+    const idleDuration = Date.now() - lastActivityTime;
+    lastActivityTime = Date.now();
+    if (idleDuration >= 60000 || !isDeltaRealtimeConnected()) {
+      wakeAndSync(true);
+    }
   };
 
   document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('online', handleOnline);
+  window.addEventListener('focus', handleFocus);
 
   return () => {
     stopPolling();
@@ -122,6 +132,7 @@ export function startDeltaSyncService(intervalMs: number = 30 * 60 * 1000): () =
     stopBroadcast();
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('online', handleOnline);
+    window.removeEventListener('focus', handleFocus);
   };
 }
 

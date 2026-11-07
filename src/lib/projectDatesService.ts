@@ -115,17 +115,41 @@ export function getTasksForProject(
     : [];
 
   if (matchedMap.size > 0) {
-    if (isProjectTasksHydrated(pIdStr) || matchedMap.size >= validSummaries.length) {
-      return Array.from(matchedMap.values());
-    }
-    // Partial in-memory tasks before project hydration: merge with remaining validSummaries
     const realList = Array.from(matchedMap.values());
     const realIdSet = new Set(realList.map(t => String(t.id).trim().toLowerCase()));
-    const realNameSet = new Set(realList.map(t => String(t.name || '').trim().toLowerCase()).filter(Boolean));
+    const realCodeSet = new Set(realList.map(t => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean));
+    const realNameStartSet = new Set(
+      realList.map(t => `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`)
+    );
+
+    const hasMissingValidSummary = validSummaries.some(vs => {
+      const vsId = String(vs.id || '').trim().toLowerCase();
+      if (vsId && !vsId.startsWith('ts_')) {
+        return !realIdSet.has(vsId);
+      }
+      const vsCode = String(vs.taskCodePhu || '').trim().toLowerCase();
+      const vsNameStart = `${String(vs.name || '').trim().toLowerCase()}|${String(vs.start || '').trim()}`;
+      if (vsCode && realCodeSet.has(vsCode)) return false;
+      if (vsNameStart !== '|' && realNameStartSet.has(vsNameStart)) return false;
+      return true;
+    });
+
+    if (!hasMissingValidSummary && (isProjectTasksHydrated(pIdStr) || matchedMap.size >= validSummaries.length)) {
+      return realList;
+    }
+
+    // Partial in-memory tasks: merge any remaining validSummaries so unhydrated tasks are never dropped when creating a new task
     validSummaries.forEach(vs => {
       const vsId = String(vs.id || '').trim().toLowerCase();
-      const vsName = String(vs.name || '').trim().toLowerCase();
-      if (!realIdSet.has(vsId) && (!vsName || !realNameSet.has(vsName))) {
+      if (vsId && !vsId.startsWith('ts_')) {
+        if (!realIdSet.has(vsId)) {
+          realList.push(vs);
+        }
+        return;
+      }
+      const vsCode = String(vs.taskCodePhu || '').trim().toLowerCase();
+      const vsNameStart = `${String(vs.name || '').trim().toLowerCase()}|${String(vs.start || '').trim()}`;
+      if ((!vsCode || !realCodeSet.has(vsCode)) && (vsNameStart === '|' || !realNameStartSet.has(vsNameStart))) {
         realList.push(vs);
       }
     });
@@ -170,9 +194,22 @@ export function calculateProjectComputedDates(
   );
   const realOnlyTasks = rawTasks.filter(t => !(t as any)._isVirtualSummary);
   const realIdSet = new Set(realOnlyTasks.map(t => String(t.id || '').trim().toLowerCase()).filter(Boolean));
+  const realCodeSet = new Set(realOnlyTasks.map(t => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean));
+  const realNameSet = new Set(realOnlyTasks.map(t => String(t.name || '').trim().toLowerCase()).filter(Boolean));
+  const realNameStartSet = new Set(
+    realOnlyTasks.map(t => `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`)
+  );
   const hasMissingActiveSummaries = activeExistingSummaries.some((es: any) => {
     const esId = String(es?.id || '').trim().toLowerCase();
-    return Boolean(esId && !esId.startsWith('ts_') && !realIdSet.has(esId));
+    if (esId && !esId.startsWith('ts_')) {
+      return !realIdSet.has(esId);
+    }
+    const esCode = String(es?.taskCodePhu || '').trim().toLowerCase();
+    const esName = String(es?.name || '').trim().toLowerCase();
+    const esStart = String(es?.start || '').trim();
+    if (esCode && realCodeSet.has(esCode)) return false;
+    if (esName && (realNameStartSet.has(`${esName}|${esStart}`) || (!esId && !esCode && realNameSet.has(esName)))) return false;
+    return true;
   });
   let filteredInputTasks: Task[];
 
@@ -183,11 +220,6 @@ export function calculateProjectComputedDates(
   } else {
     // Partial real tasks in memory: merge with remaining activeExistingSummaries so unhydrated tasks are never dropped
     const mergedList: Task[] = [...realOnlyTasks];
-    const realCodeSet = new Set(realOnlyTasks.map(t => String(t.taskCodePhu || '').trim().toLowerCase()).filter(Boolean));
-    const realNameSet = new Set(realOnlyTasks.map(t => String(t.name || '').trim().toLowerCase()).filter(Boolean));
-    const realNameStartSet = new Set(
-      realOnlyTasks.map(t => `${String(t.name || '').trim().toLowerCase()}|${String(t.start || '').trim()}`)
-    );
 
     activeExistingSummaries.forEach((ts: any, idx: number) => {
       const tsId = String(ts?.id || '').trim().toLowerCase();
