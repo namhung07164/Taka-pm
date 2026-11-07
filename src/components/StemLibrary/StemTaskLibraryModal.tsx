@@ -14,7 +14,7 @@ import {
   Building2,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { getZIndexClass } from '../../lib/zIndexManager';
+import { getZIndexClass, getZIndexValue, useOverlayStack } from '../../lib/zIndexManager';
 import {
   StemPartsBinColumn,
   StemPresetTopBar,
@@ -36,6 +36,12 @@ export const StemTaskLibraryModal: React.FC<StemTaskLibraryModalProps> = ({
   initialProjectCode,
 }) => {
   const dragControls = useDragControls();
+  const zInfo = useOverlayStack({
+    layer: 'MODAL_MODULAR',
+    isOpen,
+    onClose,
+    closeOnTabChange: true,
+  });
   const {
     projects,
     targetProject,
@@ -76,8 +82,9 @@ export const StemTaskLibraryModal: React.FC<StemTaskLibraryModalProps> = ({
 
   return createPortal(
     <div
+      style={{ zIndex: zInfo.zValue || getZIndexValue('MODAL_MODULAR') }}
       className={cn(
-        'fixed inset-0 flex items-center justify-center p-2 sm:p-4 bg-black/60 backdrop-blur-xs',
+        'fixed inset-0 z-[250000] flex items-center justify-center p-2 sm:p-4 bg-black/65 backdrop-blur-xs',
         getZIndexClass('MODAL_MODULAR')
       )}
       onClick={(e) => {
@@ -92,7 +99,7 @@ export const StemTaskLibraryModal: React.FC<StemTaskLibraryModalProps> = ({
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 12 }}
-        className="w-full max-w-4xl max-h-[92vh] bg-white dark:bg-[#131316] border border-slate-200 dark:border-[#2e2e32] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        className="relative z-10 w-full max-w-4xl max-h-[92vh] bg-white dark:bg-[#131316] border border-slate-200 dark:border-[#2e2e32] rounded-2xl shadow-2xl flex flex-col overflow-hidden"
       >
         {/* Draggable Modal Header */}
         <div

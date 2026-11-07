@@ -5,7 +5,7 @@ import { GripHorizontal, PackagePlus, X, CheckCircle2, Sparkles } from 'lucide-r
 import { useAppStore } from '../../store/useAppStore';
 import { Task } from '../../types';
 import { cn } from '../../lib/utils';
-import { getZIndexClass } from '../../lib/zIndexManager';
+import { getZIndexClass, getZIndexValue, useOverlayStack } from '../../lib/zIndexManager';
 import {
   STEM_CONNECTOR_META,
   STEM_DEPARTMENTS,
@@ -41,6 +41,12 @@ export const StemCapturePresetModal: React.FC<StemCapturePresetModalProps> = ({
   onSaved,
 }) => {
   const dragControls = useDragControls();
+  const zInfo = useOverlayStack({
+    layer: 'MODAL_MODULAR',
+    isOpen,
+    onClose,
+    closeOnTabChange: true,
+  });
   const allTasks = useAppStore((s) => s.tasks);
   const currentUser = useAppStore((s) => s.currentUser);
 
@@ -107,8 +113,9 @@ export const StemCapturePresetModal: React.FC<StemCapturePresetModalProps> = ({
 
   return createPortal(
     <div
+      style={{ zIndex: zInfo.zValue || getZIndexValue('MODAL_MODULAR') }}
       className={cn(
-        'fixed inset-0 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs',
+        'fixed inset-0 z-[250000] flex items-center justify-center p-3 bg-black/65 backdrop-blur-xs',
         getZIndexClass('MODAL_MODULAR')
       )}
       onClick={(e) => {
@@ -122,7 +129,7 @@ export const StemCapturePresetModal: React.FC<StemCapturePresetModalProps> = ({
         dragMomentum={false}
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="w-full max-w-xl bg-white dark:bg-[#151518] border border-slate-200 dark:border-[#2e2e32] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]"
+        className="relative z-10 w-full max-w-xl bg-white dark:bg-[#151518] border border-slate-200 dark:border-[#2e2e32] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]"
       >
         {/* Draggable Header */}
         <div
